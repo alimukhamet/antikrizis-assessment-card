@@ -274,6 +274,13 @@
         <label class="lbl">Иждивенцы (кол-во)<span class="req">*</span></label>
         <input id="dependents" type="number" min="0" inputmode="numeric" placeholder="0">
       </div>
+      <div class="field" data-k="children">
+        <label class="lbl">Есть дети младше 18 лет?<span class="req">*</span></label>
+        <div class="seg" id="seg-children">
+          <button type="button" data-v="0">Нет</button>
+          <button type="button" data-v="1">Да</button>
+        </div>
+      </div>
       <div class="field full" data-k="socialStatus">
         <label class="lbl">Социальный статус клиента<span class="req">*</span></label>
         <div class="chips" id="socialStatusChips">
@@ -304,6 +311,13 @@
     <div class="card-title">Доходы и занятость</div>
     <div class="fields">
       <div class="section-label">Клиент</div>
+      <div class="field full" data-k="works">
+        <label class="lbl">Клиент работает официально?<span class="req">*</span></label>
+        <div class="seg" id="seg-works">
+          <button type="button" data-v="0">Нет</button>
+          <button type="button" data-v="1">Да</button>
+        </div>
+      </div>
       <div class="field" data-k="incomeClientOff">
         <label class="lbl">Доход клиента — официальный ₸/мес<span class="req">*</span></label>
         <input id="incomeClientOff" class="money" inputmode="numeric" placeholder="0">
@@ -313,6 +327,13 @@
         <input id="incomeClientUnoff" class="money" inputmode="numeric" placeholder="0">
       </div>
       <div class="section-label">Супруг(а)</div>
+      <div class="field full hidden" id="spouseWorksField" data-k="spouseWorks">
+        <label class="lbl">Супруг(а) работает официально?<span class="req">*</span></label>
+        <div class="seg" id="seg-spouseWorks">
+          <button type="button" data-v="0">Нет</button>
+          <button type="button" data-v="1">Да</button>
+        </div>
+      </div>
       <div class="field" data-k="incomeSpouseOff">
         <label class="lbl" id="lblSpouseOff">Доход супруга — официальный ₸/мес</label>
         <input id="incomeSpouseOff" class="money" inputmode="numeric" placeholder="0">
@@ -365,6 +386,13 @@
       <div class="field" data-k="spouseProperty">
         <label class="lbl" id="lblSpouseProperty">Имущество супруга(и)</label>
         <input id="spouseProperty" placeholder="напр. не имеется">
+      </div>
+      <div class="field hidden" id="spouseCarField" data-k="spouseCar">
+        <label class="lbl">У супруга(и) есть автомобиль?<span class="req">*</span></label>
+        <div class="seg" id="seg-spouseCar">
+          <button type="button" data-v="0">Нет</button>
+          <button type="button" data-v="1">Да</button>
+        </div>
       </div>
       <div class="field" data-k="cars">
         <label class="lbl">Есть авто?<span class="req">*</span></label>
@@ -664,8 +692,8 @@ const MAP = {
   card:        {bx:"UF_CRM_AI_CARD"} // full assessment, including the signed contract date and payment schedule
 };
 const REQUIRED = [
-  "fio","iin","dognum","marital","dependents","socialStatus","procedure",
-  "incomeClientOff","incomeClientUnoff","salaryOtherBank","ip",
+  "fio","iin","dognum","marital","dependents","children","socialStatus","procedure",
+  "works","incomeClientOff","incomeClientUnoff","salaryOtherBank","ip",
   "realEstate","cars","carSale",
   "debt","overdueDays","lastCreditDate","kaspiTurnover","creditTypes","creditPurpose",
   "ludo","guarantors","comment",
@@ -678,13 +706,17 @@ const FIELD_LABELS = {
   dognum:"Номер договора",
   marital:"Семейное положение",
   dependents:"Иждивенцы",
+  children:"Есть дети младше 18 лет?",
   socialStatus:"Социальный статус клиента",
   procedure:"Вид процедуры",
+  works:"Клиент работает официально?",
   incomeClientOff:"Доход клиента — официальный",
   incomeClientUnoff:"Доход клиента — неофициальный",
   incomeSpouseOff:"Доход супруга — официальный",
   incomeSpouseUnoff:"Доход супруга — неофициальный",
   spouseTurnover:"Обороты супруга",
+  spouseWorks:"Супруг(а) работает официально?",
+  spouseCar:"У супруга(и) есть автомобиль?",
   salaryOtherBank:"Зарплата поступает не в Kaspi?",
   spouseProperty:"Имущество супруга(и)",
   ip:"Есть ИП / ТОО / КХ?",
@@ -880,6 +912,7 @@ function numberToWordsRu(value){
 }
 
 const segVal = {
+  works:null,children:null,spouseWorks:null,spouseCar:null,
   ludo:null,salaryOtherBank:null,ip:null,realEstate:null,cars:null,carSale:null,
   docSocialPayments:null,docSalaryBank:null
 };
@@ -913,7 +946,7 @@ function setSegmentValue(k,v){
   el.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x.dataset.v===v));
   if(segEffects[k]) segEffects[k](v);
 }
-["ludo","salaryOtherBank","ip","realEstate","cars","carSale","docSocialPayments","docSalaryBank"].forEach(k=>{
+["works","children","spouseWorks","spouseCar","ludo","salaryOtherBank","ip","realEstate","cars","carSale","docSocialPayments","docSalaryBank"].forEach(k=>{
   const el = $("seg-"+k); if(!el) return;
   el.querySelectorAll("button").forEach(b=>{
     b.onclick = ()=>{
@@ -949,6 +982,8 @@ function getChecked(name){
 // ── Spouse required label ──
 function updateSpouseLabel(marital){
   const married = marital==="В браке";
+  $("spouseWorksField").classList.toggle("hidden",!married);
+  $("spouseCarField").classList.toggle("hidden",!married);
   $("lblSpouseOff").innerHTML = "Доход супруга — официальный ₸/мес" + (married?'<span class="req">*</span>':"");
   $("lblSpouseUnoff").innerHTML = "Доход супруга — неофициальный ₸/мес" + (married?'<span class="req">*</span>':"");
   $("lblSpouseTurnover").innerHTML = "Обороты супруга (бизнес) ₸/мес" + (married?'<span class="req">*</span>':"");
@@ -961,14 +996,15 @@ function readState(){
   const g = id => $(id)?$(id).value.trim():"";
   return {
     fio:g("fio"), iin:g("iin"), dognum:g("dognum"), marital:g("marital"),
-    dependents:g("dependents"), socialStatus:getChecked("socialStatus"),
+    dependents:g("dependents"), children:segVal.children, socialStatus:getChecked("socialStatus"),
     procedure:g("procedure"), procedureText:$("procedure").selectedOptions[0]?.textContent||"",
+    works:segVal.works,
     incomeClientOff:g("incomeClientOff"), incomeClientUnoff:g("incomeClientUnoff"),
     incomeSpouseOff:g("incomeSpouseOff"), incomeSpouseUnoff:g("incomeSpouseUnoff"),
-    spouseTurnover:g("spouseTurnover"),
+    spouseTurnover:g("spouseTurnover"), spouseWorks:segVal.spouseWorks,
     salaryOtherBank:segVal.salaryOtherBank,
     ip:segVal.ip, ipDetails:g("ipDetails"),
-    realEstate:segVal.realEstate, realEstateDetails:g("realEstateDetails"), spouseProperty:g("spouseProperty"),
+    realEstate:segVal.realEstate, realEstateDetails:g("realEstateDetails"), spouseProperty:g("spouseProperty"), spouseCar:segVal.spouseCar,
     cars:segVal.cars, carsDesc:g("carsDesc"),
     carSale:segVal.carSale, carSaleSum:g("carSaleSum"),
     debt:g("debt"), overdueDays:g("overdueDays"), lastCreditDate:g("lastCreditDate"),
@@ -1052,11 +1088,14 @@ function buildCardLines(s, inclContract){
   head("ЛИЧНОЕ");
   add("ФИО",s.fio); add("ИИН",s.iin); add("Семейное положение",s.marital);
   add("Иждивенцы",s.dependents); add("Социальный статус",s.socialStatus);
+  add("Есть дети младше 18 лет",s.children==="1"?"Да":s.children==="0"?"нет":"");
   add("Процедура",s.procedureText);
   head("ДОХОДЫ И ЗАНЯТОСТЬ");
+  add("Клиент работает официально",s.works==="1"?"Да":s.works==="0"?"нет":"");
   add("Доход клиента офиц.",fmtM0(s.incomeClientOff));
   add("Доход клиента неофиц.",fmtM0(s.incomeClientUnoff));
   if(s.marital==="В браке"){
+    add("Супруг(а) работает официально",s.spouseWorks==="1"?"Да":s.spouseWorks==="0"?"нет":"");
     add("Доход супруга офиц.",fmtM0(s.incomeSpouseOff));
     add("Доход супруга неофиц.",fmtM0(s.incomeSpouseUnoff));
     add("Обороты супруга",fmtM0(s.spouseTurnover));
@@ -1068,6 +1107,7 @@ function buildCardLines(s, inclContract){
   if(s.realEstate==="1") add("Недвижимость",s.realEstateDetails||"Да");
   else if(s.realEstate==="0") add("Недвижимость","нет");
   add("Имущество супруга(и)",s.spouseProperty);
+  if(s.marital==="В браке") add("У супруга(и) есть автомобиль",s.spouseCar==="1"?"Да":s.spouseCar==="0"?"нет":"");
   if(s.cars==="1") add("Авто",s.carsDesc||"Да");
   else if(s.cars==="0") add("Авто","нет");
   if(s.carSale==="1") add("Продажа авто за 3 года","Да"+(s.carSaleSum?" — "+fmtM(s.carSaleSum):""));
@@ -1499,12 +1539,13 @@ function existingDocumentRefs(item,key=documentFieldKey(item)){
 // ── Validation ──
 function validate(s){
   const missing = REQUIRED.filter(k=> {
-    if(["ludo","ip","realEstate","cars","carSale"].includes(k)) return s[k]===null||s[k]===undefined;
+    if(["works","children","ludo","ip","realEstate","cars","carSale"].includes(k)) return s[k]===null||s[k]===undefined;
     if(["dependents","incomeClientOff","incomeClientUnoff","overdueDays","kaspiTurnover","summa","months","payDay"].includes(k)) return s[k]==="";
     return !s[k];
   });
   if(s.marital==="В браке"){
     ["incomeSpouseOff","incomeSpouseUnoff","spouseTurnover","spouseProperty","spouseKaspiTurnover"].forEach(k=>{if(s[k]==="") missing.push(k);});
+    ["spouseWorks","spouseCar"].forEach(k=>{if(s[k]===null||s[k]===undefined) missing.push(k);});
   }
   if(isHighKaspi(s.kaspiTurnover,s)&&!s.kaspiTurnoverComment) missing.push("kaspiTurnoverComment");
   if(s.marital==="В браке"&&isHighKaspi(s.spouseKaspiTurnover,s)&&!s.spouseKaspiTurnoverComment) missing.push("spouseKaspiTurnoverComment");
@@ -1765,7 +1806,7 @@ function clearForm(){
   });
   $("dealId").value="";
   document.querySelectorAll('[data-flow="contract"] .chips label,[data-flow="contract"] .seg button,[data-flow="contract"] .field').forEach(el=>el.classList.remove("on","invalid"));
-  ["ludo","salaryOtherBank","ip","realEstate","cars","carSale"].forEach(k=>{segVal[k]=null;});
+  ["works","children","spouseWorks","spouseCar","ludo","salaryOtherBank","ip","realEstate","cars","carSale"].forEach(k=>{segVal[k]=null;});
   ["ip","realEstate","cars","carSale"].forEach(k=>{if(segEffects[k])segEffects[k]("0");});
   updateSpouseLabel("");
   onChange();
