@@ -39,7 +39,7 @@
   .task-link{margin-top:auto;color:var(--green);font-size:.88rem;font-weight:800;display:flex;justify-content:space-between;align-items:center}
   .task-link span:last-child{font-size:1.25rem}
   .home-note{margin:26px auto 0;color:var(--text-muted);font-size:.78rem}
-  .workflow-header{display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center;margin-bottom:24px}
+  .workflow-header{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;margin-bottom:24px}
   .back-btn{border:1px solid var(--border);background:#fff;color:var(--green);border-radius:10px;padding:10px 13px;font-weight:700;cursor:pointer}
   .workflow-title h1{font-size:1.35rem;letter-spacing:-.02em;color:var(--green-dark);margin:0}
   .workflow-title p{font-size:.78rem;color:var(--text-muted);margin:3px 0 0}
@@ -178,7 +178,7 @@
   }
 </style>
 </head>
-<body data-view="home">
+<body data-view="contract">
 <div id="toast" class="toast"></div>
 <div id="filePreviewModal" class="file-preview hidden" role="dialog" aria-modal="true" aria-labelledby="filePreviewName">
   <div class="file-preview-backdrop" data-close-preview></div>
@@ -200,36 +200,9 @@
   </div>
 </div>
 <div class="wrap">
-  <main id="homeView">
-    <div class="home-brand">
-      <div class="brand-mark">A+</div>
-      <div class="brand-copy"><strong>Антикризис</strong><span>Инструменты отдела продаж</span></div>
-    </div>
-    <div class="home-hero">
-      <div class="eyebrow">Работа со сделкой</div>
-      <h1>Что нужно сделать?</h1>
-      <p>Выберите одну задачу. Внутри будут только нужные для неё поля и одно понятное действие.</p>
-      <div class="task-grid">
-        <button class="task-card" type="button" data-open-view="contract">
-          <span class="task-number">01</span>
-          <h2>Создать договор и карточку</h2>
-          <p>Заполнить оценку клиента, сформировать договор и сохранить данные в Bitrix.</p>
-          <span class="task-link"><span>Начать оформление</span><span>→</span></span>
-        </button>
-        <button class="task-card" type="button" data-open-view="documents">
-          <span class="task-number">02</span>
-          <h2>Загрузить документы</h2>
-          <p>Прикрепить готовые документы к существующей сделке без заполнения договора и оценки.</p>
-          <span class="task-link"><span>Перейти к файлам</span><span>→</span></span>
-        </button>
-      </div>
-      <div class="home-note">Оба процесса находятся в одном файле, но работают независимо.</div>
-    </div>
-  </main>
-
   <header class="workflow-header" id="workflowHeader">
-    <button class="back-btn" id="backBtn" type="button">← Назад</button>
-    <div class="workflow-title"><h1 id="workflowTitle">Договор и карточка</h1><p id="workflowSubtitle">Оценка клиента и оформление договора</p></div>
+    <button class="back-btn" id="backBtn" type="button" hidden aria-hidden="true" tabindex="-1">← Назад</button>
+    <div class="workflow-title"><h1 id="workflowTitle">Карточка оценки клиента</h1><p id="workflowSubtitle">Оценка клиента и оформление договора</p></div>
     <label class="deal">Сделка ID <input id="dealId" inputmode="numeric" placeholder="напр. 4463"></label>
   </header>
   <div id="cfgwarn" class="cfgwarn">⚠️ Нужен crm-only вебхук в <code>CONFIG.WEBHOOK</code>. Admin webhook нельзя вставлять в HTML.</div>
@@ -660,7 +633,7 @@
   <div class="info" id="info">Заполните обязательные поля (*), чтобы сохранить.</div>
   <div class="bar-actions">
     <button class="btn btn-ghost" id="clearBtn" type="button">Очистить</button>
-    <button class="btn btn-main" id="docsBtn" type="button">Загрузить документы</button>
+    <button id="docsBtn" type="button" hidden aria-hidden="true" tabindex="-1"></button>
     <button class="btn btn-main" id="contractBtn" type="button">Сохранить договор и карточку</button>
   </div>
 </div>

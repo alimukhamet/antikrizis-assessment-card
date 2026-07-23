@@ -4,7 +4,7 @@ export default function Home() {
       <iframe
         className="tool-frame"
         src="/assessment-card.html"
-        title="Договор и карточка клиента"
+        title="Карточка оценки клиента"
       />
     </main>
   );
