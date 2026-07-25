@@ -19,7 +19,6 @@
   [data-flow]{display:none}
   body[data-view="contract"] [data-flow="contract"],body[data-view="documents"] [data-flow="documents"]{display:block}
   body[data-view="home"] #workflowHeader,body[data-view="home"] #actionBar{display:none}
-  body[data-view="home"] #cfgwarn{display:none!important}
   body:not([data-view="home"]) #homeView{display:none}
   .home-brand{display:flex;align-items:center;gap:11px;margin-bottom:54px}
   .brand-mark{width:42px;height:42px;border-radius:13px;background:var(--green);color:#fff;display:grid;place-items:center;font-weight:800;letter-spacing:-.04em;box-shadow:0 8px 20px rgba(36,92,54,.2)}
@@ -39,7 +38,7 @@
   .task-link{margin-top:auto;color:var(--green);font-size:.88rem;font-weight:800;display:flex;justify-content:space-between;align-items:center}
   .task-link span:last-child{font-size:1.25rem}
   .home-note{margin:26px auto 0;color:var(--text-muted);font-size:.78rem}
-  .workflow-header{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;margin-bottom:24px}
+  .workflow-header{display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center;margin-bottom:24px}
   .back-btn{border:1px solid var(--border);background:#fff;color:var(--green);border-radius:10px;padding:10px 13px;font-weight:700;cursor:pointer}
   .workflow-title h1{font-size:1.35rem;letter-spacing:-.02em;color:var(--green-dark);margin:0}
   .workflow-title p{font-size:.78rem;color:var(--text-muted);margin:3px 0 0}
@@ -178,7 +177,7 @@
   }
 </style>
 </head>
-<body data-view="contract">
+<body data-view="home">
 <div id="toast" class="toast"></div>
 <div id="filePreviewModal" class="file-preview hidden" role="dialog" aria-modal="true" aria-labelledby="filePreviewName">
   <div class="file-preview-backdrop" data-close-preview></div>
@@ -200,12 +199,39 @@
   </div>
 </div>
 <div class="wrap">
+  <main id="homeView">
+    <div class="home-brand">
+      <div class="brand-mark">A+</div>
+      <div class="brand-copy"><strong>Антикризис</strong><span>Инструменты отдела продаж</span></div>
+    </div>
+    <div class="home-hero">
+      <div class="eyebrow">Работа со сделкой</div>
+      <h1>Что нужно сделать?</h1>
+      <p>Выберите одну задачу. Внутри будут только нужные для неё поля и одно понятное действие.</p>
+      <div class="task-grid">
+        <button class="task-card" type="button" data-open-view="contract">
+          <span class="task-number">01</span>
+          <h2>Создать договор и карточку</h2>
+          <p>Заполнить оценку клиента, сформировать договор и сохранить данные в Bitrix.</p>
+          <span class="task-link"><span>Начать оформление</span><span>→</span></span>
+        </button>
+        <button class="task-card" type="button" data-open-view="documents">
+          <span class="task-number">02</span>
+          <h2>Загрузить документы</h2>
+          <p>Прикрепить готовые документы к существующей сделке без заполнения договора и оценки.</p>
+          <span class="task-link"><span>Перейти к файлам</span><span>→</span></span>
+        </button>
+      </div>
+      <div class="home-note">Оба процесса находятся в одном файле, но работают независимо.</div>
+    </div>
+  </main>
+
   <header class="workflow-header" id="workflowHeader">
-    <button class="back-btn" id="backBtn" type="button" hidden aria-hidden="true" tabindex="-1">← Назад</button>
-    <div class="workflow-title"><h1 id="workflowTitle">Карточка оценки клиента</h1><p id="workflowSubtitle">Оценка клиента и оформление договора</p></div>
+    <button class="back-btn" id="backBtn" type="button">← Назад</button>
+    <div class="workflow-title"><h1 id="workflowTitle">Договор и карточка</h1><p id="workflowSubtitle">Оценка клиента и оформление договора</p></div>
     <label class="deal">Сделка ID <input id="dealId" inputmode="numeric" placeholder="напр. 4463"></label>
   </header>
-  <div id="cfgwarn" class="cfgwarn">⚠️ Нужен crm-only вебхук в <code>CONFIG.WEBHOOK</code>. Admin webhook нельзя вставлять в HTML.</div>
+  <div id="cfgwarn" class="cfgwarn">⚠️ Bitrix не подключён на этом сайте. Рабочие данные недоступны; сохранение и загрузка остановлены.</div>
 
   <div class="workflow-intro" data-flow="contract">
     <h2>Договор и оценка клиента</h2>
@@ -633,7 +659,7 @@
   <div class="info" id="info">Заполните обязательные поля (*), чтобы сохранить.</div>
   <div class="bar-actions">
     <button class="btn btn-ghost" id="clearBtn" type="button">Очистить</button>
-    <button id="docsBtn" type="button" hidden aria-hidden="true" tabindex="-1"></button>
+    <button class="btn btn-main" id="docsBtn" type="button">Загрузить документы</button>
     <button class="btn btn-main" id="contractBtn" type="button">Сохранить договор и карточку</button>
   </div>
 </div>
@@ -646,6 +672,19 @@ const CONFIG = {
   // crm-only вебхук (НЕ admin-webhook из bitrix-write-secret.txt)
   WEBHOOK: "/api/bitrix/"
 };
+let bitrixReady = false;
+async function verifyBitrixConnection(){
+  const warning=document.getElementById("cfgwarn");
+  try{
+    const response=await fetch("/api/status",{cache:"no-store"});
+    const payload=await response.json();
+    bitrixReady=Boolean(response.ok&&payload.ok&&payload.source==="bitrix");
+  }catch(_){
+    bitrixReady=false;
+  }
+  warning.style.display=bitrixReady?"none":"block";
+  return bitrixReady;
+}
 const MAX_INSTALLMENTS = 60;
 // This Bitrix field is the signed contract date. Never map the calculated first payment date here.
 const CONTRACT_DATE_FIELD = "UF_CRM_1778499926844";
@@ -893,7 +932,7 @@ const segVal = {
 // URL param
 const params = new URLSearchParams(location.search);
 if(params.get("deal_id")) $("dealId").value = params.get("deal_id");
-if(!CONFIG.WEBHOOK) $("cfgwarn").style.display = "block";
+verifyBitrixConnection();
 
 // ── Money input formatting ──
 function formatMoney(el){
@@ -1789,7 +1828,7 @@ function clearForm(){
 
 // ── Bitrix workflow: save → invoice schedule → Lawyers ──
 async function bxRequest(method,params={}){
-  if(!CONFIG.WEBHOOK) throw new Error("Вебхук Bitrix не настроен.");
+  if(!CONFIG.WEBHOOK||!bitrixReady) throw new Error("Вебхук Bitrix не настроен.");
   const response=await fetch(CONFIG.WEBHOOK.replace(/\/?$/,"/")+method+".json",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
@@ -1832,7 +1871,7 @@ async function saveToBitrix(extraFields={},opts={}){
     markMissing(missing);
     return false;
   }
-  if(!CONFIG.WEBHOOK){toast("Вебхук не задан — добавьте в CONFIG.WEBHOOK",false);return false;}
+  if(!CONFIG.WEBHOOK||!bitrixReady){toast("Bitrix не подключён — сохранение остановлено",false);return false;}
   const btn=opts.button||$("contractBtn"), oldText=btn.textContent;
   btn.dataset.busy="1";
   $("clearBtn").disabled=true;
@@ -1867,7 +1906,7 @@ async function submitContractAndAssessment(){
   btn.disabled=true;
   let cardSaved=false;
   try{
-    if(!CONFIG.WEBHOOK) throw new Error("Вебхук Bitrix не настроен — карточка не может быть сохранена.");
+    if(!CONFIG.WEBHOOK||!bitrixReady) throw new Error("Вебхук Bitrix не настроен — карточка не может быть сохранена.");
     btn.textContent="Сохраняю и проверяю карточку…";
     await saveAssessmentToBitrix(s,dealId);
     cardSaved=true;
@@ -1927,8 +1966,8 @@ async function uploadDocuments(){
     toast("Выберите: " + text,false);
     return;
   }
-  if(!CONFIG.WEBHOOK){
-    toast("Вебхук не задан — добавьте в CONFIG.WEBHOOK",false);
+  if(!CONFIG.WEBHOOK||!bitrixReady){
+    toast("Bitrix не подключён — загрузка остановлена",false);
     return;
   }
   const btn=$("docsBtn"), oldText=btn.textContent;

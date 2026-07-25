@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
 
-const title = "Карточка оценки клиента";
+const title = "Договор и карточка клиента";
 const description =
   "Рабочий инструмент Antikrizis для оценки клиента, оформления договора и передачи карточки юристам.";
 

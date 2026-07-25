@@ -20,9 +20,9 @@ test("server-renders the assessment card shell", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Карточка оценки клиента<\/title>/i);
+  assert.match(html, /<title>Договор и карточка клиента<\/title>/i);
   assert.match(html, /assessment-card\.html/);
-  assert.match(html, /Карточка оценки клиента/);
+  assert.match(html, /Договор и карточка клиента/);
 });
 
 test("captures every fact needed to build the later document checklist", async () => {
@@ -40,13 +40,14 @@ test("captures every fact needed to build the later document checklist", async (
   assert.match(card, /marital:\s*\{bx:"UF_CRM_AI_MARITAL"\}/);
 });
 
-test("opens directly as the assessment and contract task", async () => {
+test("keeps contract creation and document upload as separate tasks", async () => {
   const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
 
-  assert.match(card, /<body data-view="contract">/);
-  assert.match(card, /Карточка оценки клиента/);
-  assert.doesNotMatch(card, /data-open-view="documents"/);
-  assert.match(card, /id="docsBtn"[^>]*hidden/);
+  assert.match(card, /<body data-view="home">/);
+  assert.match(card, /Создать договор и карточку/);
+  assert.match(card, /Загрузить документы/);
+  assert.match(card, /data-open-view="documents"/);
+  assert.match(card, /id="docsBtn"/);
   assert.match(card, /Сохранить договор и карточку/);
   assert.match(card, /PRIMARY_DOCS_MULTI_FIELD = "UF_CRM_ANK_PRIMARY_DOCS"/);
   assert.match(card, /batch-preview/);
