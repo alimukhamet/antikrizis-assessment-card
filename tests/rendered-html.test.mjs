@@ -32,12 +32,17 @@ test("captures every fact needed to build the later document checklist", async (
   assert.match(card, /id="seg-children"/);
   assert.match(card, /id="seg-spouseWorks"/);
   assert.match(card, /id="seg-spouseCar"/);
+  assert.match(card, /id="registeredAddress"/);
+  assert.match(card, /Адрес прописки/);
   assert.match(card, /add\("Клиент работает официально"/);
   assert.match(card, /add\("Есть дети младше 18 лет"/);
   assert.match(card, /add\("Супруг\(а\) работает официально"/);
   assert.match(card, /add\("У супруга\(и\) есть автомобиль"/);
   assert.match(card, /card:\s*\{bx:"UF_CRM_AI_CARD"\}/);
   assert.match(card, /marital:\s*\{bx:"UF_CRM_AI_MARITAL"\}/);
+  assert.match(card, /data:\s*"UF_CRM_ANK_DATA"/);
+  assert.match(card, /registeredAddress:\s*"UF_CRM_ANK_REG_ADDR"/);
+  assert.match(card, /function buildAssessmentProfile/);
 });
 
 test("keeps contract creation and document upload as separate tasks", async () => {
