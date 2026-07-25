@@ -53,3 +53,17 @@ test("keeps contract creation and document upload as separate tasks", async () =
   assert.match(card, /batch-preview/);
   assert.match(card, /openFilePreview/);
 });
+
+test("limits the public assessment proxy to the methods used by the card", async () => {
+  const route = await readFile(
+    new URL("../app/api/bitrix/[method]/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(route, /const ASSESSMENT_METHODS = new Set/);
+  assert.match(route, /"crm\.deal\.get"/);
+  assert.match(route, /"crm\.deal\.update"/);
+  assert.match(route, /"crm\.item\.get"/);
+  assert.match(route, /"crm\.item\.update"/);
+  assert.match(route, /error: "METHOD_NOT_ALLOWED"/);
+});
