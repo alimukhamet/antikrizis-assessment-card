@@ -255,11 +255,6 @@
         <label class="lbl">ИИН<span class="req">*</span></label>
         <input id="iin" inputmode="numeric" maxlength="12" placeholder="12 цифр">
       </div>
-      <div class="field full" data-k="registeredAddress">
-        <label class="lbl">Адрес прописки<span class="req">*</span></label>
-        <input id="registeredAddress" placeholder="Область, город/район, улица, дом, квартира">
-        <div class="hint">Укажите, где человек зарегистрирован официально. Этот адрес сохраняется в профиле и повторно используется в документах.</div>
-      </div>
       <div class="field" data-k="dognum">
         <label class="lbl">Номер договора<span class="req">*</span></label>
         <input id="dognum" placeholder="напр. 26-0413/01">
@@ -693,13 +688,6 @@ async function verifyBitrixConnection(){
 const MAX_INSTALLMENTS = 60;
 // This Bitrix field is the signed contract date. Never map the calculated first payment date here.
 const CONTRACT_DATE_FIELD = "UF_CRM_1778499926844";
-const PROFILE_FIELDS = {
-  data: "UF_CRM_ANK_DATA",
-  status: "UF_CRM_ANK_STATUS",
-  confirmedAt: "UF_CRM_ANK_CONF_AT",
-  registeredAddress: "UF_CRM_ANK_REG_ADDR"
-};
-const ASSESSMENT_STATUS_CONFIRMED = "417";
 const MAP = {
   fio:         {bx:"UF_CRM_1773669702495"},
   iin:         {bx:"UF_CRM_AI_IIN"},
@@ -716,7 +704,7 @@ const MAP = {
   card:        {bx:"UF_CRM_AI_CARD"} // full assessment, including the signed contract date and payment schedule
 };
 const REQUIRED = [
-  "fio","iin","registeredAddress","dognum","marital","dependents","children","socialStatus","procedure",
+  "fio","iin","dognum","marital","dependents","children","socialStatus","procedure",
   "works","incomeClientOff","incomeClientUnoff","salaryOtherBank","ip",
   "realEstate","cars","carSale",
   "debt","overdueDays","lastCreditDate","kaspiTurnover","creditTypes","creditPurpose",
@@ -727,7 +715,6 @@ const FIELD_LABELS = {
   dealId:"ID сделки",
   fio:"ФИО клиента",
   iin:"ИИН",
-  registeredAddress:"Адрес прописки",
   dognum:"Номер договора",
   marital:"Семейное положение",
   dependents:"Иждивенцы",
@@ -1020,7 +1007,7 @@ function updateSpouseLabel(marital){
 function readState(){
   const g = id => $(id)?$(id).value.trim():"";
   return {
-    fio:g("fio"), iin:g("iin"), registeredAddress:g("registeredAddress"), dognum:g("dognum"), marital:g("marital"),
+    fio:g("fio"), iin:g("iin"), dognum:g("dognum"), marital:g("marital"),
     dependents:g("dependents"), children:segVal.children, socialStatus:getChecked("socialStatus"),
     procedure:g("procedure"), procedureText:$("procedure").selectedOptions[0]?.textContent||"",
     works:segVal.works,
@@ -1111,7 +1098,7 @@ function buildCardLines(s, inclContract){
   L.push("КАРТОЧКА КЛИЕНТА");
   L.push("════════════════════");
   head("ЛИЧНОЕ");
-  add("ФИО",s.fio); add("ИИН",s.iin); add("Адрес прописки",s.registeredAddress); add("Семейное положение",s.marital);
+  add("ФИО",s.fio); add("ИИН",s.iin); add("Семейное положение",s.marital);
   add("Иждивенцы",s.dependents); add("Социальный статус",s.socialStatus);
   add("Есть дети младше 18 лет",s.children==="1"?"Да":s.children==="0"?"нет":"");
   add("Процедура",s.procedureText);
@@ -1703,82 +1690,8 @@ function buildFields(s){
   }
   // Defensive assignment: the contract-date field must always come from the user's contract-date input.
   if(s.contractDate) f[CONTRACT_DATE_FIELD]=fmtInputDate(s.contractDate);
-  const confirmedAt=new Date().toISOString();
-  f[PROFILE_FIELDS.data]=JSON.stringify(buildAssessmentProfile(s,confirmedAt));
-  f[PROFILE_FIELDS.status]=ASSESSMENT_STATUS_CONFIRMED;
-  f[PROFILE_FIELDS.confirmedAt]=confirmedAt;
-  f[PROFILE_FIELDS.registeredAddress]=s.registeredAddress;
   if(s.summa){f["OPPORTUNITY"]=num(s.summa);f["CURRENCY_ID"]="KZT";}
   return f;
-}
-
-function triState(value){
-  return value==="1"?true:value==="0"?false:null;
-}
-
-function buildAssessmentProfile(s,confirmedAt){
-  return {
-    schemaVersion:1,
-    assessment:{
-      status:"confirmed",
-      confirmedAt,
-      source:"employee_assessment",
-      confirmedBy:null
-    },
-    identity:{
-      fio:s.fio,
-      iin:s.iin,
-      registeredAddress:s.registeredAddress
-    },
-    household:{
-      maritalStatus:s.marital,
-      dependents:Number(s.dependents),
-      hasMinorChildren:triState(s.children),
-      socialStatus:s.socialStatus
-    },
-    employment:{
-      worksOfficially:triState(s.works),
-      officialIncome:num(s.incomeClientOff),
-      unofficialIncome:num(s.incomeClientUnoff),
-      salaryOutsideKaspi:triState(s.salaryOtherBank),
-      hasBusiness:triState(s.ip),
-      businessDetails:s.ipDetails,
-      spouseWorksOfficially:triState(s.spouseWorks),
-      spouseOfficialIncome:num(s.incomeSpouseOff),
-      spouseUnofficialIncome:num(s.incomeSpouseUnoff),
-      spouseBusinessTurnover:num(s.spouseTurnover)
-    },
-    assets:{
-      hasRealEstate:triState(s.realEstate),
-      realEstateDetails:s.realEstateDetails,
-      spouseProperty:s.spouseProperty,
-      spouseHasCar:triState(s.spouseCar),
-      hasCars:triState(s.cars),
-      carsDetails:s.carsDesc,
-      soldCarWithinThreeYears:triState(s.carSale),
-      carSaleAmount:num(s.carSaleSum)
-    },
-    debts:{
-      totalDebt:num(s.debt),
-      overdueDays:Number(s.overdueDays),
-      lastCreditMonth:s.lastCreditDate,
-      creditTypes:s.creditTypes,
-      creditPurpose:s.creditPurpose,
-      kaspiAnnualTurnover:num(s.kaspiTurnover),
-      kaspiTurnoverComment:s.kaspiTurnoverComment,
-      spouseKaspiAnnualTurnover:num(s.spouseKaspiTurnover),
-      spouseKaspiTurnoverComment:s.spouseKaspiTurnoverComment,
-      guarantors:s.guarantors
-    },
-    risks:{
-      gambling:triState(s.ludo),
-      employeeComment:s.comment
-    },
-    procedure:{
-      id:s.procedure,
-      label:s.procedureText
-    }
-  };
 }
 
 function buildContractQuestionnaire(s){
@@ -1826,7 +1739,6 @@ function buildTemplateData(s){
     client_name:s.fio,
     client_short_name:shortPersonName(s.fio),
     client_iin:s.iin,
-    registered_address:s.registeredAddress,
     company_name:COMPANY.name,
     company_bin:COMPANY.bin,
     company_signer:COMPANY.signer,
@@ -1947,13 +1859,6 @@ async function saveAssessmentToBitrix(s,dealId){
   const savedCard=String(saved?.[MAP.card.bx]||"");
   if(!expectedCard||savedCard!==expectedCard){
     throw new Error("Карточка отправлена, но Bitrix не подтвердил её после сохранения.");
-  }
-  if(String(saved?.[PROFILE_FIELDS.registeredAddress]||"")!==s.registeredAddress){
-    throw new Error("Bitrix не подтвердил адрес прописки после сохранения.");
-  }
-  const savedProfile=String(saved?.[PROFILE_FIELDS.data]||"");
-  if(!savedProfile||savedProfile!==String(fields[PROFILE_FIELDS.data]||"")){
-    throw new Error("Bitrix не подтвердил структурированный профиль после сохранения.");
   }
 }
 
