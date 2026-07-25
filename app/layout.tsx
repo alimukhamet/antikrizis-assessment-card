@@ -40,9 +40,21 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const isOldSite = process.env.SITE_STATUS === "old";
+  const replacementUrl = process.env.OLD_SITE_REPLACEMENT_URL;
+
   return (
     <html lang="ru">
-      <body>{children}</body>
+      <body>
+        {isOldSite && (
+          <aside className="old-site-banner" role="status">
+            <strong>СТАРАЯ ВЕРСИЯ САЙТА</strong>
+            <span>Не используйте её для новой работы.</span>
+            {replacementUrl && <a href={replacementUrl}>Открыть новую версию →</a>}
+          </aside>
+        )}
+        {children}
+      </body>
     </html>
   );
 }
