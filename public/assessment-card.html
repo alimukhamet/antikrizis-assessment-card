@@ -470,6 +470,11 @@
           <label><input type="checkbox" name="creditType" value="Штрафы"> Штрафы</label>
         </div>
       </div>
+      <div class="field full" data-k="creditors">
+        <label class="lbl">Список кредиторов и банков<span class="req">*</span></label>
+        <textarea id="creditors" rows="4" placeholder="Один кредитор в строке: Kaspi Bank&#10;Halyk Bank&#10;МФО или физическое лицо"></textarea>
+        <div class="hint">Заполняется продажами один раз. Юрист получит этот список для ЗВИ и сверит его с ПКБ/ГКБ.</div>
+      </div>
       <div class="field full" data-k="creditPurpose">
         <label class="lbl">На что были взяты кредиты?<span class="req">*</span></label>
         <textarea id="creditPurpose" placeholder="напр. лечение, закрытие старых кредитов, бизнес, ремонт, бытовые расходы"></textarea>
@@ -707,7 +712,7 @@ const REQUIRED = [
   "fio","iin","dognum","marital","dependents","children","socialStatus","procedure",
   "works","incomeClientOff","incomeClientUnoff","salaryOtherBank","ip",
   "realEstate","cars","carSale",
-  "debt","overdueDays","lastCreditDate","kaspiTurnover","creditTypes","creditPurpose",
+  "debt","overdueDays","lastCreditDate","kaspiTurnover","creditTypes","creditors","creditPurpose",
   "ludo","guarantors","comment",
   "summa","contractDate","months","payDay","grafType"
 ];
@@ -747,6 +752,7 @@ const FIELD_LABELS = {
   spouseKaspiTurnover:"Обороты супруга по Каспи за последний год",
   spouseKaspiTurnoverComment:"Комментарий по высоким оборотам Каспи супруга",
   creditTypes:"Типы кредитов",
+  creditors:"Список кредиторов и банков",
   creditPurpose:"На что были взяты кредиты",
   ludo:"Лудомания?",
   guarantors:"Созаёмщики / гаранты / поручители",
@@ -1023,6 +1029,7 @@ function readState(){
     kaspiTurnover:g("kaspiTurnover"), kaspiTurnoverComment:g("kaspiTurnoverComment"),
     spouseKaspiTurnover:g("spouseKaspiTurnover"), spouseKaspiTurnoverComment:g("spouseKaspiTurnoverComment"),
     creditTypes:getChecked("creditType"),
+    creditors:g("creditors").split(/[\n,;]+/).map(value=>value.trim()).filter(Boolean).join("; "),
     creditPurpose:g("creditPurpose"),
     ludo:segVal.ludo, guarantors:g("guarantors"),
     comment:g("comment"),
@@ -1134,6 +1141,7 @@ function buildCardLines(s, inclContract){
     if(isHighKaspi(s.spouseKaspiTurnover,s)) add("Комментарий по оборотам Каспи супруга",s.spouseKaspiTurnoverComment);
   }
   add("Типы кредитов",s.creditTypes);
+  add("Список кредиторов и банков",s.creditors);
   add("На что были взяты кредиты",s.creditPurpose);
   head("РИСКИ");
   add("Лудомания",s.ludo==="1"?"ДА":s.ludo==="0"?"нет":"");
@@ -1712,7 +1720,7 @@ function buildContractQuestionnaire(s){
   const procedureName=String(s.procedureText||"").replace(/^[^—]+—\s*/,"").trim()||s.procedureText;
   return {
     totalDebt: fmtN(s.debt),
-    creditors: s.creditTypes || "не указано",
+    creditors: s.creditors || "не указано",
     overdue: `${s.overdueDays} дн.`,
     enforcement: s.guarantors || "нет",
     property: property.join("; "),

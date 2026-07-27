@@ -36,6 +36,11 @@ test("captures every fact needed to build the later document checklist", async (
   assert.match(card, /add\("Есть дети младше 18 лет"/);
   assert.match(card, /add\("Супруг\(а\) работает официально"/);
   assert.match(card, /add\("У супруга\(и\) есть автомобиль"/);
+  assert.match(card, /id="creditors"/);
+  assert.match(card, /Список кредиторов и банков/);
+  assert.match(card, /"creditTypes","creditors","creditPurpose"/);
+  assert.match(card, /add\("Список кредиторов и банков",s\.creditors\)/);
+  assert.match(card, /creditors:\s*s\.creditors \|\| "не указано"/);
   assert.match(card, /card:\s*\{bx:"UF_CRM_AI_CARD"\}/);
   assert.match(card, /marital:\s*\{bx:"UF_CRM_AI_MARITAL"\}/);
 });
