@@ -42,8 +42,15 @@
   .back-btn{border:1px solid var(--border);background:#fff;color:var(--green);border-radius:10px;padding:10px 13px;font-weight:700;cursor:pointer}
   .workflow-title h1{font-size:1.35rem;letter-spacing:-.02em;color:var(--green-dark);margin:0}
   .workflow-title p{font-size:.78rem;color:var(--text-muted);margin:3px 0 0}
-  .deal{display:flex;align-items:center;gap:8px;font-size:.78rem;font-weight:700;color:var(--text-mid);background:#fff;border:1px solid var(--border);border-radius:12px;padding:8px 10px}
+  .deal{display:grid;grid-template-columns:auto 118px;align-items:center;gap:4px 8px;min-width:280px;font-size:.78rem;font-weight:700;color:var(--text-mid);background:#fff;border:1px solid var(--border);border-radius:12px;padding:8px 10px;transition:border-color .16s,box-shadow .16s}
   .deal input{width:118px;padding:7px 9px;border:1px solid var(--border);border-radius:8px;font-size:.9rem}
+  .deal-name{grid-column:1/-1;display:block;max-width:320px;color:var(--text-muted);font-size:.72rem;font-weight:650;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .deal[data-state="loading"]{border-color:#b9c9bd}
+  .deal[data-state="loading"] .deal-name{color:var(--text-mid)}
+  .deal[data-state="success"]{border-color:#9dc6a8;box-shadow:0 0 0 2px rgba(55,123,76,.08)}
+  .deal[data-state="success"] .deal-name{color:var(--green);font-weight:800}
+  .deal[data-state="error"]{border-color:#dfaaa5}
+  .deal[data-state="error"] .deal-name{color:var(--red)}
   .workflow-intro{border-radius:18px;padding:20px 22px;margin-bottom:16px;color:#fff;background:linear-gradient(135deg,var(--green-dark),var(--green));box-shadow:var(--shadow)}
   .workflow-intro h2{font-size:1.25rem;letter-spacing:-.02em;margin:0 0 5px}
   .workflow-intro p{font-size:.86rem;opacity:.84;margin:0;max-width:680px}
@@ -161,8 +168,9 @@
     .workflow-title{min-width:0}
     .workflow-title h1{font-size:1.05rem}
     .workflow-title p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .deal{grid-column:1/-1;justify-content:space-between}
-    .deal input{flex:1;width:auto;max-width:180px}
+    .deal{grid-column:1/-1;grid-template-columns:auto minmax(120px,180px);justify-content:space-between;min-width:0}
+    .deal input{width:100%;max-width:180px}
+    .deal-name{max-width:100%}
     .fields,.doc-grid{grid-template-columns:1fr}
     .batch-upload-head{align-items:stretch;flex-direction:column}
     .batch-picker{width:100%}
@@ -229,7 +237,11 @@
   <header class="workflow-header" id="workflowHeader">
     <button class="back-btn" id="backBtn" type="button">← Назад</button>
     <div class="workflow-title"><h1 id="workflowTitle">Договор и карточка</h1><p id="workflowSubtitle">Оценка клиента и оформление договора</p></div>
-    <label class="deal">Сделка ID <input id="dealId" inputmode="numeric" placeholder="напр. 4463"></label>
+    <div class="deal" id="dealLookup" data-state="idle">
+      <label for="dealId">Сделка ID</label>
+      <input id="dealId" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="напр. 4463" aria-describedby="dealName">
+      <span class="deal-name" id="dealName" role="status" aria-live="polite">Введите ID — покажем название сделки</span>
+    </div>
   </header>
   <div id="cfgwarn" class="cfgwarn">⚠️ Bitrix не подключён на этом сайте. Рабочие данные недоступны; сохранение и загрузка остановлены.</div>
 
@@ -938,7 +950,9 @@ const segVal = {
 // URL param
 const params = new URLSearchParams(location.search);
 if(params.get("deal_id")) $("dealId").value = params.get("deal_id");
-verifyBitrixConnection();
+verifyBitrixConnection().then(ready=>{
+  if(ready&&$("dealId").value.trim()) scheduleDealLookup(0);
+});
 
 // ── Money input formatting ──
 function formatMoney(el){
@@ -1825,6 +1839,7 @@ function clearForm(){
     else el.value="";
   });
   $("dealId").value="";
+  scheduleDealLookup(0);
   document.querySelectorAll('[data-flow="contract"] .chips label,[data-flow="contract"] .seg button,[data-flow="contract"] .field').forEach(el=>el.classList.remove("on","invalid"));
   ["works","children","spouseWorks","spouseCar","ludo","salaryOtherBank","ip","realEstate","cars","carSale"].forEach(k=>{segVal[k]=null;});
   ["ip","realEstate","cars","carSale"].forEach(k=>{if(segEffects[k])segEffects[k]("0");});
@@ -1853,6 +1868,48 @@ async function bxRequest(method,params={}){
 
 async function bxResult(method,params={}){
   return (await bxRequest(method,params)).result;
+}
+
+const DEAL_LOOKUP_DELAY = 500;
+let dealLookupTimer = null;
+let dealLookupRequest = 0;
+
+function setDealLookupState(message,state="idle"){
+  $("dealLookup").dataset.state=state;
+  $("dealName").textContent=message;
+  $("dealName").title=state==="success"?message:"";
+}
+
+function scheduleDealLookup(delay=DEAL_LOOKUP_DELAY){
+  clearTimeout(dealLookupTimer);
+  const dealId=$("dealId").value.trim();
+  const requestId=++dealLookupRequest;
+  if(!dealId){
+    setDealLookupState("Введите ID — покажем название сделки");
+    return;
+  }
+  if(!/^\d+$/.test(dealId)){
+    setDealLookupState("ID сделки должен содержать только цифры","error");
+    return;
+  }
+  setDealLookupState("Ищем сделку в Bitrix…","loading");
+  dealLookupTimer=setTimeout(()=>loadDealName(dealId,requestId),delay);
+}
+
+async function loadDealName(dealId,requestId){
+  try{
+    if(!bitrixReady) await verifyBitrixConnection();
+    if(requestId!==dealLookupRequest||$("dealId").value.trim()!==dealId) return;
+    if(!bitrixReady) throw new Error("Bitrix не подключён");
+    const deal=await bxResult("crm.deal.get",{id:Number(dealId)});
+    if(requestId!==dealLookupRequest||$("dealId").value.trim()!==dealId) return;
+    const title=String(deal?.TITLE||deal?.title||"").trim();
+    setDealLookupState(title?`Сделка: ${title}`:"Сделка найдена, но название не указано","success");
+  }catch(error){
+    if(requestId!==dealLookupRequest||$("dealId").value.trim()!==dealId) return;
+    console.error(error);
+    setDealLookupState("Сделка не найдена или Bitrix временно недоступен","error");
+  }
 }
 
 async function saveAssessmentToBitrix(s,dealId){
@@ -2037,7 +2094,14 @@ async function uploadDocuments(){
 $("contractBtn").onclick = submitContractAndAssessment;
 $("docsBtn").onclick = uploadDocuments;
 $("clearBtn").onclick = clearForm;
-$("dealId").addEventListener("input",onChange);
+$("dealId").addEventListener("input",()=>scheduleDealLookup());
+$("dealId").addEventListener("change",()=>scheduleDealLookup(0));
+$("dealId").addEventListener("keydown",event=>{
+  if(event.key==="Enter"){
+    event.preventDefault();
+    scheduleDealLookup(0);
+  }
+});
 onChange();
 </script>
 </body>

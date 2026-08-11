@@ -59,6 +59,17 @@ test("keeps contract creation and document upload as separate tasks", async () =
   assert.match(card, /openFilePreview/);
 });
 
+test("resolves a typed deal ID to the Bitrix deal title", async () => {
+  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+
+  assert.match(card, /id="dealLookup"/);
+  assert.match(card, /id="dealName"[^>]*aria-live="polite"/);
+  assert.match(card, /function scheduleDealLookup/);
+  assert.match(card, /const deal=await bxResult\("crm\.deal\.get",\{id:Number\(dealId\)\}\)/);
+  assert.match(card, /deal\?\.TITLE/);
+  assert.match(card, /Сделка: \$\{title\}/);
+});
+
 test("limits the public assessment proxy to the methods used by the card", async () => {
   const route = await readFile(
     new URL("../app/api/bitrix/[method]/route.ts", import.meta.url),
