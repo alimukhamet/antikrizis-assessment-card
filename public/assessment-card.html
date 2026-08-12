@@ -28,8 +28,8 @@
   .eyebrow{font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.11em;color:var(--green-mid);margin-bottom:12px}
   .home-hero h1{font-size:clamp(2rem,5vw,3.35rem);line-height:1.08;letter-spacing:-.045em;margin:0;color:var(--green-dark)}
   .home-hero>p{font-size:1.05rem;color:var(--text-mid);max-width:590px;margin:18px auto 34px}
-  .task-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;text-align:left}
-  .task-card{appearance:none;width:100%;min-height:250px;border:1px solid var(--border);border-radius:22px;background:#fff;padding:24px;text-align:left;color:var(--text);cursor:pointer;display:flex;flex-direction:column;transition:transform .18s,box-shadow .18s,border-color .18s;box-shadow:0 3px 12px rgba(24,54,34,.04)}
+  .task-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;text-align:left}
+  .task-card{appearance:none;width:100%;min-height:250px;border:1px solid var(--border);border-radius:22px;background:#fff;padding:24px;text-align:left;text-decoration:none;color:var(--text);cursor:pointer;display:flex;flex-direction:column;transition:transform .18s,box-shadow .18s,border-color .18s;box-shadow:0 3px 12px rgba(24,54,34,.04)}
   .task-card:hover{transform:translateY(-3px);border-color:#abc5b3;box-shadow:var(--shadow)}
   .task-card:focus-visible{outline:3px solid #b9d8c3;outline-offset:3px}
   .task-number{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:var(--green-pale);color:var(--green);font-size:.8rem;font-weight:800;margin-bottom:28px}
@@ -153,7 +153,11 @@
   .doc-item.invalid{border-color:var(--red);background:#fdf3f2}
   .doc-files-area.invalid{border:1px solid var(--red);border-radius:14px;padding:10px;background:#fdf3f2}
   .doc-item input[type=file]{padding:7px;background:var(--green-pale)}
-  .doc-item input[type=password]{margin-top:6px}
+  .password-field{position:relative;margin-top:6px}
+  .password-field input{padding-right:94px}
+  .password-toggle{position:absolute;top:50%;right:5px;transform:translateY(-50%);height:32px;border:0;border-radius:7px;background:var(--green-pale);color:var(--green);padding:0 10px;font-size:.72rem;font-weight:800;cursor:pointer}
+  .password-toggle:hover{background:var(--green-light)}
+  .password-toggle:focus-visible{outline:2px solid var(--green-mid);outline-offset:1px}
   .checkline{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:.84rem;color:var(--text-mid);font-weight:600}
   .checkline input{width:auto}
   .doc-summary{font-size:.78rem;color:var(--text-mid);margin-top:10px}
@@ -229,8 +233,14 @@
           <p>Прикрепить готовые документы к существующей сделке без заполнения договора и оценки.</p>
           <span class="task-link"><span>Перейти к файлам</span><span>→</span></span>
         </button>
+        <a class="task-card" href="https://gkb-credit-analyzer-kz.mukhamet-ali-ma.chatgpt.site" target="_blank" rel="noopener">
+          <span class="task-number">03</span>
+          <h2>Проверить кредитный отчёт</h2>
+          <p>Открыть анализатор отчётов ГКБ и ПКБ Казахстана в отдельном рабочем окне.</p>
+          <span class="task-link"><span>Открыть анализатор</span><span>→</span></span>
+        </a>
       </div>
-      <div class="home-note">Оба процесса находятся в одном файле, но работают независимо.</div>
+      <div class="home-note">Все три задачи открываются отдельно и не мешают друг другу.</div>
     </div>
   </main>
 
@@ -564,7 +574,14 @@
         <div class="doc-item" data-doc="idCard"><label class="lbl">Удостоверение личности<span class="req">*</span></label><input id="docIdCard" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"></div>
         <div class="doc-item" data-doc="power"><label class="lbl">Доверенность<span class="req">*</span></label><input id="docPower" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"></div>
         <div class="doc-item" data-doc="kaspi"><label class="lbl">Выписка Kaspi Gold<span class="req">*</span></label><input id="docKaspi" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx,.csv"></div>
-        <div class="doc-item" data-doc="eds"><label class="lbl">ЭЦП файл и пароль<span class="req">*</span></label><input id="docEds" type="file"><input id="docEdsPassword" type="password" placeholder="Пароль ЭЦП"></div>
+        <div class="doc-item" data-doc="eds">
+          <label class="lbl">ЭЦП файл и пароль<span class="req">*</span></label>
+          <input id="docEds" type="file">
+          <div class="password-field">
+            <input id="docEdsPassword" type="password" placeholder="Пароль ЭЦП" autocomplete="off" spellcheck="false">
+            <button class="password-toggle" id="docEdsPasswordToggle" type="button" aria-controls="docEdsPassword" aria-pressed="false">Показать</button>
+          </div>
+        </div>
         <div class="doc-item hidden" id="docSocialPaymentsItem" data-doc="socialPayments"><label class="lbl">Справка по выплатам пенсии и пособий<span class="req">*</span></label><input id="docSocialPayments" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"></div>
         <div class="doc-item hidden" id="docSalaryBankItem" data-doc="salaryBank"><label class="lbl">Выписка зарплатного банка<span class="req">*</span></label><input id="docSalaryBank" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx,.csv"></div>
       </div>
@@ -1656,6 +1673,18 @@ document.querySelectorAll("input:not(.money),select,textarea").forEach(el=>{
   el.addEventListener("input",onChange);
   el.addEventListener("change",onChange);
 });
+const docEdsPassword=$("docEdsPassword");
+const docEdsPasswordToggle=$("docEdsPasswordToggle");
+function setEdsPasswordVisibility(show){
+  docEdsPassword.type=show?"text":"password";
+  docEdsPasswordToggle.textContent=show?"Скрыть":"Показать";
+  docEdsPasswordToggle.setAttribute("aria-pressed",String(show));
+  docEdsPasswordToggle.setAttribute("aria-label",show?"Скрыть пароль ЭЦП":"Показать пароль ЭЦП");
+}
+docEdsPasswordToggle.addEventListener("click",()=>{
+  setEdsPasswordVisibility(docEdsPassword.type==="password");
+  docEdsPassword.focus();
+});
 $("batchDocPicker").addEventListener("change",event=>addBatchDocuments(event.target.files));
 $("batchClearBtn").addEventListener("click",()=>{
   if(batchDocuments.length&&!confirm("Убрать все файлы из общего выбора?")) return;
@@ -1819,6 +1848,7 @@ function clearForm(){
     DOC_SPECS.forEach(spec=>{const input=$(spec.input);if(input)input.value="";});
     resetBatchDocuments();
     $("docEdsPassword").value="";
+    setEdsPasswordVisibility(false);
     $("docClientName").value="";
     ["docSocialPayments","docSalaryBank"].forEach(k=>{
       segVal[k]=null;
@@ -2076,6 +2106,7 @@ async function uploadDocuments(){
     DOC_SPECS.forEach(spec=>{const input=$(spec.input);if(input)input.value="";});
     resetBatchDocuments();
     $("docEdsPassword").value="";
+    setEdsPasswordVisibility(false);
     $("requiredDocFilesArea").classList.remove("invalid");
     document.querySelectorAll(".doc-item.invalid").forEach(el=>el.classList.remove("invalid"));
     toast("✓ Загружено файлов: "+documentValues.length+" в сделку #"+dealId+". Ранее загруженные файлы сохранены.");

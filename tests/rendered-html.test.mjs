@@ -59,6 +59,24 @@ test("keeps contract creation and document upload as separate tasks", async () =
   assert.match(card, /openFilePreview/);
 });
 
+test("adds the owned GKB analyzer as the third sales task", async () => {
+  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+
+  assert.match(card, /<span class="task-number">03<\/span>/);
+  assert.match(card, /Проверить кредитный отчёт/);
+  assert.match(card, /href="https:\/\/gkb-credit-analyzer-kz\.mukhamet-ali-ma\.chatgpt\.site"/);
+  assert.match(card, /target="_blank" rel="noopener"/);
+});
+
+test("lets the salesperson show and hide the ECP password", async () => {
+  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+
+  assert.match(card, /id="docEdsPassword" type="password"/);
+  assert.match(card, /id="docEdsPasswordToggle"/);
+  assert.match(card, /docEdsPassword\.type=show\?"text":"password"/);
+  assert.match(card, /docEdsPasswordToggle\.textContent=show\?"Скрыть":"Показать"/);
+});
+
 test("resolves a typed deal ID to the Bitrix deal title", async () => {
   const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
 
