@@ -88,6 +88,25 @@ test("resolves a typed deal ID to the Bitrix deal title", async () => {
   assert.match(card, /Сделка: \$\{title\}/);
 });
 
+test("requires a fresh deal-name confirmation before either Bitrix write", async () => {
+  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+
+  assert.match(card, /id="targetConfirmModal"/);
+  assert.match(card, /id="targetConfirmDealName"/);
+  assert.match(card, /id="targetConfirmDealId"/);
+  assert.match(card, /async function confirmDealTarget/);
+  assert.match(card, /const deal=await bxResult\("crm\.deal\.get",\{id:Number\(dealId\)\}\)/);
+  assert.match(card, /Да, сохранить в эту сделку/);
+  assert.match(card, /Да, загрузить в эту сделку/);
+
+  const contractConfirm = card.indexOf("const approved=await confirmDealTarget", card.indexOf("async function submitContractAndAssessment"));
+  const contractWrite = card.indexOf("await saveAssessmentToBitrix", card.indexOf("async function submitContractAndAssessment"));
+  const documentsConfirm = card.indexOf("const approved=await confirmDealTarget", card.indexOf("async function uploadDocuments"));
+  const documentsWrite = card.indexOf('apiBase+"crm.item.update.json"', card.indexOf("async function uploadDocuments"));
+  assert.ok(contractConfirm > 0 && contractConfirm < contractWrite);
+  assert.ok(documentsConfirm > 0 && documentsConfirm < documentsWrite);
+});
+
 test("limits the public assessment proxy to the methods used by the card", async () => {
   const route = await readFile(
     new URL("../app/api/bitrix/[method]/route.ts", import.meta.url),

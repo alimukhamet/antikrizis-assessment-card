@@ -93,6 +93,21 @@
   .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);padding:11px 18px;border-radius:9px;font-size:.9rem;font-weight:600;display:none;z-index:50;box-shadow:0 4px 14px rgba(0,0,0,.12)}
   .toast.ok{background:#e6f4ea;color:var(--green);border:1px solid #b7dcc0}
   .toast.err{background:#fdecea;color:var(--red);border:1px solid #f3c4bf}
+  body.target-confirm-open{overflow:hidden}
+  .target-confirm{position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:18px}
+  .target-confirm.hidden{display:none!important}
+  .target-confirm-backdrop{position:absolute;inset:0;background:rgba(13,28,18,.68);backdrop-filter:blur(3px)}
+  .target-confirm-dialog{position:relative;width:min(520px,100%);background:#fff;border-radius:20px;padding:24px;box-shadow:0 24px 70px rgba(0,0,0,.3)}
+  .target-confirm-kicker{margin:0 0 7px;color:var(--red);font-size:.72rem;font-weight:850;text-transform:uppercase;letter-spacing:.08em}
+  .target-confirm-dialog h2{margin:0;color:var(--green-dark);font-size:1.35rem;line-height:1.2;letter-spacing:-.025em}
+  .target-confirm-copy{margin:10px 0 16px;color:var(--text-mid);font-size:.88rem}
+  .target-confirm-deal{border:1px solid #a9c7b1;border-radius:14px;background:var(--green-pale);padding:14px 15px}
+  .target-confirm-deal span{display:block;color:var(--text-muted);font-size:.7rem;font-weight:750;margin-bottom:3px}
+  .target-confirm-deal strong{display:block;color:var(--green-dark);font-size:1.02rem;line-height:1.3;overflow-wrap:anywhere}
+  .target-confirm-id{margin-top:5px;color:var(--green);font-size:.86rem;font-weight:850}
+  .target-confirm-warning{margin:13px 0 0;color:var(--text-mid);font-size:.78rem}
+  .target-confirm-actions{display:grid;grid-template-columns:auto 1fr;gap:9px;margin-top:20px}
+  .target-confirm-actions .btn{min-height:46px}
   .cfgwarn{background:#fff8e6;border:1px solid #f0e0a8;color:#7a5b12;border-radius:10px;padding:10px 12px;font-size:.8rem;margin-bottom:14px;display:none}
   .doc-context{background:var(--green-pale);border:1px solid var(--green-light);border-radius:12px;padding:14px;margin-bottom:14px}
   .doc-context-title{font-weight:800;color:var(--green-dark);font-size:.84rem;margin:0 0 10px}
@@ -183,6 +198,9 @@
     .batch-actions{grid-column:2;grid-row:1}
     .file-preview{padding:8px}
     .file-preview-dialog{width:100%;height:94vh;border-radius:13px}
+    .target-confirm-dialog{padding:20px;border-radius:16px}
+    .target-confirm-actions{grid-template-columns:1fr}
+    .target-confirm-actions .btn-ghost{order:2}
     .bar{align-items:stretch;flex-direction:column;gap:8px;padding:10px 12px}
     .bar-actions{display:grid;grid-template-columns:auto 1fr}
     .bar-actions .btn{padding:11px 9px}
@@ -207,6 +225,24 @@
     <div class="file-preview-footer">
       <button class="btn btn-ghost" type="button" data-close-preview>Закрыть</button>
       <a id="filePreviewOpen" class="btn btn-main" target="_blank" rel="noopener">Открыть отдельно</a>
+    </div>
+  </div>
+</div>
+<div id="targetConfirmModal" class="target-confirm hidden" role="dialog" aria-modal="true" aria-labelledby="targetConfirmTitle" aria-describedby="targetConfirmCopy">
+  <div class="target-confirm-backdrop"></div>
+  <div class="target-confirm-dialog">
+    <p class="target-confirm-kicker">Последняя проверка</p>
+    <h2 id="targetConfirmTitle">Это правильная сделка?</h2>
+    <p class="target-confirm-copy" id="targetConfirmCopy">Проверьте название и ID перед отправкой данных в Bitrix.</p>
+    <div class="target-confirm-deal">
+      <span>Название сделки</span>
+      <strong id="targetConfirmDealName"></strong>
+      <div class="target-confirm-id" id="targetConfirmDealId"></div>
+    </div>
+    <p class="target-confirm-warning" id="targetConfirmWarning"></p>
+    <div class="target-confirm-actions">
+      <button class="btn btn-ghost" id="targetConfirmCancel" type="button">Нет, вернуться</button>
+      <button class="btn btn-main" id="targetConfirmApprove" type="button">Да, продолжить</button>
     </div>
   </div>
 </div>
@@ -1942,6 +1978,53 @@ async function loadDealName(dealId,requestId){
   }
 }
 
+let targetConfirmResolve=null;
+let targetConfirmLastFocus=null;
+
+function closeDealTargetConfirmation(approved=false){
+  const modal=$("targetConfirmModal");
+  if(modal.classList.contains("hidden")) return;
+  modal.classList.add("hidden");
+  document.body.classList.remove("target-confirm-open");
+  const resolve=targetConfirmResolve;
+  targetConfirmResolve=null;
+  if(targetConfirmLastFocus&&typeof targetConfirmLastFocus.focus==="function") targetConfirmLastFocus.focus();
+  targetConfirmLastFocus=null;
+  if(resolve) resolve(approved);
+}
+
+function openDealTargetConfirmation({dealId,dealTitle,action,approveLabel}){
+  if(targetConfirmResolve) closeDealTargetConfirmation(false);
+  targetConfirmLastFocus=document.activeElement;
+  $("targetConfirmDealName").textContent=dealTitle;
+  $("targetConfirmDealId").textContent=`ID сделки: #${dealId}`;
+  $("targetConfirmWarning").textContent=action;
+  $("targetConfirmApprove").textContent=approveLabel;
+  $("targetConfirmModal").classList.remove("hidden");
+  document.body.classList.add("target-confirm-open");
+  return new Promise(resolve=>{
+    targetConfirmResolve=resolve;
+    requestAnimationFrame(()=>$("targetConfirmCancel").focus());
+  });
+}
+
+async function confirmDealTarget(dealId,{action,approveLabel}){
+  const deal=await bxResult("crm.deal.get",{id:Number(dealId)});
+  if($("dealId").value.trim()!==dealId) throw new Error("ID сделки изменился во время проверки. Начните отправку ещё раз.");
+  const dealTitle=String(deal?.TITLE||deal?.title||"").trim();
+  if(!dealTitle) throw new Error("Bitrix не вернул название сделки. Отправка остановлена.");
+  setDealLookupState(`Сделка: ${dealTitle}`,"success");
+  const approved=await openDealTargetConfirmation({dealId,dealTitle,action,approveLabel});
+  if(approved&&$("dealId").value.trim()!==dealId) throw new Error("ID сделки изменился. Отправка остановлена.");
+  return approved;
+}
+
+$("targetConfirmCancel").addEventListener("click",()=>closeDealTargetConfirmation(false));
+$("targetConfirmApprove").addEventListener("click",()=>closeDealTargetConfirmation(true));
+document.addEventListener("keydown",event=>{
+  if(event.key==="Escape"&&!$("targetConfirmModal").classList.contains("hidden")) closeDealTargetConfirmation(false);
+});
+
 async function saveAssessmentToBitrix(s,dealId){
   const fields=buildFields(s);
   const result=await bxResult("crm.deal.update",{id:Number(dealId),fields});
@@ -2002,6 +2085,16 @@ async function submitContractAndAssessment(){
   let cardSaved=false;
   try{
     if(!CONFIG.WEBHOOK||!bitrixReady) throw new Error("Вебхук Bitrix не настроен — карточка не может быть сохранена.");
+    btn.textContent="Проверяю сделку…";
+    const approved=await confirmDealTarget(dealId,{
+      action:"После подтверждения карточка будет сохранена в эту сделку, а договор — скачан на компьютер.",
+      approveLabel:"Да, сохранить в эту сделку"
+    });
+    if(!approved){
+      $("info").textContent="Операция отменена. Проверьте ID сделки и попробуйте снова.";
+      toast("Сохранение отменено — данные не отправлены",false);
+      return;
+    }
     btn.textContent="Сохраняю и проверяю карточку…";
     await saveAssessmentToBitrix(s,dealId);
     cardSaved=true;
@@ -2071,6 +2164,16 @@ async function uploadDocuments(){
   $("contractBtn").disabled=true;
   $("clearBtn").disabled=true;
   try{
+    btn.textContent="Проверяю сделку…";
+    const approved=await confirmDealTarget(dealId,{
+      action:"После подтверждения выбранные документы будут загружены именно в эту сделку.",
+      approveLabel:"Да, загрузить в эту сделку"
+    });
+    if(!approved){
+      $("info").textContent="Загрузка отменена. Проверьте ID сделки и попробуйте снова.";
+      toast("Загрузка отменена — файлы не отправлены",false);
+      return;
+    }
     btn.textContent="Готовлю документы…";
     const documentValues=await buildDocumentValues(s,dealId);
     const apiBase=CONFIG.WEBHOOK.replace(/\/?$/,"/");
