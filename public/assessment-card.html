@@ -27,7 +27,26 @@
   .home-hero{max-width:720px;margin:0 auto;text-align:center}
   .eyebrow{font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.11em;color:var(--green-mid);margin-bottom:12px}
   .home-hero h1{font-size:clamp(2rem,5vw,3.35rem);line-height:1.08;letter-spacing:-.045em;margin:0;color:var(--green-dark)}
-  .home-hero>p{font-size:1.05rem;color:var(--text-mid);max-width:590px;margin:18px auto 34px}
+  .home-hero>p{font-size:1.05rem;color:var(--text-mid);max-width:590px;margin:18px auto 26px}
+  .sales-summary{margin:0 0 18px;border:1px solid var(--border);border-radius:20px;background:#fff;padding:16px;text-align:left;box-shadow:0 3px 12px rgba(24,54,34,.04)}
+  .sales-summary-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}
+  .sales-summary-title strong{display:block;color:var(--green-dark);font-size:.98rem}
+  .sales-summary-title span{display:block;color:var(--text-muted);font-size:.7rem;margin-top:2px}
+  .sales-periods,.sales-people{display:flex;flex-wrap:wrap;gap:6px}
+  .sales-people{margin-bottom:10px}
+  .sales-filter{border:1px solid var(--border);border-radius:20px;background:#fff;color:var(--text-mid);padding:6px 11px;font-size:.75rem;font-weight:750;cursor:pointer}
+  .sales-filter:hover{border-color:#abc5b3;color:var(--green)}
+  .sales-filter.active{background:var(--green);border-color:var(--green);color:#fff}
+  .sales-filter:focus-visible{outline:3px solid #b9d8c3;outline-offset:2px}
+  .sales-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+  .sales-metric{min-width:0;border-radius:12px;background:var(--green-pale);padding:11px 12px}
+  .sales-metric.primary{background:var(--green-dark);color:#fff}
+  .sales-metric span{display:block;color:var(--text-muted);font-size:.67rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sales-metric.primary span{color:rgba(255,255,255,.7)}
+  .sales-metric strong{display:block;color:var(--green-dark);font-size:1.2rem;line-height:1.15;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+  .sales-metric.primary strong{color:#fff}
+  .sales-summary-status{min-height:1.1em;margin:9px 1px 0;color:var(--text-muted);font-size:.68rem}
+  .sales-summary-status.error{color:var(--red);font-weight:700}
   .task-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;text-align:left}
   .task-card{appearance:none;width:100%;min-height:250px;border:1px solid var(--border);border-radius:22px;background:#fff;padding:24px;text-align:left;text-decoration:none;color:var(--text);cursor:pointer;display:flex;flex-direction:column;transition:transform .18s,box-shadow .18s,border-color .18s;box-shadow:0 3px 12px rgba(24,54,34,.04)}
   .task-card:hover{transform:translateY(-3px);border-color:#abc5b3;box-shadow:var(--shadow)}
@@ -181,6 +200,12 @@
     .wrap{padding:18px 12px 190px}
     body[data-view="home"] .wrap{padding-bottom:28px}
     .home-brand{margin-bottom:36px}
+    .sales-summary-head{align-items:flex-start;flex-direction:column;gap:9px}
+    .sales-periods,.sales-people{width:100%}
+    .sales-filter{flex:1;padding:7px 8px}
+    .sales-metrics{grid-template-columns:1fr}
+    .sales-metric{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px}
+    .sales-metric strong{margin:0;font-size:1.08rem;text-align:right}
     .task-grid{grid-template-columns:1fr}
     .task-card{min-height:210px}
     .workflow-header{grid-template-columns:auto 1fr;margin-bottom:16px}
@@ -256,6 +281,30 @@
       <div class="eyebrow">Работа со сделкой</div>
       <h1>Что нужно сделать?</h1>
       <p>Выберите одну задачу. Внутри будут только нужные для неё поля и одно понятное действие.</p>
+      <section class="sales-summary" aria-labelledby="salesSummaryTitle">
+        <div class="sales-summary-head">
+          <div class="sales-summary-title">
+            <strong id="salesSummaryTitle">Результаты продаж</strong>
+            <span>Сделки, переданные юристам</span>
+          </div>
+          <div class="sales-periods" aria-label="Период отчёта">
+            <button class="sales-filter" type="button" data-sales-period="today" aria-pressed="false">Сегодня</button>
+            <button class="sales-filter" type="button" data-sales-period="current_week" aria-pressed="false">Неделя</button>
+            <button class="sales-filter active" type="button" data-sales-period="current_month" aria-pressed="true">Месяц</button>
+          </div>
+        </div>
+        <div class="sales-people" aria-label="Сотрудник отдела продаж">
+          <button class="sales-filter active" type="button" data-sales-manager="7609" aria-pressed="true">Дархан</button>
+          <button class="sales-filter" type="button" data-sales-manager="2093" aria-pressed="false">Рамазан</button>
+          <button class="sales-filter" type="button" data-sales-manager="4351" aria-pressed="false">Нурдаулет</button>
+        </div>
+        <div class="sales-metrics" aria-live="polite" aria-busy="true" id="salesMetrics">
+          <div class="sales-metric primary"><span>Передано юристам</span><strong id="salesHandoffs">—</strong></div>
+          <div class="sales-metric"><span>Сумма договоров</span><strong id="salesContractTotal">—</strong></div>
+          <div class="sales-metric"><span>Средний договор</span><strong id="salesContractAverage">—</strong></div>
+        </div>
+        <div class="sales-summary-status" id="salesSummaryStatus" role="status">Загружаем результаты…</div>
+      </section>
       <div class="task-grid">
         <button class="task-card" type="button" data-open-view="contract">
           <span class="task-number">01</span>
@@ -1006,6 +1055,92 @@ if(params.get("deal_id")) $("dealId").value = params.get("deal_id");
 verifyBitrixConnection().then(ready=>{
   if(ready&&$("dealId").value.trim()) scheduleDealLookup(0);
 });
+
+const salesSelection={managerId:"7609",period:"current_month"};
+let salesMetricsRequest=0;
+let salesAutoRefreshStarted=false;
+
+function formatSalesMoney(value){
+  return `${Math.round(Number(value)||0).toLocaleString("ru-RU")} ₸`;
+}
+
+function setSalesFilter(group,value){
+  document.querySelectorAll(`[data-sales-${group}]`).forEach(button=>{
+    const active=button.dataset[`sales${group[0].toUpperCase()+group.slice(1)}`]===value;
+    button.classList.toggle("active",active);
+    button.setAttribute("aria-pressed",String(active));
+  });
+}
+
+function salesUpdatedLabel(value){
+  if(!value) return "";
+  const date=new Date(value);
+  if(Number.isNaN(date.getTime())) return "";
+  return `Обновлено ${new Intl.DateTimeFormat("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}).format(date)}. `;
+}
+
+async function refreshSalesMetricsInBackground(){
+  const status=$("salesSummaryStatus");
+  status.classList.remove("error");
+  status.textContent="Показываем последние данные. Обновляем из Bitrix — это может занять около минуты…";
+  try{
+    const response=await fetch("/api/sales-metrics",{method:"POST",headers:{accept:"application/json"}});
+    const data=await response.json();
+    if(!response.ok||data.error) throw new Error(data.error||"Не удалось обновить данные");
+    await loadSalesMetrics(true);
+  }catch(error){
+    status.textContent=(error&&error.message)||"Автоматическое обновление не выполнено. Показаны последние сохранённые данные.";
+    status.classList.add("error");
+  }
+}
+
+async function loadSalesMetrics(force=false){
+  const requestId=++salesMetricsRequest;
+  const metrics=$("salesMetrics"),status=$("salesSummaryStatus");
+  metrics.setAttribute("aria-busy","true");
+  status.classList.remove("error");
+  status.textContent="Загружаем результаты…";
+  try{
+    const query=new URLSearchParams(salesSelection);
+    if(force) query.set("fresh",String(Date.now()));
+    const response=await fetch(`/api/sales-metrics?${query}`,{headers:{accept:"application/json"}});
+    const data=await response.json();
+    if(!response.ok||data.error) throw new Error(data.error||"Не удалось загрузить результаты");
+    if(requestId!==salesMetricsRequest) return;
+    $("salesHandoffs").textContent=Number(data.handoffs||0).toLocaleString("ru-RU");
+    $("salesContractTotal").textContent=formatSalesMoney(data.contractTotal);
+    $("salesContractAverage").textContent=formatSalesMoney(data.contractAverage);
+    const updatedText=salesUpdatedLabel(data.lastSyncAt);
+    const periodText=data.periodLabel?`Период: ${data.periodLabel}. `:"";
+    const missingText=data.missingContractValues?`Без суммы договора: ${data.missingContractValues}.`:"Все переданные сделки имеют сумму договора.";
+    status.textContent=updatedText+periodText+missingText;
+    if(data.stale&&!salesAutoRefreshStarted){
+      salesAutoRefreshStarted=true;
+      refreshSalesMetricsInBackground();
+    }
+  }catch(error){
+    if(requestId!==salesMetricsRequest) return;
+    $("salesHandoffs").textContent="—";
+    $("salesContractTotal").textContent="—";
+    $("salesContractAverage").textContent="—";
+    status.textContent=(error&&error.message)||"Не удалось загрузить результаты. Обновите страницу.";
+    status.classList.add("error");
+  }finally{
+    if(requestId===salesMetricsRequest) metrics.setAttribute("aria-busy","false");
+  }
+}
+
+document.querySelectorAll("[data-sales-manager]").forEach(button=>button.addEventListener("click",()=>{
+  salesSelection.managerId=button.dataset.salesManager;
+  setSalesFilter("manager",salesSelection.managerId);
+  loadSalesMetrics();
+}));
+document.querySelectorAll("[data-sales-period]").forEach(button=>button.addEventListener("click",()=>{
+  salesSelection.period=button.dataset.salesPeriod;
+  setSalesFilter("period",salesSelection.period);
+  loadSalesMetrics();
+}));
+loadSalesMetrics();
 
 // ── Money input formatting ──
 function formatMoney(el){

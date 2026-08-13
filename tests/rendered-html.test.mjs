@@ -68,6 +68,42 @@ test("adds the owned GKB analyzer as the third sales task", async () => {
   assert.match(card, /target="_blank" rel="noopener"/);
 });
 
+test("fits the three sales KPIs on the daily home screen with person and period buttons", async () => {
+  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+
+  assert.match(card, /Результаты продаж/);
+  assert.match(card, /data-sales-manager="7609"[^>]*>Дархан</);
+  assert.match(card, /data-sales-manager="2093"[^>]*>Рамазан</);
+  assert.match(card, /data-sales-manager="4351"[^>]*>Нурдаулет</);
+  assert.match(card, /data-sales-period="today"[^>]*>Сегодня</);
+  assert.match(card, /data-sales-period="current_week"[^>]*>Неделя</);
+  assert.match(card, /data-sales-period="current_month"[^>]*>Месяц</);
+  assert.match(card, /Передано юристам/);
+  assert.match(card, /Сумма договоров/);
+  assert.match(card, /Средний договор/);
+  assert.match(card, /fetch\(`\/api\/sales-metrics\?\$\{query\}`/);
+});
+
+test("exposes only aggregate sales metrics for the three approved managers", async () => {
+  const route = await readFile(
+    new URL("../app/api/sales-metrics/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(route, /"7609": "Дархан"/);
+  assert.match(route, /"2093": "Рамазан"/);
+  assert.match(route, /"4351": "Нурдаулет"/);
+  assert.match(route, /const PERIODS = new Set\(\["today", "current_week", "current_month"\]\)/);
+  assert.match(route, /metric: "handoffs"/);
+  assert.match(route, /contractTotal/);
+  assert.match(route, /contractAverage/);
+  assert.match(route, /missingContractValues/);
+  assert.match(route, /export async function POST/);
+  assert.match(route, /body: JSON\.stringify\(\{ mode: "incremental" \}\)/);
+  assert.match(route, /stale: isReportStale/);
+  assert.doesNotMatch(route, /title:\s*deal\.title/);
+});
+
 test("lets the salesperson show and hide the ECP password", async () => {
   const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
 
