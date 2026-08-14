@@ -7,22 +7,29 @@ const MANAGERS = {
 } as const;
 
 const PERIODS = new Set(["today", "current_week", "current_month"]);
-const CACHE_TTL_MS = 120_000;
-const REPORT_STALE_AFTER_MS = 4 * 60 * 60 * 1000;
+const CACHE_TTL_MS = 60_000;
+const ALMATY_OFFSET = "+05:00";
 
 type ManagerId = keyof typeof MANAGERS;
-type AssessmentSummaryResponse = {
-  managerId?: string;
-  period?: string;
-  periodLabel?: string;
-  handoffs?: number;
-  contractTotal?: number;
-  contractAverage?: number;
-  contractsWithValue?: number;
-  missingContractValues?: number;
-  generatedAt?: string;
-  lastSyncAt?: string | null;
-  error?: string;
+type Period = {
+  key: string;
+  label: string;
+  start: string;
+  end: string;
+};
+type StageEvent = {
+  ID?: string | number;
+  OWNER_ID?: string | number;
+  CREATED_TIME?: string;
+  CATEGORY_ID?: string | number;
+  STAGE_ID?: string;
+};
+type Deal = {
+  ID?: string;
+  CREATED_BY_ID?: string;
+  ASSIGNED_BY_ID?: string;
+  MOVED_BY_ID?: string;
+  OPPORTUNITY?: string | number | null;
 };
 type SalesMetricPayload = {
   managerId: ManagerId;
@@ -35,37 +42,39 @@ type SalesMetricPayload = {
   contractsWithValue: number;
   missingContractValues: number;
   generatedAt: string;
-  lastSyncAt: string | null;
-  stale: boolean;
+  lastSyncAt: string;
+  stale: false;
 };
 
 const cache = new Map<string, { expiresAt: number; payload: SalesMetricPayload }>();
-let refreshPromise: Promise<string | null> | null = null;
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const managerId = searchParams.get("managerId") as ManagerId | null;
-  const period = searchParams.get("period") ?? "current_month";
+  const periodKey = searchParams.get("period") ?? "current_month";
 
-  if (!managerId || !(managerId in MANAGERS) || !PERIODS.has(period)) {
+  if (!managerId || !(managerId in MANAGERS) || !PERIODS.has(periodKey)) {
     return Response.json(
       { error: "Выберите сотрудника и период из предложенного списка." },
       { status: 400, headers: { "cache-control": "no-store" } },
     );
   }
 
-  const cacheKey = `${managerId}:${period}`;
+  const cacheKey = `${managerId}:${periodKey}`;
   const cached = cache.get(cacheKey);
   if (!searchParams.has("fresh") && cached && cached.expiresAt > Date.now()) {
     return Response.json(cached.payload, { headers: responseHeaders() });
   }
 
   try {
-    const payload = await buildSalesMetrics(managerId, period);
+    const payload = await buildSalesMetrics(managerId, resolvePeriod(periodKey));
     cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, payload });
     return Response.json(payload, { headers: responseHeaders() });
   } catch (error) {
-    console.error("Sales metrics failed", error);
+    console.error(
+      "Sales metrics failed",
+      error instanceof Error ? error.message : "Unknown error",
+    );
     return Response.json(
       { error: "Результаты продаж временно недоступны. Обновите страницу через минуту." },
       { status: 502, headers: { "cache-control": "no-store" } },
@@ -73,117 +82,187 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST() {
-  try {
-    const reportUrl = requiredEnv("SALES_REPORT_URL").replace(/\/$/, "");
-    const reportToken = requiredEnv("SALES_REPORT_BYPASS_TOKEN");
-    const summary = await reportFetch<AssessmentSummaryResponse>(
-      `${reportUrl}/api/assessment-summary?managerId=7609&period=current_month`,
-      reportToken,
-    );
-    if (!isReportStale(summary.lastSyncAt)) {
-      return Response.json(
-        { refreshed: false, lastSyncAt: summary.lastSyncAt ?? null },
-        { headers: { "cache-control": "no-store" } },
-      );
-    }
-
-    if (!refreshPromise) {
-      refreshPromise = refreshSalesReport(reportUrl, reportToken).finally(() => {
-        refreshPromise = null;
-      });
-    }
-    const lastSyncAt = await refreshPromise;
-    cache.clear();
-    return Response.json(
-      { refreshed: true, lastSyncAt },
-      { headers: { "cache-control": "no-store" } },
-    );
-  } catch (error) {
-    console.error("Sales metrics refresh failed", error);
-    return Response.json(
-      { error: "Не удалось обновить данные из Bitrix. Последний сохранённый отчёт остаётся доступен." },
-      { status: 502, headers: { "cache-control": "no-store" } },
-    );
-  }
-}
-
 async function buildSalesMetrics(
   managerId: ManagerId,
-  period: string,
+  period: Period,
 ): Promise<SalesMetricPayload> {
-  const reportUrl = requiredEnv("SALES_REPORT_URL").replace(/\/$/, "");
-  const reportToken = requiredEnv("SALES_REPORT_BYPASS_TOKEN");
-  const query = new URLSearchParams({ managerId, period });
-  const summary = await reportFetch<AssessmentSummaryResponse>(
-    `${reportUrl}/api/assessment-summary?${query}`,
-    reportToken,
-  );
-  const handoffs = Math.max(0, Number(summary.handoffs ?? 0));
+  const events = await loadHandoffEvents(period);
+  const firstHandoffByDeal = new Map<string, StageEvent>();
+  for (const event of events) {
+    if (String(event.STAGE_ID ?? "") !== "C13:WON") continue;
+    const dealId = String(event.OWNER_ID ?? "");
+    if (!/^\d+$/.test(dealId) || firstHandoffByDeal.has(dealId)) continue;
+    firstHandoffByDeal.set(dealId, event);
+  }
+
+  const deals = await loadDeals([...firstHandoffByDeal.keys()]);
+  const selectedDeals = deals.filter((deal) => salesOwner(deal) === managerId);
+  const contractValues = selectedDeals
+    .map((deal) => parseMoney(deal.OPPORTUNITY))
+    .filter((value) => value > 0);
+  const contractTotal = contractValues.reduce((sum, value) => sum + value, 0);
+  const now = new Date().toISOString();
 
   return {
     managerId,
     managerName: MANAGERS[managerId],
-    period,
-    periodLabel: summary.periodLabel ?? period,
-    handoffs,
-    contractTotal: Math.max(0, Number(summary.contractTotal ?? 0)),
-    contractAverage: Math.max(0, Number(summary.contractAverage ?? 0)),
-    contractsWithValue: Math.max(0, Number(summary.contractsWithValue ?? 0)),
-    missingContractValues: Math.max(0, Number(summary.missingContractValues ?? 0)),
-    generatedAt: summary.generatedAt ?? new Date().toISOString(),
-    lastSyncAt: summary.lastSyncAt ?? null,
-    stale: isReportStale(summary.lastSyncAt),
+    period: period.key,
+    periodLabel: period.label,
+    handoffs: selectedDeals.length,
+    contractTotal,
+    contractAverage: contractValues.length
+      ? Math.round(contractTotal / contractValues.length)
+      : 0,
+    contractsWithValue: contractValues.length,
+    missingContractValues: Math.max(0, selectedDeals.length - contractValues.length),
+    generatedAt: now,
+    lastSyncAt: now,
+    stale: false,
   };
 }
 
-async function refreshSalesReport(reportUrl: string, token: string) {
-  const response = await fetch(`${reportUrl}/api/sync`, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-      "OAI-Sites-Authorization": `Bearer ${token}`,
-    },
-    body: JSON.stringify({ mode: "incremental" }),
-    cache: "no-store",
-  });
-  const payload = (await response.json()) as {
-    status?: string;
-    finishedAt?: string;
-    error?: string;
-  };
-  if (!response.ok || payload.error || payload.status !== "success") {
-    throw new Error(payload.error ?? `Sales sync HTTP ${response.status}`);
+async function loadHandoffEvents(period: Period): Promise<StageEvent[]> {
+  const events: StageEvent[] = [];
+  let start = 0;
+
+  for (let page = 0; page < 20; page += 1) {
+    const payload = await bitrixCall<{
+      result?: { items?: StageEvent[] };
+      next?: number;
+    }>("crm.stagehistory.list", {
+      entityTypeId: 2,
+      order: { ID: "ASC" },
+      filter: {
+        CATEGORY_ID: 13,
+        STAGE_ID: "C13:WON",
+        ">=CREATED_TIME": period.start,
+        "<CREATED_TIME": period.end,
+      },
+      start,
+    });
+    const items = payload.result?.items ?? [];
+    events.push(...items);
+    if (typeof payload.next !== "number") break;
+    start = payload.next;
   }
-  return payload.finishedAt ?? null;
+
+  return events.filter((event) => {
+    const at = new Date(String(event.CREATED_TIME ?? "")).getTime();
+    return (
+      Number(event.CATEGORY_ID) === 13 &&
+      String(event.STAGE_ID ?? "") === "C13:WON" &&
+      at >= new Date(period.start).getTime() &&
+      at < new Date(period.end).getTime()
+    );
+  });
 }
 
-async function reportFetch<T>(url: string, token: string): Promise<T> {
-  const response = await fetch(url, {
-    headers: {
-      accept: "application/json",
-      "OAI-Sites-Authorization": `Bearer ${token}`,
-    },
+async function loadDeals(dealIds: string[]): Promise<Deal[]> {
+  if (!dealIds.length) return [];
+  const webhook = requiredWebhook();
+  const deals: Deal[] = [];
+
+  for (let index = 0; index < dealIds.length; index += 50) {
+    const group = dealIds.slice(index, index + 50);
+    const body = new URLSearchParams();
+    body.set("halt", "0");
+    group.forEach((id, position) => {
+      body.set(`cmd[d${position}]`, `crm.deal.get?id=${encodeURIComponent(id)}`);
+    });
+    const response = await fetch(`${webhook}batch.json`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body,
+      cache: "no-store",
+    });
+    const payload = (await response.json()) as {
+      result?: { result?: Record<string, Deal> };
+      error?: string;
+      error_description?: string;
+    };
+    if (!response.ok || payload.error) {
+      throw new Error(payload.error_description ?? payload.error ?? `Bitrix batch HTTP ${response.status}`);
+    }
+    deals.push(...Object.values(payload.result?.result ?? {}));
+  }
+
+  return deals;
+}
+
+async function bitrixCall<T>(method: string, params: Record<string, unknown>) {
+  const response = await fetch(`${requiredWebhook()}${method}.json`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(params),
     cache: "no-store",
   });
-  const payload = (await response.json()) as T & { error?: string };
+  const payload = (await response.json()) as T & {
+    error?: string;
+    error_description?: string;
+  };
   if (!response.ok || payload.error) {
-    throw new Error(payload.error ?? `Sales report HTTP ${response.status}`);
+    throw new Error(payload.error_description ?? payload.error ?? `Bitrix HTTP ${response.status}`);
   }
   return payload;
 }
 
-function requiredEnv(key: string): string {
-  const value = process.env[key];
-  if (!value) throw new Error(`${key} is not configured`);
-  return value;
+function salesOwner(deal: Deal): string | null {
+  const candidates = [deal.CREATED_BY_ID, deal.ASSIGNED_BY_ID, deal.MOVED_BY_ID]
+    .map((value) => String(value ?? ""));
+  return candidates.find((value) => value in MANAGERS) ?? null;
 }
 
-function isReportStale(lastSyncAt: string | null | undefined) {
-  if (!lastSyncAt) return true;
-  const syncedAt = new Date(lastSyncAt).getTime();
-  return !Number.isFinite(syncedAt) || Date.now() - syncedAt > REPORT_STALE_AFTER_MS;
+function parseMoney(value: string | number | null | undefined): number {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const parsed = Number(String(value ?? "").replace(/\s/g, "").replace(",", "."));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function resolvePeriod(key: string): Period {
+  const today = almatyDate();
+  let startDate = today;
+  let label = "Сегодня";
+
+  if (key === "current_week") {
+    startDate = addDays(today, -(weekday(today) - 1));
+    label = "Текущая неделя";
+  } else if (key === "current_month") {
+    startDate = `${today.slice(0, 7)}-01`;
+    label = "Текущий месяц";
+  }
+
+  return {
+    key,
+    label,
+    start: new Date(`${startDate}T00:00:00${ALMATY_OFFSET}`).toISOString(),
+    end: new Date(`${addDays(today, 1)}T00:00:00${ALMATY_OFFSET}`).toISOString(),
+  };
+}
+
+function almatyDate(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Almaty",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function weekday(date: string): number {
+  const day = new Date(`${date}T12:00:00${ALMATY_OFFSET}`).getUTCDay();
+  return day === 0 ? 7 : day;
+}
+
+function addDays(date: string, amount: number): string {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + amount);
+  return value.toISOString().slice(0, 10);
+}
+
+function requiredWebhook(): string {
+  const webhook = process.env.BITRIX_WEBHOOK;
+  if (!webhook) throw new Error("BITRIX_WEBHOOK is not configured");
+  return webhook.replace(/\/?$/, "/");
 }
 
 function responseHeaders() {

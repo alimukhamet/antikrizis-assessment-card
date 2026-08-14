@@ -94,15 +94,14 @@ test("exposes only aggregate sales metrics for the three approved managers", asy
   assert.match(route, /"2093": "Рамазан"/);
   assert.match(route, /"4351": "Нурдаулет"/);
   assert.match(route, /const PERIODS = new Set\(\["today", "current_week", "current_month"\]\)/);
-  assert.match(route, /\/api\/assessment-summary\?/);
-  assert.match(route, /const handoffs = Math\.max/);
+  assert.match(route, /"crm\.stagehistory\.list"/);
+  assert.match(route, /`crm\.deal\.get\?id=\$\{encodeURIComponent\(id\)\}`/);
+  assert.match(route, /handoffs: selectedDeals\.length/);
   assert.match(route, /contractTotal/);
   assert.match(route, /contractAverage/);
   assert.match(route, /missingContractValues/);
-  assert.doesNotMatch(route, /crm\.deal\.get/);
-  assert.match(route, /export async function POST/);
-  assert.match(route, /body: JSON\.stringify\(\{ mode: "incremental" \}\)/);
-  assert.match(route, /stale: isReportStale/);
+  assert.match(route, /stale: false/);
+  assert.doesNotMatch(route, /SALES_REPORT_BYPASS_TOKEN/);
   assert.doesNotMatch(route, /title:\s*deal\.title/);
 });
 
