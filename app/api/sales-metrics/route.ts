@@ -79,7 +79,7 @@ export async function GET(request: Request) {
     );
   }
 
-  const cacheKey = `${managerId}:${period.start}:${period.end}`;
+  const cacheKey = `${managerId}:${period.key}:${period.start}:${period.end}`;
   const cached = cache.get(cacheKey);
   if (!searchParams.has("fresh") && cached && cached.expiresAt > Date.now()) {
     return Response.json(cached.payload, { headers: responseHeaders() });

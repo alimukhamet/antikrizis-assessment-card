@@ -105,6 +105,7 @@ test("exposes only aggregate sales metrics for the three approved managers", asy
   assert.match(route, /"4351": "Нурдаулет"/);
   assert.match(route, /const PERIODS = new Set\(\["today", "current_week", "current_month", "custom"\]\)/);
   assert.match(route, /function resolveRequestedPeriod/);
+  assert.match(route, /const cacheKey = `\$\{managerId\}:\$\{period\.key\}:\$\{period\.start\}:\$\{period\.end\}`/);
   assert.match(route, /"<CREATED_TIME": period\.end/);
   assert.match(route, /end: new Date\(`\$\{addDays\(to, 1\)\}T00:00:00\$\{ALMATY_OFFSET\}`\)\.toISOString\(\)/);
   assert.match(route, /"crm\.stagehistory\.list"/);
