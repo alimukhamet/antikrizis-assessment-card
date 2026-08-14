@@ -207,7 +207,7 @@ async function bitrixCall<T>(method: string, params: Record<string, unknown>) {
 }
 
 function salesOwner(deal: Deal): string | null {
-  const candidates = [deal.CREATED_BY_ID, deal.ASSIGNED_BY_ID, deal.MOVED_BY_ID]
+  const candidates = [deal.ASSIGNED_BY_ID, deal.CREATED_BY_ID, deal.MOVED_BY_ID]
     .map((value) => String(value ?? ""));
   return candidates.find((value) => value in MANAGERS) ?? null;
 }
