@@ -94,7 +94,8 @@ test("exposes only aggregate sales metrics for the three approved managers", asy
   assert.match(route, /"2093": "Рамазан"/);
   assert.match(route, /"4351": "Нурдаулет"/);
   assert.match(route, /const PERIODS = new Set\(\["today", "current_week", "current_month"\]\)/);
-  assert.match(route, /metric: "handoffs"/);
+  assert.match(route, /\/api\/assessment-summary\?/);
+  assert.match(route, /const handoffs = Math\.max/);
   assert.match(route, /contractTotal/);
   assert.match(route, /contractAverage/);
   assert.match(route, /missingContractValues/);

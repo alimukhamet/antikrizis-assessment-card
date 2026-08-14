@@ -11,17 +11,14 @@ const CACHE_TTL_MS = 120_000;
 const REPORT_STALE_AFTER_MS = 4 * 60 * 60 * 1000;
 
 type ManagerId = keyof typeof MANAGERS;
-type DashboardManager = { id: string; handoffs?: number };
-type DashboardResponse = {
-  runId?: string;
+type AssessmentSummaryResponse = {
+  managerId?: string;
+  period?: string;
+  periodLabel?: string;
+  handoffs?: number;
+  dealIds?: string[];
   generatedAt?: string;
   lastSyncAt?: string | null;
-  period?: { label?: string };
-  managers?: DashboardManager[];
-  error?: string;
-};
-type DrilldownResponse = {
-  deals?: Array<{ id?: string }>;
   error?: string;
 };
 type SalesMetricPayload = {
@@ -77,13 +74,13 @@ export async function POST() {
   try {
     const reportUrl = requiredEnv("SALES_REPORT_URL").replace(/\/$/, "");
     const reportToken = requiredEnv("SALES_REPORT_BYPASS_TOKEN");
-    const dashboard = await reportFetch<DashboardResponse>(
-      `${reportUrl}/api/dashboard?period=current_month`,
+    const summary = await reportFetch<AssessmentSummaryResponse>(
+      `${reportUrl}/api/assessment-summary?managerId=7609&period=current_month`,
       reportToken,
     );
-    if (!isReportStale(dashboard.lastSyncAt)) {
+    if (!isReportStale(summary.lastSyncAt)) {
       return Response.json(
-        { refreshed: false, lastSyncAt: dashboard.lastSyncAt ?? null },
+        { refreshed: false, lastSyncAt: summary.lastSyncAt ?? null },
         { headers: { "cache-control": "no-store" } },
       );
     }
@@ -114,32 +111,17 @@ async function buildSalesMetrics(
 ): Promise<SalesMetricPayload> {
   const reportUrl = requiredEnv("SALES_REPORT_URL").replace(/\/$/, "");
   const reportToken = requiredEnv("SALES_REPORT_BYPASS_TOKEN");
-  const dashboard = await reportFetch<DashboardResponse>(
-    `${reportUrl}/api/dashboard?period=${encodeURIComponent(period)}`,
+  const query = new URLSearchParams({ managerId, period });
+  const summary = await reportFetch<AssessmentSummaryResponse>(
+    `${reportUrl}/api/assessment-summary?${query}`,
     reportToken,
   );
-  if (!dashboard.runId) throw new Error("Sales report returned no run ID");
-
-  const manager = (dashboard.managers ?? []).find((item) => item.id === managerId);
-  const handoffs = Math.max(0, Number(manager?.handoffs ?? 0));
-  let dealIds: string[] = [];
-
-  if (handoffs > 0) {
-    const query = new URLSearchParams({
-      runId: dashboard.runId,
-      metric: "handoffs",
-      managerId,
-    });
-    const drilldown = await reportFetch<DrilldownResponse>(
-      `${reportUrl}/api/deals?${query}`,
-      reportToken,
-    );
-    dealIds = [...new Set(
-      (drilldown.deals ?? [])
-        .map((deal) => String(deal.id ?? ""))
-        .filter((id) => /^\d+$/.test(id)),
-    )];
-  }
+  const handoffs = Math.max(0, Number(summary.handoffs ?? 0));
+  const dealIds = [...new Set(
+    (summary.dealIds ?? [])
+      .map((id) => String(id))
+      .filter((id) => /^\d+$/.test(id)),
+  )];
 
   const amounts = await loadContractValues(dealIds);
   const contractTotal = amounts.reduce((sum, amount) => sum + amount, 0);
@@ -150,7 +132,7 @@ async function buildSalesMetrics(
     managerId,
     managerName: MANAGERS[managerId],
     period,
-    periodLabel: dashboard.period?.label ?? period,
+    periodLabel: summary.periodLabel ?? period,
     handoffs,
     contractTotal,
     contractAverage: contractsWithValue
@@ -158,9 +140,9 @@ async function buildSalesMetrics(
       : 0,
     contractsWithValue,
     missingContractValues,
-    generatedAt: dashboard.generatedAt ?? new Date().toISOString(),
-    lastSyncAt: dashboard.lastSyncAt ?? null,
-    stale: isReportStale(dashboard.lastSyncAt),
+    generatedAt: summary.generatedAt ?? new Date().toISOString(),
+    lastSyncAt: summary.lastSyncAt ?? null,
+    stale: isReportStale(summary.lastSyncAt),
   };
 }
 
