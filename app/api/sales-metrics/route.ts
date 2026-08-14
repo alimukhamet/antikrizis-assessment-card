@@ -6,7 +6,7 @@ const MANAGERS = {
   "4351": "Нурдаулет",
 } as const;
 
-const PERIODS = new Set(["today", "current_week", "current_month"]);
+const PERIODS = new Set(["today", "current_week", "current_month", "custom"]);
 const CACHE_TTL_MS = 60_000;
 const ALMATY_OFFSET = "+05:00";
 
@@ -60,14 +60,33 @@ export async function GET(request: Request) {
     );
   }
 
-  const cacheKey = `${managerId}:${periodKey}`;
+  let period: Period;
+  try {
+    period = resolveRequestedPeriod(
+      periodKey,
+      searchParams.get("from"),
+      searchParams.get("to"),
+    );
+  } catch (error) {
+    return Response.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Проверьте выбранные даты.",
+      },
+      { status: 400, headers: { "cache-control": "no-store" } },
+    );
+  }
+
+  const cacheKey = `${managerId}:${period.start}:${period.end}`;
   const cached = cache.get(cacheKey);
   if (!searchParams.has("fresh") && cached && cached.expiresAt > Date.now()) {
     return Response.json(cached.payload, { headers: responseHeaders() });
   }
 
   try {
-    const payload = await buildSalesMetrics(managerId, resolvePeriod(periodKey));
+    const payload = await buildSalesMetrics(managerId, period);
     cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, payload });
     return Response.json(payload, { headers: responseHeaders() });
   } catch (error) {
@@ -237,6 +256,49 @@ function resolvePeriod(key: string): Period {
     start: new Date(`${startDate}T00:00:00${ALMATY_OFFSET}`).toISOString(),
     end: new Date(`${addDays(today, 1)}T00:00:00${ALMATY_OFFSET}`).toISOString(),
   };
+}
+
+function resolveRequestedPeriod(
+  key: string,
+  from: string | null,
+  to: string | null,
+): Period {
+  if (key !== "custom") return resolvePeriod(key);
+  if (!isDateInput(from) || !isDateInput(to)) {
+    throw new Error("Укажите дату начала и дату окончания периода.");
+  }
+  if (from > to) {
+    throw new Error("Дата начала не может быть позже даты окончания.");
+  }
+  if (to > almatyDate()) {
+    throw new Error("Дата окончания не может быть позже сегодняшнего дня.");
+  }
+  const days = Math.round(
+    (new Date(`${to}T00:00:00Z`).getTime() -
+      new Date(`${from}T00:00:00Z`).getTime()) /
+      86_400_000,
+  );
+  if (days > 366) {
+    throw new Error("Выберите период не более 367 дней.");
+  }
+
+  return {
+    key,
+    label: `${formatPeriodDate(from)} — ${formatPeriodDate(to)}`,
+    start: new Date(`${from}T00:00:00${ALMATY_OFFSET}`).toISOString(),
+    end: new Date(`${addDays(to, 1)}T00:00:00${ALMATY_OFFSET}`).toISOString(),
+  };
+}
+
+function isDateInput(value: string | null): value is string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function formatPeriodDate(value: string): string {
+  const [year, month, day] = value.split("-");
+  return `${day}.${month}.${year}`;
 }
 
 function almatyDate(): string {

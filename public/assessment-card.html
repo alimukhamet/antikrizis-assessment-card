@@ -38,6 +38,14 @@
   .sales-filter:hover{border-color:#abc5b3;color:var(--green)}
   .sales-filter.active{background:var(--green);border-color:var(--green);color:#fff}
   .sales-filter:focus-visible{outline:3px solid #b9d8c3;outline-offset:2px}
+  .sales-date-range{display:grid;grid-template-columns:minmax(130px,1fr) minmax(130px,1fr) auto;align-items:end;gap:8px;margin:-2px 0 10px;padding:10px;border-radius:12px;background:var(--green-pale)}
+  .sales-date-range[hidden]{display:none}
+  .sales-date-field{display:block;min-width:0;color:var(--text-muted);font-size:.67rem;font-weight:750}
+  .sales-date-field input{display:block;width:100%;margin-top:4px;border:1px solid var(--border);border-radius:9px;background:#fff;color:var(--text);padding:7px 9px;font-size:.78rem;font-weight:650}
+  .sales-date-field input:focus{outline:2px solid #b9d8c3;border-color:#9dbca6}
+  .sales-date-apply{min-height:34px;border:0;border-radius:9px;background:var(--green);color:#fff;padding:7px 13px;font-size:.75rem;font-weight:800;cursor:pointer}
+  .sales-date-apply:hover{background:var(--green-dark)}
+  .sales-date-apply:focus-visible{outline:3px solid #b9d8c3;outline-offset:2px}
   .sales-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
   .sales-metric{min-width:0;border-radius:12px;background:var(--green-pale);padding:11px 12px}
   .sales-metric.primary{background:var(--green-dark);color:#fff}
@@ -203,6 +211,8 @@
     .sales-summary-head{align-items:flex-start;flex-direction:column;gap:9px}
     .sales-periods,.sales-people{width:100%}
     .sales-filter{flex:1;padding:7px 8px}
+    .sales-date-range{grid-template-columns:1fr 1fr}
+    .sales-date-apply{grid-column:1/-1}
     .sales-metrics{grid-template-columns:1fr}
     .sales-metric{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px}
     .sales-metric strong{margin:0;font-size:1.08rem;text-align:right}
@@ -291,6 +301,7 @@
             <button class="sales-filter" type="button" data-sales-period="today" aria-pressed="false">Сегодня</button>
             <button class="sales-filter" type="button" data-sales-period="current_week" aria-pressed="false">Неделя</button>
             <button class="sales-filter active" type="button" data-sales-period="current_month" aria-pressed="true">Месяц</button>
+            <button class="sales-filter" type="button" data-sales-period="custom" aria-pressed="false">Даты</button>
           </div>
         </div>
         <div class="sales-people" aria-label="Сотрудник отдела продаж">
@@ -298,6 +309,15 @@
           <button class="sales-filter" type="button" data-sales-manager="2093" aria-pressed="false">Рамазан</button>
           <button class="sales-filter" type="button" data-sales-manager="4351" aria-pressed="false">Нурдаулет</button>
         </div>
+        <form class="sales-date-range" id="salesDateRange" hidden>
+          <label class="sales-date-field">С даты
+            <input id="salesDateFrom" name="from" type="date" required>
+          </label>
+          <label class="sales-date-field">По дату
+            <input id="salesDateTo" name="to" type="date" required>
+          </label>
+          <button class="sales-date-apply" type="submit">Показать</button>
+        </form>
         <div class="sales-metrics" aria-live="polite" aria-busy="true" id="salesMetrics">
           <div class="sales-metric primary"><span>Передано юристам</span><strong id="salesHandoffs">—</strong></div>
           <div class="sales-metric"><span>Сумма договоров</span><strong id="salesContractTotal">—</strong></div>
@@ -1056,9 +1076,15 @@ verifyBitrixConnection().then(ready=>{
   if(ready&&$("dealId").value.trim()) scheduleDealLookup(0);
 });
 
-const salesSelection={managerId:"7609",period:"current_month"};
+const salesToday=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Almaty",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+const salesSelection={managerId:"7609",period:"current_month",from:`${salesToday.slice(0,7)}-01`,to:salesToday};
 let salesMetricsRequest=0;
 let salesAutoRefreshStarted=false;
+
+$("salesDateFrom").value=salesSelection.from;
+$("salesDateTo").value=salesSelection.to;
+$("salesDateFrom").max=salesToday;
+$("salesDateTo").max=salesToday;
 
 function formatSalesMoney(value){
   return `${Math.round(Number(value)||0).toLocaleString("ru-RU")} ₸`;
@@ -1101,7 +1127,11 @@ async function loadSalesMetrics(force=false){
   status.classList.remove("error");
   status.textContent="Загружаем результаты…";
   try{
-    const query=new URLSearchParams(salesSelection);
+    const query=new URLSearchParams({managerId:salesSelection.managerId,period:salesSelection.period});
+    if(salesSelection.period==="custom"){
+      query.set("from",salesSelection.from);
+      query.set("to",salesSelection.to);
+    }
     if(force) query.set("fresh",String(Date.now()));
     const response=await fetch(`/api/sales-metrics?${query}`,{headers:{accept:"application/json"}});
     const data=await response.json();
@@ -1138,8 +1168,33 @@ document.querySelectorAll("[data-sales-manager]").forEach(button=>button.addEven
 document.querySelectorAll("[data-sales-period]").forEach(button=>button.addEventListener("click",()=>{
   salesSelection.period=button.dataset.salesPeriod;
   setSalesFilter("period",salesSelection.period);
+  $("salesDateRange").hidden=salesSelection.period!=="custom";
+  if(salesSelection.period==="custom"){
+    $("salesSummaryStatus").textContent="Выберите даты и нажмите «Показать».";
+    $("salesDateFrom").focus();
+    return;
+  }
   loadSalesMetrics();
 }));
+$("salesDateRange").addEventListener("submit",event=>{
+  event.preventDefault();
+  const from=$("salesDateFrom").value,to=$("salesDateTo").value;
+  const status=$("salesSummaryStatus");
+  status.classList.remove("error");
+  if(!from||!to){
+    status.textContent="Укажите обе даты.";
+    status.classList.add("error");
+    return;
+  }
+  if(from>to){
+    status.textContent="Дата начала не может быть позже даты окончания.";
+    status.classList.add("error");
+    return;
+  }
+  salesSelection.from=from;
+  salesSelection.to=to;
+  loadSalesMetrics();
+});
 loadSalesMetrics();
 
 // ── Money input formatting ──

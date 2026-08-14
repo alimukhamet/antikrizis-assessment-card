@@ -2,16 +2,20 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-async function render() {
+async function fetchBuilt(path = "/", headers = {}) {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
-    new Request("http://localhost/", { headers: { accept: "text/html" } }),
+    new Request(`http://localhost${path}`, { headers }),
     { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
     { waitUntil() {}, passThroughOnException() {} },
   );
+}
+
+async function render() {
+  return fetchBuilt("/", { accept: "text/html" });
 }
 
 test("server-renders the assessment card shell", async () => {
@@ -78,6 +82,12 @@ test("fits the three sales KPIs on the daily home screen with person and period 
   assert.match(card, /data-sales-period="today"[^>]*>Сегодня</);
   assert.match(card, /data-sales-period="current_week"[^>]*>Неделя</);
   assert.match(card, /data-sales-period="current_month"[^>]*>Месяц</);
+  assert.match(card, /data-sales-period="custom"[^>]*>Даты</);
+  assert.match(card, /id="salesDateFrom"[^>]*type="date"/);
+  assert.match(card, /id="salesDateTo"[^>]*type="date"/);
+  assert.match(card, /id="salesDateRange"/);
+  assert.match(card, /query\.set\("from",salesSelection\.from\)/);
+  assert.match(card, /query\.set\("to",salesSelection\.to\)/);
   assert.match(card, /Передано юристам/);
   assert.match(card, /Сумма договоров/);
   assert.match(card, /Средний договор/);
@@ -93,7 +103,10 @@ test("exposes only aggregate sales metrics for the three approved managers", asy
   assert.match(route, /"7609": "Дархан"/);
   assert.match(route, /"2093": "Рамазан"/);
   assert.match(route, /"4351": "Нурдаулет"/);
-  assert.match(route, /const PERIODS = new Set\(\["today", "current_week", "current_month"\]\)/);
+  assert.match(route, /const PERIODS = new Set\(\["today", "current_week", "current_month", "custom"\]\)/);
+  assert.match(route, /function resolveRequestedPeriod/);
+  assert.match(route, /"<CREATED_TIME": period\.end/);
+  assert.match(route, /end: new Date\(`\$\{addDays\(to, 1\)\}T00:00:00\$\{ALMATY_OFFSET\}`\)\.toISOString\(\)/);
   assert.match(route, /"crm\.stagehistory\.list"/);
   assert.match(route, /`crm\.deal\.get\?id=\$\{encodeURIComponent\(id\)\}`/);
   assert.match(route, /handoffs: selectedDeals\.length/);
@@ -104,6 +117,18 @@ test("exposes only aggregate sales metrics for the three approved managers", asy
   assert.match(route, /\[deal\.ASSIGNED_BY_ID, deal\.MOVED_BY_ID, deal\.CREATED_BY_ID\]/);
   assert.doesNotMatch(route, /SALES_REPORT_BYPASS_TOKEN/);
   assert.doesNotMatch(route, /title:\s*deal\.title/);
+});
+
+test("rejects an invalid flexible sales date range before reading Bitrix", async () => {
+  const response = await fetchBuilt(
+    "/api/sales-metrics?managerId=7609&period=custom&from=2026-08-14&to=2026-08-01",
+    { accept: "application/json" },
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "Дата начала не может быть позже даты окончания.",
+  });
 });
 
 test("lets the salesperson show and hide the ECP password", async () => {
