@@ -86,6 +86,8 @@ test("fits the three sales KPIs on the daily home screen with person and period 
   assert.match(card, /id="salesDateFrom"[^>]*type="date"/);
   assert.match(card, /id="salesDateTo"[^>]*type="date"/);
   assert.match(card, /id="salesDateRange"/);
+  assert.match(card, /class="sales-date-apply"[^>]*>ОК<\/button>/);
+  assert.match(card, /\.sales-date-range\{display:flex/);
   assert.match(card, /query\.set\("from",salesSelection\.from\)/);
   assert.match(card, /query\.set\("to",salesSelection\.to\)/);
   assert.match(card, /Передано юристам/);

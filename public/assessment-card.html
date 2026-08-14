@@ -38,12 +38,12 @@
   .sales-filter:hover{border-color:#abc5b3;color:var(--green)}
   .sales-filter.active{background:var(--green);border-color:var(--green);color:#fff}
   .sales-filter:focus-visible{outline:3px solid #b9d8c3;outline-offset:2px}
-  .sales-date-range{display:grid;grid-template-columns:minmax(130px,1fr) minmax(130px,1fr) auto;align-items:end;gap:8px;margin:-2px 0 10px;padding:10px;border-radius:12px;background:var(--green-pale)}
+  .sales-date-range{display:flex;align-items:center;gap:5px;width:max-content;max-width:100%;margin:-2px 0 9px}
   .sales-date-range[hidden]{display:none}
-  .sales-date-field{display:block;min-width:0;color:var(--text-muted);font-size:.67rem;font-weight:750}
-  .sales-date-field input{display:block;width:100%;margin-top:4px;border:1px solid var(--border);border-radius:9px;background:#fff;color:var(--text);padding:7px 9px;font-size:.78rem;font-weight:650}
-  .sales-date-field input:focus{outline:2px solid #b9d8c3;border-color:#9dbca6}
-  .sales-date-apply{min-height:34px;border:0;border-radius:9px;background:var(--green);color:#fff;padding:7px 13px;font-size:.75rem;font-weight:800;cursor:pointer}
+  .sales-date-range input{width:124px;height:32px;min-width:0;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--text);padding:3px 6px;font-size:.68rem;font-weight:650}
+  .sales-date-range input:focus{outline:2px solid #b9d8c3;border-color:#9dbca6}
+  .sales-date-separator{color:var(--text-muted);font-size:.72rem}
+  .sales-date-apply{width:38px;height:32px;flex:0 0 38px;border:0;border-radius:8px;background:var(--green);color:#fff;padding:0;font-size:.66rem;font-weight:800;cursor:pointer}
   .sales-date-apply:hover{background:var(--green-dark)}
   .sales-date-apply:focus-visible{outline:3px solid #b9d8c3;outline-offset:2px}
   .sales-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
@@ -211,8 +211,9 @@
     .sales-summary-head{align-items:flex-start;flex-direction:column;gap:9px}
     .sales-periods,.sales-people{width:100%}
     .sales-filter{flex:1;padding:7px 8px}
-    .sales-date-range{grid-template-columns:1fr 1fr}
-    .sales-date-apply{grid-column:1/-1}
+    .sales-date-range{width:100%;gap:4px}
+    .sales-date-range input{width:auto;flex:1}
+    .sales-date-apply{flex:0 0 36px;width:36px}
     .sales-metrics{grid-template-columns:1fr}
     .sales-metric{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px}
     .sales-metric strong{margin:0;font-size:1.08rem;text-align:right}
@@ -309,14 +310,11 @@
           <button class="sales-filter" type="button" data-sales-manager="2093" aria-pressed="false">Рамазан</button>
           <button class="sales-filter" type="button" data-sales-manager="4351" aria-pressed="false">Нурдаулет</button>
         </div>
-        <form class="sales-date-range" id="salesDateRange" hidden>
-          <label class="sales-date-field">С даты
-            <input id="salesDateFrom" name="from" type="date" required>
-          </label>
-          <label class="sales-date-field">По дату
-            <input id="salesDateTo" name="to" type="date" required>
-          </label>
-          <button class="sales-date-apply" type="submit">Показать</button>
+        <form class="sales-date-range" id="salesDateRange" aria-label="Произвольный период" hidden>
+          <input id="salesDateFrom" name="from" type="date" aria-label="С даты" title="С даты" required>
+          <span class="sales-date-separator" aria-hidden="true">—</span>
+          <input id="salesDateTo" name="to" type="date" aria-label="По дату" title="По дату" required>
+          <button class="sales-date-apply" type="submit" aria-label="Показать выбранный период">ОК</button>
         </form>
         <div class="sales-metrics" aria-live="polite" aria-busy="true" id="salesMetrics">
           <div class="sales-metric primary"><span>Передано юристам</span><strong id="salesHandoffs">—</strong></div>
