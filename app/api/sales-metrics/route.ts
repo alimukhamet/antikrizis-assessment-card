@@ -16,7 +16,10 @@ type AssessmentSummaryResponse = {
   period?: string;
   periodLabel?: string;
   handoffs?: number;
-  dealIds?: string[];
+  contractTotal?: number;
+  contractAverage?: number;
+  contractsWithValue?: number;
+  missingContractValues?: number;
   generatedAt?: string;
   lastSyncAt?: string | null;
   error?: string;
@@ -117,16 +120,6 @@ async function buildSalesMetrics(
     reportToken,
   );
   const handoffs = Math.max(0, Number(summary.handoffs ?? 0));
-  const dealIds = [...new Set(
-    (summary.dealIds ?? [])
-      .map((id) => String(id))
-      .filter((id) => /^\d+$/.test(id)),
-  )];
-
-  const amounts = await loadContractValues(dealIds);
-  const contractTotal = amounts.reduce((sum, amount) => sum + amount, 0);
-  const contractsWithValue = amounts.filter((amount) => amount > 0).length;
-  const missingContractValues = Math.max(0, handoffs - contractsWithValue);
 
   return {
     managerId,
@@ -134,12 +127,10 @@ async function buildSalesMetrics(
     period,
     periodLabel: summary.periodLabel ?? period,
     handoffs,
-    contractTotal,
-    contractAverage: contractsWithValue
-      ? Math.round(contractTotal / contractsWithValue)
-      : 0,
-    contractsWithValue,
-    missingContractValues,
+    contractTotal: Math.max(0, Number(summary.contractTotal ?? 0)),
+    contractAverage: Math.max(0, Number(summary.contractAverage ?? 0)),
+    contractsWithValue: Math.max(0, Number(summary.contractsWithValue ?? 0)),
+    missingContractValues: Math.max(0, Number(summary.missingContractValues ?? 0)),
     generatedAt: summary.generatedAt ?? new Date().toISOString(),
     lastSyncAt: summary.lastSyncAt ?? null,
     stale: isReportStale(summary.lastSyncAt),
@@ -181,41 +172,6 @@ async function reportFetch<T>(url: string, token: string): Promise<T> {
     throw new Error(payload.error ?? `Sales report HTTP ${response.status}`);
   }
   return payload;
-}
-
-async function loadContractValues(dealIds: string[]): Promise<number[]> {
-  if (!dealIds.length) return [];
-  const webhook = requiredEnv("BITRIX_WEBHOOK").replace(/\/?$/, "/");
-  const values: number[] = [];
-
-  for (let index = 0; index < dealIds.length; index += 10) {
-    const group = dealIds.slice(index, index + 10);
-    const deals = await Promise.all(
-      group.map(async (id) => {
-        const response = await fetch(`${webhook}crm.deal.get.json`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id: Number(id) }),
-          cache: "no-store",
-        });
-        const payload = (await response.json()) as {
-          result?: { OPPORTUNITY?: string | number | null };
-          error?: string;
-        };
-        if (!response.ok || payload.error) return 0;
-        return parseMoney(payload.result?.OPPORTUNITY);
-      }),
-    );
-    values.push(...deals);
-  }
-
-  return values;
-}
-
-function parseMoney(value: string | number | null | undefined): number {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  const parsed = Number(String(value ?? "").replace(/\s/g, "").replace(",", "."));
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
 function requiredEnv(key: string): string {

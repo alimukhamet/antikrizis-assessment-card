@@ -99,6 +99,7 @@ test("exposes only aggregate sales metrics for the three approved managers", asy
   assert.match(route, /contractTotal/);
   assert.match(route, /contractAverage/);
   assert.match(route, /missingContractValues/);
+  assert.doesNotMatch(route, /crm\.deal\.get/);
   assert.match(route, /export async function POST/);
   assert.match(route, /body: JSON\.stringify\(\{ mode: "incremental" \}\)/);
   assert.match(route, /stale: isReportStale/);
