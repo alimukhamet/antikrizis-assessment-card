@@ -329,7 +329,7 @@ function requiredWebhook(): string {
 
 function responseHeaders() {
   return {
-    "cache-control": "public, max-age=60, stale-while-revalidate=120",
+    "cache-control": "no-store",
     "content-type": "application/json; charset=utf-8",
   };
 }

@@ -114,6 +114,7 @@ test("exposes only aggregate sales metrics for the three approved managers", asy
   assert.match(route, /contractAverage/);
   assert.match(route, /missingContractValues/);
   assert.match(route, /stale: false/);
+  assert.match(route, /"cache-control": "no-store"/);
   assert.match(route, /\[deal\.ASSIGNED_BY_ID, deal\.MOVED_BY_ID, deal\.CREATED_BY_ID\]/);
   assert.doesNotMatch(route, /SALES_REPORT_BYPASS_TOKEN/);
   assert.doesNotMatch(route, /title:\s*deal\.title/);
