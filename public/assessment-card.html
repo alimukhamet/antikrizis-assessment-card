@@ -32,8 +32,10 @@
   .sales-summary-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}
   .sales-summary-title strong{display:block;color:var(--green-dark);font-size:.98rem}
   .sales-summary-title span{display:block;color:var(--text-muted);font-size:.7rem;margin-top:2px}
-  .sales-periods,.sales-people{display:flex;flex-wrap:wrap;gap:6px}
+  .sales-periods,.sales-people,.sales-payment{display:flex;flex-wrap:wrap;gap:6px}
   .sales-people{margin-bottom:10px}
+  .sales-payment{align-items:center;margin-bottom:10px}
+  .sales-filter-label{color:var(--text-muted);font-size:.7rem;font-weight:750;margin-right:2px}
   .sales-filter{border:1px solid var(--border);border-radius:20px;background:#fff;color:var(--text-mid);padding:6px 11px;font-size:.75rem;font-weight:750;cursor:pointer}
   .sales-filter:hover{border-color:#abc5b3;color:var(--green)}
   .sales-filter.active{background:var(--green);border-color:var(--green);color:#fff}
@@ -209,7 +211,8 @@
     body[data-view="home"] .wrap{padding-bottom:28px}
     .home-brand{margin-bottom:36px}
     .sales-summary-head{align-items:flex-start;flex-direction:column;gap:9px}
-    .sales-periods,.sales-people{width:100%}
+    .sales-periods,.sales-people,.sales-payment{width:100%}
+    .sales-filter-label{flex:0 0 100%;margin:0}
     .sales-filter{flex:1;padding:7px 8px}
     .sales-date-range{width:100%;gap:4px}
     .sales-date-range input{width:auto;flex:1}
@@ -309,6 +312,13 @@
           <button class="sales-filter active" type="button" data-sales-manager="7609" aria-pressed="true">Дархан</button>
           <button class="sales-filter" type="button" data-sales-manager="2093" aria-pressed="false">Рамазан</button>
           <button class="sales-filter" type="button" data-sales-manager="4351" aria-pressed="false">Нурдаулет</button>
+        </div>
+        <div class="sales-payment" aria-label="Вид оплаты">
+          <span class="sales-filter-label">Вид оплаты</span>
+          <button class="sales-filter" type="button" data-sales-payment="423" aria-pressed="false">50/50</button>
+          <button class="sales-filter active" type="button" data-sales-payment="261" aria-pressed="true">После определения</button>
+          <button class="sales-filter" type="button" data-sales-payment="263" aria-pressed="false">До определения</button>
+          <button class="sales-filter" type="button" data-sales-payment="all" aria-pressed="false">Все</button>
         </div>
         <form class="sales-date-range" id="salesDateRange" aria-label="Произвольный период" hidden>
           <input id="salesDateFrom" name="from" type="date" aria-label="С даты" title="С даты" required>
@@ -776,13 +786,14 @@
         <div class="hint">Число месяца, когда клиенту удобно платить. Дата первого платежа считается автоматически.</div>
       </div>
       <div class="field full" data-k="grafType">
-        <label class="lbl">Тип графика<span class="req">*</span></label>
+        <label class="lbl">Какой вид оплаты?<span class="req">*</span></label>
         <select id="grafType">
           <option value="">—</option>
-          <option value="263">До определения (обычный)</option>
-          <option value="261">После определения (+2 мес. на весь график)</option>
+          <option value="423">50/50</option>
+          <option value="261">После определения</option>
+          <option value="263">До определения</option>
         </select>
-        <div class="hint">«До определения» — первый платёж в этом месяце, если число платежа ещё не прошло, иначе в следующем. «После определения» — +2 месяца к обычному графику.</div>
+        <div class="hint">Значение сохраняется в поле Bitrix «Вид оплаты». Для «После определения» график сдвигается на 2 месяца.</div>
       </div>
     </div>
     <div class="schedule" id="schedule">
@@ -893,7 +904,7 @@ const FIELD_LABELS = {
   contractDate:"Дата договора",
   months:"Всего платежей",
   payDay:"Удобное число платежа",
-  grafType:"Тип графика",
+  grafType:"Какой вид оплаты?",
   docClientName:"ФИО клиента",
   docSocialPayments:"Пенсия или пособия",
   docSalaryBank:"Зарплата не в Kaspi"
@@ -1075,7 +1086,7 @@ verifyBitrixConnection().then(ready=>{
 });
 
 const salesToday=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Almaty",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
-const salesSelection={managerId:"7609",period:"current_month",from:`${salesToday.slice(0,7)}-01`,to:salesToday};
+const salesSelection={managerId:"7609",paymentType:"261",period:"current_month",from:`${salesToday.slice(0,7)}-01`,to:salesToday};
 let salesMetricsRequest=0;
 let salesAutoRefreshStarted=false;
 
@@ -1125,7 +1136,7 @@ async function loadSalesMetrics(force=false){
   status.classList.remove("error");
   status.textContent="Загружаем результаты…";
   try{
-    const query=new URLSearchParams({managerId:salesSelection.managerId,period:salesSelection.period});
+    const query=new URLSearchParams({managerId:salesSelection.managerId,paymentType:salesSelection.paymentType,period:salesSelection.period});
     if(salesSelection.period==="custom"){
       query.set("from",salesSelection.from);
       query.set("to",salesSelection.to);
@@ -1140,8 +1151,9 @@ async function loadSalesMetrics(force=false){
     $("salesContractAverage").textContent=formatSalesMoney(data.contractAverage);
     const updatedText=salesUpdatedLabel(data.lastSyncAt);
     const periodText=data.periodLabel?`Период: ${data.periodLabel}. `:"";
+    const paymentText=data.paymentTypeLabel?`Вид оплаты: ${data.paymentTypeLabel}. `:"";
     const missingText=data.missingContractValues?`Без суммы договора: ${data.missingContractValues}.`:"Все переданные сделки имеют сумму договора.";
-    status.textContent=updatedText+periodText+missingText;
+    status.textContent=updatedText+periodText+paymentText+missingText;
     if(data.stale&&!salesAutoRefreshStarted){
       salesAutoRefreshStarted=true;
       refreshSalesMetricsInBackground();
@@ -1161,6 +1173,11 @@ async function loadSalesMetrics(force=false){
 document.querySelectorAll("[data-sales-manager]").forEach(button=>button.addEventListener("click",()=>{
   salesSelection.managerId=button.dataset.salesManager;
   setSalesFilter("manager",salesSelection.managerId);
+  loadSalesMetrics();
+}));
+document.querySelectorAll("[data-sales-payment]").forEach(button=>button.addEventListener("click",()=>{
+  salesSelection.paymentType=button.dataset.salesPayment;
+  setSalesFilter("payment",salesSelection.paymentType);
   loadSalesMetrics();
 }));
 document.querySelectorAll("[data-sales-period]").forEach(button=>button.addEventListener("click",()=>{
@@ -1408,7 +1425,7 @@ function buildCardLines(s, inclContract){
     add("Дата первого платежа",fmtInputDate(s.firstDate));
     add("Всего платежей",s.months);
     add("Число месяца платежей",s.payDay);
-    add("Тип графика",s.grafTypeText);
+    add("Вид оплаты",s.grafTypeText);
     const sch=buildSchedule(s);
     if(sch){head("ГРАФИК ПЛАТЕЖЕЙ");L.push(scheduleText(sch));}
   }

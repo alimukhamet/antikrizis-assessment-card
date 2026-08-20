@@ -6,34 +6,36 @@ const MANAGERS = {
   "4351": "Нурдаулет",
 } as const;
 
+const PAYMENT_TYPES = {
+  all: "Все",
+  "423": "50/50",
+  "261": "После определения",
+  "263": "До определения",
+} as const;
+
 const PERIODS = new Set(["today", "current_week", "current_month", "custom"]);
 const CACHE_TTL_MS = 60_000;
 const ALMATY_OFFSET = "+05:00";
+const HANDOFF_DATE_FIELD = "UF_CRM_1777554129345";
+const PAYMENT_TYPE_FIELD = "UF_CRM_1781335943568";
 
 type ManagerId = keyof typeof MANAGERS;
+type PaymentType = keyof typeof PAYMENT_TYPES;
 type Period = {
   key: string;
   label: string;
-  start: string;
-  end: string;
-};
-type StageEvent = {
-  ID?: string | number;
-  OWNER_ID?: string | number;
-  CREATED_TIME?: string;
-  CATEGORY_ID?: string | number;
-  STAGE_ID?: string;
+  startDate: string;
+  endDate: string;
 };
 type Deal = {
   ID?: string;
-  CREATED_BY_ID?: string;
-  ASSIGNED_BY_ID?: string;
-  MOVED_BY_ID?: string;
   OPPORTUNITY?: string | number | null;
 };
 type SalesMetricPayload = {
   managerId: ManagerId;
   managerName: string;
+  paymentType: PaymentType;
+  paymentTypeLabel: string;
   period: string;
   periodLabel: string;
   handoffs: number;
@@ -51,11 +53,17 @@ const cache = new Map<string, { expiresAt: number; payload: SalesMetricPayload }
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const managerId = searchParams.get("managerId") as ManagerId | null;
+  const paymentType = (searchParams.get("paymentType") ?? "261") as PaymentType;
   const periodKey = searchParams.get("period") ?? "current_month";
 
-  if (!managerId || !(managerId in MANAGERS) || !PERIODS.has(periodKey)) {
+  if (
+    !managerId ||
+    !(managerId in MANAGERS) ||
+    !(paymentType in PAYMENT_TYPES) ||
+    !PERIODS.has(periodKey)
+  ) {
     return Response.json(
-      { error: "Выберите сотрудника и период из предложенного списка." },
+      { error: "Выберите сотрудника, вид оплаты и период из предложенного списка." },
       { status: 400, headers: { "cache-control": "no-store" } },
     );
   }
@@ -79,14 +87,14 @@ export async function GET(request: Request) {
     );
   }
 
-  const cacheKey = `${managerId}:${period.key}:${period.start}:${period.end}`;
+  const cacheKey = `${managerId}:${paymentType}:${period.key}:${period.startDate}:${period.endDate}`;
   const cached = cache.get(cacheKey);
   if (!searchParams.has("fresh") && cached && cached.expiresAt > Date.now()) {
     return Response.json(cached.payload, { headers: responseHeaders() });
   }
 
   try {
-    const payload = await buildSalesMetrics(managerId, period);
+    const payload = await buildSalesMetrics(managerId, paymentType, period);
     cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, payload });
     return Response.json(payload, { headers: responseHeaders() });
   } catch (error) {
@@ -103,20 +111,11 @@ export async function GET(request: Request) {
 
 async function buildSalesMetrics(
   managerId: ManagerId,
+  paymentType: PaymentType,
   period: Period,
 ): Promise<SalesMetricPayload> {
-  const events = await loadHandoffEvents(period);
-  const firstHandoffByDeal = new Map<string, StageEvent>();
-  for (const event of events) {
-    if (String(event.STAGE_ID ?? "") !== "C13:WON") continue;
-    const dealId = String(event.OWNER_ID ?? "");
-    if (!/^\d+$/.test(dealId) || firstHandoffByDeal.has(dealId)) continue;
-    firstHandoffByDeal.set(dealId, event);
-  }
-
-  const deals = await loadDeals([...firstHandoffByDeal.keys()]);
-  const selectedDeals = deals.filter((deal) => salesOwner(deal) === managerId);
-  const contractValues = selectedDeals
+  const deals = await loadHandoffDeals(managerId, paymentType, period);
+  const contractValues = deals
     .map((deal) => parseMoney(deal.OPPORTUNITY))
     .filter((value) => value > 0);
   const contractTotal = contractValues.reduce((sum, value) => sum + value, 0);
@@ -125,84 +124,51 @@ async function buildSalesMetrics(
   return {
     managerId,
     managerName: MANAGERS[managerId],
+    paymentType,
+    paymentTypeLabel: PAYMENT_TYPES[paymentType],
     period: period.key,
     periodLabel: period.label,
-    handoffs: selectedDeals.length,
+    handoffs: deals.length,
     contractTotal,
     contractAverage: contractValues.length
       ? Math.round(contractTotal / contractValues.length)
       : 0,
     contractsWithValue: contractValues.length,
-    missingContractValues: Math.max(0, selectedDeals.length - contractValues.length),
+    missingContractValues: Math.max(0, deals.length - contractValues.length),
     generatedAt: now,
     lastSyncAt: now,
     stale: false,
   };
 }
 
-async function loadHandoffEvents(period: Period): Promise<StageEvent[]> {
-  const events: StageEvent[] = [];
+async function loadHandoffDeals(
+  managerId: ManagerId,
+  paymentType: PaymentType,
+  period: Period,
+): Promise<Deal[]> {
+  const deals: Deal[] = [];
   let start = 0;
 
-  for (let page = 0; page < 20; page += 1) {
+  for (let page = 0; page < 100; page += 1) {
+    const filter: Record<string, string> = {
+      ASSIGNED_BY_ID: managerId,
+      [`>=${HANDOFF_DATE_FIELD}`]: period.startDate,
+      [`<=${HANDOFF_DATE_FIELD}`]: period.endDate,
+    };
+    if (paymentType !== "all") filter[PAYMENT_TYPE_FIELD] = paymentType;
+
     const payload = await bitrixCall<{
-      result?: { items?: StageEvent[] };
+      result?: Deal[];
       next?: number;
-    }>("crm.stagehistory.list", {
-      entityTypeId: 2,
+    }>("crm.deal.list", {
       order: { ID: "ASC" },
-      filter: {
-        CATEGORY_ID: 13,
-        STAGE_ID: "C13:WON",
-        ">=CREATED_TIME": period.start,
-        "<CREATED_TIME": period.end,
-      },
+      filter,
+      select: ["ID", "OPPORTUNITY"],
       start,
     });
-    const items = payload.result?.items ?? [];
-    events.push(...items);
+    deals.push(...(payload.result ?? []));
     if (typeof payload.next !== "number") break;
     start = payload.next;
-  }
-
-  return events.filter((event) => {
-    const at = new Date(String(event.CREATED_TIME ?? "")).getTime();
-    return (
-      Number(event.CATEGORY_ID) === 13 &&
-      String(event.STAGE_ID ?? "") === "C13:WON" &&
-      at >= new Date(period.start).getTime() &&
-      at < new Date(period.end).getTime()
-    );
-  });
-}
-
-async function loadDeals(dealIds: string[]): Promise<Deal[]> {
-  if (!dealIds.length) return [];
-  const webhook = requiredWebhook();
-  const deals: Deal[] = [];
-
-  for (let index = 0; index < dealIds.length; index += 50) {
-    const group = dealIds.slice(index, index + 50);
-    const body = new URLSearchParams();
-    body.set("halt", "0");
-    group.forEach((id, position) => {
-      body.set(`cmd[d${position}]`, `crm.deal.get?id=${encodeURIComponent(id)}`);
-    });
-    const response = await fetch(`${webhook}batch.json`, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body,
-      cache: "no-store",
-    });
-    const payload = (await response.json()) as {
-      result?: { result?: Record<string, Deal> };
-      error?: string;
-      error_description?: string;
-    };
-    if (!response.ok || payload.error) {
-      throw new Error(payload.error_description ?? payload.error ?? `Bitrix batch HTTP ${response.status}`);
-    }
-    deals.push(...Object.values(payload.result?.result ?? {}));
   }
 
   return deals;
@@ -223,12 +189,6 @@ async function bitrixCall<T>(method: string, params: Record<string, unknown>) {
     throw new Error(payload.error_description ?? payload.error ?? `Bitrix HTTP ${response.status}`);
   }
   return payload;
-}
-
-function salesOwner(deal: Deal): string | null {
-  const candidates = [deal.ASSIGNED_BY_ID, deal.MOVED_BY_ID, deal.CREATED_BY_ID]
-    .map((value) => String(value ?? ""));
-  return candidates.find((value) => value in MANAGERS) ?? null;
 }
 
 function parseMoney(value: string | number | null | undefined): number {
@@ -253,8 +213,8 @@ function resolvePeriod(key: string): Period {
   return {
     key,
     label,
-    start: new Date(`${startDate}T00:00:00${ALMATY_OFFSET}`).toISOString(),
-    end: new Date(`${addDays(today, 1)}T00:00:00${ALMATY_OFFSET}`).toISOString(),
+    startDate,
+    endDate: today,
   };
 }
 
@@ -285,8 +245,8 @@ function resolveRequestedPeriod(
   return {
     key,
     label: `${formatPeriodDate(from)} — ${formatPeriodDate(to)}`,
-    start: new Date(`${from}T00:00:00${ALMATY_OFFSET}`).toISOString(),
-    end: new Date(`${addDays(to, 1)}T00:00:00${ALMATY_OFFSET}`).toISOString(),
+    startDate: from,
+    endDate: to,
   };
 }
 

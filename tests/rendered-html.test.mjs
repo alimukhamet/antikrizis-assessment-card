@@ -79,6 +79,10 @@ test("fits the three sales KPIs on the daily home screen with person and period 
   assert.match(card, /data-sales-manager="7609"[^>]*>Дархан</);
   assert.match(card, /data-sales-manager="2093"[^>]*>Рамазан</);
   assert.match(card, /data-sales-manager="4351"[^>]*>Нурдаулет</);
+  assert.match(card, /data-sales-payment="423"[^>]*>50\/50</);
+  assert.match(card, /data-sales-payment="261"[^>]*>После определения</);
+  assert.match(card, /data-sales-payment="263"[^>]*>До определения</);
+  assert.match(card, /data-sales-payment="all"[^>]*>Все</);
   assert.match(card, /data-sales-period="today"[^>]*>Сегодня</);
   assert.match(card, /data-sales-period="current_week"[^>]*>Неделя</);
   assert.match(card, /data-sales-period="current_month"[^>]*>Месяц</);
@@ -90,6 +94,7 @@ test("fits the three sales KPIs on the daily home screen with person and period 
   assert.match(card, /\.sales-date-range\{display:flex/);
   assert.match(card, /query\.set\("from",salesSelection\.from\)/);
   assert.match(card, /query\.set\("to",salesSelection\.to\)/);
+  assert.match(card, /paymentType:salesSelection\.paymentType/);
   assert.match(card, /Передано юристам/);
   assert.match(card, /Сумма договоров/);
   assert.match(card, /Средний договор/);
@@ -107,20 +112,38 @@ test("exposes only aggregate sales metrics for the three approved managers", asy
   assert.match(route, /"4351": "Нурдаулет"/);
   assert.match(route, /const PERIODS = new Set\(\["today", "current_week", "current_month", "custom"\]\)/);
   assert.match(route, /function resolveRequestedPeriod/);
-  assert.match(route, /const cacheKey = `\$\{managerId\}:\$\{period\.key\}:\$\{period\.start\}:\$\{period\.end\}`/);
-  assert.match(route, /"<CREATED_TIME": period\.end/);
-  assert.match(route, /end: new Date\(`\$\{addDays\(to, 1\)\}T00:00:00\$\{ALMATY_OFFSET\}`\)\.toISOString\(\)/);
-  assert.match(route, /"crm\.stagehistory\.list"/);
-  assert.match(route, /`crm\.deal\.get\?id=\$\{encodeURIComponent\(id\)\}`/);
-  assert.match(route, /handoffs: selectedDeals\.length/);
+  assert.match(route, /const PAYMENT_TYPES =/);
+  assert.match(route, /"423": "50\/50"/);
+  assert.match(route, /"261": "После определения"/);
+  assert.match(route, /"263": "До определения"/);
+  assert.match(route, /const HANDOFF_DATE_FIELD = "UF_CRM_1777554129345"/);
+  assert.match(route, /const PAYMENT_TYPE_FIELD = "UF_CRM_1781335943568"/);
+  assert.match(route, /const cacheKey = `\$\{managerId\}:\$\{paymentType\}:\$\{period\.key\}:\$\{period\.startDate\}:\$\{period\.endDate\}`/);
+  assert.match(route, /`>=\$\{HANDOFF_DATE_FIELD\}`\]: period\.startDate/);
+  assert.match(route, /`<=\$\{HANDOFF_DATE_FIELD\}`\]: period\.endDate/);
+  assert.match(route, /"crm\.deal\.list"/);
+  assert.match(route, /ASSIGNED_BY_ID: managerId/);
+  assert.match(route, /filter\[PAYMENT_TYPE_FIELD\] = paymentType/);
+  assert.match(route, /handoffs: deals\.length/);
   assert.match(route, /contractTotal/);
   assert.match(route, /contractAverage/);
   assert.match(route, /missingContractValues/);
   assert.match(route, /stale: false/);
   assert.match(route, /"cache-control": "no-store"/);
-  assert.match(route, /\[deal\.ASSIGNED_BY_ID, deal\.MOVED_BY_ID, deal\.CREATED_BY_ID\]/);
+  assert.doesNotMatch(route, /crm\.stagehistory\.list/);
   assert.doesNotMatch(route, /SALES_REPORT_BYPASS_TOKEN/);
   assert.doesNotMatch(route, /title:\s*deal\.title/);
+});
+
+test("saves all three payment types to the existing Bitrix field", async () => {
+  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+
+  assert.match(card, /Какой вид оплаты\?/);
+  assert.match(card, /<option value="423">50\/50<\/option>/);
+  assert.match(card, /<option value="261">После определения<\/option>/);
+  assert.match(card, /<option value="263">До определения<\/option>/);
+  assert.match(card, /grafType:\s*\{bx:"UF_CRM_1781335943568", enum:true\}/);
+  assert.match(card, /add\("Вид оплаты",s\.grafTypeText\)/);
 });
 
 test("rejects an invalid flexible sales date range before reading Bitrix", async () => {
