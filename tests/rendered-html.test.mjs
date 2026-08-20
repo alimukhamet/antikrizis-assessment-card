@@ -146,16 +146,15 @@ test("saves all three payment types to the existing Bitrix field", async () => {
   assert.match(card, /add\("Вид оплаты",s\.grafTypeText\)/);
 });
 
-test("generates a two-payment document schedule for 50/50", async () => {
+test("uses the usual after-decision document schedule for 50/50", async () => {
   const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
 
-  assert.match(card, /const months=isFiftyFifty\?2:Number\(s\.months\)/);
-  assert.match(card, /label:"Платёж 1 — 50%"/);
-  assert.match(card, /label:"Платёж 2 — 50%"/);
-  assert.match(card, /amount:first/);
-  assert.match(card, /amount:total-first/);
-  assert.match(card, /if\(isFiftyFifty\) \$\("months"\)\.value="2"/);
+  assert.match(card, /const afterDecision=grafType==="261"\|\|grafType==="423"/);
+  assert.match(card, /ordinaryOffset\+\(afterDecision\?2:0\)/);
+  assert.match(card, /const total=num\(s\.summa\), months=Number\(s\.months\)/);
   assert.match(card, /payments:\(sch\?\.rows\|\|\[\]\)\.map/);
+  assert.doesNotMatch(card, /Платёж 1 — 50%/);
+  assert.doesNotMatch(card, /isFiftyFifty\?2/);
 });
 
 test("rejects an invalid flexible sales date range before reading Bitrix", async () => {

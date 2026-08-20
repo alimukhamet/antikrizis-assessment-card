@@ -793,7 +793,7 @@
           <option value="261">После определения</option>
           <option value="263">До определения</option>
         </select>
-        <div class="hint">Значение сохраняется в поле Bitrix «Вид оплаты». «50/50» создаёт в договоре два равных платежа. Для «После определения» график сдвигается на 2 месяца.</div>
+        <div class="hint">«50/50» сохраняется в Bitrix как отдельный вид оплаты, но график договора рассчитывается по тем же правилам, что и «После определения».</div>
       </div>
     </div>
     <div class="schedule" id="schedule">
@@ -1325,7 +1325,7 @@ function fmtMonth(str){if(!str)return "";const p=String(str).split("-");const m=
 
 // First payment date is derived from the contract date + preferred pay-day + graph type.
 // «До определения» (263): current month if the pay-day has not passed, otherwise next month.
-// «После определения» (261): the ordinary schedule shifted by exactly two calendar months,
+// «После определения» (261) and «50/50» (423): the ordinary schedule shifted by exactly two calendar months,
 // matching the rule shown in the form. Month-end dates are clamped safely (31 → 30/28/29).
 function firstPaymentDateObj(contractDate,payDay,grafType){
   const pd=Number(payDay);
@@ -1333,26 +1333,18 @@ function firstPaymentDateObj(contractDate,payDay,grafType){
   const base=parseDate(contractDate);
   if(!Number.isFinite(base.getTime())) return null;
   const ordinaryOffset=pd>=base.getDate()?0:1;
-  return dayOf(base,ordinaryOffset+(grafType==="261"?2:0),pd);
+  const afterDecision=grafType==="261"||grafType==="423";
+  return dayOf(base,ordinaryOffset+(afterDecision?2:0),pd);
 }
 function firstPaymentISO(contractDate,payDay,grafType){
   const d=firstPaymentDateObj(contractDate,payDay,grafType);
   return d?d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"):"";
 }
 function buildSchedule(s){
-  const total=num(s.summa), isFiftyFifty=s.grafType==="423";
-  const months=isFiftyFifty?2:Number(s.months), day=Number(s.payDay);
+  const total=num(s.summa), months=Number(s.months), day=Number(s.payDay);
   const start=firstPaymentDateObj(s.contractDate,s.payDay,s.grafType);
   if(!total||!Number.isInteger(months)||months<1||months>MAX_INSTALLMENTS||
      !Number.isInteger(day)||day<1||day>31||!start) return null;
-  if(isFiftyFifty){
-    const first=Math.floor(total/2);
-    const rows=[
-      {label:"Платёж 1 — 50%",amount:first,date:dayOf(start,0,day)},
-      {label:"Платёж 2 — 50%",amount:total-first,date:dayOf(start,1,day)}
-    ];
-    return{rows,total,sum:total};
-  }
   // Платежи округляются до 1 000 ₸, разницу забирает последний платёж (итог всегда точный).
   let base = Math.round(total/months/1000)*1000;
   if(base<=0 || total-base*(months-1)<=0) base = Math.floor(total/months);
@@ -1883,13 +1875,6 @@ function showMissing(missing,includeDeal=false){
 }
 
 function onChange(){
-  const isFiftyFifty=$("grafType").value==="423";
-  if(isFiftyFifty) $("months").value="2";
-  $("months").readOnly=isFiftyFifty;
-  $("months").setAttribute("aria-readonly",String(isFiftyFifty));
-  $("monthsHint").textContent=isFiftyFifty
-    ? "50/50: в договор автоматически попадут 2 равных платежа."
-    : "6 = 6 равных платежей без отдельной предоплаты";
   renderSchedule();
   const s=readState();
   updateSpouseLabel(s.marital);
