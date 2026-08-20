@@ -778,7 +778,7 @@
       <div class="field" data-k="months">
         <label class="lbl">Всего платежей<span class="req">*</span></label>
         <input id="months" type="number" min="1" placeholder="напр. 6">
-        <div class="hint">6 = 6 равных платежей без отдельной предоплаты</div>
+        <div class="hint" id="monthsHint">6 = 6 равных платежей без отдельной предоплаты</div>
       </div>
       <div class="field" data-k="payDay">
         <label class="lbl">Удобное число платежа (1–31)<span class="req">*</span></label>
@@ -793,7 +793,7 @@
           <option value="261">После определения</option>
           <option value="263">До определения</option>
         </select>
-        <div class="hint">Значение сохраняется в поле Bitrix «Вид оплаты». Для «После определения» график сдвигается на 2 месяца.</div>
+        <div class="hint">Значение сохраняется в поле Bitrix «Вид оплаты». «50/50» создаёт в договоре два равных платежа. Для «После определения» график сдвигается на 2 месяца.</div>
       </div>
     </div>
     <div class="schedule" id="schedule">
@@ -1340,10 +1340,19 @@ function firstPaymentISO(contractDate,payDay,grafType){
   return d?d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"):"";
 }
 function buildSchedule(s){
-  const total=num(s.summa), months=Number(s.months), day=Number(s.payDay);
+  const total=num(s.summa), isFiftyFifty=s.grafType==="423";
+  const months=isFiftyFifty?2:Number(s.months), day=Number(s.payDay);
   const start=firstPaymentDateObj(s.contractDate,s.payDay,s.grafType);
   if(!total||!Number.isInteger(months)||months<1||months>MAX_INSTALLMENTS||
      !Number.isInteger(day)||day<1||day>31||!start) return null;
+  if(isFiftyFifty){
+    const first=Math.floor(total/2);
+    const rows=[
+      {label:"Платёж 1 — 50%",amount:first,date:dayOf(start,0,day)},
+      {label:"Платёж 2 — 50%",amount:total-first,date:dayOf(start,1,day)}
+    ];
+    return{rows,total,sum:total};
+  }
   // Платежи округляются до 1 000 ₸, разницу забирает последний платёж (итог всегда точный).
   let base = Math.round(total/months/1000)*1000;
   if(base<=0 || total-base*(months-1)<=0) base = Math.floor(total/months);
@@ -1874,6 +1883,13 @@ function showMissing(missing,includeDeal=false){
 }
 
 function onChange(){
+  const isFiftyFifty=$("grafType").value==="423";
+  if(isFiftyFifty) $("months").value="2";
+  $("months").readOnly=isFiftyFifty;
+  $("months").setAttribute("aria-readonly",String(isFiftyFifty));
+  $("monthsHint").textContent=isFiftyFifty
+    ? "50/50: в договор автоматически попадут 2 равных платежа."
+    : "6 = 6 равных платежей без отдельной предоплаты";
   renderSchedule();
   const s=readState();
   updateSpouseLabel(s.marital);
