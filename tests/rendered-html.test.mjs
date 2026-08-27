@@ -146,6 +146,19 @@ test("saves all three payment types to the existing Bitrix field", async () => {
   assert.match(card, /add\("Вид оплаты",s\.grafTypeText\)/);
 });
 
+test("verifies every invoice-critical contract field after Bitrix saves it", async () => {
+  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+
+  assert.match(card, /const saved=await bxResult\("crm\.deal\.get"/);
+  assert.match(card, /for\(const \[name,wanted\] of Object\.entries\(fields\)\)/);
+  assert.match(card, /\[MAP\.months\.bx\]:"Количество платежей"/);
+  assert.match(card, /\[MAP\.payDay\.bx\]:"Число оплаты"/);
+  assert.match(card, /\[MAP\.grafType\.bx\]:"Вид оплаты"/);
+  assert.match(card, /\[MAP\.grafText\.bx\]:"Полный график платежей"/);
+  assert.match(card, /\[MAP\.card\.bx\]:"Карточка договора"/);
+  assert.match(card, /Договор не скачан; данные нужно проверить/);
+});
+
 test("uses the usual after-decision document schedule for 50/50", async () => {
   const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
 
