@@ -146,6 +146,19 @@ test("saves all three payment types to the existing Bitrix field", async () => {
   assert.match(card, /add\("Вид оплаты",s\.grafTypeText\)/);
 });
 
+test("verifies every invoice-critical contract field after Bitrix saves it", async () => {
+  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+
+  assert.match(card, /const saved=await bxResult\("crm\.deal\.get"/);
+  assert.match(card, /for\(const \[name,wanted\] of Object\.entries\(fields\)\)/);
+  assert.match(card, /\[MAP\.months\.bx\]:"Количество платежей"/);
+  assert.match(card, /\[MAP\.payDay\.bx\]:"Число оплаты"/);
+  assert.match(card, /\[MAP\.grafType\.bx\]:"Вид оплаты"/);
+  assert.match(card, /\[MAP\.grafText\.bx\]:"Полный график платежей"/);
+  assert.match(card, /\[MAP\.card\.bx\]:"Карточка договора"/);
+  assert.match(card, /Договор не скачан; данные нужно проверить/);
+});
+
 test("uses the usual after-decision document schedule for 50/50", async () => {
   const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
 
@@ -208,6 +221,22 @@ test("requires a fresh deal-name confirmation before either Bitrix write", async
   assert.ok(documentsConfirm > 0 && documentsConfirm < documentsWrite);
 });
 
+test("adds the completed questionnaire to the Bitrix deal history", async () => {
+  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+
+  assert.match(card, /async function addAssessmentToDealHistory/);
+  assert.match(card, /bxResult\("crm\.timeline\.comment\.add",\{/);
+  assert.match(card, /ENTITY_ID:Number\(dealId\)/);
+  assert.match(card, /ENTITY_TYPE:"deal"/);
+  assert.match(card, /COMMENT:lawyerCard\(s\)/);
+
+  const save = card.indexOf("await saveAssessmentToBitrix", card.indexOf("async function submitContractAndAssessment"));
+  const comment = card.indexOf("await addAssessmentToDealHistory", card.indexOf("async function submitContractAndAssessment"));
+  const download = card.indexOf("downloadBlob(blob,filename)", card.indexOf("async function submitContractAndAssessment"));
+  assert.ok(save > 0 && save < comment);
+  assert.ok(comment < download);
+});
+
 test("limits the public assessment proxy to the methods used by the card", async () => {
   const route = await readFile(
     new URL("../app/api/bitrix/[method]/route.ts", import.meta.url),
@@ -217,6 +246,7 @@ test("limits the public assessment proxy to the methods used by the card", async
   assert.match(route, /const ASSESSMENT_METHODS = new Set/);
   assert.match(route, /"crm\.deal\.get"/);
   assert.match(route, /"crm\.deal\.update"/);
+  assert.match(route, /"crm\.timeline\.comment\.add"/);
   assert.match(route, /"crm\.item\.get"/);
   assert.match(route, /"crm\.item\.update"/);
   assert.match(route, /error: "METHOD_NOT_ALLOWED"/);

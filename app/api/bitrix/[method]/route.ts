@@ -6,6 +6,7 @@ const JSON_HEADERS = {
 const ASSESSMENT_METHODS = new Set([
   "crm.deal.get",
   "crm.deal.update",
+  "crm.timeline.comment.add",
   "crm.item.get",
   "crm.item.update",
 ]);

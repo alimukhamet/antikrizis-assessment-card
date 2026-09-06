@@ -2236,14 +2236,48 @@ async function saveAssessmentToBitrix(s,dealId){
   const result=await bxResult("crm.deal.update",{id:Number(dealId),fields});
   if(!result) throw new Error("Bitrix не подтвердил сохранение карточки.");
 
-  // Never claim success until Bitrix returns the exact assessment card we sent.
-  // The contract is downloaded locally and existing deal files are left untouched.
+  // Never claim success until Bitrix returns every contract field we sent.
+  // This protects invoice automation from a partially or differently saved schedule.
   const saved=await bxResult("crm.deal.get",{id:Number(dealId)});
-  const expectedCard=String(fields[MAP.card.bx]||"");
-  const savedCard=String(saved?.[MAP.card.bx]||"");
-  if(!expectedCard||savedCard!==expectedCard){
-    throw new Error("Карточка отправлена, но Bitrix не подтвердил её после сохранения.");
+  const numberFields=new Set(["OPPORTUNITY",MAP.months.bx,MAP.payDay.bx]);
+  const dateFields=new Set([CONTRACT_DATE_FIELD]);
+  const enumFields=new Set([MAP.grafType.bx,MAP.procedure.bx]);
+  const normalizeDate=value=>{
+    const text=String(value??"").trim();
+    let match=text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(match)return `${match[1]}-${match[2]}-${match[3]}`;
+    match=text.match(/^(\d{2})\.(\d{2})\.(\d{4})/);
+    return match?`${match[3]}-${match[2]}-${match[1]}`:text;
+  };
+  const normalized=(name,value)=>{
+    const scalar=Array.isArray(value)?value[0]:value;
+    if(numberFields.has(name))return Number(scalar);
+    if(dateFields.has(name))return normalizeDate(scalar);
+    if(enumFields.has(name))return String(scalar??"").trim();
+    return String(scalar??"").replace(/\r\n/g,"\n");
+  };
+  const labels={
+    OPPORTUNITY:"Сумма договора",CURRENCY_ID:"Валюта",[CONTRACT_DATE_FIELD]:"Дата договора",
+    [MAP.months.bx]:"Количество платежей",[MAP.payDay.bx]:"Число оплаты",
+    [MAP.grafType.bx]:"Вид оплаты",[MAP.grafText.bx]:"Полный график платежей",
+    [MAP.card.bx]:"Карточка договора"
+  };
+  for(const [name,wanted] of Object.entries(fields)){
+    if(normalized(name,saved?.[name])!==normalized(name,wanted)){
+      throw new Error(`Bitrix не подтвердил поле «${labels[name]||name}». Договор не скачан; данные нужно проверить.`);
+    }
   }
+}
+
+async function addAssessmentToDealHistory(s,dealId){
+  const result=await bxResult("crm.timeline.comment.add",{
+    fields:{
+      ENTITY_ID:Number(dealId),
+      ENTITY_TYPE:"deal",
+      COMMENT:lawyerCard(s)
+    }
+  });
+  if(!result) throw new Error("Bitrix не подтвердил добавление анкеты в историю сделки.");
 }
 
 // ── Save ──
@@ -2289,6 +2323,7 @@ async function submitContractAndAssessment(){
   $("docsBtn").disabled=true;
   btn.disabled=true;
   let cardSaved=false;
+  let historyCommentSaved=false;
   try{
     if(!CONFIG.WEBHOOK||!bitrixReady) throw new Error("Вебхук Bitrix не настроен — карточка не может быть сохранена.");
     btn.textContent="Проверяю сделку…";
@@ -2307,16 +2342,21 @@ async function submitContractAndAssessment(){
 
     btn.textContent="Генерирую договор…";
     const blob=await buildContractDocx(s);
+    btn.textContent="Добавляю анкету в историю…";
+    await addAssessmentToDealHistory(s,dealId);
+    historyCommentSaved=true;
     const filename=`${sanitizeFilename(s.fio,"client")} - Договор ${sanitizeFilename(s.dognum,"number")} - ID ${sanitizeFilename(dealId)}.docx`;
     downloadBlob(blob,filename);
-    const resultText="✓ Карточка сохранена и проверена в сделке #"+dealId+". Договор скачан на компьютер. Существующие файлы сделки не изменены.";
+    const resultText="✓ Карточка сохранена и проверена в сделке #"+dealId+". Анкета добавлена в историю. Договор скачан на компьютер. Существующие файлы сделки не изменены.";
     $("info").textContent=resultText;
     toast(resultText);
   }catch(e){
     console.error(e);
-    const message=cardSaved
-      ? "Карточка сохранена в Bitrix, но договор не скачан: "+(e.message||e)
-      : "Операция остановлена: "+(e.message||e);
+    const message=cardSaved&&!historyCommentSaved
+      ? "Карточка сохранена в Bitrix, но анкета не добавлена в историю и договор не скачан: "+(e.message||e)
+      : cardSaved
+        ? "Карточка и анкета сохранены в Bitrix, но договор не скачан: "+(e.message||e)
+        : "Операция остановлена: "+(e.message||e);
     $("info").textContent=message;
     toast(message,false);
   }finally{
