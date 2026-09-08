@@ -29,7 +29,9 @@ type Period = {
 };
 type Deal = {
   ID?: string;
+  ASSIGNED_BY_ID?: string | number | null;
   OPPORTUNITY?: string | number | null;
+  UF_CRM_1781335943568?: string | number | null;
 };
 type SalesMetricPayload = {
   managerId: ManagerId;
@@ -46,10 +48,16 @@ type SalesMetricPayload = {
   generatedAt: string;
   lastSyncAt: string;
   stale: false;
+  relatedMetrics?: SalesMetricPayload[];
 };
 
-const cache = new Map<string, { expiresAt: number; payload: SalesMetricPayload }>();
-const inFlight = new Map<string, Promise<SalesMetricPayload>>();
+type SalesPeriodSnapshot = {
+  deals: Deal[];
+  generatedAt: string;
+};
+
+const cache = new Map<string, { expiresAt: number; snapshot: SalesPeriodSnapshot }>();
+const inFlight = new Map<string, Promise<SalesPeriodSnapshot>>();
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -88,26 +96,30 @@ export async function GET(request: Request) {
     );
   }
 
-  const cacheKey = `${managerId}:${paymentType}:${period.key}:${period.startDate}:${period.endDate}`;
+  const cacheKey = `${period.key}:${period.startDate}:${period.endDate}`;
   const cached = cache.get(cacheKey);
   if (!searchParams.has("fresh") && cached && cached.expiresAt > Date.now()) {
-    return Response.json(cached.payload, { headers: responseHeaders() });
+    return Response.json(
+      buildSalesMetrics(managerId, paymentType, period, cached.snapshot),
+      { headers: responseHeaders() },
+    );
   }
 
   try {
     let pending = inFlight.get(cacheKey);
     if (!pending) {
-      pending = buildSalesMetrics(managerId, paymentType, period).then((payload) => {
+      pending = loadSalesPeriod(period).then((snapshot) => {
         for (const [key, entry] of cache) {
           if (entry.expiresAt <= Date.now()) cache.delete(key);
         }
-        if (cache.size >= 300) cache.delete(cache.keys().next().value!);
-        cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, payload });
-        return payload;
+        if (cache.size >= 100) cache.delete(cache.keys().next().value!);
+        cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, snapshot });
+        return snapshot;
       }).finally(() => inFlight.delete(cacheKey));
       inFlight.set(cacheKey, pending);
     }
-    const payload = await pending;
+    const snapshot = await pending;
+    const payload = buildSalesMetrics(managerId, paymentType, period, snapshot);
     return Response.json(payload, { headers: responseHeaders() });
   } catch (error) {
     console.error(
@@ -121,17 +133,38 @@ export async function GET(request: Request) {
   }
 }
 
-async function buildSalesMetrics(
+function buildSalesMetrics(
   managerId: ManagerId,
   paymentType: PaymentType,
   period: Period,
-): Promise<SalesMetricPayload> {
-  const deals = await loadHandoffDeals(managerId, paymentType, period);
+  snapshot: SalesPeriodSnapshot,
+): SalesMetricPayload {
+  const relatedMetrics = (Object.keys(MANAGERS) as ManagerId[]).flatMap((id) =>
+    (Object.keys(PAYMENT_TYPES) as PaymentType[]).map((type) =>
+      summarizeSalesMetrics(id, type, period, snapshot),
+    ),
+  );
+  const selected = relatedMetrics.find(
+    (metric) => metric.managerId === managerId && metric.paymentType === paymentType,
+  );
+  if (!selected) throw new Error("Requested sales metric was not built");
+  return { ...selected, relatedMetrics };
+}
+
+function summarizeSalesMetrics(
+  managerId: ManagerId,
+  paymentType: PaymentType,
+  period: Period,
+  snapshot: SalesPeriodSnapshot,
+): SalesMetricPayload {
+  const deals = snapshot.deals.filter((deal) => {
+    if (String(deal.ASSIGNED_BY_ID ?? "") !== managerId) return false;
+    return paymentType === "all" || String(deal[PAYMENT_TYPE_FIELD] ?? "") === paymentType;
+  });
   const contractValues = deals
     .map((deal) => parseMoney(deal.OPPORTUNITY))
     .filter((value) => value > 0);
   const contractTotal = contractValues.reduce((sum, value) => sum + value, 0);
-  const now = new Date().toISOString();
 
   return {
     managerId,
@@ -147,28 +180,22 @@ async function buildSalesMetrics(
       : 0,
     contractsWithValue: contractValues.length,
     missingContractValues: Math.max(0, deals.length - contractValues.length),
-    generatedAt: now,
-    lastSyncAt: now,
+    generatedAt: snapshot.generatedAt,
+    lastSyncAt: snapshot.generatedAt,
     stale: false,
   };
 }
 
-async function loadHandoffDeals(
-  managerId: ManagerId,
-  paymentType: PaymentType,
-  period: Period,
-): Promise<Deal[]> {
+async function loadSalesPeriod(period: Period): Promise<SalesPeriodSnapshot> {
   const deals: Deal[] = [];
   let lastId = 0;
   const signal = AbortSignal.timeout(30_000);
 
   for (let page = 0; page < 100; page += 1) {
     const filter: Record<string, string> = {
-      ASSIGNED_BY_ID: managerId,
       [`>=${HANDOFF_DATE_FIELD}`]: period.startDate,
       [`<=${HANDOFF_DATE_FIELD}`]: period.endDate,
     };
-    if (paymentType !== "all") filter[PAYMENT_TYPE_FIELD] = paymentType;
     if (lastId) filter[">ID"] = String(lastId);
 
     const payload = await bitrixCall<{
@@ -176,7 +203,7 @@ async function loadHandoffDeals(
     }>("crm.deal.list", {
       order: { ID: "ASC" },
       filter,
-      select: ["ID", "OPPORTUNITY"],
+      select: ["ID", "ASSIGNED_BY_ID", "OPPORTUNITY", PAYMENT_TYPE_FIELD],
       // Skip Bitrix's redundant COUNT query; count the actual rows below.
       start: -1,
     }, signal);
@@ -190,7 +217,9 @@ async function loadHandoffDeals(
       lastId = id;
     }
     deals.push(...rows);
-    if (rows.length < 50) return deals;
+    if (rows.length < 50) {
+      return { deals, generatedAt: new Date().toISOString() };
+    }
   }
   throw new Error("Bitrix result exceeds the safe pagination limit");
 }

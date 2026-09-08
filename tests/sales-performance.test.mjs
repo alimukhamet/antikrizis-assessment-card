@@ -19,7 +19,9 @@ test("fast pagination counts every deal and shares concurrent requests",async()=
     const body=JSON.parse(options.body);calls.push(body);
     await new Promise(resolve=>setTimeout(resolve,10));
     const offset=Number(body.filter[">ID"]||0);
-    return Response.json({result:Array.from({length:offset?6:50},(_,i)=>({ID:String(offset+i+1),OPPORTUNITY:i?500000:0}))});
+    return Response.json({result:Array.from({length:offset?6:50},(_,i)=>({
+      ID:String(offset+i+1),ASSIGNED_BY_ID:"4351",OPPORTUNITY:i?500000:0,UF_CRM_1781335943568:"261"
+    }))});
   });
   const [a,b]=await Promise.all([GET(request()),GET(request())]);
   const data=await a.json();
@@ -31,11 +33,15 @@ test("fast pagination counts every deal and shares concurrent requests",async()=
   assert.equal(calls.length,2);
   assert.equal(calls[0].start,-1);
   assert.equal(calls[1].filter[">ID"],"50");
-  assert.equal(calls[1].filter.UF_CRM_1781335943568,"261");
+  assert.equal(calls[0].filter.ASSIGNED_BY_ID,undefined);
+  assert.equal(calls[0].filter.UF_CRM_1781335943568,undefined);
+  assert.deepEqual(calls[0].select,["ID","ASSIGNED_BY_ID","OPPORTUNITY","UF_CRM_1781335943568"]);
   assert.equal(calls[1].filter[">=UF_CRM_1777554129345"],"2026-06-01");
   await GET(request());assert.equal(calls.length,2);
-  await GET(new Request(request().url.replace("paymentType=261","paymentType=423")));assert.equal(calls.length,4);
-  assert.equal(calls[2].filter.UF_CRM_1781335943568,"423");
+  const otherPayment=await GET(new Request(request().url.replace("paymentType=261","paymentType=423")));
+  assert.equal(calls.length,2);
+  assert.equal((await otherPayment.json()).handoffs,0);
+  assert.equal(data.relatedMetrics.length,12);
 });
 
 test("a failed page never becomes a partial or cached sales total",async()=>{
@@ -43,7 +49,9 @@ test("a failed page never becomes a partial or cached sales total",async()=>{
   const GET=route(async(_url,options)=>{
     const body=JSON.parse(options.body);
     if(body.filter[">ID"]&&fail) return Response.json({error:"TEMPORARY"});
-    return Response.json({result:body.filter[">ID"]?[]:Array.from({length:50},(_,i)=>({ID:String(i+1),OPPORTUNITY:100}))});
+    return Response.json({result:body.filter[">ID"]?[]:Array.from({length:50},(_,i)=>({
+      ID:String(i+1),ASSIGNED_BY_ID:"4351",OPPORTUNITY:100,UF_CRM_1781335943568:"261"
+    }))});
   });
   assert.equal((await GET(request())).status,502);
   fail=false;
@@ -54,7 +62,7 @@ const html=await readFile(new URL("../public/assessment-card.html",import.meta.u
 function client(){
   const elements=new Map();
   const $=id=>{
-    if(!elements.has(id))elements.set(id,{textContent:"",classList:{remove(){},add(){}},setAttribute(){}});
+    if(!elements.has(id))elements.set(id,{textContent:"",value:"",max:"",min:"",classList:{remove(){},add(){}},setAttribute(){},addEventListener(){}});
     return elements.get(id);
   };
   const responses=[];let calls=0;
@@ -69,13 +77,14 @@ function payload(handoffs,lastSyncAt=new Date().toISOString()){
 }
 test("returning to the same selection is immediate; another manager never inherits its numbers",async()=>{
   const c=client();
-  c.responses.push(()=>payload(46));await c.load();
+  c.responses.push(()=>Response.json({handoffs:46,contractTotal:4600,contractAverage:100,lastSyncAt:new Date().toISOString(),periodLabel:"Месяц",relatedMetrics:[
+    {managerId:"7609",paymentType:"261",handoffs:46,contractTotal:4600,contractAverage:100,lastSyncAt:new Date().toISOString(),periodLabel:"Месяц"},
+    {managerId:"2093",paymentType:"261",handoffs:12,contractTotal:1200,contractAverage:100,lastSyncAt:new Date().toISOString(),periodLabel:"Месяц"}
+  ]}));await c.load();
   await c.load();assert.equal(c.calls(),1);assert.equal(c.$("salesHandoffs").textContent,"46");
   c.select("2093");
-  let finish;c.responses.push(()=>new Promise(resolve=>finish=resolve));const pending=c.load();
-  assert.equal(c.$("salesHandoffs").textContent,"—");
-  finish(payload(12));await pending;assert.equal(c.$("salesHandoffs").textContent,"12");
-  c.select("7609");await c.load();assert.equal(c.calls(),2);assert.equal(c.$("salesHandoffs").textContent,"46");
+  await c.load();assert.equal(c.$("salesHandoffs").textContent,"12");
+  c.select("7609");await c.load();assert.equal(c.calls(),1);assert.equal(c.$("salesHandoffs").textContent,"46");
 });
 test("late responses cannot replace the current selection",async()=>{
   const c=client();let finish;
