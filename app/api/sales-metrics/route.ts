@@ -49,6 +49,7 @@ type SalesMetricPayload = {
 };
 
 const cache = new Map<string, { expiresAt: number; payload: SalesMetricPayload }>();
+const inFlight = new Map<string, Promise<SalesMetricPayload>>();
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -58,8 +59,8 @@ export async function GET(request: Request) {
 
   if (
     !managerId ||
-    !(managerId in MANAGERS) ||
-    !(paymentType in PAYMENT_TYPES) ||
+    !Object.hasOwn(MANAGERS, managerId) ||
+    !Object.hasOwn(PAYMENT_TYPES, paymentType) ||
     !PERIODS.has(periodKey)
   ) {
     return Response.json(
@@ -94,8 +95,19 @@ export async function GET(request: Request) {
   }
 
   try {
-    const payload = await buildSalesMetrics(managerId, paymentType, period);
-    cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, payload });
+    let pending = inFlight.get(cacheKey);
+    if (!pending) {
+      pending = buildSalesMetrics(managerId, paymentType, period).then((payload) => {
+        for (const [key, entry] of cache) {
+          if (entry.expiresAt <= Date.now()) cache.delete(key);
+        }
+        if (cache.size >= 300) cache.delete(cache.keys().next().value!);
+        cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, payload });
+        return payload;
+      }).finally(() => inFlight.delete(cacheKey));
+      inFlight.set(cacheKey, pending);
+    }
+    const payload = await pending;
     return Response.json(payload, { headers: responseHeaders() });
   } catch (error) {
     console.error(
@@ -147,7 +159,8 @@ async function loadHandoffDeals(
   period: Period,
 ): Promise<Deal[]> {
   const deals: Deal[] = [];
-  let start = 0;
+  let lastId = 0;
+  const signal = AbortSignal.timeout(30_000);
 
   for (let page = 0; page < 100; page += 1) {
     const filter: Record<string, string> = {
@@ -156,30 +169,39 @@ async function loadHandoffDeals(
       [`<=${HANDOFF_DATE_FIELD}`]: period.endDate,
     };
     if (paymentType !== "all") filter[PAYMENT_TYPE_FIELD] = paymentType;
+    if (lastId) filter[">ID"] = String(lastId);
 
     const payload = await bitrixCall<{
       result?: Deal[];
-      next?: number;
     }>("crm.deal.list", {
       order: { ID: "ASC" },
       filter,
       select: ["ID", "OPPORTUNITY"],
-      start,
-    });
-    deals.push(...(payload.result ?? []));
-    if (typeof payload.next !== "number") break;
-    start = payload.next;
+      // Skip Bitrix's redundant COUNT query; count the actual rows below.
+      start: -1,
+    }, signal);
+    if (!Array.isArray(payload.result)) throw new Error("Invalid Bitrix deal list");
+    const rows = payload.result;
+    for (const deal of rows) {
+      const id = Number(deal.ID);
+      if (!Number.isSafeInteger(id) || id <= lastId) {
+        throw new Error("Bitrix returned an invalid pagination cursor");
+      }
+      lastId = id;
+    }
+    deals.push(...rows);
+    if (rows.length < 50) return deals;
   }
-
-  return deals;
+  throw new Error("Bitrix result exceeds the safe pagination limit");
 }
 
-async function bitrixCall<T>(method: string, params: Record<string, unknown>) {
+async function bitrixCall<T>(method: string, params: Record<string, unknown>, signal: AbortSignal) {
   const response = await fetch(`${requiredWebhook()}${method}.json`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(params),
     cache: "no-store",
+    signal,
   });
   const payload = (await response.json()) as T & {
     error?: string;
