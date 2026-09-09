@@ -245,6 +245,8 @@
     .bar-actions .btn{padding:11px 9px}
   }
 </style>
+<link rel="stylesheet" href="/assessment-quality.css">
+<script src="/assessment-quality.js"></script>
 </head>
 <body data-view="home">
 <div id="toast" class="toast"></div>
@@ -1342,7 +1344,7 @@ function updateSpouseLabel(marital){
 // ── Read all form values ──
 function readState(){
   const g = id => $(id)?$(id).value.trim():"";
-  return {
+  const state = {
     fio:g("fio"), iin:g("iin"), dognum:g("dognum"), marital:g("marital"),
     dependents:g("dependents"), children:segVal.children, socialStatus:getChecked("socialStatus"),
     procedure:g("procedure"), procedureText:$("procedure").selectedOptions[0]?.textContent||"",
@@ -1371,6 +1373,7 @@ function readState(){
     payDay:g("payDay"), grafType:g("grafType"),
     grafTypeText:$("grafType").selectedOptions[0]?.textContent||""
   };
+  return AssessmentQuality.decorate(state);
 }
 
 // ── Schedule builder ──
@@ -1475,7 +1478,7 @@ function buildCardLines(s, inclContract){
   add("Список кредиторов и банков",s.creditors);
   add("На что были взяты кредиты",s.creditPurpose);
   head("РИСКИ");
-  add("Лудомания",s.ludo==="1"?"ДА":s.ludo==="0"?"нет":"");
+  add("Расходы на азартные игры (со слов клиента)",s.ludo==="1"?"ДА":s.ludo==="0"?"нет":"");
   add("Созаёмщики/гаранты",s.guarantors);
   if(inclContract){
     head("ДОГОВОР (только продажи)");
@@ -1490,6 +1493,7 @@ function buildCardLines(s, inclContract){
   }
   if(s.comment){head("КОММЕНТАРИЙ");L.push(s.comment);}
   L.push("");
+  L.push(...AssessmentQuality.summary(s));
   L.push("заполнено "+new Date().toLocaleString("ru-RU"));
   return L;
 }
@@ -1889,21 +1893,24 @@ function existingDocumentRefs(item,key=documentFieldKey(item)){
 
 // ── Validation ──
 function validate(s){
+  AssessmentQuality.update(s);
   const missing = REQUIRED.filter(k=> {
+    if(AssessmentQuality.unknown(s,k)) return false;
     if(["works","children","ludo","ip","realEstate","cars","carSale"].includes(k)) return s[k]===null||s[k]===undefined;
     if(["dependents","incomeClientOff","incomeClientUnoff","overdueDays","kaspiTurnover","summa","months","payDay"].includes(k)) return s[k]==="";
     return !s[k];
   });
   if(s.marital==="В браке"){
-    ["incomeSpouseOff","incomeSpouseUnoff","spouseTurnover","spouseProperty","spouseKaspiTurnover"].forEach(k=>{if(s[k]==="") missing.push(k);});
-    ["spouseWorks","spouseCar"].forEach(k=>{if(s[k]===null||s[k]===undefined) missing.push(k);});
+    ["incomeSpouseOff","incomeSpouseUnoff","spouseTurnover","spouseProperty","spouseKaspiTurnover"].forEach(k=>{if(s[k]===""&&!AssessmentQuality.unknown(s,k)) missing.push(k);});
+    ["spouseWorks","spouseCar"].forEach(k=>{if(!AssessmentQuality.unknown(s,k)&&(s[k]===null||s[k]===undefined||s[k]==="")) missing.push(k);});
   }
   if(isHighKaspi(s.kaspiTurnover,s)&&!s.kaspiTurnoverComment) missing.push("kaspiTurnoverComment");
   if(s.marital==="В браке"&&isHighKaspi(s.spouseKaspiTurnover,s)&&!s.spouseKaspiTurnoverComment) missing.push("spouseKaspiTurnoverComment");
-  if(s.ip==="1"&&!s.ipDetails) missing.push("ipDetails");
-  if(s.realEstate==="1"&&!s.realEstateDetails) missing.push("realEstateDetails");
-  if(s.cars==="1"&&!s.carsDesc) missing.push("carsDesc");
-  if(s.carSale==="1"&&!s.carSaleSum) missing.push("carSaleSum");
+  if(s.ip==="1"&&!s.ipDetails&&!AssessmentQuality.unknown(s,"ipDetails")) missing.push("ipDetails");
+  if(s.realEstate==="1"&&!s.realEstateDetails&&!AssessmentQuality.unknown(s,"realEstateDetails")) missing.push("realEstateDetails");
+  if(s.cars==="1"&&!s.carsDesc&&!AssessmentQuality.unknown(s,"carsDesc")) missing.push("carsDesc");
+  if(s.carSale==="1"&&!s.carSaleSum&&!AssessmentQuality.unknown(s,"carSaleSum")) missing.push("carSaleSum");
+  for(const issue of AssessmentQuality.issues(s)){missing.push(issue.id);FIELD_LABELS[issue.id]=issue.message;}
   const months=Number(s.months),payDay=Number(s.payDay);
   if(!Number.isInteger(months)||months<1||months>MAX_INSTALLMENTS) missing.push("months");
   if(!Number.isInteger(payDay)||payDay<1||payDay>31) missing.push("payDay");
@@ -1926,6 +1933,7 @@ function missingText(missing){
 }
 
 function showMissing(missing,includeDeal=false){
+  if(missing.length) AssessmentQuality.reveal(missing[0]);
   const all = includeDeal ? ["dealId",...missing] : missing;
   const text = missingText(all);
   $("info").textContent = "Заполните: " + text;
@@ -1935,6 +1943,7 @@ function showMissing(missing,includeDeal=false){
 function onChange(){
   renderSchedule();
   const s=readState();
+  AssessmentQuality.update(s);
   updateSpouseLabel(s.marital);
   updateKaspiRiskFields(s);
   updateDocumentsUi(s);
@@ -1967,6 +1976,8 @@ function onChange(){
       ? "Заполните: " + missingText(missing.slice(0,4)) + (missing.length>4 ? " и ещё " + (missing.length-4) : "")
       : "Готово: договор и карточка будут сохранены в сделку #" + dealId + ".";
 }
+
+AssessmentQuality.mount();
 
 // Attach listeners to non-money inputs
 document.querySelectorAll("input:not(.money),select,textarea").forEach(el=>{
@@ -2047,33 +2058,33 @@ function buildFields(s){
 
 function buildContractQuestionnaire(s){
   const income=[
-    `Клиент офиц.: ${fmtM(s.incomeClientOff)||"0 ₸"}`,
-    `Клиент неофиц.: ${fmtM(s.incomeClientUnoff)||"0 ₸"}`
+    `Клиент офиц.: ${AssessmentQuality.unknown(s,"incomeClientOff")?"Неизвестно — уточнить":fmtM(s.incomeClientOff)||"0 ₸"}`,
+    `Клиент неофиц.: ${AssessmentQuality.unknown(s,"incomeClientUnoff")?"Неизвестно — уточнить":fmtM(s.incomeClientUnoff)||"0 ₸"}`
   ];
   if(s.marital==="В браке"){
-    income.push(`Супруг офиц.: ${fmtM(s.incomeSpouseOff)||"0 ₸"}`);
-    income.push(`Супруг неофиц.: ${fmtM(s.incomeSpouseUnoff)||"0 ₸"}`);
-    income.push(`Обороты супруга: ${fmtM(s.spouseTurnover)||"0 ₸"}`);
+    income.push(`Супруг офиц.: ${AssessmentQuality.unknown(s,"incomeSpouseOff")?"Неизвестно — уточнить":fmtM(s.incomeSpouseOff)||"0 ₸"}`);
+    income.push(`Супруг неофиц.: ${AssessmentQuality.unknown(s,"incomeSpouseUnoff")?"Неизвестно — уточнить":fmtM(s.incomeSpouseUnoff)||"0 ₸"}`);
+    income.push(`Обороты супруга: ${AssessmentQuality.unknown(s,"spouseTurnover")?"Неизвестно — уточнить":fmtM(s.spouseTurnover)||"0 ₸"}`);
   }
   const property=[];
-  property.push(s.realEstate==="1" ? `Недвижимость: ${s.realEstateDetails}` : "Недвижимость: нет");
-  property.push(s.cars==="1" ? `Авто: ${s.carsDesc}` : "Авто: нет");
-  property.push(s.carSale==="1" ? `Продажа авто за 3 года: ${fmtM(s.carSaleSum)}` : "Продажа авто за 3 года: нет");
-  const ipStatus=s.ip==="1" ? `Да — ${s.ipDetails}` : "нет";
+  property.push(AssessmentQuality.unknown(s,"realEstate") ? "Недвижимость: неизвестно" : s.realEstate==="1" ? `Недвижимость: ${s.realEstateDetails||"есть; подробности неизвестны"}` : "Недвижимость: нет");
+  property.push(AssessmentQuality.unknown(s,"cars") ? "Авто: неизвестно" : s.cars==="1" ? `Авто: ${s.carsDesc||"есть; подробности неизвестны"}` : "Авто: нет");
+  property.push(AssessmentQuality.unknown(s,"carSale") ? "Продажа авто за 3 года: неизвестно" : s.carSale==="1" ? `Продажа авто за 3 года: ${fmtM(s.carSaleSum)||"сумма неизвестна"}` : "Продажа авто за 3 года: нет");
+  const ipStatus=AssessmentQuality.unknown(s,"ip") ? "Неизвестно — уточнить" : s.ip==="1" ? `Да — ${s.ipDetails||"подробности неизвестны"}` : "нет";
   const procedureName=String(s.procedureText||"").replace(/^[^—]+—\s*/,"").trim()||s.procedureText;
   return {
     totalDebt: fmtN(s.debt),
     creditors: s.creditors || "не указано",
-    overdue: `${s.overdueDays} дн.`,
-    enforcement: s.guarantors || "нет",
+    overdue: AssessmentQuality.unknown(s,"overdueDays") ? "Неизвестно — уточнить" : `${s.overdueDays} дн.`,
+    enforcement: AssessmentQuality.enforcement(s),
     property: property.join("; "),
     maritalStatus: s.marital,
-    spouseProperty: s.marital==="В браке" ? (s.spouseProperty||"нет") : "не применимо",
+    spouseProperty: s.marital==="В браке" ? (s.spouseProperty||"Неизвестно — уточнить") : "не применимо",
     officialIncome: income.join("; "),
     ipStatus,
     legalEntities: ipStatus,
-    guarantors: s.guarantors || "нет",
-    deals: s.carSale==="1" ? `Продажа авто: ${fmtM(s.carSaleSum)}` : "нет",
+    guarantors: s.guarantors || "Неизвестно — уточнить",
+    deals: [AssessmentQuality.unknown(s,"carSale") ? "Продажа авто: неизвестно" : s.carSale==="1" ? `Продажа авто: ${fmtM(s.carSaleSum)||"сумма неизвестна"}` : "Продажи авто не было", s.quality?.extra.assetTransfers||"Другие сделки: неизвестно"].join("; "),
     procedureName
   };
 }
@@ -2173,6 +2184,7 @@ function clearForm(){
   document.querySelectorAll('[data-flow="contract"] .chips label,[data-flow="contract"] .seg button,[data-flow="contract"] .field').forEach(el=>el.classList.remove("on","invalid"));
   ["works","children","spouseWorks","spouseCar","ludo","salaryOtherBank","ip","realEstate","cars","carSale"].forEach(k=>{segVal[k]=null;});
   ["ip","realEstate","cars","carSale"].forEach(k=>{if(segEffects[k])segEffects[k]("0");});
+  AssessmentQuality.reset();
   updateSpouseLabel("");
   onChange();
   $("dealId").focus();
@@ -2405,7 +2417,7 @@ async function submitContractAndAssessment(){
     historyCommentSaved=true;
     const filename=`${sanitizeFilename(s.fio,"client")} - Договор ${sanitizeFilename(s.dognum,"number")} - ID ${sanitizeFilename(dealId)}.docx`;
     downloadBlob(blob,filename);
-    const resultText="✓ Карточка сохранена и проверена в сделке #"+dealId+". Анкета добавлена в историю. Договор скачан на компьютер. Существующие файлы сделки не изменены.";
+    const resultText="✓ Карточка сохранена, запись в Bitrix подтверждена. Сделка #"+dealId+". Статусы проверки сведений указаны в карточке. Анкета добавлена в историю. Договор скачан на компьютер. Существующие файлы сделки не изменены.";
     $("info").textContent=resultText;
     toast(resultText);
   }catch(e){
