@@ -10,9 +10,9 @@ export async function GET(request: Request) {
   if (!actor) return Response.json({ error: 'SIGN_IN_REQUIRED' }, { status: 401, headers });
   const params = new URL(request.url).searchParams;
   const selected = params.get('person');
-  if (selected && selected !== actor.worker) return Response.json({ error: 'Доступны только ваши показатели.' }, { status: 403, headers });
-  const person = actor.worker as Person;
-  if (!Object.hasOwn(PEOPLE, person)) return Response.json({ person: actor.worker, name: actor.displayName, periods: [], noPlan: true }, { headers });
+  if (actor.worker !== 'ali' && selected && selected !== actor.worker) return Response.json({ error: 'Доступны только ваши показатели.' }, { status: 403, headers });
+  const person = (actor.worker === 'ali' ? selected || 'darkhan' : actor.worker) as Person;
+  if (!Object.hasOwn(PEOPLE, person)) return Response.json({ error: 'Неизвестный сотрудник.' }, { status: 400, headers });
   const today = todayAlmaty(), month = params.get('month') || today.slice(0, 7);
   let range;
   try { range = monthRange(month, today); } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400, headers }); }
@@ -38,7 +38,7 @@ export async function GET(request: Request) {
     }));
     const uncovered = Math.round((Date.parse(range.end) - Date.parse(range.start)) / 86400000) + 1 - [...coveredDays].filter(day => day >= range.start && day <= range.end).length;
     const earned = !EARNINGS_BASIS_CONFIRMED || !periods.length || periods.some(p => p.earned === null) ? null : periods.reduce((sum, p) => sum + p.earned!, 0);
-    return Response.json({ person, name: PEOPLE[person].name, canChoosePerson: false, month, today, generatedAt: new Date().toISOString(), monthly, periods: periods.map(p => ({ ...p, earned: EARNINGS_BASIS_CONFIRMED ? p.earned : null, commission: EARNINGS_BASIS_CONFIRMED ? p.commission : null })), earned, paid: null, owed: null, uncoveredDays: uncovered, earningsBasisConfirmed: EARNINGS_BASIS_CONFIRMED }, { headers });
+    return Response.json({ person, name: PEOPLE[person].name, canChoosePerson: actor.worker === 'ali', month, today, generatedAt: new Date().toISOString(), monthly, periods: periods.map(p => ({ ...p, earned: EARNINGS_BASIS_CONFIRMED ? p.earned : null, commission: EARNINGS_BASIS_CONFIRMED ? p.commission : null })), earned, paid: null, owed: null, uncoveredDays: uncovered, earningsBasisConfirmed: EARNINGS_BASIS_CONFIRMED }, { headers });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : 'Не удалось загрузить показатели.' }, { status: 502, headers });
   }
