@@ -23,8 +23,8 @@ export async function POST(request: Request) {
   const origin = 'https://antikrizis-payment-control.mukhamet-ali-ma.chatgpt.site';
   let upstream: Response;
   try {
-    upstream = await fetch(origin + '/api/session', {method:'POST',redirect:'error',headers:{'content-type':'application/json',origin,'sec-fetch-site':'same-origin'},body:JSON.stringify({worker,password:body.password}),signal:AbortSignal.timeout(15000)});
-  } catch {return Response.json({error:'Сервис входа временно недоступен. Повторите позже.'},{status:503,headers});}
+    upstream = await fetch(origin + '/api/session', {method:'POST',redirect:'manual',headers:{'content-type':'application/json',origin,'sec-fetch-site':'same-origin'},body:JSON.stringify({worker,password:body.password}),signal:AbortSignal.timeout(15000)});
+  } catch (error) {console.error('Payment sign-in transport failed', error instanceof Error ? error.message : 'unknown');return Response.json({error:'Сервис входа временно недоступен. Повторите позже.'},{status:503,headers});}
   if (!upstream.ok) return Response.json({error:upstream.status===401?'Неверное имя или пароль.':'Сервис входа временно недоступен.'},{status:upstream.status===401?401:503,headers});
   const result = await upstream.json() as {ok?:boolean;data?:{displayName?:string}};
   if(result.ok!==true || !upstream.headers.get('set-cookie')?.includes('antikrizis_payment_session=')) return Response.json({error:'Не удалось подтвердить вход.'},{status:503,headers});
