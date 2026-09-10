@@ -1,9 +1,12 @@
+import {readSessionCookie,verifySession,requestOriginAllowed} from '../lib/worker-session';
+import assessmentHtml from '../templates/assessment-card.html?raw';
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
 
 interface Env {
   ASSETS: Fetcher;
+  SITE_SESSION_TOKEN?: string;
   DB: D1Database;
   IMAGES: {
     input(stream: ReadableStream): {
@@ -28,6 +31,20 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    const protectedPage = ['/', '/assessment-card', '/assessment-card.html'].includes(url.pathname);
+    const protectedApi = url.pathname.startsWith('/api/') && url.pathname !== '/api/session';
+    if (protectedPage || protectedApi) {
+      const actor = await verifySession(readSessionCookie(request.headers.get('cookie')), env.SITE_SESSION_TOKEN ?? process.env.SITE_SESSION_TOKEN ?? '');
+      if (!actor) {
+        if(protectedApi)return Response.json({error:'SIGN_IN_REQUIRED'},{status:401,headers:{'cache-control':'no-store'}});
+        const login=new URL('/login',url.origin);login.searchParams.set('returnTo',url.pathname+url.search);
+        return Response.redirect(login.toString(),303);
+      }
+      if(!requestOriginAllowed(request))return Response.json({error:'INVALID_ORIGIN'},{status:403,headers:{'cache-control':'no-store'}});
+      if(['/assessment-card','/assessment-card.html'].includes(url.pathname))return new Response(assessmentHtml,{headers:{'content-type':'text/html; charset=utf-8','cache-control':'private, no-store'}});
+      const response=await handler.fetch(request,env,ctx);
+      const secured=new Response(response.body,response);secured.headers.set('cache-control','private, no-store');return secured;
+    }
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];

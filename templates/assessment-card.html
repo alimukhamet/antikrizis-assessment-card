@@ -264,6 +264,7 @@
 .person-name{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.rank-move{font-size:10px;font-weight:500;white-space:nowrap;color:#87948b}.rank-move.up{color:var(--green)}.rank-move.down{color:#8b7770}
 @media(max-width:600px){.ranking-labels{grid-template-columns:minmax(82px,1fr) 48px 96px 135px;gap:8px;min-width:421px}.person summary{grid-template-columns:18px minmax(82px,1fr) 48px 96px 135px;gap:8px;min-width:421px}.person-average{font-size:12px}.ranking-labels{font-size:9px}.rank-move{font-size:9px}.rank-scroll{overflow-x:auto;overscroll-behavior-x:contain}.person-name{font-size:12px}.person-value{font-size:14px}}
 .rank-scroll{margin-top:20px}.leader-crown{width:18px;height:18px;color:var(--green);display:block}
+.payment-shortcut{display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding:13px 17px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--green-dark);font-size:14px;font-weight:600;text-decoration:none}.payment-shortcut:hover{border-color:var(--green);background:var(--green-pale)}.payment-shortcut:focus-visible{outline:3px solid #b9d8c3;outline-offset:3px}
 </style>
 <link rel="stylesheet" href="/assessment-quality.css">
 <script src="/assessment-quality.js"></script>
@@ -309,7 +310,7 @@
 </div>
 <div class="wrap">
   <main id="homeView">
-    <div class="home-brand">
+    <div class="home-brand"><button id="signOut" type="button" style="order:3;margin-left:auto;border:0;background:none;color:var(--text-muted);cursor:pointer;font-size:12px">Выйти</button>
       <div class="brand-mark">A+</div>
       <div class="brand-copy"><strong>Антикризис</strong><span>Инструменты отдела продаж</span></div>
     </div>
@@ -349,7 +350,7 @@
           <span class="task-link"><span>Открыть анализатор</span><span>→</span></span>
         </a>
       </div>
-      <div class="home-note">Все три задачи открываются отдельно и не мешают друг другу.</div>
+      <a class="payment-shortcut" href="https://antikrizis-payment-control.mukhamet-ali-ma.chatgpt.site/" target="_blank" rel="noopener"><span>Контроль оплат</span><span aria-hidden="true">↗</span></a>
     </div>
   </main>
 
@@ -1214,6 +1215,7 @@ $("salesDateRange").addEventListener("submit",event=>{
   loadSalesMetrics();
 });
 loadSalesMetrics();
+$("signOut").onclick=async()=>{const response=await fetch('/api/session',{method:'DELETE'});if(response.ok)window.top.location.href='/login';};
 
 // ── Money input formatting ──
 function formatMoney(el){

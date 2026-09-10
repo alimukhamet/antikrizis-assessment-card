@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 const code=await readFile(new URL('../public/assessment-quality.js',import.meta.url),'utf8');
-const html=await readFile(new URL('../public/assessment-card.html',import.meta.url),'utf8');
+const html=await readFile(new URL('../templates/assessment-card.html',import.meta.url),'utf8');
 const ctx=vm.createContext({Date,console});vm.runInContext(code,ctx);const A=ctx.AssessmentQuality;
 const date=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
 function sample(){return {...Object.fromEntries(A.topics.flatMap(t=>t.keys).map(k=>[k,'Тестовое значение'])),marital:'Холост / не замужем',carSale:'0',ludo:'0',quality:{unknown:[],collector:'Тестовый сотрудник',collectedOn:date(),owner:'Тестовый юрист',due:date(),next:'Сверить все разделы по документам',extra:{livingCosts:'0',loanPayments:'120 000',incomeStability:'Зарплата, среднее за 6 месяцев',assetTransfers:'Не было',creditorDetails:'Тестовый кредитор; 1 000 000; 120 000; 20 дней; без залога; со слов клиента',enforcementStatus:'no',enforcementDetails:'',carSaleDetails:'',gamblingDetails:''},reviews:Object.fromEntries(A.topics.map(t=>[t.id,{status:'reported',source:'',reviewer:'',date:'',note:''}]))}};}

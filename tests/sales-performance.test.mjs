@@ -59,7 +59,7 @@ test("a failed page never becomes a partial or cached sales total",async()=>{
 });
 
 
-const html=await readFile(new URL("../public/assessment-card.html",import.meta.url),"utf8");
+const html=await readFile(new URL("../templates/assessment-card.html",import.meta.url),"utf8");
 function client(){
   const elements=new Map();const $=id=>{if(!elements.has(id))elements.set(id,{textContent:"",innerHTML:"",value:"",classList:{remove(){},add(){}},setAttribute(){},addEventListener(){}});return elements.get(id)};
   const responses=[];let calls=0;const context=vm.createContext({$,URLSearchParams,Intl,Date,Number,JSON,Map,Set,AbortController,setTimeout,clearTimeout,document:{querySelectorAll:()=>[]},fetch:async()=>{calls++;const next=responses.shift();if(!next)throw Error("Unexpected fetch");return next()}});

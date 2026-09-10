@@ -1,3 +1,4 @@
+import {TEST_SECRET,testCookie} from './session-helper.mjs';
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -8,8 +9,8 @@ async function fetchBuilt(path = "/", headers = {}) {
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
-    new Request(`http://localhost${path}`, { headers }),
-    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+    new Request(`http://localhost${path}`, { headers: {cookie:await testCookie(),...headers} }),
+    { SITE_SESSION_TOKEN:TEST_SECRET, ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
     { waitUntil() {}, passThroughOnException() {} },
   );
 }
@@ -30,7 +31,7 @@ test("server-renders the assessment card shell", async () => {
 });
 
 test("captures every fact needed to build the later document checklist", async () => {
-  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+  const card = await readFile(new URL("../templates/assessment-card.html", import.meta.url), "utf8");
 
   assert.match(card, /id="seg-works"/);
   assert.match(card, /id="seg-children"/);
@@ -50,7 +51,7 @@ test("captures every fact needed to build the later document checklist", async (
 });
 
 test("keeps contract creation and document upload as separate tasks", async () => {
-  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+  const card = await readFile(new URL("../templates/assessment-card.html", import.meta.url), "utf8");
 
   assert.match(card, /<body data-view="home">/);
   assert.match(card, /Создать договор и карточку/);
@@ -64,7 +65,7 @@ test("keeps contract creation and document upload as separate tasks", async () =
 });
 
 test("adds the owned GKB analyzer as the third sales task", async () => {
-  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+  const card = await readFile(new URL("../templates/assessment-card.html", import.meta.url), "utf8");
 
   assert.match(card, /<span class="task-number">03<\/span>/);
   assert.match(card, /Проверить кредитный отчёт/);
@@ -73,7 +74,7 @@ test("adds the owned GKB analyzer as the third sales task", async () => {
 });
 
 test("shows team rankings with average contracts and shared filters", async () => {
-  const card=await readFile(new URL("../public/assessment-card.html",import.meta.url),"utf8");
+  const card=await readFile(new URL("../templates/assessment-card.html",import.meta.url),"utf8");
   for(const label of ["Результаты продаж","Менеджер","Договоры","Средний договор","Сумма договоров","salesDateRange"])assert.ok(card.includes(label));
   for(const period of ["today","current_week","current_month","custom"])assert.ok(card.includes(`data-sales-period="${period}"`));
   for(const type of ["all","261","263","423"])assert.ok(card.includes(`data-sales-payment="${type}"`));
@@ -119,7 +120,7 @@ test("exposes only aggregate sales metrics for the three approved managers", asy
 });
 
 test("saves all three payment types to the existing Bitrix field", async () => {
-  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+  const card = await readFile(new URL("../templates/assessment-card.html", import.meta.url), "utf8");
 
   assert.match(card, /Какой вид оплаты\?/);
   assert.match(card, /<option value="423">50\/50<\/option>/);
@@ -130,7 +131,7 @@ test("saves all three payment types to the existing Bitrix field", async () => {
 });
 
 test("verifies every invoice-critical contract field after Bitrix saves it", async () => {
-  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+  const card = await readFile(new URL("../templates/assessment-card.html", import.meta.url), "utf8");
 
   assert.match(card, /const saved=await bxResult\("crm\.deal\.get"/);
   assert.match(card, /for\(const \[name,wanted\] of Object\.entries\(fields\)\)/);
@@ -143,7 +144,7 @@ test("verifies every invoice-critical contract field after Bitrix saves it", asy
 });
 
 test("uses the usual after-decision document schedule for 50/50", async () => {
-  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+  const card = await readFile(new URL("../templates/assessment-card.html", import.meta.url), "utf8");
 
   assert.match(card, /const afterDecision=grafType==="261"\|\|grafType==="423"/);
   assert.match(card, /ordinaryOffset\+\(afterDecision\?2:0\)/);
@@ -166,7 +167,7 @@ test("rejects an invalid flexible sales date range before reading Bitrix", async
 });
 
 test("lets the salesperson show and hide the ECP password", async () => {
-  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+  const card = await readFile(new URL("../templates/assessment-card.html", import.meta.url), "utf8");
 
   assert.match(card, /id="docEdsPassword" type="password"/);
   assert.match(card, /id="docEdsPasswordToggle"/);
@@ -175,7 +176,7 @@ test("lets the salesperson show and hide the ECP password", async () => {
 });
 
 test("resolves a typed deal ID to the Bitrix deal title", async () => {
-  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+  const card = await readFile(new URL("../templates/assessment-card.html", import.meta.url), "utf8");
 
   assert.match(card, /id="dealLookup"/);
   assert.match(card, /id="dealName"[^>]*aria-live="polite"/);
@@ -186,7 +187,7 @@ test("resolves a typed deal ID to the Bitrix deal title", async () => {
 });
 
 test("requires a fresh deal-name confirmation before either Bitrix write", async () => {
-  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+  const card = await readFile(new URL("../templates/assessment-card.html", import.meta.url), "utf8");
 
   assert.match(card, /id="targetConfirmModal"/);
   assert.match(card, /id="targetConfirmDealName"/);
@@ -205,7 +206,7 @@ test("requires a fresh deal-name confirmation before either Bitrix write", async
 });
 
 test("adds the completed questionnaire to the Bitrix deal history", async () => {
-  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
+  const card = await readFile(new URL("../templates/assessment-card.html", import.meta.url), "utf8");
 
   assert.match(card, /async function addAssessmentToDealHistory/);
   assert.match(card, /bxResult\("crm\.timeline\.comment\.add",\{/);
