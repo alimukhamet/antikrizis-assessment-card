@@ -72,36 +72,14 @@ test("adds the owned GKB analyzer as the third sales task", async () => {
   assert.match(card, /target="_blank" rel="noopener"/);
 });
 
-test("fits the three sales KPIs on the daily home screen with person and period buttons", async () => {
-  const card = await readFile(new URL("../public/assessment-card.html", import.meta.url), "utf8");
-
-  assert.match(card, /Результаты продаж/);
-  assert.match(card, /data-sales-manager="7609"[^>]*>Дархан</);
-  assert.match(card, /data-sales-manager="2093"[^>]*>Рамазан</);
-  assert.match(card, /data-sales-manager="4351"[^>]*>Нурдаулет</);
-  assert.match(card, /data-sales-payment="423"[^>]*>50\/50</);
-  assert.match(card, /data-sales-payment="261"[^>]*>После определения</);
-  assert.match(card, /data-sales-payment="263"[^>]*>До определения</);
-  assert.match(card, /data-sales-payment="all"[^>]*>Все</);
-  assert.match(card, /data-sales-period="today"[^>]*>Сегодня</);
-  assert.match(card, /data-sales-period="current_week"[^>]*>Неделя</);
-  assert.match(card, /data-sales-period="current_month"[^>]*>Месяц</);
-  assert.match(card, /data-sales-period="custom"[^>]*>Даты</);
-  assert.match(card, /id="salesDateFrom"[^>]*type="date"/);
-  assert.match(card, /id="salesDateTo"[^>]*type="date"/);
-  assert.match(card, /id="salesDateRange"/);
-  assert.match(card, /class="sales-date-apply"[^>]*>ОК<\/button>/);
-  assert.match(card, /\.sales-date-range\{display:flex/);
-  assert.match(card, /query\.set\("from",salesSelection\.from\)/);
-  assert.match(card, /query\.set\("to",salesSelection\.to\)/);
-  assert.match(card, /function salesQuery\(managerId=salesSelection\.managerId,paymentType=salesSelection\.paymentType\)/);
-  assert.match(card, /function rememberRelatedSalesResults/);
-  assert.match(card, /syncSalesDateLimits\("from"\)/);
-  assert.match(card, /syncSalesDateLimits\("to"\)/);
-  assert.match(card, /Передано юристам/);
-  assert.match(card, /Сумма договоров/);
-  assert.match(card, /Средний договор/);
-  assert.match(card, /fetch\(`\/api\/sales-metrics\?\$\{query\}`/);
+test("shows team rankings with average contracts and shared filters", async () => {
+  const card=await readFile(new URL("../public/assessment-card.html",import.meta.url),"utf8");
+  for(const label of ["Результаты продаж","Менеджер","Договоры","Средний договор","Сумма договоров","salesDateRange"])assert.ok(card.includes(label));
+  for(const period of ["today","current_week","current_month","custom"])assert.ok(card.includes(`data-sales-period="${period}"`));
+  for(const type of ["all","261","263","423"])assert.ok(card.includes(`data-sales-payment="${type}"`));
+  assert.ok(!card.includes('data-sales-manager='));
+  assert.ok(!card.includes('previousRank:'));
+  assert.match(card,/function salesPreviousQuery/);
 });
 
 test("exposes only aggregate sales metrics for the three approved managers", async () => {

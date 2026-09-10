@@ -244,6 +244,25 @@
     .bar-actions{display:grid;grid-template-columns:auto 1fr}
     .bar-actions .btn{padding:11px 9px}
   }
+/* Preserve the existing home; only the results panel is redesigned. */
+.competition{margin:0 0 18px;padding:22px 24px 15px;text-align:left;background:#fff;border:1px solid var(--border);border-radius:20px;box-shadow:0 3px 12px rgba(24,54,34,.025)}
+.competition-head{display:flex;align-items:center;justify-content:space-between;gap:18px}.competition-head h2{margin:0;font-size:18px;letter-spacing:-.4px;line-height:1.25}.competition-head p{color:var(--text-muted);font-size:12px;margin:4px 0 0}
+.period-switch{display:flex;gap:4px;flex-shrink:0}.period-switch button{background:#fff;border:1px solid var(--border);border-radius:18px;padding:7px 11px;font-size:12px;font-weight:600;color:var(--text-mid);cursor:pointer}.period-switch button[aria-pressed=true]{background:var(--green);border-color:var(--green);color:#fff}
+.payment-switch{display:flex;gap:20px;border-bottom:1px solid #e8ede9;margin-top:19px}.payment-switch button{background:none;border:0;border-bottom:2px solid transparent;padding:0 0 11px;color:var(--text-muted);font-size:12px;font-weight:500;cursor:pointer}.payment-switch button[aria-pressed=true]{color:var(--green-dark);border-bottom-color:var(--green);font-weight:650}
+.competition button:focus-visible,.competition summary:focus-visible,.competition input:focus-visible{outline:3px solid #b9d8c3;outline-offset:3px}
+.team-summary{display:flex;justify-content:space-between;align-items:center;padding:20px 0 21px}.metric-caption{display:block;color:var(--text-mid);font-size:12px}.team-summary #total{display:block;color:var(--green-dark);font-size:32px;letter-spacing:-1px;font-weight:650;line-height:1.35;font-variant-numeric:tabular-nums}.currency{font-size:21px;font-weight:450;color:#89958d}.team-caption{text-align:right;font-size:12px;color:var(--text-muted)}.team-caption strong{display:block;color:var(--text-mid);font-size:14px;font-weight:600}.team-caption span{display:block;margin-top:5px;font-size:11px}
+.ranking-labels{display:grid;grid-template-columns:minmax(0,1fr) 80px 175px;gap:12px;padding:0 0 10px 34px;border-bottom:1px solid #e8ede9;font-size:10px;color:var(--text-muted)}.ranking-labels span:not(:first-child){text-align:right}
+.person{border-bottom:1px solid #edf0ed}.person:last-child{border-bottom:0}.person summary{list-style:none;display:grid;grid-template-columns:22px minmax(0,1fr) 80px 175px;gap:12px;align-items:center;padding:16px 0;cursor:pointer}.person summary::-webkit-details-marker{display:none}.position{font-size:12px;color:#8c9990}.person-name{font-size:14px;font-weight:600;color:var(--text)}.person:first-child .person-name{color:var(--green)}.person-count{font-size:14px;text-align:right;color:var(--text-mid);font-variant-numeric:tabular-nums}.person-value{text-align:right;font-size:17px;font-weight:650;font-variant-numeric:tabular-nums;letter-spacing:-.4px}.person-gap{display:block;font-size:10px;font-weight:400;color:var(--text-muted);letter-spacing:0;margin-top:4px}.person:first-child .person-gap{color:var(--green)}.person-detail{font-size:12px;margin:0 0 15px 34px;color:var(--text-mid)}.person-detail strong{font-weight:600}
+.competition-foot{display:flex;justify-content:space-between;gap:12px;border-top:1px solid #e8ede9;margin-top:3px;padding-top:12px;font-size:10px;color:var(--text-muted)}
+#dates{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;align-items:center}#dates[hidden]{display:none}#dates label{font-size:12px;color:var(--text-mid)}#dates input{width:125px;padding:5px;border:1px solid var(--border);border-radius:6px;font-size:12px}#dates button{background:var(--green);color:#fff;border:0;border-radius:6px;padding:7px 11px;font-size:12px;cursor:pointer}
+.task-card:disabled{opacity:1;cursor:default}.task-card:disabled:hover{transform:none;border-color:var(--border);box-shadow:0 3px 12px rgba(24,54,34,.04)}
+@media(max-width:600px){.competition{padding:18px 16px 13px}.competition-head{align-items:flex-start;flex-direction:column;gap:14px}.period-switch{width:100%}.period-switch button{flex:1;padding:8px;font-size:12px}.payment-switch{gap:0;justify-content:space-between}.payment-switch button{font-size:10px;padding-bottom:10px}.team-summary #total{font-size:27px}.metric-caption{font-size:10px}.team-caption strong{font-size:12px}.team-caption span{font-size:10px}.ranking-labels{grid-template-columns:minmax(0,1fr) 44px 119px;gap:8px;font-size:9px;padding-left:26px}.person summary{grid-template-columns:18px minmax(0,1fr) 44px 119px;gap:8px}.person-name{font-size:12px}.person-count{font-size:12px}.person-value{font-size:14px}.person-gap{font-size:9px}.competition-foot{font-size:9px}.person-detail{margin-left:26px;font-size:11px}}
+
+.ranking-labels{grid-template-columns:minmax(0,1fr) 62px 113px 157px;gap:10px}
+.person summary{grid-template-columns:22px minmax(0,1fr) 62px 113px 157px;gap:10px}
+.person-average{text-align:right;font-size:14px;color:var(--text-mid);white-space:nowrap;font-variant-numeric:tabular-nums}
+.person-name{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.rank-move{font-size:10px;font-weight:500;white-space:nowrap;color:#87948b}.rank-move.up{color:var(--green)}.rank-move.down{color:#8b7770}
+@media(max-width:600px){.ranking-labels{grid-template-columns:minmax(82px,1fr) 48px 96px 135px;gap:8px;min-width:421px}.person summary{grid-template-columns:18px minmax(82px,1fr) 48px 96px 135px;gap:8px;min-width:421px}.person-average{font-size:12px}.ranking-labels{font-size:9px}.rank-move{font-size:9px}.rank-scroll{overflow-x:auto;overscroll-behavior-x:contain}.person-name{font-size:12px}.person-value{font-size:14px}}
 </style>
 <link rel="stylesheet" href="/assessment-quality.css">
 <script src="/assessment-quality.js"></script>
@@ -297,44 +316,19 @@
       <div class="eyebrow">Работа со сделкой</div>
       <h1>Что нужно сделать?</h1>
       <p>Выберите одну задачу. Внутри будут только нужные для неё поля и одно понятное действие.</p>
-      <section class="sales-summary" aria-labelledby="salesSummaryTitle">
-        <div class="sales-summary-head">
-          <div class="sales-summary-title">
-            <strong id="salesSummaryTitle">Результаты продаж</strong>
-            <span>Сделки, переданные юристам</span>
-          </div>
-          <div class="sales-periods" aria-label="Период отчёта">
-            <button class="sales-filter" type="button" data-sales-period="today" aria-pressed="false">Сегодня</button>
-            <button class="sales-filter" type="button" data-sales-period="current_week" aria-pressed="false">Неделя</button>
-            <button class="sales-filter active" type="button" data-sales-period="current_month" aria-pressed="true">Месяц</button>
-            <button class="sales-filter" type="button" data-sales-period="custom" aria-pressed="false">Даты</button>
-          </div>
-        </div>
-        <div class="sales-people" aria-label="Сотрудник отдела продаж">
-          <button class="sales-filter active" type="button" data-sales-manager="7609" aria-pressed="true">Дархан</button>
-          <button class="sales-filter" type="button" data-sales-manager="2093" aria-pressed="false">Рамазан</button>
-          <button class="sales-filter" type="button" data-sales-manager="4351" aria-pressed="false">Нурдаулет</button>
-        </div>
-        <div class="sales-payment" aria-label="Вид оплаты">
-          <span class="sales-filter-label">Вид оплаты</span>
-          <button class="sales-filter" type="button" data-sales-payment="423" aria-pressed="false">50/50</button>
-          <button class="sales-filter active" type="button" data-sales-payment="261" aria-pressed="true">После определения</button>
-          <button class="sales-filter" type="button" data-sales-payment="263" aria-pressed="false">До определения</button>
-          <button class="sales-filter" type="button" data-sales-payment="all" aria-pressed="false">Все</button>
-        </div>
-        <form class="sales-date-range" id="salesDateRange" aria-label="Произвольный период" hidden>
+      <section class="competition" aria-labelledby="competition-title">
+<div class="competition-head"><div><h2 id="competition-title">Результаты продаж</h2><p>Сделки, переданные юристам</p></div><div class="period-switch" aria-label="Период отчёта"><button data-sales-period="today" aria-pressed="false">Сегодня</button><button data-sales-period="current_week" aria-pressed="false">Неделя</button><button data-sales-period="current_month" aria-pressed="true">Месяц</button><button data-sales-period="custom" aria-pressed="false">Даты</button></div></div>
+<div class="payment-switch" aria-label="Вид оплаты"><button data-sales-payment="all" aria-pressed="true">Все</button><button data-sales-payment="423" aria-pressed="false">50/50</button><button data-sales-payment="261" aria-pressed="false">После определения</button><button data-sales-payment="263" aria-pressed="false">До определения</button></div>
+<form class="sales-date-range" id="salesDateRange" aria-label="Произвольный период" hidden>
           <input id="salesDateFrom" name="from" type="date" aria-label="С даты" title="С даты" required>
           <span class="sales-date-separator" aria-hidden="true">—</span>
           <input id="salesDateTo" name="to" type="date" aria-label="По дату" title="По дату" required>
           <button class="sales-date-apply" type="submit" aria-label="Показать выбранный период">ОК</button>
         </form>
-        <div class="sales-metrics" aria-live="polite" aria-busy="true" id="salesMetrics">
-          <div class="sales-metric primary"><span>Передано юристам</span><strong id="salesHandoffs">—</strong></div>
-          <div class="sales-metric"><span>Сумма договоров</span><strong id="salesContractTotal">—</strong></div>
-          <div class="sales-metric"><span>Средний договор</span><strong id="salesContractAverage">—</strong></div>
-        </div>
-        <div class="sales-summary-status" id="salesSummaryStatus" role="status">Загружаем результаты…</div>
-      </section>
+<div class="team-summary"><div><span class="metric-caption">Сумма договоров команды</span><strong id="total"></strong></div><div class="team-caption"><strong id="count"></strong><span id="period-label"></span></div></div>
+<div class="rank-scroll" role="region" aria-label="Рейтинг менеджеров" tabindex="0"><div class="ranking-labels"><span>Менеджер</span><span>Договоры</span><span>Средний договор</span><span>Сумма договоров</span></div><div id="rows" aria-busy="true" aria-live="polite"></div></div>
+<div id="salesSummaryStatus" class="sales-summary-status" role="status">Загружаем результаты…</div><div class="competition-foot"><span>Рейтинг по сумме договоров · не по оплатам</span><span></span></div>
+</section>      
       <div class="task-grid">
         <button class="task-card" type="button" data-open-view="contract">
           <span class="task-number">01</span>
@@ -1088,13 +1082,10 @@ verifyBitrixConnection().then(ready=>{
 });
 
 const salesToday=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Almaty",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
-const salesSelection={managerId:"7609",paymentType:"261",period:"current_month",from:`${salesToday.slice(0,7)}-01`,to:salesToday};
-let salesMetricsRequest=0;
-let salesMetricsController=null;
+const salesSelection={managerId:"7609",paymentType:"all",period:"current_month",from:`${salesToday.slice(0,7)}-01`,to:salesToday};
+let salesMetricsRequest=0,salesMetricsController=null;
 const salesResultCache=new Map();
-const SALES_RESULT_TTL=60_000;
-const SALES_RESULT_MAX_AGE=24*60*60*1000;
-
+const SALES_NAMES={"7609":"Дархан","2093":"Рамазан","4351":"Нурдаулет"};
 $("salesDateFrom").value=salesSelection.from;
 $("salesDateTo").value=salesSelection.to;
 
@@ -1122,113 +1113,70 @@ function setSalesFilter(group,value){
   });
 }
 
-function salesUpdatedLabel(value){
-  if(!value) return "";
-  const date=new Date(value);
-  if(Number.isNaN(date.getTime())) return "";
-  return `Обновлено ${new Intl.DateTimeFormat("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}).format(date)}. `;
-}
-
-function renderSalesMetrics(data){
-  $("salesHandoffs").textContent=Number(data.handoffs||0).toLocaleString("ru-RU");
-  $("salesContractTotal").textContent=formatSalesMoney(data.contractTotal);
-  $("salesContractAverage").textContent=formatSalesMoney(data.contractAverage);
-  const periodText=data.periodLabel?`Период: ${data.periodLabel}. `:"";
-  const paymentText=data.paymentTypeLabel?`Вид оплаты: ${data.paymentTypeLabel}. `:"";
-  const missingText=data.missingContractValues?`Без суммы договора: ${data.missingContractValues}.`:"Все переданные сделки имеют сумму договора.";
-  $("salesSummaryStatus").textContent=salesUpdatedLabel(data.lastSyncAt)+periodText+paymentText+missingText;
-}
-
-function cachedSalesResult(key){
-  try{
-    const data=salesResultCache.get(key)||JSON.parse(sessionStorage.getItem(key)||"null");
-    const age=Date.now()-Date.parse(data?.lastSyncAt);
-    if(data&&age>=0&&age<SALES_RESULT_MAX_AGE) return data;
-  }catch(_){}
-  return null;
-}
 
 function salesQuery(managerId=salesSelection.managerId,paymentType=salesSelection.paymentType){
   const query=new URLSearchParams({managerId,paymentType,period:salesSelection.period});
-  if(salesSelection.period==="custom"){
-    query.set("from",salesSelection.from);
-    query.set("to",salesSelection.to);
-  }
+  if(salesSelection.period==="custom"){query.set("from",salesSelection.from);query.set("to",salesSelection.to);}
   return query;
 }
-
-function salesCacheKey(query){
-  return `sales-results-v2:${salesToday}:${query}`;
+function salesShift(date,days){const d=new Date(date+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);}
+function salesPreviousQuery(query){
+  const end=query.get("to")||salesToday;let start=query.get("from")||salesToday;
+  if(query.get("period")==="current_month")start=salesToday.slice(0,7)+"-01";
+  if(query.get("period")==="current_week"){const weekday=new Date(salesToday+"T00:00:00Z").getUTCDay()||7;start=salesShift(salesToday,1-weekday);}
+  const days=Math.round((new Date(end)-new Date(start))/86400000)+1;
+  return new URLSearchParams({managerId:"7609",paymentType:query.get("paymentType"),period:"custom",from:salesShift(start,-days),to:salesShift(start,-1)});
 }
-
-function rememberSalesResult(key,data){
-  salesResultCache.set(key,data);
-  try{sessionStorage.setItem(key,JSON.stringify(data));}catch(_){}
+function salesTeam(data,type){
+  const rows=(data.relatedMetrics||[]).filter(x=>x.paymentType===type&&Object.hasOwn(SALES_NAMES,x.managerId));
+  if(rows.length!==3||new Set(rows.map(x=>x.managerId)).size!==3)throw new Error("Не удалось получить результаты всей команды. Повторите загрузку.");
+  if(rows.some(x=>![x.contractTotal,x.contractAverage,x.handoffs,x.missingContractValues].every(n=>typeof n==="number"&&Number.isFinite(n)&&n>=0)))throw new Error("Некорректные результаты продаж.");
+  return rows.sort((a,b)=>b.contractTotal-a.contractTotal||a.managerId.localeCompare(b.managerId));
 }
-
-function rememberRelatedSalesResults(data){
-  if(!Array.isArray(data.relatedMetrics)) return;
-  data.relatedMetrics.forEach(metric=>{
-    if(!metric?.managerId||!metric?.paymentType) return;
-    rememberSalesResult(salesCacheKey(salesQuery(metric.managerId,metric.paymentType)),metric);
-  });
+function clearSalesBoard(){ $("total").textContent="—";$("count").textContent="—";$("period-label").textContent="";$("rows").innerHTML=""; }
+function renderSalesTeam(data,type,previous=null){
+  const rows=salesTeam(data,type),before=previous?salesTeam(previous,type):null;
+  $("total").textContent=formatSalesMoney(rows.reduce((s,x)=>s+x.contractTotal,0));
+  $("count").textContent=rows.reduce((s,x)=>s+x.handoffs,0).toLocaleString("ru-RU")+" · Передано юристам";
+  $("period-label").textContent=data.periodLabel||"";
+  $("rows").innerHTML=rows.map(x=>{
+    const rank=rows.findIndex(y=>y.contractTotal===x.contractTotal)+1;
+    const prior=before?before.find(y=>y.managerId===x.managerId):null;
+    const movement=prior?before.findIndex(y=>y.contractTotal===prior.contractTotal)+1-rank:null;
+    const arrow=movement===null?"":`<span class="rank-move ${movement>0?'up':movement<0?'down':'same'}" title="Изменение места относительно предыдущего равного периода" aria-label="${movement>0?'Поднялся на '+movement:movement<0?'Опустился на '+(-movement):'Место не изменилось'}">${movement>0?'↑':movement<0?'↓':'−'}${movement?Math.abs(movement):''}</span>`;
+    const gap=x.contractTotal===0?'Нет суммы договоров':rank===1?'Лидер':formatSalesMoney(rows[rank-2].contractTotal-x.contractTotal)+' до '+(rank-1)+' места';
+    return `<details class="person"><summary><span class="position">${rank}</span><span class="person-name">${SALES_NAMES[x.managerId]}${arrow}</span><span class="person-count">${x.handoffs}</span><span class="person-average">${x.contractsWithValue?formatSalesMoney(x.contractAverage):'—'}</span><span class="person-value">${formatSalesMoney(x.contractTotal)}<span class="person-gap">${gap}</span></span></summary><div class="person-detail">${x.missingContractValues?'Без суммы договора: '+x.missingContractValues+'. Среднее рассчитано только по договорам с суммой.':'Все переданные сделки имеют сумму договора.'}</div></details>`;
+  }).join("");
+  const missing=rows.reduce((s,x)=>s+x.missingContractValues,0);
+  const stamp=new Date(data.lastSyncAt);
+  $("salesSummaryStatus").textContent=(Number.isNaN(stamp.getTime())?'':`Обновлено ${stamp.toLocaleString("ru-RU",{timeZone:"Asia/Almaty"})}. `)+(missing?`Без суммы: ${missing}. `:'');
 }
-
+async function fetchSales(query,signal,force=false){
+  const key=salesToday+":"+query;const cached=salesResultCache.get(key);
+  if(!force&&cached&&Date.now()-cached.at<60000)return cached.data;
+  const requestQuery=new URLSearchParams(query);if(force)requestQuery.set("fresh",String(Date.now()));
+  const response=await fetch(`/api/sales-metrics?${requestQuery}`,{headers:{accept:"application/json"},signal});const data=await response.json();
+  if(!response.ok||data.error)throw new Error(data.error||"Результаты временно недоступны.");
+  salesTeam(data,query.get("paymentType"));
+  // One response contains all managers and payment types from the same snapshot.
+  for(const type of ['all','261','263','423']){const q=new URLSearchParams(query);q.set('paymentType',type);salesResultCache.set(salesToday+":"+q,{data,at:Date.now()});}
+  return data;
+}
 async function loadSalesMetrics(force=false){
-  const requestId=++salesMetricsRequest;
-  if(salesMetricsController) salesMetricsController.abort();
-  const controller=new AbortController();
-  salesMetricsController=controller;
-  const metrics=$("salesMetrics"),status=$("salesSummaryStatus");
-  metrics.setAttribute("aria-busy","true");
-  status.classList.remove("error");
-  const query=salesQuery();
-  // The Almaty date in the key prevents yesterday's relative period from being reused today.
-  const cacheKey=salesCacheKey(query);
-  const cached=cachedSalesResult(cacheKey);
-  if(cached){
-    renderSalesMetrics(cached);
-    if(!force&&Date.now()-Date.parse(cached.lastSyncAt)<SALES_RESULT_TTL){
-      metrics.setAttribute("aria-busy","false");
-      return;
-    }
-    status.textContent+=" Обновляем из Bitrix…";
-  }else{
-    $("salesHandoffs").textContent="—";
-    $("salesContractTotal").textContent="—";
-    $("salesContractAverage").textContent="—";
-    status.textContent="Загружаем результаты…";
-  }
-  const timeout=setTimeout(()=>controller.abort(),35_000);
+  const id=++salesMetricsRequest;if(salesMetricsController)salesMetricsController.abort();
+  const controller=new AbortController();salesMetricsController=controller;
+  const query=salesQuery(),type=query.get('paymentType');clearSalesBoard();$("rows").setAttribute('aria-busy','true');$("salesSummaryStatus").classList.remove('error');$("salesSummaryStatus").textContent='Загружаем результаты…';
+  let timer=setTimeout(()=>controller.abort(),35000);
   try{
-    if(force) query.set("fresh",String(Date.now()));
-    const response=await fetch(`/api/sales-metrics?${query}`,{headers:{accept:"application/json"},signal:controller.signal});
-    const data=await response.json();
-    if(!response.ok||data.error) throw new Error(data.error||"Не удалось загрузить результаты");
-    if(requestId!==salesMetricsRequest) return;
-    rememberSalesResult(cacheKey,data);
-    rememberRelatedSalesResults(data);
-    renderSalesMetrics(data);
-  }catch(error){
-    if(requestId!==salesMetricsRequest) return;
-    if(cached){
-      renderSalesMetrics(cached);
-      status.textContent+=" Не удалось обновить: показаны последние сохранённые данные.";
-    }else{
-      status.textContent=controller.signal.aborted?"Bitrix отвечает слишком долго. Выберите период ещё раз, чтобы повторить.":((error&&error.message)||"Не удалось загрузить результаты. Обновите страницу.");
-    }
-    status.classList.add("error");
-  }finally{
-    clearTimeout(timeout);
-    if(requestId===salesMetricsRequest) metrics.setAttribute("aria-busy","false");
-  }
+    const data=await fetchSales(query,controller.signal,force);if(id!==salesMetricsRequest)return;
+    renderSalesTeam(data,type);$("rows").setAttribute('aria-busy','false');clearTimeout(timer);
+    $("salesSummaryStatus").textContent+=' Сравниваем с предыдущим периодом…';
+    timer=setTimeout(()=>controller.abort(),35000);
+    try{const previousQuery=salesPreviousQuery(query);const previous=await fetchSales(previousQuery,controller.signal,force);if(id!==salesMetricsRequest)return;renderSalesTeam(data,type,previous);$("salesSummaryStatus").textContent+=` Стрелки: сравнение с ${previousQuery.get('from')} — ${previousQuery.get('to')} (равный период).`;}
+    catch(_){if(id!==salesMetricsRequest)return;renderSalesTeam(data,type);$("salesSummaryStatus").textContent+=' Сравнение недоступно; стрелки скрыты.';}
+  }catch(error){if(id!==salesMetricsRequest)return;clearSalesBoard();$("salesSummaryStatus").classList.add('error');$("salesSummaryStatus").textContent=controller.signal.aborted?'Bitrix отвечает слишком долго. Выберите период ещё раз, чтобы повторить.':error.message;}
+  finally{clearTimeout(timer);if(id===salesMetricsRequest)$("rows").setAttribute('aria-busy','false');}
 }
-
-document.querySelectorAll("[data-sales-manager]").forEach(button=>button.addEventListener("click",()=>{
-  salesSelection.managerId=button.dataset.salesManager;
-  setSalesFilter("manager",salesSelection.managerId);
-  loadSalesMetrics();
-}));
 document.querySelectorAll("[data-sales-payment]").forEach(button=>button.addEventListener("click",()=>{
   salesSelection.paymentType=button.dataset.salesPayment;
   setSalesFilter("payment",salesSelection.paymentType);
@@ -1241,10 +1189,8 @@ document.querySelectorAll("[data-sales-period]").forEach(button=>button.addEvent
   if(salesSelection.period==="custom"){
     ++salesMetricsRequest;
     if(salesMetricsController) salesMetricsController.abort();
-    $("salesMetrics").setAttribute("aria-busy","false");
-    $("salesHandoffs").textContent="—";
-    $("salesContractTotal").textContent="—";
-    $("salesContractAverage").textContent="—";
+    $("rows").setAttribute("aria-busy","false");
+    clearSalesBoard();
     $("salesSummaryStatus").textContent="Выберите даты и нажмите «Показать».";
     $("salesDateFrom").focus();
     return;

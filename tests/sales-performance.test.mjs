@@ -58,38 +58,30 @@ test("a failed page never becomes a partial or cached sales total",async()=>{
   assert.equal((await (await GET(request())).json()).handoffs,50);
 });
 
+
 const html=await readFile(new URL("../public/assessment-card.html",import.meta.url),"utf8");
 function client(){
-  const elements=new Map();
-  const $=id=>{
-    if(!elements.has(id))elements.set(id,{textContent:"",value:"",max:"",min:"",classList:{remove(){},add(){}},setAttribute(){},addEventListener(){}});
-    return elements.get(id);
-  };
-  const responses=[];let calls=0;
-  const context=vm.createContext({$,URLSearchParams,Intl,Date,Number,JSON,Map,AbortController,setTimeout,clearTimeout,
-    document:{querySelectorAll:()=>[]},sessionStorage:{getItem:()=>null,setItem(){}},
-    fetch:async()=>{calls++;const next=responses.shift();if(!next)throw new Error("Unexpected fetch");return next();}});
-  vm.runInContext(html.slice(html.indexOf("const salesToday="),html.indexOf('document.querySelectorAll("[data-sales-manager]")')),context);
-  return {context,$,responses,calls:()=>calls,load:()=>vm.runInContext("loadSalesMetrics()",context),select:id=>vm.runInContext(`salesSelection.managerId=${JSON.stringify(id)}`,context)};
+  const elements=new Map();const $=id=>{if(!elements.has(id))elements.set(id,{textContent:"",innerHTML:"",value:"",classList:{remove(){},add(){}},setAttribute(){},addEventListener(){}});return elements.get(id)};
+  const responses=[];let calls=0;const context=vm.createContext({$,URLSearchParams,Intl,Date,Number,JSON,Map,Set,AbortController,setTimeout,clearTimeout,document:{querySelectorAll:()=>[]},fetch:async()=>{calls++;const next=responses.shift();if(!next)throw Error("Unexpected fetch");return next()}});
+  vm.runInContext(html.slice(html.indexOf("const salesToday="),html.indexOf('document.querySelectorAll("[data-sales-payment]")')),context);
+  return {context,$,responses,calls:()=>calls,load:()=>vm.runInContext("loadSalesMetrics()",context),select:type=>vm.runInContext(`salesSelection.paymentType=${JSON.stringify(type)}`,context)};
 }
-function payload(handoffs,lastSyncAt=new Date().toISOString()){
-  return Response.json({handoffs,contractTotal:handoffs*100,contractAverage:100,lastSyncAt,periodLabel:"Месяц"});
-}
-test("returning to the same selection is immediate; another manager never inherits its numbers",async()=>{
-  const c=client();
-  c.responses.push(()=>Response.json({handoffs:46,contractTotal:4600,contractAverage:100,lastSyncAt:new Date().toISOString(),periodLabel:"Месяц",relatedMetrics:[
-    {managerId:"7609",paymentType:"261",handoffs:46,contractTotal:4600,contractAverage:100,lastSyncAt:new Date().toISOString(),periodLabel:"Месяц"},
-    {managerId:"2093",paymentType:"261",handoffs:12,contractTotal:1200,contractAverage:100,lastSyncAt:new Date().toISOString(),periodLabel:"Месяц"}
-  ]}));await c.load();
-  await c.load();assert.equal(c.calls(),1);assert.equal(c.$("salesHandoffs").textContent,"46");
-  c.select("2093");
-  await c.load();assert.equal(c.$("salesHandoffs").textContent,"12");
-  c.select("7609");await c.load();assert.equal(c.calls(),1);assert.equal(c.$("salesHandoffs").textContent,"46");
+function payload(values=[600,400,200]){return {periodLabel:"Период",lastSyncAt:new Date().toISOString(),relatedMetrics:['all','261','263','423'].flatMap(paymentType=>['7609','2093','4351'].map((managerId,i)=>({managerId,paymentType,contractTotal:values[i],contractAverage:values[i]/2,handoffs:2,contractsWithValue:2,missingContractValues:0})))}}
+test("complete team filters reuse the snapshot and averages remain visible",async()=>{
+  const c=client();c.responses.push(()=>Response.json(payload()),()=>Response.json(payload([400,600,200])));await c.load();assert.equal(c.calls(),2);
+  assert.match(c.$('rows').innerHTML,/person-average">300 ₸/);assert.match(c.$('rows').innerHTML,/rank-move up/);assert.match(c.$('rows').innerHTML,/rank-move down/);
+  c.select('261');await c.load();assert.equal(c.calls(),2);assert.match(c.$('rows').innerHTML,/Нурдаулет/);
 });
-test("late responses cannot replace the current selection",async()=>{
-  const c=client();let finish;
-  c.responses.push(()=>new Promise(resolve=>finish=resolve));const old=c.load();
-  c.select("2093");c.responses.push(()=>payload(12));await c.load();
-  finish(payload(46));await old;
-  assert.equal(c.$("salesHandoffs").textContent,"12");
+test("late current-period responses cannot replace the selected period",async()=>{
+  const c=client();let finish;c.responses.push(()=>new Promise(r=>finish=r));const old=c.load();c.select('261');c.responses.push(()=>Response.json(payload([100,100,100])),()=>Response.json(payload()));await c.load();finish(Response.json(payload()));await old;assert.equal(c.$('total').textContent,'300 ₸');
+});
+test("missing previous results hide arrows without discarding current totals",async()=>{
+  const c=client();c.responses.push(()=>Response.json(payload()),()=>{throw Error('Previous unavailable')});await c.load();assert.equal(c.$('total').textContent,'1 200 ₸');assert.doesNotMatch(c.$('rows').innerHTML,/rank-move/);assert.match(c.$('salesSummaryStatus').textContent,/Сравнение недоступно/);
+});
+test("incomplete team data never becomes a partial total",async()=>{
+  const c=client();const partial=payload();partial.relatedMetrics=partial.relatedMetrics.filter(x=>x.managerId!=='4351');c.responses.push(()=>Response.json(partial));await c.load();assert.equal(c.$('total').textContent,'—');assert.equal(c.$('rows').innerHTML,'');
+});
+test("ties share places and comparison uses an adjacent equal-length date range",()=>{
+  const c=client();c.context.data=payload([500,500,100]);vm.runInContext('renderSalesTeam(data,"all")',c.context);assert.equal((c.$('rows').innerHTML.match(/position">1</g)||[]).length,2);
+  const result=vm.runInContext('salesPreviousQuery(new URLSearchParams({period:"custom",paymentType:"all",from:"2026-03-01",to:"2026-03-10"})).toString()',c.context);const q=new URLSearchParams(result);assert.equal(q.get('from'),'2026-02-19');assert.equal(q.get('to'),'2026-02-28');
 });
