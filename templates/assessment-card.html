@@ -265,6 +265,11 @@
 @media(max-width:600px){.ranking-labels{grid-template-columns:minmax(82px,1fr) 48px 96px 135px;gap:8px;min-width:421px}.person summary{grid-template-columns:18px minmax(82px,1fr) 48px 96px 135px;gap:8px;min-width:421px}.person-average{font-size:12px}.ranking-labels{font-size:9px}.rank-move{font-size:9px}.rank-scroll{overflow-x:auto;overscroll-behavior-x:contain}.person-name{font-size:12px}.person-value{font-size:14px}}
 .rank-scroll{margin-top:20px}.leader-crown{width:18px;height:18px;color:var(--green);display:block}
 .payment-shortcut{display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding:13px 17px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--green-dark);font-size:14px;font-weight:600;text-decoration:none}.payment-shortcut:hover{border-color:var(--green);background:var(--green-pale)}.payment-shortcut:focus-visible{outline:3px solid #b9d8c3;outline-offset:3px}
+  .personal-shortcuts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 18px}
+  .personal-shortcuts a{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 16px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--green-dark);text-decoration:none;font-size:14px;font-weight:650;text-align:left}
+  .personal-shortcuts a:hover{background:var(--green-pale);border-color:var(--green-mid)}
+  .personal-shortcuts a:focus-visible{outline:3px solid var(--green-mid);outline-offset:3px}
+  @media(max-width:360px){.personal-shortcuts{grid-template-columns:1fr}}
 </style>
 </head>
 <body data-view="home">
@@ -327,7 +332,11 @@
         </form>
 <div class="rank-scroll" role="region" aria-label="Рейтинг менеджеров" tabindex="0"><div class="ranking-labels"><span>Менеджер</span><span>Договоры</span><span>Средний договор</span><span>Сумма договоров</span></div><div id="rows" aria-busy="true" aria-live="polite"></div></div>
 <div id="salesSummaryStatus" class="sales-summary-status" role="status">Загружаем результаты…</div><div class="competition-foot"><span>Рейтинг по сумме договоров · не по оплатам</span><span></span></div>
-</section>      
+</section>
+      <nav class="personal-shortcuts" aria-label="Мои показатели">
+        <a href="/my-results" target="_top"><span>Мои результаты</span><span aria-hidden="true">→</span></a>
+        <a href="/my-earnings" target="_top"><span>Мой заработок</span><span aria-hidden="true">→</span></a>
+      </nav>
       <div class="task-grid">
         <button class="task-card" type="button" data-open-view="contract">
           <span class="task-number">01</span>

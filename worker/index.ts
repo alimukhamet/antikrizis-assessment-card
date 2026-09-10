@@ -31,7 +31,7 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    const protectedPage = ['/', '/assessment-card', '/assessment-card.html'].includes(url.pathname);
+    const protectedPage = ['/', '/assessment-card', '/assessment-card.html', '/my-results', '/my-earnings'].includes(url.pathname);
     const protectedApi = url.pathname.startsWith('/api/') && url.pathname !== '/api/session';
     if (protectedPage || protectedApi) {
       const actor = await verifySession(readSessionCookie(request.headers.get('cookie')), env.SITE_SESSION_TOKEN ?? process.env.SITE_SESSION_TOKEN ?? '');

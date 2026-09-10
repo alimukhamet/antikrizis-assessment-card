@@ -23,7 +23,7 @@ export function LoginForm() {
       let target = "/";
       try {
         const parsed = new URL(requested, window.location.origin);
-        if (parsed.origin === window.location.origin && ["/", "/assessment-review"].includes(parsed.pathname)) target = parsed.pathname + parsed.search;
+        if (parsed.origin === window.location.origin && ["/", "/assessment-review", "/my-results", "/my-earnings"].includes(parsed.pathname)) target = parsed.pathname + parsed.search;
       } catch { /* Invalid return URL falls back to the task chooser. */ }
       window.location.assign(target);
     } catch (problem) {
