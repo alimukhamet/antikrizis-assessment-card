@@ -263,6 +263,7 @@
 .person-average{text-align:right;font-size:14px;color:var(--text-mid);white-space:nowrap;font-variant-numeric:tabular-nums}
 .person-name{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.rank-move{font-size:10px;font-weight:500;white-space:nowrap;color:#87948b}.rank-move.up{color:var(--green)}.rank-move.down{color:#8b7770}
 @media(max-width:600px){.ranking-labels{grid-template-columns:minmax(82px,1fr) 48px 96px 135px;gap:8px;min-width:421px}.person summary{grid-template-columns:18px minmax(82px,1fr) 48px 96px 135px;gap:8px;min-width:421px}.person-average{font-size:12px}.ranking-labels{font-size:9px}.rank-move{font-size:9px}.rank-scroll{overflow-x:auto;overscroll-behavior-x:contain}.person-name{font-size:12px}.person-value{font-size:14px}}
+.rank-scroll{margin-top:20px}.leader-crown{width:18px;height:18px;color:var(--green);display:block}
 </style>
 <link rel="stylesheet" href="/assessment-quality.css">
 <script src="/assessment-quality.js"></script>
@@ -325,7 +326,6 @@
           <input id="salesDateTo" name="to" type="date" aria-label="По дату" title="По дату" required>
           <button class="sales-date-apply" type="submit" aria-label="Показать выбранный период">ОК</button>
         </form>
-<div class="team-summary"><div><span class="metric-caption">Сумма договоров команды</span><strong id="total"></strong></div><div class="team-caption"><strong id="count"></strong><span id="period-label"></span></div></div>
 <div class="rank-scroll" role="region" aria-label="Рейтинг менеджеров" tabindex="0"><div class="ranking-labels"><span>Менеджер</span><span>Договоры</span><span>Средний договор</span><span>Сумма договоров</span></div><div id="rows" aria-busy="true" aria-live="polite"></div></div>
 <div id="salesSummaryStatus" class="sales-summary-status" role="status">Загружаем результаты…</div><div class="competition-foot"><span>Рейтинг по сумме договоров · не по оплатам</span><span></span></div>
 </section>      
@@ -1133,19 +1133,16 @@ function salesTeam(data,type){
   if(rows.some(x=>![x.contractTotal,x.contractAverage,x.handoffs,x.missingContractValues].every(n=>typeof n==="number"&&Number.isFinite(n)&&n>=0)))throw new Error("Некорректные результаты продаж.");
   return rows.sort((a,b)=>b.contractTotal-a.contractTotal||a.managerId.localeCompare(b.managerId));
 }
-function clearSalesBoard(){ $("total").textContent="—";$("count").textContent="—";$("period-label").textContent="";$("rows").innerHTML=""; }
+function clearSalesBoard(){ $("rows").innerHTML=""; }
 function renderSalesTeam(data,type,previous=null){
   const rows=salesTeam(data,type),before=previous?salesTeam(previous,type):null;
-  $("total").textContent=formatSalesMoney(rows.reduce((s,x)=>s+x.contractTotal,0));
-  $("count").textContent=rows.reduce((s,x)=>s+x.handoffs,0).toLocaleString("ru-RU")+" · Передано юристам";
-  $("period-label").textContent=data.periodLabel||"";
   $("rows").innerHTML=rows.map(x=>{
     const rank=rows.findIndex(y=>y.contractTotal===x.contractTotal)+1;
     const prior=before?before.find(y=>y.managerId===x.managerId):null;
     const movement=prior?before.findIndex(y=>y.contractTotal===prior.contractTotal)+1-rank:null;
     const arrow=movement===null?"":`<span class="rank-move ${movement>0?'up':movement<0?'down':'same'}" title="Изменение места относительно предыдущего равного периода" aria-label="${movement>0?'Поднялся на '+movement:movement<0?'Опустился на '+(-movement):'Место не изменилось'}">${movement>0?'↑':movement<0?'↓':'−'}${movement?Math.abs(movement):''}</span>`;
     const gap=x.contractTotal===0?'Нет суммы договоров':rank===1?'Лидер':formatSalesMoney(rows[rank-2].contractTotal-x.contractTotal)+' до '+(rank-1)+' места';
-    return `<details class="person"><summary><span class="position">${rank}</span><span class="person-name">${SALES_NAMES[x.managerId]}${arrow}</span><span class="person-count">${x.handoffs}</span><span class="person-average">${x.contractsWithValue?formatSalesMoney(x.contractAverage):'—'}</span><span class="person-value">${formatSalesMoney(x.contractTotal)}<span class="person-gap">${gap}</span></span></summary><div class="person-detail">${x.missingContractValues?'Без суммы договора: '+x.missingContractValues+'. Среднее рассчитано только по договорам с суммой.':'Все переданные сделки имеют сумму договора.'}</div></details>`;
+    return `<details class="person"><summary><span class="position" aria-label="Место ${rank}">${rank===1&&x.contractTotal>0?'<svg class="leader-crown" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 6 4 4 5-7 5 7 4-4-2 12H5L3 6Z"/><path d="M6 21h12"/></svg>':rank}</span><span class="person-name">${SALES_NAMES[x.managerId]}${arrow}</span><span class="person-count">${x.handoffs}</span><span class="person-average">${x.contractsWithValue?formatSalesMoney(x.contractAverage):'—'}</span><span class="person-value">${formatSalesMoney(x.contractTotal)}<span class="person-gap">${gap}</span></span></summary><div class="person-detail">${x.missingContractValues?'Без суммы договора: '+x.missingContractValues+'. Среднее рассчитано только по договорам с суммой.':'Все переданные сделки имеют сумму договора.'}</div></details>`;
   }).join("");
   const missing=rows.reduce((s,x)=>s+x.missingContractValues,0);
   const stamp=new Date(data.lastSyncAt);

@@ -73,15 +73,15 @@ test("complete team filters reuse the snapshot and averages remain visible",asyn
   c.select('261');await c.load();assert.equal(c.calls(),2);assert.match(c.$('rows').innerHTML,/Нурдаулет/);
 });
 test("late current-period responses cannot replace the selected period",async()=>{
-  const c=client();let finish;c.responses.push(()=>new Promise(r=>finish=r));const old=c.load();c.select('261');c.responses.push(()=>Response.json(payload([100,100,100])),()=>Response.json(payload()));await c.load();finish(Response.json(payload()));await old;assert.equal(c.$('total').textContent,'300 ₸');
+  const c=client();let finish;c.responses.push(()=>new Promise(r=>finish=r));const old=c.load();c.select('261');c.responses.push(()=>Response.json(payload([100,100,100])),()=>Response.json(payload()));await c.load();finish(Response.json(payload()));await old;assert.match(c.$('rows').innerHTML,/person-value">100 ₸/);
 });
 test("missing previous results hide arrows without discarding current totals",async()=>{
-  const c=client();c.responses.push(()=>Response.json(payload()),()=>{throw Error('Previous unavailable')});await c.load();assert.equal(c.$('total').textContent,'1 200 ₸');assert.doesNotMatch(c.$('rows').innerHTML,/rank-move/);assert.match(c.$('salesSummaryStatus').textContent,/Сравнение недоступно/);
+  const c=client();c.responses.push(()=>Response.json(payload()),()=>{throw Error('Previous unavailable')});await c.load();assert.match(c.$('rows').innerHTML,/person-value">600 ₸/);assert.doesNotMatch(c.$('rows').innerHTML,/rank-move/);assert.match(c.$('salesSummaryStatus').textContent,/Сравнение недоступно/);
 });
 test("incomplete team data never becomes a partial total",async()=>{
-  const c=client();const partial=payload();partial.relatedMetrics=partial.relatedMetrics.filter(x=>x.managerId!=='4351');c.responses.push(()=>Response.json(partial));await c.load();assert.equal(c.$('total').textContent,'—');assert.equal(c.$('rows').innerHTML,'');
+  const c=client();const partial=payload();partial.relatedMetrics=partial.relatedMetrics.filter(x=>x.managerId!=='4351');c.responses.push(()=>Response.json(partial));await c.load();assert.equal(c.$('rows').innerHTML,'');
 });
 test("ties share places and comparison uses an adjacent equal-length date range",()=>{
-  const c=client();c.context.data=payload([500,500,100]);vm.runInContext('renderSalesTeam(data,"all")',c.context);assert.equal((c.$('rows').innerHTML.match(/position">1</g)||[]).length,2);
+  const c=client();c.context.data=payload([500,500,100]);vm.runInContext('renderSalesTeam(data,"all")',c.context);assert.equal((c.$('rows').innerHTML.match(/aria-label="Место 1"/g)||[]).length,2);
   const result=vm.runInContext('salesPreviousQuery(new URLSearchParams({period:"custom",paymentType:"all",from:"2026-03-01",to:"2026-03-10"})).toString()',c.context);const q=new URLSearchParams(result);assert.equal(q.get('from'),'2026-02-19');assert.equal(q.get('to'),'2026-02-28');
 });
