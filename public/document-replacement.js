@@ -40,5 +40,6 @@ window.DocumentReplacement=(()=>{
  // Typing a new answer acknowledges the retired source; autofill clears it only with fresh evidence.
  for(const name of ['input','change'])document.addEventListener(name,event=>{const control=event.target;if(!af.applying&&control.hasAttribute?.('data-source-replaced')){delete control.dataset.sourceReplaced;control.setCustomValidity('');const source=af.sources.get(control.id);if(source&&!selectedFiles.some(item=>item.id===source.fileId))af.sources.delete(control.id);control.closest('.field')?.querySelectorAll('[data-replacement-notice],.af-source[data-for="'+control.id+'"]').forEach(e=>e.remove());}});
  document.addEventListener('assessment-draft-restored',refreshMarkers);
+ document.addEventListener('assessment-analysis-complete',()=>{afRenderResults();refreshMarkers();});
  return{replace,button,refreshMarkers};
 })();

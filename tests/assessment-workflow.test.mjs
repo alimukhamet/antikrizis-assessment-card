@@ -303,3 +303,10 @@ test('an unreadable stored scan stays openable without document-condition answer
  const row=s.d.querySelector('.af-file');assert.match(row.querySelector('summary').textContent,/Удостоверение.*Сверить вручную/);assert.ok(!row.querySelector('summary .needs-review'));
  assert.ok([...row.querySelectorAll('button')].some(b=>b.textContent==='Открыть документ'));assert.ok([...row.querySelectorAll('button')].some(b=>b.textContent==='Заменить'));assert.equal(row.querySelector('.af-document-notes').open,false);
 });
+test('replacement actions become enabled when restored documents finish reading',async t=>{
+ const s=setup(t);await s.load();collect(s);s.mount();
+ s.w.HostedAssessment.analyzeFile=async item=>item;
+ s.w.HostedAssessment.adapt=item=>({kind:'other',type:item.type,identity:{iin:'991231300003'},fields:[],loans:[],properties:[],pageText:['SYNTHETIC'],server:{dealId:'11665',documentId:item.storedDocumentId,extractionId:'synthetic'},sourcePreview:'/synthetic.pdf'});
+ await s.run('afAnalyze({cacheOnly:true})');
+ const buttons=[...s.d.querySelectorAll('.af-replace-document')];assert.equal(buttons.length,7);assert.ok(buttons.every(button=>!button.disabled));
+});
