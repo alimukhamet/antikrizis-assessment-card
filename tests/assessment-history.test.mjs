@@ -13,3 +13,12 @@ test('history service never reposts a writing or uncertain history intent',async
  const adapter={append:async()=>{adds++;throw new history.AssessmentHistoryError('HISTORY_OUTCOME_UNCERTAIN');},reconcile:async()=>{reads++;return null;}};
  const args=[repo,adapter,{id:'case',external_id:'11665',client_iin:iin,identity_revision:1},{id:'worker'},'request'];await service.saveSubmissionHistory(...args);assert.equal(row.history_state,'uncertain');await service.saveSubmissionHistory(...args);assert.equal(adds,1);assert.equal(reads,1);adapter.reconcile=async()=>({commentId:'5',verified:true});await service.saveSubmissionHistory(...args);assert.equal(row.history_state,'verified');await service.saveSubmissionHistory(...args);assert.equal(adds,1);
 });
+test('new history snapshot contains full answers, contract terms and the actual destination',()=>{
+ const {historySnapshot}=load('lib/questionnaire/history-snapshot.ts');
+ const text=historySnapshot({title:'SYNTHETIC CLIENT',external_id:'11665',client_iin:iin},{displayName:'TEST EMPLOYEE'},'FULL ANSWERS\nCONTRACT 123\nPAYMENT SCHEDULE',[{type:'ГКБ — полный отчёт',person:'Клиент',documentId:'source'}],[{id:'source',original_name:'SYNTHETIC.pdf'}],'2026-09-14T12:00:00Z');
+ for(const value of ['SYNTHETIC CLIENT','11665',iin,'TEST EMPLOYEE','FULL ANSWERS','CONTRACT 123','PAYMENT SCHEDULE','SYNTHETIC.pdf'])assert.ok(text.includes(value),value);
+});
+test('new submissions append and reconcile the pinned full history; old snapshots keep their old text',async()=>{
+ const service=load('lib/questionnaire/submission-history.ts',{'../documents/repository':repository,'../crm/assessment-history':history});
+ for(const full of [null,'FULL SNAPSHOT WITH CONTRACT']){const row={id:submissionId,state:'verified',history_state:'pending',identity_revision:1,actor_id:'worker',payload_json:JSON.stringify({lawyerCard:card,historyCard:full})};let appended,reconciled;const repo={get:async()=>row,claimHistory:async()=>true,finishHistory:async()=>row};const adapter={append:async(id,owner,ref,text)=>{appended=text;return{commentId:'1'};},reconcile:async(id,owner,ref,text)=>{reconciled=text;return{commentId:'1'};}};const args=[repo,adapter,{id:'case',external_id:'11665',client_iin:iin,identity_revision:1},{id:'worker'},'request'];await service.saveSubmissionHistory(...args);row.history_state='uncertain';await service.saveSubmissionHistory(...args);assert.equal(appended,full||card);assert.equal(reconciled,full||card);}
+});

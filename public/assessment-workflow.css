@@ -209,3 +209,13 @@ body[data-assessment-workflow] .wf-final-actions{padding:18px;border:1px solid #
  .wf-bottom-nav .btn-main{min-width:145px}.wf-upload-actions{gap:3px}
 }
 @media(prefers-reduced-motion:reduce){body[data-assessment-workflow] *{scroll-behavior:auto!important;transition:none!important}}
+/* Keep the client and draft destination together at every viewport width. */
+.wf-header{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px 16px;margin-bottom:16px}
+.wf-client{align-items:flex-start}.wf-client-copy>span{font-variant-numeric:tabular-nums;line-height:1.6}
+.wf-draft-note{grid-column:1/-1;margin:0;font-size:12px;color:#617168;line-height:1.5}
+.af-document-notes{font-size:12px;color:#6b776f;margin:10px 0}.af-document-notes>summary{cursor:pointer}
+.af-replace-document{margin-left:8px!important}
+.submission-destination{width:min(520px,calc(100vw - 32px));max-height:85vh;overflow:auto;box-sizing:border-box;padding:24px;border:1px solid #ccd9cf;border-radius:14px;color:#21392c;background:#fff}
+.submission-destination::backdrop{background:#17332566}.submission-destination h2{font-size:20px;margin:0 0 16px}.submission-destination p{line-height:1.6;margin:8px 0}.submission-destination strong{overflow-wrap:anywhere}
+.submission-destination label{display:flex;align-items:flex-start;gap:10px;margin:20px 0;font-size:14px}.submission-destination .af-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+@media(max-width:650px){.wf-header{grid-template-columns:minmax(0,1fr)}.wf-header .draft-toolbar{justify-content:flex-start;margin:0}.wf-client #openClients{flex-shrink:0;font-size:12px;padding:8px 10px}.wf-draft-note{font-size:11px}}

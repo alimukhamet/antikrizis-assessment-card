@@ -4,7 +4,7 @@ window.ServerDrafts=(()=>{
  function controlKey(e){if(e.closest('.af-source'))return null;if(e.closest('.exact-count'))return 'exact:'+e.closest('.exact-count').previousElementSibling.id;if(e.type==='checkbox'){if(e.dataset.holding)return `holding:${e.dataset.owner}:${e.dataset.holding}`;if(e.dataset.unknown)return `unknown:${e.dataset.unknown}`;if(e.dataset.legacyUnknown)return `unknown:${e.dataset.legacyUnknown}`;if(e.name)return `choice:${e.name}:${e.value}`;}return e.id.replace(/_r\d+$/,'');}
  function controls(root){return [...root.querySelectorAll('input,select,textarea')].filter(e=>!e.closest('.af-source')&&!['file','password'].includes(e.type));}
  function capture(){
-  const root=$('questionnaireStep'),answer=e=>({key:controlKey(e),value:e.value,checked:Boolean(e.checked)});
+  const root=$('questionnaireStep'),answer=e=>({key:controlKey(e),value:e.value,checked:Boolean(e.checked),...(e.dataset.sourceReplaced?{sourceReplaced:true}:{})});
   const values=controls(root).filter(e=>!e.closest('.repeat-item')).map(answer).filter(a=>a.key);
   const groups=[...root.querySelectorAll('.repeat')].map(g=>({id:g.id,rows:[...g.querySelector(':scope > .repeat-rows').children].map(row=>controls(row).map(answer).filter(a=>a.key)),rowKeys:[...g.querySelector(':scope > .repeat-rows').children].map(row=>[...af.rowKeys].find(([,id])=>id===row.id)?.[0]||null)}));
   const documents=[],pendingFiles=missingFiles.filter(name=>!selectedFiles.some(item=>item.file.name===name));
@@ -56,7 +56,7 @@ window.ServerDrafts=(()=>{
   })();
   const result=await saveTask;saveTask=null;if(result&&isDirty())changed();return result;
  }
- function assign(e,a){if(!e)return;if(e.tagName==='SELECT'&&a.value&&!Array.from(e.options).some(o=>o.value===a.value)){if(e.hasAttribute('data-compact-count')&&/^\d+$/.test(a.value))setCount(e,Number(a.value));else return;}if(e.type==='checkbox')e.checked=a.checked;else e.value=a.value;delete e.dataset.clientConfirmedValue;}
+ function assign(e,a){if(!e)return;if(a.sourceReplaced)e.dataset.sourceReplaced='true';if(['unknown','Не знаю'].includes(a.value)&&e.type!=='checkbox'){e.value='';return;}if(e.tagName==='SELECT'&&a.value&&!Array.from(e.options).some(o=>o.value===a.value)){if(e.hasAttribute('data-compact-count')&&/^\d+$/.test(a.value))setCount(e,Number(a.value));else return;}if(e.type==='checkbox')e.checked=a.checked;else e.value=a.value;delete e.dataset.clientConfirmedValue;}
  async function confirmRestore(){
   if(baselineSnapshot===null||JSON.stringify(capture())===baselineSnapshot)return true;
   return new Promise(resolve=>{const dialog=document.createElement('dialog');dialog.className='draft-restore-dialog';const text=document.createElement('p');text.textContent='Загрузка заменит ваши несохранённые ответы. Можно сначала скачать их копию или отменить загрузку.';const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Отмена';cancel.className='btn btn-ghost';const apply=document.createElement('button');apply.type='button';apply.textContent='Скачать копию и загрузить';apply.className='btn btn-main';apply.dataset.draftReplace='true';const finish=value=>{dialog.close();dialog.remove();resolve(value);};cancel.onclick=()=>finish(false);dialog.addEventListener('cancel',event=>{event.preventDefault();finish(false);});apply.onclick=()=>{recoverySnapshot=capture();const url=URL.createObjectURL(new Blob([JSON.stringify(recoverySnapshot,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='unsaved-assessment-'+HostedAssessment.getContext().client.external.dealId+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);finish(true);};dialog.append(text,cancel,apply);document.body.append(dialog);dialog.showModal();});
@@ -67,14 +67,17 @@ window.ServerDrafts=(()=>{
   const root=$('questionnaireStep');af.sources.clear();af.results.clear();af.rowKeys.clear();af.conflicts=[];af.client=HostedAssessment.getContext().client.iin||'';root.querySelectorAll('.af-source').forEach(e=>e.remove());
   // Only trusted templates build rows. No HTML from storage is inserted into the page.
   root.querySelectorAll('.exact-count').forEach(e=>e.remove());
-  controls(root).forEach(e=>{delete e.dataset.clientConfirmedValue;e.disabled=false;if(e.type==='checkbox')e.checked=false;else e.value='';});
+  controls(root).forEach(e=>{delete e.dataset.clientConfirmedValue;delete e.dataset.sourceReplaced;e.setCustomValidity('');e.disabled=false;if(e.type==='checkbox')e.checked=false;else e.value='';});
   for(const g of root.querySelectorAll('.repeat')){const group=p.groups.find(group=>group.id===g.id),rows=group?.rows||[];g.querySelector(':scope > .repeat-rows').replaceChildren();for(let i=0;i<rows.length;i++){const row=add(g);const key=group.rowKeys?.[i];if(key){row.id='restored-row-'+(++nextRow);af.rowKeys.set(key,row.id);}}}
   const top=controls(root).filter(e=>!e.closest('.repeat-item'));for(const a of p.answers)assign(top.find(e=>controlKey(e)===a.key),a);
+  window.RequiredAnswers?.restore();
   af.applying=true;try{for(const e of top){if(e.matches('.job-count,[data-car-count]')&&e.value!=='more')continue;e.dispatchEvent(new Event('change',{bubbles:true}));}}finally{af.applying=false;}
   for(const a of p.answers.filter(a=>a.key.startsWith('exact:')))assign(controls(root).find(e=>controlKey(e)===a.key),a);
   for(const group of p.groups){const g=document.getElementById(group.id);if(!g)continue;const rows=g.querySelector(':scope > .repeat-rows');for(let i=0;i<group.rows.length;i++){if(!rows.children[i])add(g);const cs=controls(rows.children[i]);for(const a of group.rows[i])assign(cs.find(e=>controlKey(e)===a.key),a);}}
+  window.RequiredAnswers?.restore();
   const all=controls(root);af.applying=true;try{all.filter(e=>e.closest('.repeat-item')).forEach(e=>e.dispatchEvent(new Event('change',{bubbles:true})));}finally{af.applying=false;}
   $('needsSocialDoc').value=p.docContext.social;$('needsSalaryDoc').value=p.docContext.salaryBank==='other'?'1':p.docContext.salaryBank??(p.docContext.salary==='1'?'1':'');
+  syncBenefitAnswer();
   selectedFiles=[];fileSequence=0;
   const failed=[];for(const doc of p.documents){if(!doc.originalName){failed.push(doc.documentId);continue;}selectedFiles.push({id:++fileSequence,file:{name:doc.originalName,size:0,type:'application/pdf'},type:doc.type,person:doc.person||'Клиент',storedDocumentId:doc.documentId});}
   revision=draft.revision;request=null;baselineLoaded=true;$('loadDraft').classList.add('hidden');renderDocuments();afRenderResults();afRenderConflicts();afClientChoices();children();spouse();kaspi();visibilityRules();afRefresh();document.dispatchEvent(new Event('assessment-draft-restored'));

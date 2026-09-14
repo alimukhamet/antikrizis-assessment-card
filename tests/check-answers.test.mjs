@@ -13,7 +13,7 @@ const set=(p,key,value,checked)=>{const a=p.answers.find(a=>a.key===key);a.value
 const run=p=>checkAnswers(validateDraft(p),iin);
 const has=(result,key,code)=>result.issues.some(i=>i.key===key&&(!code||i.code===code));
 test('complete single client answers pass without inventing spouse details',()=>{const result=run(fixture());assert.equal(result.answersComplete,true,JSON.stringify(result.issues));assert.equal(result.schedule.firstPaymentDate,'2026-12-07');});
-test('blank and explicit unknown stay distinct, with consistent child counts',()=>{const p=fixture();set(p,'childrenTotal','');assert.ok(has(run(p),'childrenTotal','ANSWER_REQUIRED'));set(p,'unknown:childrenTotal','on',true);assert.ok(!has(run(p),'childrenTotal'));set(p,'unknown:childrenTotal','on',false);set(p,'childrenTotal','1');set(p,'childrenUnder18','2');assert.ok(has(run(p),'childrenUnder18','CHILD_COUNT_CONFLICT'));});
+test('blank and explicit unknown stay distinct, with consistent child counts',()=>{const p=fixture();set(p,'childrenTotal','');assert.ok(has(run(p),'childrenTotal','ANSWER_REQUIRED'));set(p,'unknown:childrenTotal','on',true);assert.ok(has(run(p),'childrenTotal','ANSWER_REQUIRED'));set(p,'unknown:childrenTotal','on',false);set(p,'childrenTotal','1');set(p,'childrenUnder18','2');assert.ok(has(run(p),'childrenUnder18','CHILD_COUNT_CONFLICT'));});
 test('married clients require spouse income, assets and bank answers',()=>{const p=fixture();set(p,'marital','В браке');const r=run(p);for(const key of ['count-partnerjobs','partnerKaspiAnnual','holding:partner:'])assert.ok(has(r,key),key);});
 test('other overall purpose requires an explanation only when selected',()=>{const p=fixture();set(p,'choice:debtPurpose:Другое','Другое',true);assert.ok(has(run(p),'debtPurposeOther'));set(p,'debtPurposeOther','TEST EXPLANATION');assert.ok(!has(run(p),'debtPurposeOther'));set(p,'choice:debtPurpose:Другое','Другое',false);assert.ok(!compileAssessment(p,iin).lawyerCard.includes('TEST EXPLANATION'));assert.ok(schema.groups.find(g=>g.id==='transfers').fields.some(f=>f.key==='transferOther'));});
 test('selected property requires a row; incompatible none choice is rejected',()=>{const p=fixture();set(p,'holding:client:real','real',true);const r=run(p);assert.ok(has(r,'clientreal','ROW_REQUIRED'));assert.ok(has(r,'holding:client:','CONFLICTING_CHOICES'));});
@@ -39,10 +39,11 @@ test('compiler preserves debt cents and keeps payment terms out of the lawyer ca
  assert.ok(!compiled.lawyerCard.includes('CONTRACT-PRIVATE-TEST'));assert.ok(!compiled.lawyerCard.includes('987654'));assert.ok(!compiled.lawyerCard.includes('ГРАФИК ПЛАТЕЖЕЙ'));
  assert.ok(compiled.fullCard.includes('CONTRACT-PRIVATE-TEST'));assert.equal(compiled.values.card,compiled.fullCard);assert.equal(compiled.values.grafType,'423');
 });
-test('compiler excludes stale hidden spouse answers and retains explicit unknowns and other explanation',()=>{
+test('compiler blocks legacy unknowns and retains other explanations after staff answers',()=>{
  const p=fixture();set(p,'partnerKaspiAnnual','987654321');set(p,'childrenTotal','');set(p,'unknown:childrenTotal','on',true);
  set(p,'choice:debtPurpose:Другое','Другое',true);set(p,'debtPurposeOther','EXPLANATION TO PRESERVE');
- const c=compileAssessment(validateDraft(p),iin);assert.ok(!c.lawyerCard.includes('987654321'));assert.ok(c.lawyerCard.includes('Неизвестно — уточнить'));assert.ok(c.lawyerCard.includes('EXPLANATION TO PRESERVE'));
+ assert.throws(()=>compileAssessment(validateDraft(p),iin),/ANSWERS_INCOMPLETE/);set(p,'childrenTotal','0');set(p,'unknown:childrenTotal','on',false);
+ const c=compileAssessment(validateDraft(p),iin);assert.ok(!c.lawyerCard.includes('987654321'));assert.ok(!c.lawyerCard.includes('Неизвестно — уточнить'));assert.ok(c.lawyerCard.includes('EXPLANATION TO PRESERVE'));
 });
 test('incomplete questionnaire cannot be compiled into save values',()=>{const p=fixture();set(p,'fio','');assert.throws(()=>compileAssessment(validateDraft(p),iin),/ANSWERS_INCOMPLETE/);});
 
@@ -61,7 +62,7 @@ test('participants require a separate answer for each loan; legacy answers canno
  const second=structuredClone(first);second.find(a=>a.key==='loanParticipants').value='SECOND PERSON — Гарант';group.rows.push(second);group.rowKeys.push(null);
  const incomplete=run(p);assert.ok(has(incomplete,'enforcementDetails'));assert.ok(incomplete.issues.some(i=>i.key==='loanParticipants'&&i.row===0));assert.ok(!incomplete.issues.some(i=>i.key==='loanParticipants'&&i.row===1));
  set(p,'unknown:enforcementDetails','on',true);first.find(a=>a.key==='unknown:loanParticipants').checked=true;
- assert.ok(run(p).issues.some(i=>i.key==='loanParticipants'&&i.row===0));first.find(a=>a.key==='loanParticipants').value='Нет';assert.equal(run(p).answersComplete,true);const data=contractData(p,iin);assert.equal(data.enforcement,'Неизвестно — уточнить');assert.match(data.guarantors,/Кредит 1 .*Нет/);assert.match(data.guarantors,/Кредит 2 .*SECOND PERSON — Гарант/);assert.doesNotMatch(data.guarantors,/LEGACY PERSON/);
+ assert.ok(run(p).issues.some(i=>i.key==='loanParticipants'&&i.row===0));first.find(a=>a.key==='loanParticipants').value='Нет';assert.ok(has(run(p),'enforcementDetails','ANSWER_REQUIRED'));set(p,'unknown:enforcementDetails','on',false);set(p,'enforcementDetails','Нет');assert.equal(run(p).answersComplete,true);const data=contractData(p,iin);assert.equal(data.enforcement,'Нет');assert.match(data.guarantors,/Кредит 1 .*Нет/);assert.match(data.guarantors,/Кредит 2 .*SECOND PERSON — Гарант/);assert.doesNotMatch(data.guarantors,/LEGACY PERSON/);
  assert.doesNotMatch(compileAssessment(p,iin).lawyerCard,/LEGACY PERSON/);assert.equal(validateDraft(p).answers.find(a=>a.key==='guarantors').value,'LEGACY PERSON');
 });
 
@@ -127,10 +128,14 @@ test('both active handoff outputs retain the lawyer note and exact documentary s
  const result=compileAssessment(p,iin,[evidence]);
  for(const card of [result.fullCard,result.lawyerCard]){assert.match(card,/SYNTHETIC FOLLOW-UP/);assert.match(card,/synthetic.pdf, стр. 2/);assert.match(card,/не удостоверяет подлинность/);}
 });
-test('active contract retains unknown property and cannot turn missing income or participants into zero or no',()=>{
+test('legacy unknown property blocks final saving and cannot turn missing income or participants into zero or no',()=>{
  const p=fixture();set(p,'holding:client:none','none',false);set(p,'holding:client:unknown','unknown',true);
- assert.equal(contractData(p,iin).property,'Неизвестно — уточнить');
+ assert.throws(()=>contractData(p,iin),/ANSWERS_INCOMPLETE/);set(p,'holding:client:unknown','unknown',false);set(p,'holding:client:none','none',true);
  set(p,'count-clientjobs','');assert.throws(()=>contractData(p,iin),/ANSWERS_INCOMPLETE/);
  set(p,'count-clientjobs','0');p.groups.find(g=>g.id==='creditors').rows[0].find(a=>a.key==='loanParticipants').value='';
  assert.throws(()=>contractData(p,iin),/ANSWERS_INCOMPLETE/);
+});
+test('retired document source remains a blocker after draft serialization',()=>{
+ const p=fixture();p.answers.find(a=>a.key==='fio').sourceReplaced=true;
+ const restored=validateDraft(JSON.parse(JSON.stringify(p)));assert.equal(restored.answers.find(a=>a.key==='fio').sourceReplaced,true);assert.ok(has(checkAnswers(restored,iin),'fio','ANSWER_SOURCE_REPLACED'));assert.throws(()=>compileAssessment(restored,iin),/ANSWERS_INCOMPLETE/);
 });

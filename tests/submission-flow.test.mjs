@@ -2,6 +2,7 @@ import{test}from'node:test';import assert from'node:assert/strict';import fs fro
 function setup({uncertain=false,editDuringPrepare=false}={}){
  const dom=new JSDOM('<button id="anchor">Check</button><p id="status"></p>',{url:'https://assessment.example',runScripts:'outside-only'}),w=dom.window;let payload={answers:['INITIAL']},row=null,rendered=null,downloads=0;const calls=[];
  w.HostedAssessment={ready:()=>true,getContext:()=>({client:{external:{dealId:'11665'}}})};w.ServerDrafts={capture:()=>payload,reviewBindings:()=>[]};w.URL.createObjectURL=()=> 'blob:test';w.URL.revokeObjectURL=()=>{};w.HTMLAnchorElement.prototype.click=()=>{downloads++;};
+ w.SubmissionDestination={confirm:async()=>({dealId:'11665',iin:'SYNTHETIC',identityRevision:1})};
  w.ContractRenderers={['a'.repeat(64)]:{render:async(data,version)=>{rendered={data,version};return{};}}};
  w.fetch=async(url,options)=>{if(!options?.method)return{ok:true,json:async()=>({submission:row})};const b=JSON.parse(options.body);calls.push(b);if(b.action==='prepare'){row={requestId:b.requestId,state:'prepared',assessmentSaved:false,historySaved:false,contractNumber:'TEST',reviewText:'SAVED SNAPSHOT'};if(editDuringPrepare)payload={answers:['EDITED']};}if(b.action==='commit')row={...row,state:uncertain?'uncertain':'verified',assessmentSaved:!uncertain};if(b.action==='reconcile')row={...row,state:'verified',assessmentSaved:true};if(b.action==='history')row={...row,historySaved:true};if(b.action==='cancel')row={...row,state:'cancelled'};return{ok:true,json:async()=>b.action==='contract'?{contract:{rendererVersion:'a'.repeat(64),data:{client_name:'SAVED PERSON'}}}:row};};
  w.eval(fs.readFileSync(new URL('../public/submission-flow.js',import.meta.url),'utf8'));const flow=w.SubmissionFlow.mount(w.document.getElementById('anchor'),w.document.getElementById('status'));
@@ -33,4 +34,13 @@ test('a pending PDF or another document problem prevents any signature or contra
   s.w.AssessmentCheck={run:async()=>{},result:()=>({answersComplete:true,evidence:{issues:[]},documents:{issues:[{code:'DOCUMENT_UPLOAD_PENDING'},{code:'EDS_SEPARATE_UPLOAD_REQUIRED'},...(extra?[{code:extra}]:[])]}})};
   await s.save.onclick();assert.equal(keys,0);assert.equal(s.calls.length,0);assert.equal(s.downloads(),0);
  }
+});
+test('cancelling destination review prevents document, credential, field and history writes',async()=>{
+ const s=setup();s.check(true);let documents=0;s.w.SubmissionDestination.confirm=async()=>null;s.w.AssessmentDocumentUpload={submit:async()=>documents++};await s.save.onclick();assert.equal(documents,0);assert.equal(s.calls.length,0);
+});
+test('every outbound submission action includes the confirmed destination',async()=>{
+ const s=setup();s.check(true);await s.save.onclick();for(const call of s.calls.filter(c=>['prepare','commit','history'].includes(c.action)))assert.deepEqual(call.destination,{dealId:'11665',iin:'SYNTHETIC',identityRevision:1});
+});
+test('a changed answer during destination review prevents all outbound writes',async()=>{
+ const s=setup();s.check(true);s.w.SubmissionDestination.confirm=async()=>{s.w.ServerDrafts.capture=()=>({answers:['DIFFERENT']});return{dealId:'11665',iin:'SYNTHETIC',identityRevision:1};};await s.save.onclick();assert.equal(s.calls.length,0);
 });

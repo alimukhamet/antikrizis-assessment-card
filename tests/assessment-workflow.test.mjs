@@ -22,7 +22,7 @@ function setup(t){
   throw Error('Unexpected test request: '+path);
  };
  for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))run(match[1]);
- for(const name of ['hosted-assessment','assessment-review','server-drafts','document-review','document-upload','credential-upload','submission-flow','server-answer-check','client-confirmed-amount'])run(fs.readFileSync('public/'+name+'.js','utf8'));
+ for(const name of ['hosted-assessment','assessment-review','server-drafts','document-review','document-upload','credential-upload','submission-flow','server-answer-check','client-confirmed-amount','required-answers','document-replacement'])run(fs.readFileSync('public/'+name+'.js','utf8'));
  t.after(async()=>{await new Promise(resolve=>setTimeout(resolve,0));dom.window.close();});
  const capture=()=>JSON.parse(JSON.stringify(w.ServerDrafts.capture()));
  return{w,d,run,calls,capture,mount(){run(fs.readFileSync('public/assessment-workflow.js','utf8'));},async load(){d.getElementById('hostDealId').value='11665';await d.getElementById('hostLoadDeal').onclick();await new Promise(resolve=>setTimeout(resolve,0));}};
@@ -247,10 +247,11 @@ test('entering benefits updates document collection without losing the answers',
  s.run("selectedFiles.push({id:99,type:'Справка по выплатам пенсии и пособий',person:'Клиент',storedDocumentId:'synthetic-benefit',file:{name:'benefit.pdf',size:10}})");s.w.AssessmentWorkflow.refresh();assert.equal(s.w.AssessmentWorkflow.show('answers',{focus:false}),true);
  count.value='0';count.dispatchEvent(new s.w.Event('change',{bubbles:true}));assert.equal(s.d.getElementById('needsSocialDoc').value,'0');assert.equal(s.d.getElementById('require-social').classList.contains('hidden'),true);assert.ok(s.capture().documents.some(d=>d.documentId==='synthetic-benefit'),'existing document stays stored');
 });
-test('restored contradictory benefit context stays visible and cannot hide the certificate',async t=>{
+test('an explicit No clears a stale benefits count and removes the conditional certificate',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();const count=s.d.getElementById('clientBenefitsCount');count.value='1';s.run('refreshRequiredDocuments()');
- assert.equal(count.checkValidity(),false);assert.match(count.validationMessage,/не совпадает/);assert.ok(s.w.AssessmentWorkflow.collection().missing.includes('Справка по выплатам пенсии и пособий'));
- s.d.getElementById('needsSocialDoc').value='1';s.d.getElementById('needsSocialDoc').dispatchEvent(new s.w.Event('change',{bubbles:true}));assert.equal(count.checkValidity(),true);
+ assert.equal(count.checkValidity(),false);assert.match(count.validationMessage,/не совпадает/);assert.ok(!s.w.AssessmentWorkflow.collection().missing.includes('Справка по выплатам пенсии и пособий'));
+ s.d.getElementById('needsSocialDoc').dispatchEvent(new s.w.Event('change',{bubbles:true}));assert.equal(count.value,'0');assert.equal(count.checkValidity(),true);
+ s.d.getElementById('needsSocialDoc').value='1';s.d.getElementById('needsSocialDoc').dispatchEvent(new s.w.Event('change',{bubbles:true}));assert.equal(count.value,'');assert.ok(s.w.AssessmentWorkflow.collection().missing.includes('Справка по выплатам пенсии и пособий'));
  count.value='';s.run('refreshRequiredDocuments()');assert.equal(count.validity.customError,false);assert.equal(count.validity.valueMissing,true);
 });
 test('Russian editor rejects future dates on restored and new loans using the assessment day',async t=>{
@@ -261,4 +262,44 @@ test('Russian editor rejects future dates on restored and new loans using the as
  shadow.querySelector('input').value='2026';shadow.querySelector('input').dispatchEvent(new s.w.Event('input',{bubbles:true}));assert.equal(input.value,'2026-01');assert.equal(input.checkValidity(),true);assert.equal(shadow.querySelector('[role="status"]').hidden,true);
  const month=shadow.querySelector('select');month.value='10';month.dispatchEvent(new s.w.Event('change',{bubbles:true}));assert.equal(input.checkValidity(),false);month.value='09';month.dispatchEvent(new s.w.Event('change',{bubbles:true}));assert.equal(input.checkValidity(),true);
  const row=s.run("add(document.getElementById('creditors'))");await new Promise(resolve=>setTimeout(resolve,0));assert.equal(row.querySelector('input[type="month"]').max,'2026-09');
+});
+
+test('unknown shortcuts are absent and restored unknowns become unanswered, never zero',async t=>{
+ const s=setup(t);await s.load();s.mount();
+ for(const root of[s.d,...[...s.d.querySelectorAll('template')].map(t=>t.content)]){
+  assert.equal([...root.querySelectorAll('option')].some(o=>/Не знаю/.test(o.textContent)),false);
+  for(const label of root.querySelectorAll('label'))if(/Не знаю/.test(label.textContent))assert.ok(label.closest('[hidden],[data-legacy-answer]'));
+ }
+ s.d.getElementById('childrenTotal').value='2';s.d.querySelector('[data-legacy-unknown="childrenTotal"]').checked=true;s.d.querySelector('[data-holding="unknown"]').checked=true;
+ s.w.RequiredAnswers.restore();assert.equal(s.d.getElementById('childrenTotal').value,'');assert.equal(s.d.getElementById('childrenTotal').disabled,false);assert.equal(s.d.querySelector('[data-holding="none"]').checked,false);assert.equal(s.d.querySelector('[data-holding="unknown"]').checked,false);
+});
+
+test('replacement preserves the prior file on read failure or another client IIN',async t=>{
+ const s=setup(t);await s.load();collect(s);s.mount();s.w.ServerDrafts.save=async()=>true;
+ const item=s.run('selectedFiles[0]');const count=s.run('selectedFiles.length');
+ for(const mode of ['failed','wrong-client']){
+  s.w.HostedAssessment.analyzeFile=async()=>{if(mode==='failed')throw Error('TEST READ FAILURE');return{};};
+  s.w.HostedAssessment.adapt=()=>({identity:{iin:'OTHER'},server:{dealId:'11665',documentId:'new-doc'}});
+  assert.equal(await s.w.DocumentReplacement.replace(item,new s.w.File(['test'],'new.pdf')),false);assert.equal(s.run('selectedFiles[0]'),item);assert.equal(s.run('selectedFiles.length'),count);
+ }
+});
+
+test('replacement keeps typed answers and persists the retired source as a final-save blocker',async t=>{
+ const s=setup(t);await s.load();collect(s);s.mount();s.w.ServerDrafts.save=async()=>true;
+ s.run(`af.sources.set('fio',{fileId:1,value:'OLD SOURCE',pending:false,reviewId:'old-review',server:{dealId:'11665',documentId:'synthetic-0',extractionId:'old'}});document.getElementById('fio').value='EMPLOYEE EDIT';`);
+ s.w.HostedAssessment.analyzeFile=async()=>({});s.w.HostedAssessment.adapt=()=>({identity:{iin:'991231300003'},fields:[],loans:[],properties:[],pageText:['test'],kind:'gkbShort',type:'ГКБ — краткий отчёт',server:{dealId:'11665',documentId:'new-doc',extractionId:'new'},sourcePreview:'/new.pdf'});
+ assert.equal(await s.w.DocumentReplacement.replace(s.run('selectedFiles[0]'),new s.w.File(['test'],'new.pdf')),true);
+ assert.equal(s.d.getElementById('fio').value,'EMPLOYEE EDIT');assert.equal(s.run("af.sources.get('fio').reviewId"),null);
+ assert.equal(s.capture().answers.find(a=>a.key==='fio').sourceReplaced,true);assert.equal(s.capture().documents[0].documentId,'new-doc');
+ assert.ok(s.d.querySelector('.af-source[data-for="fio"]').textContent.includes('Источник заменён'));
+ // Editing is deliberate re-entry; stale document approval cannot survive it.
+ s.d.getElementById('fio').value='RECHECKED PERSON';s.d.getElementById('fio').dispatchEvent(new s.w.Event('input',{bubbles:true}));
+ assert.equal(s.capture().answers.find(a=>a.key==='fio').sourceReplaced,undefined);assert.equal(s.run("af.sources.has('fio')"),false);
+});
+
+test('an unreadable stored scan stays openable without document-condition answers',async t=>{
+ const s=setup(t);await s.load();s.mount();
+ s.run(`selectedFiles=[{id:1,type:'Удостоверение личности',person:'Клиент',storedDocumentId:'scan',file:{name:'scan.pdf'}}];af.results.set(1,{kind:'other',blocked:true,notes:['Тип документа не установлен по содержимому.']});afRenderResults();`);
+ const row=s.d.querySelector('.af-file');assert.match(row.querySelector('summary').textContent,/Удостоверение.*Сверить вручную/);assert.ok(!row.querySelector('summary .needs-review'));
+ assert.ok([...row.querySelectorAll('button')].some(b=>b.textContent==='Открыть документ'));assert.ok([...row.querySelectorAll('button')].some(b=>b.textContent==='Заменить'));assert.equal(row.querySelector('.af-document-notes').open,false);
 });

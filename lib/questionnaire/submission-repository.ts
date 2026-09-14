@@ -6,7 +6,7 @@ import type {ApprovedAnswerEvidence} from './review-bindings';
 export type SubmissionPayload = {
  schemaVersion:1; draft:DraftPayload; baseline:AssessmentBaseline; values:AssessmentValues;
  // Trusted review IDs collected by the submission validator, never caller assertions.
- contractData:Record<string,unknown>;contractRendererVersion:string;lawyerCard:string; reviewIds:string[]; evidence:ApprovedAnswerEvidence[]; validationVersion:string; assessmentDay:string;
+ contractData:Record<string,unknown>;contractRendererVersion:string;lawyerCard:string;historyCard?:string; reviewIds:string[]; evidence:ApprovedAnswerEvidence[]; validationVersion:string; assessmentDay:string;
 };
 export type SubmissionRow = {
  id:string;case_id:string;request_id:string;identity_revision:number;payload_json:string;payload_hash:string;

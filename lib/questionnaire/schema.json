@@ -45,8 +45,7 @@
         "7",
         "8",
         "9",
-        "more",
-        "unknown"
+        "more"
       ],
       "compactCount": true,
       "required": true,
@@ -73,6 +72,7 @@
     {
       "key": "unknown:childrenTotal",
       "type": "checkbox",
+      "legacy": true,
       "label": "Сколько у вас детей?*",
       "required": false,
       "conditions": []
@@ -100,6 +100,7 @@
     {
       "key": "unknown:childrenUnder18",
       "type": "checkbox",
+      "legacy": true,
       "label": "Сколько из них младше 18 лет?*",
       "required": false,
       "conditions": [
@@ -357,6 +358,7 @@
     {
       "key": "holding:client:unknown",
       "type": "checkbox",
+      "legacy": true,
       "label": "Что зарегистрировано на ваше имя?*",
       "required": false,
       "conditions": []
@@ -457,6 +459,7 @@
     {
       "key": "holding:partner:unknown",
       "type": "checkbox",
+      "legacy": true,
       "label": "Что зарегистрировано на имя супруга(и)?*",
       "required": false,
       "conditions": [
@@ -502,8 +505,7 @@
       "options": [
         "",
         "0",
-        "1",
-        "unknown"
+        "1"
       ],
       "required": true,
       "conditions": []
@@ -645,8 +647,7 @@
         "",
         "Есть на руках",
         "Можно получить",
-        "Нет",
-        "Не знаю"
+        "Нет"
       ],
       "required": true,
       "conditions": [
@@ -746,6 +747,7 @@
     {
       "key": "unknown:enforcementDetails",
       "type": "checkbox",
+      "legacy": true,
       "label": "Какие исполнительные производства или исполнительные надписи есть? Укажите количество и подробности*",
       "required": false,
       "conditions": []
@@ -1127,8 +1129,7 @@
           "options": [
             "",
             "Нет",
-            "Да",
-            "Не знаю"
+            "Да"
           ],
           "required": true,
           "conditions": []
@@ -1163,8 +1164,7 @@
           "options": [
             "",
             "Нет",
-            "Да",
-            "Не знаю"
+            "Да"
           ],
           "required": true,
           "conditions": []
@@ -1184,8 +1184,7 @@
           "options": [
             "",
             "Да",
-            "Нет",
-            "Не знаю"
+            "Нет"
           ],
           "required": true,
           "conditions": []
@@ -1213,8 +1212,7 @@
           "options": [
             "",
             "Да",
-            "Нет",
-            "Не знаю"
+            "Нет"
           ],
           "required": true,
           "conditions": []
@@ -1250,8 +1248,7 @@
           "options": [
             "",
             "Да",
-            "Нет",
-            "Не знаю"
+            "Нет"
           ],
           "required": true,
           "conditions": []
@@ -1327,8 +1324,7 @@
           "options": [
             "",
             "Нет",
-            "Да",
-            "Не знаю"
+            "Да"
           ],
           "required": true,
           "conditions": []
@@ -1364,8 +1360,7 @@
           "options": [
             "",
             "Нет",
-            "Да",
-            "Не знаю"
+            "Да"
           ],
           "required": true,
           "conditions": []
@@ -1386,8 +1381,7 @@
           "options": [
             "",
             "Да",
-            "Нет",
-            "Не знаю"
+            "Нет"
           ],
           "required": true,
           "conditions": []
@@ -1416,8 +1410,7 @@
           "options": [
             "",
             "Да",
-            "Нет",
-            "Не знаю"
+            "Нет"
           ],
           "required": true,
           "conditions": []
@@ -1454,8 +1447,7 @@
           "options": [
             "",
             "Да",
-            "Нет",
-            "Не знаю"
+            "Нет"
           ],
           "required": true,
           "conditions": []

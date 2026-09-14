@@ -41,15 +41,16 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
  });}
  function field(f:Definition,row?:Map<string,Answer>,group?:string,index?:number){
   if(f.legacy||!active(f.conditions,row)||f.key.startsWith('exact:'))return;
+  if((row?.get(f.key)||all.get(f.key))?.sourceReplaced)issue(f.key,'ANSWER_SOURCE_REPLACED','Источник заменён: '+f.label,group,index);
   if(f.type==='checkbox'){
    if(!f.key.startsWith('unknown:')&&!f.key.startsWith('choice:debtPurpose:')&&checked(f.key))displayAnswers.push({key:f.key,label:f.label,value:f.key.split(':').at(-1)||''});
    return;
   }
   const v=value(f.key,row);
   const unknownKey='unknown:'+f.key;
-  const unknown=(row?row.get(unknownKey)?.checked===true:checked(unknownKey))&&(group?schema.groups.find(g=>g.id===group)?.fields:schema.scalar)?.some(x=>x.key===unknownKey&&!('legacy' in x&&x.legacy));
+  const unknown=f.key!=='loanParticipants'&&(row?row.get(unknownKey)?.checked===true:checked(unknownKey))&&(group?schema.groups.find(g=>g.id===group)?.fields:schema.scalar)?.some(x=>x.key===unknownKey);
   displayAnswers.push({key:f.key,label:f.label,value:unknown?'Неизвестно — уточнить':v,...(group?{group,row:index}:{})});
-  if(unknown)return;
+  if(unknown||['unknown','Не знаю'].includes(v)){issue(f.key,'ANSWER_REQUIRED',f.label,group,index);return;}
   if(!v){if(f.required)issue(f.key,'ANSWER_REQUIRED',f.label,group,index);return;}
   if(f.key==='loanParticipants'&&!parseParticipants(v).valid)issue(f.key,'PARTICIPANTS_REQUIRED','Выберите «Нет» или укажите ФИО и роль каждого участника',group,index);
   if(f.compactCount&&v==='more')issue(f.key,'EXACT_COUNT_REQUIRED',f.label,group,index);
@@ -78,7 +79,7 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
  }
  for(const prefix of ['choice:socialStatus:', 'holding:client:',...(married?['holding:partner:']:[])]){
   const selected=payload.answers.filter(a=>a.key.startsWith(prefix)&&a.checked).map(a=>a.key.slice(prefix.length));
-  if(!selected.length)issue(prefix,'CHOICE_REQUIRED','Выберите подходящий ответ');
+  if(!selected.length||selected.includes('unknown'))issue(prefix,'CHOICE_REQUIRED','Выберите подходящий ответ');
   if(selected.length>1&&selected.some(v=>['Нет','none','unknown'].includes(v)))issue(prefix,'CONFLICTING_CHOICES','Несовместимые ответы');
  }
  if(!trustedIin)issue('iin','DEAL_IDENTITY_UNVERIFIED','Сначала подтвердите клиента сделки');

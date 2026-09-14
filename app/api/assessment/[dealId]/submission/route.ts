@@ -1,6 +1,7 @@
 import {requireStaffRequest} from '../../../staff-access';
 import {boundedJson,evidenceContext,evidenceError,operatingDay} from '../../../../../lib/documents/request-context';
 import {RepositoryError} from '../../../../../lib/documents/repository';
+import {assertSubmissionDestination} from '../../../../../lib/questionnaire/submission-destination';
 import {SubmissionRepository,type SubmissionRow} from '../../../../../lib/questionnaire/submission-repository';
 import {prepareFinalSubmission,commitFinalSubmission,reconcileFinalSubmission,cancelFinalPreparation,savedContract} from '../../../../../lib/questionnaire/final-submission';
 import {saveSubmissionHistory} from '../../../../../lib/questionnaire/submission-history';
@@ -15,6 +16,7 @@ export async function POST(request:Request,context:{params:Promise<{dealId:strin
   const {env}=await import('cloudflare:workers');
   const runtime=env as typeof env & {DB?:D1Database};
   if(!runtime.DB)throw new RepositoryError('EVIDENCE_STORAGE_NOT_CONFIGURED',503);
+  if(['prepare','commit','history'].includes(String(body.action)))assertSubmissionDestination(record,body.destination);
   const submissions=new SubmissionRepository(runtime.DB),adapter=createAssessmentAdapter(process.env.BITRIX_WEBHOOK??'');
   if(body.action==='contract')return Response.json({contract:await savedContract(submissions,record,actor,body.requestId)},{headers:{'cache-control':'no-store'}});
   let row:SubmissionRow|null;

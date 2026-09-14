@@ -19,9 +19,10 @@ async function afSource(src){
  const token=crypto.randomUUID();preview.dataset.request=token;
  $af('afSourceTitle').textContent=item?.file.name||'Документ';$af('afQuote').textContent=src.quote||'';
  const update=page=>{$af('afSourceText').textContent=r?.pageText?.[page-1]||'Текст страницы недоступен.';};update(src.page||1);dialog.showModal();
- if(!r?.sourcePreview){preview.textContent='Сначала распознайте файл, чтобы сохранить и открыть исходный PDF.';return;}
+ const sourceUrl=r?.sourcePreview||(item?.storedDocumentId?'/api/assessment/'+HostedAssessment.getContext().client.external.dealId+'/documents/'+item.storedDocumentId+'?view=pdf':null);
+ if(!sourceUrl){preview.textContent='Сначала распознайте файл, чтобы сохранить и открыть исходный PDF.';return;}
  preview.textContent='Открываем PDF…';
- try{const viewer=await import('/pdf-preview.mjs');if(!dialog.open||preview.dataset.request!==token)return;await viewer.mount(preview,{url:r.sourcePreview,page:src.page||1,onPage:update});}catch{preview.textContent='Не удалось открыть просмотр. Обновите страницу и повторите.';}
+ try{const viewer=await import('/pdf-preview.mjs');if(!dialog.open||preview.dataset.request!==token)return;await viewer.mount(preview,{url:sourceUrl,page:src.page||1,onPage:update});}catch{preview.textContent='Не удалось открыть просмотр. Обновите страницу и повторите.';}
 }
 function afLogicalVisible(e){
  if(!e||!e.isConnected||e.disabled||e.closest('.hidden,[hidden],[data-legacy-answer]'))return false;
@@ -34,7 +35,7 @@ function afLogicalVisible(e){
 }
 function afControls(){return [...$af('questionnaireStep').querySelectorAll('input,select,textarea')].filter(e=>!e.closest('.af-source')&&afLogicalVisible(e));}
 function afLabel(e){return e.closest('.field')?.querySelector('label.lbl')?.textContent.trim()||e.getAttribute('aria-label')||e.id||'Ответ';}
-function afMissing(){return afControls().filter(e=>!e.hasAttribute('data-optional')&&!['checkbox','file','button'].includes(e.type)&&(!e.value.trim()||!e.checkValidity()));}
+function afMissing(){return afControls().filter(e=>e.dataset.sourceReplaced||!e.hasAttribute('data-optional')&&!['checkbox','file','button'].includes(e.type)&&(!e.value.trim()||!e.checkValidity()));}
 function afMissingGroups(){return [...$af('questionnaireStep').querySelectorAll('.holdings,.chips')].filter(g=>afLogicalVisible(g)&&!g.querySelector('input:checked'));}
 function afPending(){return [...af.sources].filter(([id,s])=>s.pending&&afLogicalVisible($af(id)));}
 function afRefresh(){
@@ -53,7 +54,10 @@ function afBadge(e,src){
  const label=afEl('span',hint);label.title=(selectedFiles.find(x=>x.id===src.fileId)?.file.name||'Документ')+(src.date?' · '+src.date:'');box.append(label);
  const open=afEl('button','Источник');open.type='button';open.onclick=()=>afSource(src);box.append(open);
  if(src.pending&&src.edited){const label=afEl('label','Причина исправления');const reason=afEl('textarea');reason.id=e.id+'-review-reason';label.htmlFor=reason.id;reason.setAttribute('data-optional','');reason.value=src.correctionReason||'';reason.addEventListener('input',()=>src.correctionReason=reason.value);box.append(label,reason);}
- if(src.pending){const yes=afEl('button',src.edited?'Сохранить исправление':'Верно');yes.type='button';yes.onclick=async()=>{yes.disabled=true;try{await HostedAssessment.review(e,src);src.pending=false;src.stale=false;afBadge(e,src);afRefresh();}catch(error){afStatus(error.message,true);yes.disabled=false;}};box.append(yes);}
+ if(src.stale&&!selectedFiles.some(item=>item.id===src.fileId)){
+  label.textContent='Источник заменён. Сверьте ответ с новым документом.';
+  const clear=afEl('button','Очистить ответ');clear.type='button';clear.onclick=()=>{if(e.type==='checkbox')e.checked=false;else e.value='';af.sources.delete(e.id);delete e.dataset.sourceReplaced;e.setCustomValidity('');box.remove();e.dispatchEvent(new Event('change',{bubbles:true}));afRefresh();};box.append(clear);
+ }else if(src.pending){const yes=afEl('button',src.edited?'Сохранить исправление':'Верно');yes.type='button';yes.onclick=async()=>{yes.disabled=true;try{await HostedAssessment.review(e,src);delete e.dataset.sourceReplaced;e.setCustomValidity('');field.querySelectorAll('[data-replacement-notice]').forEach(node=>node.remove());src.pending=false;src.stale=false;afBadge(e,src);afRefresh();}catch(error){afStatus(error.message,true);yes.disabled=false;}};box.append(yes);}
  field.append(box);
 }
 function afDispatchChange(e){const previous=af.applying;af.applying=true;try{e.dispatchEvent(new Event('change',{bubbles:true}));}finally{af.applying=previous;}}
@@ -73,6 +77,7 @@ function afPut(e,value,src){
   }
   e.value=value;afDispatchChange(e);
  }
+ delete e.dataset.sourceReplaced;e.setCustomValidity('');
  const source={...src,pending:!src.priorReview,value:String(src.originalValue??value),reviewId:src.priorReview?.id,edited:src.priorReview?.disposition==='corrected',correctionReason:src.priorReview?.reason||''};af.sources.set(e.id,source);afBadge(e,source);return true;
 }
 // Same identity rule as lib/documents/loan-identity.ts, covered by a parity test.
@@ -164,17 +169,22 @@ function afApply(){
 $af('afApply').onclick=afApply;
 function afRenderResults(){
  const root=$af('afFileResults');root.replaceChildren();
- for(const item of selectedFiles){const r=af.results.get(item.id);if(!r)continue;
+ for(const item of selectedFiles){const r=af.results.get(item.id)||(item.storedDocumentId?{sourceOnly:true}:null);if(!r)continue;
   const shortType={'ГКБ — краткий отчёт':'ГКБ краткий','ГКБ — полный отчёт':'ГКБ полный','Справка ЕНПФ':'ЕНПФ','Выписка Kaspi Gold':'Kaspi','Удостоверение личности':'Удостоверение','Ф6 об отсутствии имущества':'Ф6','Справка по выплатам пенсии и пособий':'Пенсии и пособия'};
-  const displayType=r.type&&r.kind!=='other'?shortType[r.type]||r.type:item.file.name;
+  const displayType=item.type&&item.type!=='Другой документ'?shortType[item.type]||item.type:r.type&&r.kind!=='other'?shortType[r.type]||r.type:item.file.name;
   const box=afEl('details',undefined,'af-file'),summary=afEl('summary'),name=afEl('strong',afExcluded(item)?'Ключ ЭЦП':displayType);summary.title=item.file.name;
-  const state=r.error?'Ошибка':r.blocked?'Нужна проверка':r.excluded?'Отдельно':r.duplicate?'Повтор':'Прочитан';
-  summary.append(name,afEl('span',state,'af-file-state'+(r.error||r.blocked?' needs-review':'')));box.append(summary);
+  const wrongOwner=Boolean(r.identity?.iin&&HostedAssessment.getContext()?.client.iin&&r.identity.iin!==HostedAssessment.getContext().client.iin&&item.person==='Клиент');
+  const state=r.sourceOnly?'Сохранён':r.error?'Не прочитан':wrongOwner?'Другой клиент':r.blocked?'Сверить вручную':r.excluded?'Отдельно':r.duplicate?'Повтор':'Прочитан';
+  summary.append(name,afEl('span',state,'af-file-state'+(r.error||wrongOwner?' needs-review':'')));box.append(summary);
   box.append(afEl('p',afExcluded(item)?'Ключ ЭЦП':item.file.name,'af-original-name'));box.append(afEl('p',(r.pages||0)+' стр.'+(item.person?' · '+item.person:''),'hint'));
   if(r.error)box.append(afEl('p',r.error,'error'));
   if(r.statement){const st=r.statement;box.append(afEl('p','Период: '+st.period+' · операций: '+st.transactions+' · поступления: '+Number(st.credits).toLocaleString('ru-RU')+' ₸. '+(st.reconciled?'Операции сверены.':'Нужна сверка операций.'),'hint'));}
-  const notes=afEl('ul');(r.notes||[]).filter(t=>!t.startsWith('Подлинность документа')&&!t.startsWith('Использован ранее')).forEach(t=>notes.append(afEl('li',t)));if(notes.children.length)box.append(notes);
-  if(r.pageText?.length){const b=afEl('button','Открыть документ');b.type='button';b.className='btn btn-ghost';b.onclick=()=>afSource({fileId:item.id,page:1});box.append(b);}
+  if(wrongOwner)box.append(afEl('p','В документе указан другой ИИН. Замените файл.','error'));
+  else if(r.blocked)box.append(afEl('p',item.type==='Доверенность'?'Сверьте владельца, срок и полномочия в документе.':'Откройте документ и сверьте владельца и срок. Автоматическое чтение не завершено.','hint'));
+  const notes=afEl('ul');(r.notes||[]).filter(t=>!t.startsWith('Подлинность документа')&&!t.startsWith('Использован ранее')).forEach(t=>notes.append(afEl('li',t)));
+  if(notes.children.length){const info=afEl('details',undefined,'af-document-notes');info.append(afEl('summary','Подробности чтения'),notes);box.append(info);}
+  if(r.sourcePreview||item.storedDocumentId){const b=afEl('button','Открыть документ');b.type='button';b.className='btn btn-ghost';b.onclick=()=>afSource({fileId:item.id,page:1});box.append(b);}
+  if(!afExcluded(item)&&window.DocumentReplacement)box.append(DocumentReplacement.button(item));
   root.append(box);
  }
 }
@@ -225,8 +235,8 @@ setTimeout(afRefresh,50);
 HostedAssessment.mount();
 
 $af('afDate').addEventListener('change',()=>{for(const [id,src] of af.sources){if(!$af(id))continue;src.pending=true;afBadge($af(id),src);}if(af.sources.size)afStatus('Дата оценки изменилась. Повторите распознавание и проверьте актуальность ответов.');afRefresh();});
-const afBaseRender=renderDocuments;renderDocuments=function(){afBaseRender();for(const[id,src]of af.sources){if(!selectedFiles.some(x=>x.id===src.fileId)&&$af(id)){src.pending=true;afBadge($af(id),src);}}afRefresh();};
-const afNew=afEl('button','Новая анкета');afNew.type='button';afNew.className='btn btn-ghost';afNew.onclick=()=>{if(confirm('Начать новую анкету? Несохранённые ответы будут очищены. Сохранённые версии останутся в сделке.')){try{if(window.parent.location.origin===location.origin)window.parent.location.assign('/assessment-review');else location.assign('/questionnaire.html');}catch{location.assign('/questionnaire.html');}};};document.querySelector('.draft-toolbar').append(afNew);
+const afBaseRender=renderDocuments;renderDocuments=function(){afBaseRender();for(const[id,src]of af.sources){if(!selectedFiles.some(x=>x.id===src.fileId)&&$af(id)){src.pending=true;src.stale=true;src.reviewId=null;$af(id).dataset.sourceReplaced='true';afBadge($af(id),src);}}afRefresh();};
+
 
 // Reading and draft storage happen after file selection; CRM submission is a separate final action.
 document.addEventListener('change',event=>{if(event.target?.type==='file'&&event.target.closest('#documentStep'))setTimeout(()=>{if(HostedAssessment.ready()&&!af.busy&&selectedFiles.some(item=>!afExcluded(item)&&!item.storedDocumentId&&!af.results.get(item.id)?.server))afAnalyze();},0);});

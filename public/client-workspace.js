@@ -32,7 +32,7 @@ window.ClientWorkspace=(()=>{
  async function open(){
   if(directory){directory.focus();return;}
   const dialog=el('dialog',null,'client-dialog');directory=dialog;dialog.setAttribute('aria-labelledby','clientDirectoryTitle');
-  const heading=el('h2','Клиенты и черновики');heading.id='clientDirectoryTitle';
+  const heading=el('h2','Выбрать клиента');heading.id='clientDirectoryTitle';
   const exit=button('Закрыть',close),search=el('input');search.type='search';search.placeholder='Имя клиента или номер сделки';search.setAttribute('aria-label','Найти клиента');
   const status=el('p','Загружаем черновики…','hint'),list=el('div',null,'client-directory-list');status.setAttribute('role','status');search.maxLength=80;
   dialog.append(heading,exit,search,status,list);dialog.addEventListener('close',()=>{dialog.remove();if(directory===dialog)directory=null;},{once:true});document.body.append(dialog);dialog.showModal();
@@ -89,9 +89,9 @@ window.ClientWorkspace=(()=>{
   }catch(error){notice.textContent=error.message;}
   finally{af.busy=false;locked.forEach(([node,disabled])=>node.disabled=disabled);afRefresh();document.dispatchEvent(new Event('assessment-analysis-complete'));if(imported||reused)await ServerDrafts.save({automatic:true});}
  }
- const clients=button(HostedAssessment.ready()?'Сменить':'Выбрать',open);clients.id='openClients';clients.setAttribute('aria-label',HostedAssessment.ready()?'Сменить клиента':'Выбрать клиента');document.querySelector('.wf-client-copy').after(clients);
+ const clients=button(HostedAssessment.ready()?'Другой клиент':'Выбрать',open);clients.id='openClients';clients.setAttribute('aria-label',HostedAssessment.ready()?'Сменить клиента':'Выбрать клиента');document.querySelector('.wf-client-copy').after(clients);
  const picker=document.querySelector('.wf-case-picker');picker.querySelector('summary').textContent='По номеру сделки';
- document.addEventListener('assessment-case-opened',()=>{picker.querySelector('summary').textContent='По номеру сделки';clients.textContent='Сменить';clients.setAttribute('aria-label','Сменить клиента');});
+ document.addEventListener('assessment-case-opened',()=>{picker.querySelector('summary').textContent='По номеру сделки';clients.textContent='Другой клиент';clients.setAttribute('aria-label','Сменить клиента');});
  const importer=button('Взять из Bitrix',importDocuments);importer.id='importCrmDocuments';(document.querySelector('.wf-tools-content')||document.querySelector('.wf-upload-actions')).prepend(importer);
  const notice=el('p',null,'hint');notice.id='crmImportStatus';notice.setAttribute('role','status');document.querySelector('.wf-upload-box').append(notice);
  return{open,switchTo,importDocuments};

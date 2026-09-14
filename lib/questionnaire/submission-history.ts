@@ -9,12 +9,13 @@ export async function saveSubmissionHistory(submissions:SubmissionRepository,ada
  if(prior.state!=='verified')throw new RepositoryError('ASSESSMENT_SAVE_NOT_VERIFIED');
  if(prior.history_state==='verified')return prior;
  const payload=JSON.parse(prior.payload_json) as SubmissionPayload;
- if(!payload.lawyerCard||!record.client_iin)throw new RepositoryError('HISTORY_SNAPSHOT_UNAVAILABLE');
+ const text=payload.historyCard||payload.lawyerCard;
+ if(!text||!record.client_iin)throw new RepositoryError('HISTORY_SNAPSHOT_UNAVAILABLE');
  const pending=prior.history_state==='pending';
  if(pending&&!await submissions.claimHistory(record,requestId))return submissions.get(record.id,requestId);
  let receipt;
  try{
-  receipt=await (pending?adapter.append:adapter.reconcile)(record.external_id,record.client_iin,prior.id,payload.lawyerCard);
+  receipt=await (pending?adapter.append:adapter.reconcile)(record.external_id,record.client_iin,prior.id,text);
  }catch(error){return submissions.finishHistory(record.id,requestId,null,error instanceof AssessmentHistoryError?error.code:'HISTORY_OUTCOME_UNCERTAIN');}
  return submissions.finishHistory(record.id,requestId,receipt?.commentId??null,receipt?'HISTORY_READBACK_VERIFIED':'HISTORY_OUTCOME_UNCERTAIN');
 }

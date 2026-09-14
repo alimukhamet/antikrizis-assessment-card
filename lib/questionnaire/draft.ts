@@ -1,6 +1,6 @@
 import schema from './schema.json';
 import {RepositoryError}from'../documents/repository';
-export type Answer={key:string;value:string;checked:boolean;clientConfirmed?:true};
+export type Answer={key:string;value:string;checked:boolean;clientConfirmed?:true;sourceReplaced?:true};
 export type DraftPayload={schemaVersion:1;answers:Answer[];groups:Array<{id:string;rows:Answer[][];rowKeys:(string|null)[]}>;docContext:{social:string;salary:string;salaryBank?:'kaspi'|'other'|'none'|''};documents:Array<{documentId:string;type:string;person:string}>;pendingFiles:string[]};
 function object(value:unknown):Record<string,unknown>{if(!value||typeof value!=='object'||Array.isArray(value))throw new RepositoryError('INVALID_DRAFT',400);return value as Record<string,unknown>;}
 function text(value:unknown,max=8000){if(typeof value!=='string'||value.length>max)throw new RepositoryError('INVALID_DRAFT',400);return value;}
@@ -8,9 +8,10 @@ type Definition={key:string;type:string;options?:string[];compactCount?:boolean;
 const definitions=new Map<string,Definition>([...schema.scalar,...schema.groups.flatMap<Definition>(g=>g.fields)].map(f=>[f.key,f]));
 function answers(value:unknown,allowed:Set<string>):Answer[]{if(!Array.isArray(value)||value.length>allowed.size)throw new RepositoryError('INVALID_DRAFT',400);const used=new Set<string>();return value.map(item=>{const a=object(item),key=text(a.key,120);if(!allowed.has(key)||used.has(key)||typeof a.checked!=='boolean')throw new RepositoryError('INVALID_DRAFT_FIELD',400);const value=text(a.value),definition=definitions.get(key);
  if(key.startsWith('exact:')&&value!==''&&(!/^\d{1,3}$/.test(value)||Number(value)>200))throw new RepositoryError('INVALID_DRAFT_COUNT',400);
- if(definition?.options&&!definition.options.includes(value)&&!(definition.compactCount&&/^\d{1,3}$/.test(value)&&Number(value)<=200))throw new RepositoryError('INVALID_DRAFT_OPTION',400);
+ if(definition?.options&&!definition.options.includes(value)&&!['unknown','Не знаю'].includes(value)&&!(definition.compactCount&&/^\d{1,3}$/.test(value)&&Number(value)<=200))throw new RepositoryError('INVALID_DRAFT_OPTION',400);
+ if(a.sourceReplaced!==undefined&&a.sourceReplaced!==true)throw new RepositoryError('INVALID_SOURCE_REPLACEMENT',400);
  if(a.clientConfirmed!==undefined&&(a.clientConfirmed!==true||key!=='n8040'||!/^\d+(?:[.]\d{1,2})?$/.test(value)))throw new RepositoryError('INVALID_CLIENT_CONFIRMATION',400);
- used.add(key);return{key,value,checked:a.checked,...(a.clientConfirmed===true?{clientConfirmed:true as const}:{})};});}
+ used.add(key);return{key,value,checked:a.checked,...(a.sourceReplaced?{sourceReplaced:true as const}:{}),...(a.clientConfirmed===true?{clientConfirmed:true as const}:{})};});}
 export function validateDraft(value:unknown):DraftPayload{
  const draft=object(value);if(draft.schemaVersion!==1)throw new RepositoryError('DRAFT_SCHEMA_UNSUPPORTED',400);
  const scalar=new Set(schema.scalar.map(f=>f.key)),groupMap=new Map(schema.groups.map(g=>[g.id,new Set(g.fields.map(f=>f.key))]));

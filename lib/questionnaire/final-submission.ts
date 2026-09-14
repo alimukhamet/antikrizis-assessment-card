@@ -7,6 +7,7 @@ import {submitValidatedAssessment} from './submission-service';
 import {parseReviewBindings} from './review-bindings';
 import {CONTRACT_RENDERER_VERSION} from '../../public/contract-words.mjs';
 import {validateDraft} from './draft';
+import {historySnapshot} from './history-snapshot';
 type Adapter=ReturnType<typeof createAssessmentAdapter>;
 function same(a:unknown,b:unknown){return JSON.stringify(a)===JSON.stringify(b);}
 /** Prepare an immutable server snapshot. No CRM write occurs during preparation. */
@@ -22,7 +23,9 @@ export async function prepareFinalSubmission(evidenceRepository:EvidenceReposito
  if(!checked.publicResult.readyToSubmit||!checked.compiled)throw new RepositoryError('ASSESSMENT_NOT_READY');
  const baseline=await adapter.read(record.external_id);
  if(baseline.iin!==record.client_iin)throw new RepositoryError('CASE_IDENTITY_CHANGED');
- const payload:SubmissionPayload={schemaVersion:1,draft:checked.payload,baseline,values:checked.compiled.values,contractData:checked.publicResult.preview!.contractData!,contractRendererVersion:CONTRACT_RENDERER_VERSION,lawyerCard:checked.compiled.lawyerCard,reviewIds:checked.reviewIds,evidence:checked.publicResult.evidence.approved,validationVersion:FINAL_VALIDATION_VERSION,assessmentDay:day};
+ const originals=await Promise.all(checked.payload.documents.map(d=>evidenceRepository.document(record.id,d.documentId)));
+ const historyCard=historySnapshot(record,actor,checked.compiled.values.card,checked.payload.documents,originals.filter(d=>d!==null),new Date().toISOString());
+ const payload:SubmissionPayload={historyCard,schemaVersion:1,draft:checked.payload,baseline,values:checked.compiled.values,contractData:checked.publicResult.preview!.contractData!,contractRendererVersion:CONTRACT_RENDERER_VERSION,lawyerCard:checked.compiled.lawyerCard,reviewIds:checked.reviewIds,evidence:checked.publicResult.evidence.approved,validationVersion:FINAL_VALIDATION_VERSION,assessmentDay:day};
  return submissions.prepare(record,requestId,payload,actor);
 }
 /** Recheck evidence immediately before claiming the one permitted external write. */

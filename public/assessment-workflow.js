@@ -17,7 +17,7 @@ window.AssessmentWorkflow=(()=>{
  intro.hidden=true;
  const top=make('header',null,'wf-header'),toolbar=document.querySelector('.draft-toolbar');
  intro.before(top);top.append(toolbar);
- const more=details('Ещё','wf-more'),moreContent=make('div',null,'wf-more-content');more.append(moreContent);
+ const more=details('Действия','wf-more'),moreContent=make('div',null,'wf-more-content');more.append(moreContent);
  for(const button of [...toolbar.querySelectorAll('button')])if(button.id!=='loadDraft')moreContent.append(button);
  moreContent.append($('afExport'));toolbar.append(more);
  document.addEventListener('click',event=>{if(more.open&&!more.contains(event.target))more.open=false;});
@@ -26,7 +26,7 @@ window.AssessmentWorkflow=(()=>{
  const originalDraftStatus=showDraftStatus;
  showDraftStatus=function(text){
   const safeSaved=/^Черновик (сохранён|загружен)/.test(text)&&!/не (сохранены|загруженные)|не удалось/i.test(text);
-  const compact=safeSaved?'Сохранено':text==='Есть несохранённые изменения…'?'Сохраняем…':text==='Ответы будут сохраняться автоматически.'?'Автосохранение':text==='Сохраняем черновик…'?'Сохраняем…':text==='Открываем черновик клиента…'?'Загрузка…':text;
+  const compact=safeSaved?'Черновик сохранён':text==='Есть несохранённые изменения…'?'Сохраняем…':text==='Ответы будут сохраняться автоматически.'?'Сохраняется автоматически':text==='Сохраняем черновик…'?'Сохраняем…':text==='Открываем черновик клиента…'?'Загрузка…':text;
   originalDraftStatus(compact);draftStatus.title=text;draftStatus.classList.toggle('wf-status-detail',compact===text&&text.length>35);
  };
  draftStatus.textContent='Черновик';
@@ -41,7 +41,8 @@ window.AssessmentWorkflow=(()=>{
  const analysisActions=$('afAnalyze').closest('.af-actions');
  const fileResults=$('afFiles'),questions=$('afQuestions'),conflicts=$('afConflicts'),oldName=$('hostDealName');
  workspace.replaceChildren(client,status,identity,oldName);workspace.className='wf-client';oldName.hidden=true;top.prepend(workspace);moreContent.append(picker);
- picker.open=false;
+ picker.open=false;picker.hidden=true;
+ const draftNote=make('p','Черновик в инструменте. В Bitrix — при скачивании договора.','wf-draft-note');top.append(draftNote);
 
  const nav=make('nav',null,'wf-steps');nav.setAttribute('aria-label','Этапы оценки');top.after(nav);
  const stages=[['documents','Документы','Добавьте файлы клиента'],['answers','Ответы','Проверьте и дополните'],['contract','Договор','Проверьте и сохраните']];
@@ -175,7 +176,7 @@ window.AssessmentWorkflow=(()=>{
   const state=collection();
   collectionNotice.hidden=state.ready;collectionNotice.replaceChildren();
   if(!state.ready){
-   collectionNotice.append(make('span',af.busy?'Сохраняем и читаем документы…':'Сначала соберите документы','wf-collection-title'));
+   collectionNotice.append(make('span',af.busy?'Сохраняем и читаем документы…':state.context.length&&!state.missing.length?'Уточните список документов':'Сначала соберите документы','wf-collection-title'));
    const links=make('div',null,'wf-collection-links');
    for(const id of state.context)links.append(action(id==='needsSocialDoc'?'Пенсия / пособия':'Зарплатный банк',()=>{$(id).focus();$(id).scrollIntoView({block:'center'});}));
    for(const type of state.missing){
@@ -190,7 +191,7 @@ window.AssessmentWorkflow=(()=>{
   if(active!=='documents'&&!state.ready)show('documents',{focus:false,remember:false});
  }
  function refresh(){
-  const legacy=$('legacyLoanParticipants');legacy.hidden=!$('guarantors').value&&!legacy.querySelector('[data-unknown]').checked;legacy.querySelector('[data-unknown]').disabled=true;
+  const legacy=$('legacyLoanParticipants');legacy.hidden=!$('guarantors').value&&!legacy.querySelector('[data-legacy-unknown]').checked;legacy.querySelector('[data-legacy-unknown]').disabled=true;
   compactLoans();
   for(const hint of root.querySelectorAll('.field > .hint')){
    if(hint.querySelector('input,select,textarea,button')||!hint.textContent.trim())continue;
@@ -228,7 +229,7 @@ window.AssessmentWorkflow=(()=>{
  }
  function updateCase(){
   const context=HostedAssessment.getContext();if(!context)return;
-  clientName.textContent=context.client.title;clientMeta.textContent='№ '+context.client.external.dealId;clientMeta.title=context.client.iin?'ИИН '+context.client.iin:'ИИН не указан';
+  clientName.textContent=context.client.title;clientMeta.textContent='Сделка № '+context.client.external.dealId+(context.client.iin?' · ИИН '+context.client.iin:' · ИИН не указан');clientMeta.title=context.client.iin?'ИИН '+context.client.iin:'ИИН не указан';
   picker.querySelector('summary').textContent='Другая сделка';picker.open=false;refresh();
  }
  document.addEventListener('assessment-case-opened',()=>{lastCheck=null;for(const {fold}of answerSections)fold.open=false;updateCase();show('documents',{focus:false,remember:false});});
