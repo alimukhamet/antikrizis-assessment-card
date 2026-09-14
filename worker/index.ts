@@ -31,14 +31,14 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    const protectedPage = ['/', '/assessment-card', '/assessment-card.html', '/my-results', '/my-earnings'].includes(url.pathname);
+    const protectedPage = ['/', '/assessment-review', '/assessment-feedback', '/assessment-card', '/assessment-card.html', '/my-results', '/my-earnings'].includes(url.pathname);
     const protectedApi = url.pathname.startsWith('/api/') && url.pathname !== '/api/session';
     if (protectedPage || protectedApi) {
       const actor = await verifySession(readSessionCookie(request.headers.get('cookie')), env.SITE_SESSION_TOKEN ?? process.env.SITE_SESSION_TOKEN ?? '');
       if (!actor) {
         if(protectedApi)return Response.json({error:'SIGN_IN_REQUIRED'},{status:401,headers:{'cache-control':'no-store'}});
         const login=new URL('/login',url.origin);login.searchParams.set('returnTo',url.pathname+url.search);
-        return Response.redirect(login.toString(),303);
+        return new Response(null,{status:303,headers:{location:login.toString(),'cache-control':'no-store'}});
       }
       if(!requestOriginAllowed(request))return Response.json({error:'INVALID_ORIGIN'},{status:403,headers:{'cache-control':'no-store'}});
       if(['/assessment-card','/assessment-card.html'].includes(url.pathname))return new Response(assessmentHtml,{headers:{'content-type':'text/html; charset=utf-8','cache-control':'private, no-store'}});
@@ -57,7 +57,15 @@ const worker = {
       }, allowedWidths);
     }
 
-    return handler.fetch(request, env, ctx);
+    const response = await handler.fetch(request, env, ctx);
+    if (url.pathname === '/login') {
+      const login = new Response(response.body, response);
+      login.headers.set('cache-control', 'no-store');
+      // Native POST forms need their same-origin Origin header for CSRF checks.
+      login.headers.set('referrer-policy', 'same-origin');
+      return login;
+    }
+    return response;
   },
 };
 

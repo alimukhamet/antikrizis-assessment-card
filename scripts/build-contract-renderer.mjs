@@ -1,0 +1,14 @@
+import fs from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+const html=await fs.readFile('templates/assessment-card.html','utf8');
+const template=/const TEMPLATE_B64 = '[^']+';/.exec(html)?.[0];if(!template)throw Error('CANONICAL_TEMPLATE_MISSING');
+const libs=html.slice(html.indexOf('const LIB_URLS ='),html.indexOf('function blobToBase64(')).replace('catch(_){}','catch{}');
+const zip=html.slice(html.indexOf('const DOCX_MIME='),html.indexOf('function formatDateLong('));
+const words=html.slice(html.indexOf('function pluralRu('),html.indexOf('const segVal ='));
+const company=/const COMPANY = \{[\s\S]*?\n\};/.exec(html)?.[0];if(!company)throw Error('CANONICAL_COMPANY_MISSING');
+const version=createHash('sha256').update(template+libs+zip+'renderer-v1').digest('hex');
+const renderer=`/* Generated from the canonical contract template; do not edit legal text here. */\nwindow.ContractRenderer=(()=>{\nconst version=${JSON.stringify(version)};\n${template}\n${libs}\n${zip}\nasync function render(data,expectedVersion){if(expectedVersion&&expectedVersion!==version)throw Error('Версия договора не совпала с сохранённой.');await ensureLibs();const zip=new window.PizZip(base64ToArrayBuffer(TEMPLATE_B64));const doc=new window.docxtemplater(zip,{paragraphLoop:true,linebreaks:true,delimiters:{start:'{{',end:'}}'}});doc.setData(data);doc.render();return wordCompatibleDocxZip(doc.getZip()).generate({type:'blob',compression:'DEFLATE',mimeType:DOCX_MIME});}\nreturn {render,version};})();\nwindow.ContractRenderers=window.ContractRenderers||{};window.ContractRenderers[window.ContractRenderer.version]=window.ContractRenderer;\n`;
+await fs.writeFile('public/contract-renderer.js',renderer);
+await fs.mkdir('public/contract-renderers',{recursive:true});
+await fs.writeFile(`public/contract-renderers/${version}.js`,renderer);
+await fs.writeFile('public/contract-words.mjs',`/* Preserved canonical contract wording helpers. */\n${company}\n${words}\nconst CONTRACT_RENDERER_VERSION=${JSON.stringify(version)};\nexport {COMPANY,numberToWordsRu,CONTRACT_RENDERER_VERSION};\n`);

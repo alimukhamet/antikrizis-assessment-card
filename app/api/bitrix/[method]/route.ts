@@ -1,3 +1,4 @@
+import { requireStaffRequest } from '../../staff-access';
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
@@ -15,6 +16,9 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ method: string }> },
 ) {
+  const denied = await requireStaffRequest(request);
+  if (denied) return denied;
+
   const configuredWebhook = process.env.BITRIX_WEBHOOK;
   if (!configuredWebhook) {
     return Response.json(

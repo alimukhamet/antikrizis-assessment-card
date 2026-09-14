@@ -1,0 +1,20 @@
+import{test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import vm from'node:vm';import ts from'typescript';
+function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>imports[n],Date,Map,Set,BigInt});return exports;}
+const labels=JSON.parse(fs.readFileSync(new URL('../lib/documents/kz-labels.json',import.meta.url),'utf8'));
+const {parseKaspiStatement,extractNative}=load('lib/documents/extract-native.ts',{'./power-of-attorney':load('lib/documents/power-of-attorney.ts'),'./kz-labels.json':labels}),{statementPeriod}=load('lib/documents/policy.ts');
+const text='Kaspi ВЫПИСКА за период с 01.09.25 по 31.08.26\nИИН: 000000000010\nДоступно на 01.09.25 + 10,00 ₸\nДоступно на 31.08.26 + 90,03 ₸\n15.01.26 + 100,03 ₸ Пополнение\n16.01.26 - 20,00 ₸ Покупка';
+const pages=t=>[{page:3,text:t,needsOcr:false,nativeCharacters:t.length}];
+test('exact cents reconcile; source is actual transaction page and inflows stay distinct from income',()=>{const r=extractNative(pages(text));assert.equal(r.bankStatement.credits,'100.03');assert.equal(r.bankStatement.debits,'-20.00');assert.equal(r.bankStatement.reconciled,true);assert.equal(r.facts.find(f=>f.key==='statement.topUps').page,3);assert.ok(!r.facts.some(f=>f.key.includes('income')||f.key==='n8044'));});
+test('negative closing balance and four-digit transaction dates are supported',()=>{const t=text.replace('90,03','-90,00').replace('+ -','- ').replace('100,03','0,00').replace('20,00','100,00').replace('15.01.26','15.01.2026');assert.equal(parseKaspiStatement(pages(t)).reconciled,true);});
+test('omitted, malformed and out-of-period operations cannot produce a usable total',()=>{for(const t of [text.replace('16.01.26 - 20,00 ₸ Покупка',''),text.replace('100,03','100,0'),text.replace('15.01.26','15.01.24')]){const r=extractNative(pages(t));assert.ok(r.findings.includes('STATEMENT_RECONCILIATION_REQUIRED'));assert.ok(!r.facts.some(f=>f.key==='statement.topUps'));}});
+test('OCR pages and ambiguous balances block extraction facts',()=>{const p=pages(text);p[0].needsOcr=true;assert.equal(parseKaspiStatement(p).rowsReadable,false);assert.equal(parseKaspiStatement(pages(text+'\nДоступно на 31.08.26 + 100,00 ₸')).reconciled,false);});
+test('preceding twelve complete months are rechecked at month rollover',()=>{assert.equal(statementPeriod('2025-09-01','2026-08-31','2026-09-10').length,0);assert.equal(statementPeriod('2025-09-01','2026-08-31','2026-10-01').length,1);assert.equal(statementPeriod('2025-01-01','2025-12-31','2026-01-10').length,0);assert.equal(statementPeriod('2025-08-01','2026-08-31','2026-09-10').length,1);});
+test('transaction summary can reconcile receipts despite blocked available funds, but requires all categories',()=>{
+ const summary='Краткое содержание операций по карте:\nПополнения + 100,03 ₸\nПоступления со своих счетов + 0,00 ₸\nЗачисления кредитов + 0,00 ₸\nПереводы - 0,00 ₸\nПереводы на свои счета - 0,00 ₸\nПокупки - 20,00 ₸\nСнятия - 0,00 ₸\nРазное - 0,00 ₸\n';
+ const t=text.replace('90,03','-900,00').replace('+ -','- ')+'\n'+summary;const result=parseKaspiStatement(pages(t));assert.equal(result.reconciliation,'summary');assert.equal(result.credits,'100.03');assert.equal(result.reconciled,true);
+ assert.equal(parseKaspiStatement(pages(t.replace('Разное - 0,00 ₸',''))).reconciled,false);assert.equal(parseKaspiStatement(pages(t.replace('Покупки - 20,00 ₸','Покупки - 19,00 ₸'))).reconciled,false);
+});
+test('gambling suggestions count only identified outgoing merchants, never winnings or an inferred zero',()=>{
+ const r=extractNative(pages(text.replace('₸ Покупка','₸ Покупка OLIMPBET').replace('₸ Пополнение','₸ Пополнение OLIMPBET')));assert.equal(r.facts.find(f=>f.key==='statement.gambling').value,'20.00');assert.equal(r.bankStatement.gambling.matches.length,1);
+ assert.equal(extractNative(pages(text)).facts.some(f=>f.key==='statement.gambling'),false);
+});

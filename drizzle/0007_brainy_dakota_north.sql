@@ -1,0 +1,2 @@
+DROP INDEX `assessment_upload_active`;--> statement-breakpoint
+CREATE UNIQUE INDEX `assessment_upload_active` ON `assessment_upload_manifests` (`case_id`) WHERE "assessment_upload_manifests"."state" NOT IN ('verified','cancelled');

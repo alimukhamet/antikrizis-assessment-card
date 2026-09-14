@@ -1,0 +1,17 @@
+[data-assessment-step][hidden]{display:none!important}
+.assessment-steps{display:flex;gap:8px;margin:16px 0;flex-wrap:wrap}
+.assessment-steps button,.assessment-navigation button{border:1px solid #cbd5e1;border-radius:10px;padding:12px 16px;background:#fff;color:#1e293b;font:inherit;cursor:pointer}
+.assessment-steps button[aria-current="step"]{background:#123d79;color:white;border-color:#123d79}
+.assessment-navigation{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:20px 0;font-size:14px}
+.assessment-navigation button[hidden]{display:none}
+@media(max-width:600px){.assessment-steps{display:grid}.assessment-navigation{flex-wrap:wrap}}
+.quality-unknown{display:flex;align-items:center;gap:8px;font-size:14px;line-height:1.5;color:#475569;margin-top:8px;cursor:pointer}
+.quality-unknown input{width:18px!important;height:18px;flex:none}
+.quality-field textarea{min-height:90px}
+.quality-topic{border-top:1px solid #cbd5e1;padding:16px 0}
+.quality-topic summary{cursor:pointer;font-size:16px;font-weight:600;line-height:1.6}
+.quality-topic summary span{font-size:14px;font-weight:400;color:#475569}
+.quality-topic .fields{margin-top:16px}
+.quality-review .hint{font-size:14px;line-height:1.6;margin-bottom:16px}
+#qualitySummary{padding:12px 16px;background:#edf4ff;color:#123d79;border-radius:8px;font-size:15px;line-height:1.6}
+.quality-field :disabled{background:#f1f5f9;color:#64748b}

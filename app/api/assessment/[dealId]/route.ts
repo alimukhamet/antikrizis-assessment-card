@@ -1,0 +1,3 @@
+import {requireStaffRequest} from '../../staff-access';
+import {evidenceContext,evidenceError,operatingDay} from '../../../../lib/documents/request-context';
+export async function GET(request:Request,context:{params:Promise<{dealId:string}>}){const denied=await requireStaffRequest(request);if(denied)return denied;try{const {dealId}=await context.params;const {client,record,actor}=await evidenceContext(request,dealId);return Response.json({client,caseId:record.id,identityRevision:record.identity_revision,actor,assessmentDay:operatingDay()},{headers:{'cache-control':'no-store'}});}catch(error){return evidenceError(error);}}

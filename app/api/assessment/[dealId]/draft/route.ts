@@ -1,0 +1,11 @@
+import {requireStaffRequest}from'../../../staff-access';
+import {evidenceContext,evidenceError,boundedJson}from'../../../../../lib/documents/request-context';
+import {draftRepository}from'../../../../../lib/questionnaire/repository';import{validateDraft}from'../../../../../lib/questionnaire/draft';import{RepositoryError}from'../../../../../lib/documents/repository';
+export async function GET(request:Request,ctx:{params:Promise<{dealId:string}>}){const denied=await requireStaffRequest(request);if(denied)return denied;try{const{dealId}=await ctx.params,{record,repository}=await evidenceContext(request,dealId),repo=await draftRepository(),draft=await repo.latest(record.id);const payload=draft?JSON.parse(draft.payload_json):null;if(payload)for(const doc of payload.documents){const source=await repository.document(record.id,doc.documentId);doc.originalName=source?.original_name||null;}return Response.json({draft:draft?{revision:draft.revision,identityRevision:draft.identity_revision,updatedAt:draft.created_at,payload}:null,currentIdentityRevision:record.identity_revision},{headers:{'cache-control':'no-store'}});}catch(e){return evidenceError(e);}}
+export async function POST(request:Request,ctx:{params:Promise<{dealId:string}>}){const denied=await requireStaffRequest(request);if(denied)return denied;try{const body=await boundedJson(request,256000),payload=validateDraft(body.payload),{dealId}=await ctx.params,{record,actor,repository}=await evidenceContext(request,dealId);
+ const proposedIin=payload.answers.find(a=>a.key==='iin')?.value.trim();if(record.client_iin&&proposedIin&&proposedIin!==record.client_iin)throw new RepositoryError('WRONG_CLIENT');
+ if(body.identityRevision!==record.identity_revision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
+ for(const doc of payload.documents)if(!await repository.document(record.id,doc.documentId))throw new RepositoryError('DOCUMENT_NOT_IN_CASE',400);
+ const repo=await draftRepository(),saved=await repo.save(record,payload,body.expectedRevision as number,body.requestId as string,actor),latest=await repo.latest(record.id);
+ return Response.json({ok:true,revision:saved.revision,latestRevision:latest?.revision,identityRevision:saved.identity_revision,updatedAt:saved.created_at},{headers:{'cache-control':'no-store'}});
+ }catch(e){return evidenceError(e);}}

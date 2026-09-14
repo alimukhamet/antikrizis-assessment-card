@@ -1,0 +1,22 @@
+[
+  {
+    "kind": "person",
+    "legalName": "КОЙШИБАЕВА АЙЖАН КАЖИМКАНОВНА",
+    "identifier": "000515650223",
+    "reference": {
+      "source": "case10843 power of attorney",
+      "verifiedAgainst": "document text",
+      "authenticity": "not_checked"
+    }
+  },
+  {
+    "kind": "organization",
+    "legalName": "ТОО «Aplus Corporation»",
+    "identifier": "251040012303",
+    "reference": {
+      "source": "canonical contract COMPANY configuration and corpus PDF-124 contract",
+      "verifiedAgainst": "two existing records",
+      "authenticity": "not_checked"
+    }
+  }
+]

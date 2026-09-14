@@ -2,6 +2,7 @@ import {TEST_SECRET,testCookie} from './session-helper.mjs';
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { JSDOM } from 'jsdom';
 
 async function fetchBuilt(path = "/", headers = {}) {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -18,6 +19,24 @@ async function fetchBuilt(path = "/", headers = {}) {
 async function render() {
   return fetchBuilt("/", { accept: "text/html" });
 }
+
+test("login is a working native POST form and displays a session error without client JavaScript", async () => {
+  const response = await fetchBuilt('/login?returnTo=%2Fassessment-review%3FdealId%3D11665&error=cookies&worker=ramazan');
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(response.headers.get('referrer-policy'), 'same-origin');
+  const html = await response.text();
+  const dom = new JSDOM(html);
+  const form = dom.window.document.querySelector('form.login-form');
+  assert.equal(form.getAttribute('method'), 'post');
+  assert.equal(form.getAttribute('action'), '/api/session');
+  assert.equal(form.elements.namedItem('returnTo').value, '/assessment-review?dealId=11665');
+  assert.equal(form.elements.namedItem('worker').value, 'ramazan');
+  assert.match(form.querySelector('[role="alert"]').textContent, /Браузер не сохранил вход/);
+  assert.equal(form.elements.namedItem('password').type, 'password');
+  assert.equal(form.elements.namedItem('password').autocomplete, 'current-password');
+  dom.window.close();
+});
 
 test("server-renders the assessment card shell", async () => {
   const response = await render();

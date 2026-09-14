@@ -1,0 +1,117 @@
+import * as participants from '../public/loan-participants.mjs';
+import {test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import vm from'node:vm';import ts from'typescript';import * as schedule from'../public/payment-schedule.mjs';
+function load(path,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+path,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>imports[n],Date,Map,Set,TextEncoder});return exports;}
+const json=path=>JSON.parse(fs.readFileSync(new URL('../'+path,import.meta.url),'utf8'));
+const schema=json('lib/questionnaire/schema.json'),native=load('lib/documents/extract-native.ts',{'./power-of-attorney':load('lib/documents/power-of-attorney.ts'),'./kz-labels.json':json('lib/documents/kz-labels.json')});
+const {checkAnswers}=load('lib/questionnaire/check-answers.ts',{'./schema.json':schema,'../documents/extract-native':native,'../../public/payment-schedule.mjs':schedule,'../../public/loan-participants.mjs':participants});
+const {validateDraft}=load('lib/questionnaire/draft.ts',{'./schema.json':schema,'../documents/repository':load('lib/documents/repository.ts')});
+const iin='000000000010';
+function fixture(){const values={fio:'SYNTHETIC ONLY',enforcementDetails:'Нет',guarantors:'Нет',iin,dognum:'TEST',marital:'Холост / не замужем',dependents:'0',childrenTotal:'0',procedure:'199','count-clientjobs':'0','count-clientunofficial':'0',clientBenefitsCount:'0',c8037:'0',hardshipReason:'Платежи вношу, трудностей нет',kaspiAnnual:'0',gamblingTransfers:'no',lawyerNotesStatus:'no',n8044:'0',summa:'500000',contractDate:'2026-09-10',months:'5',payDay:'7',grafType:'423'};
+ const credit={n8038:'TEST BANK',n8038Start:'2025-01',n8039:'Потребительский кредит',n8040:'100.25',n8041:'20.00',n8042:'0',n8043:'Жильё',loanParticipants:'Нет'};
+ return {schemaVersion:1,answers:schema.scalar.map(f=>({key:f.key,value:values[f.key]||'',checked:['choice:socialStatus:Нет','holding:client:none','choice:debtPurpose:Жильё'].includes(f.key)})),groups:schema.groups.map(g=>({id:g.id,rows:g.id==='creditors'?[g.fields.map(f=>({key:f.key,value:credit[f.key]||'',checked:false}))]:[],rowKeys:g.id==='creditors'?[null]:[]})),docContext:{social:'0',salary:'0'},documents:[],pendingFiles:[]};}
+const set=(p,key,value,checked)=>{const a=p.answers.find(a=>a.key===key);a.value=value;if(checked!==undefined)a.checked=checked;};
+const run=p=>checkAnswers(validateDraft(p),iin);
+const has=(result,key,code)=>result.issues.some(i=>i.key===key&&(!code||i.code===code));
+test('complete single client answers pass without inventing spouse details',()=>{const result=run(fixture());assert.equal(result.answersComplete,true,JSON.stringify(result.issues));assert.equal(result.schedule.firstPaymentDate,'2026-12-07');});
+test('blank and explicit unknown stay distinct, with consistent child counts',()=>{const p=fixture();set(p,'childrenTotal','');assert.ok(has(run(p),'childrenTotal','ANSWER_REQUIRED'));set(p,'unknown:childrenTotal','on',true);assert.ok(!has(run(p),'childrenTotal'));set(p,'unknown:childrenTotal','on',false);set(p,'childrenTotal','1');set(p,'childrenUnder18','2');assert.ok(has(run(p),'childrenUnder18','CHILD_COUNT_CONFLICT'));});
+test('married clients require spouse income, assets and bank answers',()=>{const p=fixture();set(p,'marital','В браке');const r=run(p);for(const key of ['count-partnerjobs','partnerKaspiAnnual','holding:partner:'])assert.ok(has(r,key),key);});
+test('other overall purpose requires an explanation only when selected',()=>{const p=fixture();set(p,'choice:debtPurpose:Другое','Другое',true);assert.ok(has(run(p),'debtPurposeOther'));set(p,'debtPurposeOther','TEST EXPLANATION');assert.ok(!has(run(p),'debtPurposeOther'));set(p,'choice:debtPurpose:Другое','Другое',false);assert.ok(!compileAssessment(p,iin).lawyerCard.includes('TEST EXPLANATION'));assert.ok(schema.groups.find(g=>g.id==='transfers').fields.some(f=>f.key==='transferOther'));});
+test('selected property requires a row; incompatible none choice is rejected',()=>{const p=fixture();set(p,'holding:client:real','real',true);const r=run(p);assert.ok(has(r,'clientreal','ROW_REQUIRED'));assert.ok(has(r,'holding:client:','CONFLICTING_CHOICES'));});
+test('negative amounts, fractional overdue days, invalid schedule and wrong identity fail',()=>{const p=fixture(),credit=p.groups.find(g=>g.id==='creditors').rows[0];credit.find(a=>a.key==='n8040').value='-1';credit.find(a=>a.key==='n8042').value='1.5';set(p,'months','61');set(p,'iin','000000000011');const r=run(p);for(const key of ['n8040','n8042','summa','iin'])assert.ok(has(r,key),key);});
+test('bank turnover above threshold requires an explanation even with zero official jobs',()=>{const p=fixture();set(p,'kaspiAnnual','1.00');assert.ok(has(run(p),'kaspiWhy'));set(p,'kaspiWhy','TEST turnover explanation');assert.ok(!has(run(p),'kaspiWhy'));});
+test('gambling requires an explicit answer consistent with the amount',()=>{
+ const p=fixture();set(p,'gamblingTransfers','');assert.ok(has(run(p),'gamblingTransfers','ANSWER_REQUIRED'));
+ set(p,'gamblingTransfers','yes');assert.ok(has(run(p),'n8044','GAMBLING_AMOUNT_CONFLICT'));set(p,'n8044','100.25');assert.equal(run(p).answersComplete,true);
+ set(p,'gamblingTransfers','no');assert.ok(has(run(p),'n8044','GAMBLING_AMOUNT_CONFLICT'));set(p,'n8044','0');assert.equal(run(p).answersComplete,true);
+});
+test('lawyer handoff requires a choice and notes only when there are extra circumstances',()=>{
+ const p=fixture();set(p,'lawyerNotesStatus','');assert.ok(has(run(p),'lawyerNotesStatus','ANSWER_REQUIRED'));
+ set(p,'lawyerNotesStatus','yes');set(p,'comment','   ');assert.ok(has(run(p),'comment','ANSWER_REQUIRED'));
+ set(p,'comment','SYNTHETIC IMPORTANT NOTE');assert.equal(run(p).answersComplete,true);assert.match(compileAssessment(p,iin).lawyerCard,/SYNTHETIC IMPORTANT NOTE/);
+ set(p,'lawyerNotesStatus','no');const compiled=compileAssessment(p,iin);assert.doesNotMatch(compiled.lawyerCard,/SYNTHETIC IMPORTANT NOTE/);assert.equal(compiled.values.comment,'');assert.equal(validateDraft(p).answers.find(a=>a.key==='comment').value,'SYNTHETIC IMPORTANT NOTE');
+});
+const {compileAssessment,displayAnswer}=load('lib/questionnaire/compile-assessment.ts',{'./draft':{validateDraft},'./check-answers':{checkAnswers},'../documents/repository':load('lib/documents/repository.ts'),'../../public/payment-schedule.mjs':schedule,'../../public/loan-participants.mjs':participants});
+test('compiler preserves debt cents and keeps payment terms out of the lawyer card',()=>{
+ const p=fixture();set(p,'dognum','CONTRACT-PRIVATE-TEST');set(p,'summa','987654');
+ const g=p.groups.find(g=>g.id==='creditors'),second=structuredClone(g.rows[0]);second.find(a=>a.key==='n8040').value='0.02';second.find(a=>a.key==='n8038').value='SECOND TEST BANK';g.rows.push(second);g.rowKeys.push(null);
+ const compiled=compileAssessment(validateDraft(p),iin);
+ assert.equal(compiled.values.debt,'100.27');assert.ok(compiled.lawyerCard.includes('SECOND TEST BANK'));assert.ok(compiled.lawyerCard.includes('100.27'));
+ assert.ok(!compiled.lawyerCard.includes('CONTRACT-PRIVATE-TEST'));assert.ok(!compiled.lawyerCard.includes('987654'));assert.ok(!compiled.lawyerCard.includes('ГРАФИК ПЛАТЕЖЕЙ'));
+ assert.ok(compiled.fullCard.includes('CONTRACT-PRIVATE-TEST'));assert.equal(compiled.values.card,compiled.fullCard);assert.equal(compiled.values.grafType,'423');
+});
+test('compiler excludes stale hidden spouse answers and retains explicit unknowns and other explanation',()=>{
+ const p=fixture();set(p,'partnerKaspiAnnual','987654321');set(p,'childrenTotal','');set(p,'unknown:childrenTotal','on',true);
+ set(p,'choice:debtPurpose:Другое','Другое',true);set(p,'debtPurposeOther','EXPLANATION TO PRESERVE');
+ const c=compileAssessment(validateDraft(p),iin);assert.ok(!c.lawyerCard.includes('987654321'));assert.ok(c.lawyerCard.includes('Неизвестно — уточнить'));assert.ok(c.lawyerCard.includes('EXPLANATION TO PRESERVE'));
+});
+test('incomplete questionnaire cannot be compiled into save values',()=>{const p=fixture();set(p,'fio','');assert.throws(()=>compileAssessment(validateDraft(p),iin),/ANSWERS_INCOMPLETE/);});
+
+test('compiler itself rejects an unsupported procedure before creating CRM values',()=>{const p=fixture();set(p,'procedure','UNSUPPORTED');assert.throws(()=>compileAssessment(p,iin),/INVALID_DRAFT_OPTION/);});
+test('compiled card identifies reviewed answer source and refuses stale evidence value',()=>{
+ const p=fixture(),evidence={key:'n8041',group:'creditors',row:0,documentId:'doc',extractionId:'ext',factKey:'credits.0.monthlyPayment',reviewId:'review',value:'20.00',page:2,source:'TEST',documentSha256:'test-hash',documentName:'synthetic.pdf',reviewedAt:'2026-09-10',reviewActorId:'worker:test',disposition:'confirmed'};
+ const c=compileAssessment(p,iin,[evidence]);assert.ok(c.lawyerCard.includes('synthetic.pdf, стр. 2'));assert.ok(c.lawyerCard.includes('не удостоверяет подлинность'));assert.throws(()=>compileAssessment(p,iin,[{...evidence,value:'21.00'}]),/REVIEW_VALUE_CHANGED/);
+});
+const contractWords=await import('../public/contract-words.mjs');
+const {contractData}=load('lib/questionnaire/contract-data.ts',{'./compile-assessment':{compileAssessment,displayAnswer},'./check-answers':{checkAnswers},'../../public/contract-words.mjs':contractWords,'../documents/repository':load('lib/documents/repository.ts')});
+test('new questionnaire produces canonical contract slots and exact payment totals',()=>{const data=contractData(fixture(),iin);assert.equal(data.company_name,'ТОО «Aplus Corporation»');assert.equal(data.total_debt,'100,25');assert.equal(data.contract_date_full,'10.09.2026');assert.equal(data.service_price_words,'пятьсот тысяч');assert.equal(data.payments.length,5);assert.equal(data.payments[0].date,'07 декабря 2026 г.');assert.equal(data.spouse_property,'не применимо');assert.equal(data.enforcement,'Нет');assert.equal(data.guarantors,'Нет');});
+
+test('participants require a separate answer for each loan; legacy answers cannot fill them',()=>{
+ const p=fixture();set(p,'enforcementDetails','');set(p,'guarantors','LEGACY PERSON');
+ const group=p.groups.find(g=>g.id==='creditors'),first=group.rows[0];first.find(a=>a.key==='loanParticipants').value='';
+ const second=structuredClone(first);second.find(a=>a.key==='loanParticipants').value='SECOND PERSON — Гарант';group.rows.push(second);group.rowKeys.push(null);
+ const incomplete=run(p);assert.ok(has(incomplete,'enforcementDetails'));assert.ok(incomplete.issues.some(i=>i.key==='loanParticipants'&&i.row===0));assert.ok(!incomplete.issues.some(i=>i.key==='loanParticipants'&&i.row===1));
+ set(p,'unknown:enforcementDetails','on',true);first.find(a=>a.key==='unknown:loanParticipants').checked=true;
+ assert.ok(run(p).issues.some(i=>i.key==='loanParticipants'&&i.row===0));first.find(a=>a.key==='loanParticipants').value='Нет';assert.equal(run(p).answersComplete,true);const data=contractData(p,iin);assert.equal(data.enforcement,'Неизвестно — уточнить');assert.match(data.guarantors,/Кредит 1 .*Нет/);assert.match(data.guarantors,/Кредит 2 .*SECOND PERSON — Гарант/);assert.doesNotMatch(data.guarantors,/LEGACY PERSON/);
+ assert.doesNotMatch(compileAssessment(p,iin).lawyerCard,/LEGACY PERSON/);assert.equal(validateDraft(p).answers.find(a=>a.key==='guarantors').value,'LEGACY PERSON');
+});
+
+test('contract retains other property, separates business categories and names ownership',()=>{
+ const p=fixture();set(p,'holding:client:none','none',false);set(p,'holding:client:other','other',true);set(p,'n8017','SYNTHETIC OTHER ASSET');set(p,'holding:client:ip','ip',true);
+ const group=p.groups.find(g=>g.id==='clientip');group.rows=[schema.groups.find(g=>g.id==='clientip').fields.map(f=>({key:f.key,value:f.key==='n8010'?'Да':'12345',checked:false}))];group.rowKeys=[null];
+ const c=contractData(p,iin);assert.match(c.property,/SYNTHETIC OTHER ASSET/);assert.match(c.ip_status,/12345/);assert.equal(c.legal_entities,'Нет');
+ set(p,'holding:client:real','real',true);const real=p.groups.find(g=>g.id==='clientreal');const values={n8003:'Квартира',n8004Kind:'share',n8004:'25',n8005:'10000000',n8006:'Нет'};real.rows=[schema.groups.find(g=>g.id==='clientreal').fields.map(f=>({key:f.key,value:values[f.key]||'',checked:false}))];real.rowKeys=[null];
+ assert.match(contractData(p,iin).property,/Долевая собственность/);assert.match(compileAssessment(p,iin).lawyerCard,/Долевая собственность/);assert.match(contractData(p,iin).property,/SYNTHETIC OTHER ASSET/);
+});
+
+test('participant completion requires a closed choice or named people with known roles',()=>{
+ const p=fixture(),answer=p.groups.find(g=>g.id==='creditors').rows[0].find(a=>a.key==='loanParticipants');
+ for(const invalid of ['Есть','Не знаю','ИВАНОВ ИВАН','ИВАНОВ ИВАН — Друг','— Гарант','ИВАНОВ ИВАН —']){answer.value=invalid;assert.ok(run(p).issues.some(i=>i.key==='loanParticipants'),invalid);}
+ for(const role of participants.participantRoles){answer.value='ТЕСТОВЫЙ УЧАСТНИК — '+role;assert.equal(run(p).answersComplete,true,role);}
+ answer.value='ТЕСТОВЫЙ УЧАСТНИК — Залогодатель (в ГКБ: Кепіл беруші)';assert.equal(run(p).answersComplete,true);
+});
+
+
+test('purpose is required once overall and old loan answers remain in the draft without entering the card',()=>{
+ const p=fixture(),row=p.groups.find(g=>g.id==='creditors').rows[0];
+ row.find(a=>a.key==='n8043').value='Другое';row.find(a=>a.key==='creditPurposeOther').value='LEGACY PURPOSE TEXT';
+ set(p,'choice:debtPurpose:Жильё','Жильё',false);
+ const r=run(p);assert.equal(r.issues.filter(i=>i.key==='debtPurposes').length,1);assert.equal(r.issues.some(i=>['n8043','creditPurposeOther'].includes(i.key)),false);
+ set(p,'choice:debtPurpose:Жильё','Жильё',true);set(p,'choice:debtPurpose:Бизнес','Бизнес',true);
+ assert.equal(run(p).answersComplete,true);const c=compileAssessment(p,iin);
+ assert.equal(c.lawyerCard.split('На что в целом брали кредиты / почему возникли долги?').length-1,1);
+ assert.match(c.lawyerCard,/Жильё; Бизнес/);assert.doesNotMatch(c.lawyerCard,/LEGACY PURPOSE TEXT|На что взяли кредит \/ почему возник долг/);
+ assert.equal(validateDraft(p).groups.find(g=>g.id==='creditors').rows[0].find(a=>a.key==='creditPurposeOther').value,'LEGACY PURPOSE TEXT');
+});
+
+function benefits(p,owner='client',frequency='Ежемесячно',amount='200000'){
+ const group=p.groups.find(g=>g.id===owner+'benefits'),values={[owner+'BenefitType']:'Пенсия',[owner+'BenefitAmount']:amount,[owner+'BenefitFrequency']:frequency};
+ set(p,owner+'BenefitsCount','1');group.rows=[schema.groups.find(g=>g.id===group.id).fields.map(f=>({key:f.key,value:values[f.key]||'',checked:false}))];group.rowKeys=[null];
+}
+test('pension-only contract includes actual benefits and preserves every payment frequency',()=>{
+ for(const frequency of ['Ежемесячно','Ежеквартально','Ежегодно','Единовременно','Нерегулярно']){const p=fixture();p.docContext.social='1';benefits(p,'client',frequency);assert.equal(run(p).answersComplete,true);const income=contractData(p,iin).official_income;assert.match(income,/Пенсия/);assert.match(income,/200000/);assert.ok(income.includes(frequency));assert.doesNotMatch(income,/доход: 0|₸\/мес/);}
+});
+test('contract includes spouse benefits only while spouse answers apply',()=>{
+ const p=fixture();benefits(p,'partner','Единовременно','345678');assert.doesNotMatch(contractData(p,iin).official_income,/345678/);
+ set(p,'marital','В браке');for(const key of ['count-partnerjobs','count-partnerunofficial','partnerKaspiAnnual'])set(p,key,'0');set(p,'holding:partner:none','none',true);
+ assert.equal(run(p).answersComplete,true,JSON.stringify(run(p).issues));const income=contractData(p,iin).official_income;assert.match(income,/Супруг\(а\)/);assert.match(income,/345678/);assert.match(income,/Единовременно/);
+});
+test('benefit answers cannot silently contradict the document-step answer',()=>{
+ const p=fixture();benefits(p);assert.ok(has(run(p),'clientBenefitsCount','BENEFITS_CONTEXT_CONFLICT'));assert.throws(()=>contractData(p,iin),/ANSWERS_INCOMPLETE/);
+ p.docContext.social='1';assert.equal(run(p).answersComplete,true);
+ const no=fixture();no.docContext.social='1';assert.ok(has(run(no),'clientBenefitsCount','BENEFITS_CONTEXT_CONFLICT'));set(no,'clientBenefitsCount','');assert.ok(has(run(no),'clientBenefitsCount','ANSWER_REQUIRED'));assert.equal(has(run(no),'clientBenefitsCount','BENEFITS_CONTEXT_CONFLICT'),false);
+});
+test('received-loan month is bounded by the operating day through validation and contract compilation',()=>{
+ const p=fixture(),answer=p.groups.find(g=>g.id==='creditors').rows[0].find(a=>a.key==='n8038Start');
+ for(const [month,day,valid] of [['2026-09','2026-09-01',true],['2026-10','2026-09-30',false],['2027-01','2026-12-31',false],['2027-01','2027-01-01',true],['2099-01','2026-09-14',false]]){answer.value=month;const checked=checkAnswers(validateDraft(p),iin,day);assert.equal(checked.answersComplete,valid,month+' / '+day);if(valid)assert.ok(contractData(p,iin,[],day));else{assert.ok(checked.issues.some(i=>i.code==='FUTURE_LOAN_MONTH'&&i.group==='creditors'&&i.row===0));assert.throws(()=>contractData(p,iin,[],day),/ANSWERS_INCOMPLETE/);}}
+ for(const invalid of ['0000-01','2026-13']){answer.value=invalid;assert.ok(has(checkAnswers(p,iin,'2026-09-14'),'n8038Start','INVALID_MONTH'));}
+});

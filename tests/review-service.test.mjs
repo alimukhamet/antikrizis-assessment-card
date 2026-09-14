@@ -1,0 +1,14 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';import ts from 'typescript';
+function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>imports[n],Date,Map});return exports;}
+const {RepositoryError}=load('lib/documents/repository.ts');const policy=load('lib/documents/policy.ts');const {assertReviewAllowed}=load('lib/documents/review-service.ts',{'./repository':{RepositoryError},'./policy':policy,'./analysis-service':{analysisVersion:'current-version'}});
+const c={id:'c',client_iin:'synthetic-same-identity',identity_revision:1},d={id:'d',case_id:'c'},e={id:'e',document_id:'d',version:'current-version'};
+const result={extraction:{identity:{iin:'synthetic-same-identity'},kind:'gkb_full',issuedAt:'2026-09-10',findings:[],facts:[],credits:[{facts:[{key:'monthlyPayment',value:'10.00',page:1,source:'TEST ONLY'}]}]}};
+const input={factKey:'credits.0.monthlyPayment',value:'10.00',disposition:'confirmed',reason:'',identityRevision:1};
+const run=(i={},r=result,record=c)=>assertReviewAllowed(record,d,e,r,{...input,...i},'2026-09-10');
+test('confirmation requires exact evidence value',()=>{run();assert.throws(()=>run({value:'12.00'}),/CONFIRMATION_VALUE_MISMATCH/)});
+test('corrections require reason and valid money',()=>{run({value:'12.00',disposition:'corrected',reason:'Reviewed corrected payment'});assert.throws(()=>run({value:'12.00',disposition:'corrected'}),/CORRECTION_REQUIRES/);assert.throws(()=>run({value:'-1',disposition:'corrected',reason:'x'}),/INVALID_MONEY/)});
+test('absent fact and stale identity cannot be reviewed',()=>{assert.throws(()=>run({factKey:'invented'}),/FACT_NOT_IN_EXTRACTION/);assert.throws(()=>run({identityRevision:2}),/CASE_IDENTITY_CHANGED/)});
+test('wrong person, missing pages and stale GKB remain blocked',()=>{assert.throws(()=>run({},result,{...c,client_iin:'other'}),/CLIENT_IDENTITY_UNVERIFIED/);assert.throws(()=>run({},{extraction:{...result.extraction,findings:['PAGE_COMPLETENESS_UNVERIFIED']}}),/DOCUMENT_REQUIRES_VALIDATION/);assert.throws(()=>run({},{extraction:{...result.extraction,issuedAt:'2026-08-10'}}),/GKB_DATE_NOT_ACCEPTABLE/)});
+test('unresolved review records no invented answer',()=>{run({disposition:'unresolved',reason:'Need creditor response',value:null});assert.throws(()=>run({disposition:'unresolved',reason:'',value:null}),/UNRESOLVED_REQUIRES_REASON/)});
+
+test('old extraction cannot acquire a fresh confirmation after the parser changes',()=>assert.throws(()=>assertReviewAllowed(c,d,{...e,version:'old-version'},result,input,'2026-09-10'),/EXTRACTION_VERSION_CHANGED/));

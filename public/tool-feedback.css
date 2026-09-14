@@ -1,0 +1,14 @@
+.feedback-navigation{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0}
+.feedback-trigger{border:0;background:none;color:#536b5b;font:inherit;font-size:12px;padding:5px 2px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.feedback-trigger:hover{color:#245c36}
+.feedback-dialog{width:min(540px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;box-sizing:border-box;padding:26px;border:1px solid #d0ded4;border-radius:16px;color:#183c2a;background:#fff;box-shadow:0 16px 60px #14312230}
+.feedback-dialog::backdrop{background:#122c2266}
+.feedback-dialog h2{font-size:21px;margin:0 0 14px}
+.feedback-context{font-size:14px;color:#5e7265;overflow-wrap:anywhere;margin:0 0 4px}
+.feedback-dialog label{display:block;font-weight:600;margin:20px 0 8px}
+.feedback-dialog textarea{box-sizing:border-box;width:100%;padding:12px;border:1px solid #cbd9d0;border-radius:9px;font:inherit;line-height:1.5;resize:vertical;color:#182b20;background:#fff}
+.feedback-dialog [role=status]{font-size:14px;line-height:1.5;margin:12px 0;min-height:21px}
+.feedback-actions{display:flex;justify-content:flex-end;gap:10px;margin:16px 0}
+.feedback-dialog a{font-size:13px;color:#245c36}
+.feedback-dialog :focus-visible,.feedback-trigger:focus-visible{outline:3px solid #a7beaf;outline-offset:3px}
+@media(max-width:480px){.feedback-trigger{font-size:11px}.feedback-dialog{padding:20px}.feedback-dialog h2{font-size:19px}}

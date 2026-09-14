@@ -1,36 +1,63 @@
-import { issueSession, readSessionCookie, verifySession, requestOriginAllowed, SESSION_COOKIE, SESSION_SECONDS } from '../../../lib/worker-session';
+import { issueSession, readSessionCookie, verifySession, requestOriginAllowed, SESSION_COOKIE, SESSION_SECONDS, WORKERS } from '../../../lib/worker-session';
+import { authenticateStaff } from '../../../lib/auth-provider';
+import { checkLoginRate } from '../../../lib/login-rate';
+import { loginDestination, LOGIN_ERRORS } from '../../../lib/login-navigation';
 export const dynamic = 'force-dynamic';
-const headers = { 'cache-control': 'no-store' };
+const headers = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' };
 const cookie = (value: string, maxAge: number) => `${SESSION_COOKIE}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Strict`;
+const redirect = (location: string, extra: Record<string, string> = {}) => new Response(null, {status: 303, headers: {...headers, ...extra, location}});
+function loginFailure(code: keyof typeof LOGIN_ERRORS, returnTo: unknown, worker?: unknown) {
+  const params = new URLSearchParams({error: code, returnTo: loginDestination(returnTo)});
+  if (typeof worker === 'string' && Object.prototype.hasOwnProperty.call(WORKERS, worker)) params.set('worker', worker);
+  return '/login?' + params;
+}
 export async function GET(request: Request) {
   const actor = await verifySession(readSessionCookie(request.headers.get('cookie')), process.env.SITE_SESSION_TOKEN ?? '');
+  const params = new URL(request.url).searchParams;
+  // Verify the browser retained the cookie before entering the protected page.
+  if (params.get('continue') === '1') return redirect(actor
+    ? loginDestination(params.get('returnTo'))
+    : loginFailure('cookies', params.get('returnTo')));
   return Response.json(actor ? { ok: true, actor } : { error: 'SIGN_IN_REQUIRED' }, { status: actor ? 200 : 401, headers });
 }
 export async function POST(request: Request) {
   if (!requestOriginAllowed(request)) return Response.json({ error: 'Запрос отклонён.' }, { status: 403, headers });
-  if (!(request.headers.get('content-type') ?? '').startsWith('application/json')) return Response.json({ error: 'Ожидается JSON.' }, { status: 415, headers });
-  if ((process.env.SITE_SESSION_TOKEN ?? '').length < 32) return Response.json({ error: 'Вход ещё не настроен. Сообщите Ali.' }, { status: 503, headers });
-  let body;
+  const contentType = (request.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+  const isForm = contentType === 'application/x-www-form-urlencoded';
+  if (!isForm && contentType !== 'application/json') return Response.json({ error: 'Ожидается JSON или форма входа.' }, { status: 415, headers });
+  let body: Record<string, unknown> = {};
+  const fail = (status: number, error: string, code: keyof typeof LOGIN_ERRORS, extra: Record<string, string> = {}) => isForm
+    ? redirect(loginFailure(code, body.returnTo, body.worker), extra)
+    : Response.json({error}, {status, headers: {...headers, ...extra}});
   try {
     const reader = request.body?.getReader(); if (!reader) throw Error();
     const chunks: Uint8Array[] = []; let total = 0;
-    for (;;) { const { done, value } = await reader.read(); if (done) break; total += value.length; if (total > 4096) { await reader.cancel(); return Response.json({ error: 'Запрос слишком большой.' }, { status: 413, headers }); } chunks.push(value); }
+    for (;;) { const { done, value } = await reader.read(); if (done) break; total += value.length; if (total > 4096) { await reader.cancel(); return fail(413, 'Запрос слишком большой.', 'invalid'); } chunks.push(value); }
     const combined = new Uint8Array(total); let offset = 0; for (const chunk of chunks) { combined.set(chunk, offset); offset += chunk.length; }
-    body = JSON.parse(new TextDecoder().decode(combined));
-  } catch { return Response.json({ error: 'Некорректный запрос.' }, { status: 400, headers }); }
-  const worker = typeof body?.worker === 'string' ? body.worker : '';
-  if (!['ali','ramazan','nurdaulet','darkhan'].includes(worker) || typeof body?.password !== 'string' || body.password.length > 1024) return Response.json({error:'Неверное имя или пароль.'},{status:401,headers});
-  const origin = 'https://antikrizis-payment-control.mukhamet-ali-ma.chatgpt.site';
-  let upstream: Response;
+    const text = new TextDecoder().decode(combined);
+    if (isForm) {
+      const form = new URLSearchParams(text);
+      for (const name of ['worker', 'password', 'returnTo']) if (form.getAll(name).length > 1) throw Error();
+      body = {worker: form.get('worker'), password: form.get('password'), returnTo: form.get('returnTo')};
+    } else {
+      const value = JSON.parse(text); if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error();
+      body = value;
+    }
+  } catch { return fail(400, 'Некорректный запрос.', 'invalid'); }
+  const provider = process.env.AUTH_PROVIDER || 'payment-control';
+  if ((provider === 'local' && !process.env.SITE_ACCESS_PASSWORD) || (process.env.SITE_SESSION_TOKEN ?? '').length < 32) return fail(503, LOGIN_ERRORS.configured, 'configured');
   try {
-    upstream = await fetch(origin + '/api/session', {method:'POST',redirect:'manual',headers:{'content-type':'application/json',origin,'sec-fetch-site':'same-origin'},body:JSON.stringify({worker,password:body.password}),signal:AbortSignal.timeout(15000)});
-  } catch (error) {console.error('Payment sign-in transport failed', error instanceof Error ? error.message : 'unknown');return Response.json({error:'Сервис входа временно недоступен. Повторите позже.'},{status:503,headers});}
-  if (!upstream.ok) return Response.json({error:upstream.status===401?'Неверное имя или пароль.':'Сервис входа временно недоступен.'},{status:upstream.status===401?401:503,headers});
-  const result = await upstream.json() as {ok?:boolean;data?:{displayName?:string}};
-  if(result.ok!==true || !upstream.headers.get('set-cookie')?.includes('antikrizis_payment_session=')) return Response.json({error:'Не удалось подтвердить вход.'},{status:503,headers});
-  const actor={worker,displayName:result.data?.displayName};
+    const rate = await checkLoginRate(request, process.env.SITE_SESSION_TOKEN ?? '');
+    if (!rate.allowed) return fail(429, LOGIN_ERRORS.rate, 'rate', {'retry-after': String(rate.retryAfter)});
+  } catch { return fail(503, 'Вход временно недоступен. Повторите позже.', 'unavailable'); }
+  let actor;
+  try { actor = await authenticateStaff(typeof body.worker === 'string' ? body.worker.trim().toLowerCase() : '', typeof body.password === 'string' ? body.password : '', {provider, localPassword: process.env.SITE_ACCESS_PASSWORD}); }
+  catch { return fail(503, LOGIN_ERRORS.unavailable, 'unavailable'); }
+  if (!actor) return fail(401, LOGIN_ERRORS.credentials, 'credentials');
   const token = await issueSession(actor.worker, process.env.SITE_SESSION_TOKEN ?? '');
-  return Response.json({ ok: true, actor }, { headers: { ...headers, 'set-cookie': cookie(token, SESSION_SECONDS) } });
+  const sessionHeaders = {'set-cookie': cookie(token, SESSION_SECONDS)};
+  if (isForm) return redirect('/api/session?' + new URLSearchParams({continue: '1', returnTo: loginDestination(body.returnTo)}), sessionHeaders);
+  return Response.json({ok: true, actor}, {headers: {...headers, ...sessionHeaders}});
 }
 export async function DELETE(request: Request) {
   if (!requestOriginAllowed(request)) return Response.json({ error: 'Запрос отклонён.' }, { status: 403, headers });
