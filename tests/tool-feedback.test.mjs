@@ -77,7 +77,8 @@ test('report UI preserves failed message and idempotency, and never sends input 
  assert.equal(s.calls[0].dealId,'11665');assert.equal(s.calls[0].fieldId,'n8040_r2');assert.ok(!JSON.stringify(s.calls).includes('private-'));assert.match(s.d.getElementById('feedbackStatus').textContent,/сохранено/);
 });
 test('fourth entry preserves existing three destinations and report version matches its saved record version',()=>{
- for(const path of ['templates/assessment-card.html','public/assessment-card.html']){
+ assert.equal(fs.existsSync('public/assessment-card.html'),false,'Static assets must not shadow the canonical protected tool');
+ for(const path of ['templates/assessment-card.html']){
   const dom=new JSDOM(fs.readFileSync(path,'utf8')),cards=dom.window.document.querySelectorAll('.task-grid>.task-card');assert.equal(cards.length,4);
   assert.equal(cards[0].dataset.openView,'contract');assert.equal(cards[1].dataset.openView,'documents');assert.match(cards[2].href,/gkb-credit-analyzer-kz/);assert.equal(cards[3].getAttribute('href'),'/assessment-review');assert.equal(cards[3].target,'_top');dom.window.close();
  }
