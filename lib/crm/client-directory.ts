@@ -7,14 +7,16 @@ async function call(webhook:string,method:'crm.deal.list'|'crm.item.get',body:un
  const data=await response.json() as {result?:unknown;error?:string};
  if(data.error||!data.result)throw new DocumentUploadError('DEAL_READ_FAILED');return data.result;
 }
-/** DATE_MODIFY is a deal update, not a claimed document-upload date. */
-export async function recentDocumentClients(webhook:string,send:typeof fetch=fetch):Promise<RecentClient[]>{
- const result=await call(webhook,'crm.deal.list',{order:{DATE_MODIFY:'DESC'},filter:{'!UF_CRM_ANK_PRIMARY_DOCS':false},select:['ID','TITLE','DATE_MODIFY','UF_CRM_ANK_PRIMARY_DOCS']},send);
+/** Search only on request; unrelated modified deals are not a work queue. */
+export async function searchClients(webhook:string,query:string,send:typeof fetch=fetch):Promise<RecentClient[]>{
+ const text=query.trim();if(text.length<2||text.length>80)return [];
+ const filter=/^[1-9]\d*$/.test(text)?{ID:text}:{'%TITLE':text};
+ const result=await call(webhook,'crm.deal.list',{order:{DATE_MODIFY:'DESC'},filter,select:['ID','TITLE','DATE_MODIFY','UF_CRM_ANK_PRIMARY_DOCS']},send);
  if(!Array.isArray(result))throw new DocumentUploadError('DEAL_READ_FAILED');
  return result.slice(0,50).flatMap(item=>{
   if(!item||! /^[1-9]\d*$/.test(String(item.ID)))return [];
   const count=readFileField(item).refs.length;
-  return count?[{dealId:String(item.ID),title:String(item.TITLE||''),updatedAt:String(item.DATE_MODIFY||''),fileCount:count}]:[];
+  return [{dealId:String(item.ID),title:String(item.TITLE||''),updatedAt:String(item.DATE_MODIFY||''),fileCount:count}];
  });
 }
 /** No signed URLs or credential fields leave the server. */

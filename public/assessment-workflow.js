@@ -17,9 +17,11 @@ window.AssessmentWorkflow=(()=>{
  intro.hidden=true;
  const top=make('header',null,'wf-header'),toolbar=document.querySelector('.draft-toolbar');
  intro.before(top);top.append(toolbar);
- const more=details('Ещё','wf-more');
- for(const button of [...toolbar.querySelectorAll('button')])if(button.id!=='loadDraft')more.append(button);
- more.append($('afExport'));toolbar.append(more);
+ const more=details('Ещё','wf-more'),moreContent=make('div',null,'wf-more-content');more.append(moreContent);
+ for(const button of [...toolbar.querySelectorAll('button')])if(button.id!=='loadDraft')moreContent.append(button);
+ moreContent.append($('afExport'));toolbar.append(more);
+ document.addEventListener('click',event=>{if(more.open&&!more.contains(event.target))more.open=false;});
+ more.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();more.open=false;more.querySelector('summary').focus();}});
  const draftStatus=$('draftStatus');draftStatus.setAttribute('role','status');toolbar.prepend(draftStatus);
  const originalDraftStatus=showDraftStatus;
  showDraftStatus=function(text){
@@ -38,8 +40,8 @@ window.AssessmentWorkflow=(()=>{
  const metrics=workspace.querySelector('.af-metrics'),answerActions=$('afNext').closest('.af-actions');
  const analysisActions=$('afAnalyze').closest('.af-actions');
  const fileResults=$('afFiles'),questions=$('afQuestions'),conflicts=$('afConflicts'),oldName=$('hostDealName');
- workspace.replaceChildren(client,status,identity,oldName);workspace.className='wf-client';oldName.hidden=true;top.prepend(workspace);more.append(picker);
- picker.open=true;
+ workspace.replaceChildren(client,status,identity,oldName);workspace.className='wf-client';oldName.hidden=true;top.prepend(workspace);moreContent.append(picker);
+ picker.open=false;
 
  const nav=make('nav',null,'wf-steps');nav.setAttribute('aria-label','Этапы оценки');top.after(nav);
  const stages=[['documents','Документы','Добавьте файлы клиента'],['answers','Ответы','Проверьте и дополните'],['contract','Договор','Проверьте и сохраните']];
@@ -96,7 +98,7 @@ window.AssessmentWorkflow=(()=>{
  const answerIntro=step(make('section',null,'wf-answer-intro'),'answers');
  answerIntro.id='workflowAnswers';
  const conflictDetails=details('Расхождения','wf-conflicts');conflictDetails.append(conflicts);
- answerIntro.append(answerActions,conflictDetails,metrics);more.append(questions);metrics.hidden=true;
+ answerIntro.append(answerActions,conflictDetails,metrics);moreContent.append(questions);questions.open=false;metrics.hidden=true;
  root.prepend(answerIntro);
  const answerNotice=make('p',null,'wf-answer-notice');answerNotice.setAttribute('role','status');answerNotice.hidden=true;answerIntro.append(answerNotice);
  $('afNext').textContent='Заполнить';$('afNextReview').textContent='Проверить';questions.querySelector('summary').textContent='Список вопросов';

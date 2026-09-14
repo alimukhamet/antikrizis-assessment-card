@@ -21,7 +21,7 @@ async function setup(t,store={}){
   if(path.endsWith('/submission'))return{ok:true,json:async()=>({submission:null})};
   if(path.endsWith('/credentials'))return{ok:true,json:async()=>({credentials:{verified:false},identityRevision:1})};
   if(path.endsWith('/uploads'))return{ok:true,json:async()=>({unsent:null})};
-  if(path==='/api/assessment/clients')return{ok:true,json:async()=>({drafts:[{dealId:'11665',title:'SYNTHETIC A',updatedAt:'2026-09-12',fileCount:0}],recent:[{dealId:'123',title:'<img src=x onerror=alert(1)>',updatedAt:'2026-09-12',fileCount:2}]})};
+  if(path.startsWith('/api/assessment/clients'))return{ok:true,json:async()=>({drafts:[{dealId:'11665',title:'SYNTHETIC A',updatedAt:'2026-09-12',fileCount:0}],recent:path.includes('?q=')?[{dealId:'123',title:'<img src=x onerror=alert(1)>',updatedAt:'2026-09-12',fileCount:2}]:[]})};
   throw Error('Unexpected request '+path);
  };
  for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))run(match[1]);
@@ -77,7 +77,13 @@ test('editing the deal picker cannot bind old answers to another client; transie
  s.run("selectedFiles=[{id:1,file:{name:'SYNTHETIC.pdf'},type:'',person:''}]");await s.w.ClientWorkspace.switchTo('123');assert.equal(s.d.querySelector('dialog a[target="_blank"]').getAttribute('href'),'/assessment-review?dealId=123');assert.equal(s.d.getElementById('fio').value,'SYNTHETIC A');assert.equal(s.d.getElementById('hostDealId').value,'11665');
 });
 test('client directory renders names as text and filters without mixing draft records',async t=>{
- const s=await setup(t);await s.load();s.mountWorkspace();await s.w.ClientWorkspace.open();assert.equal(s.d.querySelector('.client-dialog img'),null);const search=s.d.querySelector('.client-dialog input');search.value='123';search.dispatchEvent(new s.w.Event('input'));assert.equal(s.d.querySelectorAll('.client-directory-row').length,1);assert.match(s.d.querySelector('.client-directory-row').textContent,/img src=x/);
+ const s=await setup(t);await s.load();s.mountWorkspace();await s.w.ClientWorkspace.open();assert.equal(s.d.querySelector('.client-dialog img'),null);assert.doesNotMatch(s.d.querySelector('.client-dialog').textContent,/img src=x|Последние сделки/);const search=s.d.querySelector('.client-dialog input');search.value='123';search.dispatchEvent(new s.w.Event('input'));await new Promise(resolve=>setTimeout(resolve,300));assert.equal(s.d.querySelectorAll('.client-directory-row').length,1);assert.match(s.d.querySelector('.client-directory-row').textContent,/img src=x/);assert.equal(s.d.querySelector('.client-dialog img'),null);
+ search.value='';search.dispatchEvent(new s.w.Event('input'));assert.doesNotMatch(s.d.querySelector('.client-dialog').textContent,/img src=x/);assert.match(s.d.querySelector('.client-directory-row').textContent,/SYNTHETIC A/);
+});
+test('an outdated client search cannot replace results after the search is cleared',async t=>{
+ const s=await setup(t);await s.load();s.mountWorkspace();await s.w.ClientWorkspace.open();const base=s.w.fetch;let finish;
+ s.w.fetch=async(path,options)=>{if(path.includes('/clients?q='))await new Promise(resolve=>{finish=resolve;});return base(path,options);};
+ const search=s.d.querySelector('.client-dialog input');search.value='123';search.dispatchEvent(new s.w.Event('input'));await new Promise(resolve=>setTimeout(resolve,300));search.value='';search.dispatchEvent(new s.w.Event('input'));finish();await tick();assert.doesNotMatch(s.d.querySelector('.client-dialog').textContent,/img src=x/);assert.match(s.d.querySelector('.client-directory-row').textContent,/SYNTHETIC A/);
 });
 
 test('legacy participant answers and old unknown flags survive without disabling required per-loan answers',async t=>{

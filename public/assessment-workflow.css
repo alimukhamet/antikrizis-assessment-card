@@ -19,7 +19,7 @@ body[data-assessment-workflow] .chips label{position:relative;font-size:14px;pad
 body[data-assessment-workflow] .chips input{display:block;position:absolute;width:1px;height:1px;min-width:0;min-height:0;opacity:0}
 body[data-assessment-workflow] .chips label:focus-within{outline:3px solid #88ad96;outline-offset:3px}
 .wf-header{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:15px 17px;margin-bottom:6px;border:1px solid #d6e1d8;border-radius:12px;background:#e9efea}
-.wf-header .draft-toolbar{display:flex;align-items:center;gap:12px;margin:0;flex-shrink:0}
+.wf-header .draft-toolbar{display:flex;align-items:center;gap:12px;margin:0;flex-shrink:0;max-width:100%}
 .wf-client{display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex:1;min-width:0}
 .wf-client-copy{flex:1;min-width:0}
 .wf-client-copy strong{display:block;font-size:17px;font-weight:600;line-height:1.4;overflow-wrap:anywhere}
@@ -34,8 +34,8 @@ body[data-assessment-workflow] .chips label:focus-within{outline:3px solid #88ad
 .wf-more>summary,.wf-document-tools>summary{cursor:pointer;padding:9px;color:#627168;list-style:none;border-radius:6px}
 .wf-more>summary::-webkit-details-marker,.wf-document-tools>summary::-webkit-details-marker{display:none}
 .wf-more>summary:hover,.wf-document-tools>summary:hover{background:#f1f4f1}
-.wf-more[open]{min-width:210px;max-height:70vh;overflow:auto;overscroll-behavior:contain;border:1px solid #dde2de;border-radius:8px;background:#fff;padding:5px 9px;box-shadow:0 7px 25px #14251c12}
-.wf-more[open]>button{display:block;width:100%;margin:5px 0;text-align:left;border:0}
+.wf-more-content{position:absolute;right:0;top:100%;width:min(340px,calc(100vw - 48px));max-height:65vh;overflow:auto;overscroll-behavior:contain;box-sizing:border-box;border:1px solid #dde2de;border-radius:8px;background:#fff;padding:9px 12px;box-shadow:0 7px 25px #14251c20}
+.wf-more-content>button{display:block;width:100%;margin:5px 0;text-align:left;border:0}
 .wf-case-picker{font-size:14px;padding:8px 0;color:#55655a}
 .wf-case-picker>summary{cursor:pointer}
 .wf-case-picker .af-actions{margin:12px 0;display:grid;gap:10px}
@@ -200,7 +200,7 @@ body[data-assessment-workflow] .wf-final-actions{padding:18px;border:1px solid #
  body[data-assessment-workflow] .fields{grid-template-columns:1fr;gap:16px}
  .wf-document-conditions.fields{grid-template-columns:1fr 1fr;gap:12px}
  .wf-credential{gap:10px 14px}.wf-bottom-nav{padding:10px 16px;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
- .wf-more[open]{min-width:220px}.wf-answer-section>summary{font-size:15px}
+ .wf-answer-section>summary{font-size:15px}
 }
 @media(max-width:420px){
  .wf-steps{gap:6px}.wf-step{padding:10px 8px;min-height:54px;gap:6px}.wf-step-number{flex-basis:23px;height:23px;font-size:12px}.wf-step-copy strong{font-size:12px}.wf-document-conditions.fields,.wf-credential{grid-template-columns:1fr}

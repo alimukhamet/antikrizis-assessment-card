@@ -34,27 +34,34 @@ window.ClientWorkspace=(()=>{
   const dialog=el('dialog',null,'client-dialog');directory=dialog;dialog.setAttribute('aria-labelledby','clientDirectoryTitle');
   const heading=el('h2','Клиенты и черновики');heading.id='clientDirectoryTitle';
   const exit=button('Закрыть',close),search=el('input');search.type='search';search.placeholder='Имя клиента или номер сделки';search.setAttribute('aria-label','Найти клиента');
-  const status=el('p','Загружаем клиентов…','hint'),list=el('div',null,'client-directory-list');status.setAttribute('role','status');
+  const status=el('p','Загружаем черновики…','hint'),list=el('div',null,'client-directory-list');status.setAttribute('role','status');search.maxLength=80;
   dialog.append(heading,exit,search,status,list);dialog.addEventListener('close',()=>{dialog.remove();if(directory===dialog)directory=null;},{once:true});document.body.append(dialog);dialog.showModal();
-  try{
-   const data=await json('/api/assessment/clients');if(directory!==dialog)return;
-   status.textContent=[data.draftsUnavailable?'Не удалось загрузить черновики.':'',data.recentUnavailable?'Не удалось загрузить последние сделки.':'Последние сделки показаны по дате изменения в Bitrix.'].filter(Boolean).join(' ');
-   function render(){
+  let data={drafts:[],recent:[]},timer,request=0;
+  function render(){
     list.replaceChildren();const query=search.value.trim().toLocaleLowerCase('ru-RU'),seen=new Set();let total=0;
-    for(const [title,items,draft]of [['Сохранённые черновики',data.drafts,true],['Последние сделки с документами',data.recent,false]]){
+    for(const [title,items,draft]of [['Сохранённые черновики',data.drafts,true],['Клиенты в Bitrix',query.length>=2?data.recent:[],false]]){
      const rows=items.filter(item=>!seen.has(item.dealId)&&(!query||(item.title+' '+item.dealId).toLocaleLowerCase('ru-RU').includes(query)));
      if(!rows.length)continue;list.append(el('h3',title));
      for(const item of rows){
       seen.add(item.dealId);total++;const row=button('',()=>switchTo(item.dealId));row.className='client-directory-row';
-      const copy=el('span'),name=el('strong',item.title||'Сделка № '+item.dealId),meta=el('span','№ '+item.dealId+' · '+(draft?'Черновик сохранён ':'Сделка обновлена ')+new Date(item.updatedAt).toLocaleDateString('ru-RU')+' · Файлов: '+item.fileCount,'hint');copy.append(name,meta);
+      const copy=el('span'),name=el('strong',item.title||'Сделка № '+item.dealId),meta=el('span','№ '+item.dealId+(draft?' · Сохранено '+new Date(item.updatedAt).toLocaleDateString('ru-RU'):'')+' · Файлов: '+item.fileCount,'hint');copy.append(name,meta);
       const current=HostedAssessment.getContext()?.client.external.dealId===item.dealId;row.disabled=current;row.append(copy,el('span',current?'Открыт':draft?'Продолжить →':'Открыть →'));list.append(row);
      }
     }
-    if(!total)list.append(el('p','Клиент не найден в этом списке. Введите номер сделки в поиск.','hint'));
+    if(!total)list.append(el('p',query?'Совпадений нет.':'Пока нет сохранённых черновиков.','hint'));
     if(/^[1-9]\d*$/.test(query)&&!seen.has(query))list.append(button('Открыть сделку № '+query,()=>switchTo(query)));
-   }
-   search.oninput=render;render();
-  }catch{status.textContent='Не удалось загрузить список. Можно открыть клиента по номеру сделки.';}
+  }
+  async function load(query){
+   const id=++request;status.textContent=query?'Ищем клиента…':'Загружаем черновики…';
+   try{
+    const result=await json('/api/assessment/clients'+(query?'?q='+encodeURIComponent(query):''));
+    if(directory!==dialog||id!==request)return;data=result;render();
+    status.textContent=[result.draftsUnavailable?'Не удалось загрузить черновики.':'',result.recentUnavailable?'Не удалось найти клиента в Bitrix.':'',query?'':'Для другого клиента введите имя или номер сделки.'].filter(Boolean).join(' ');
+   }catch{if(directory===dialog&&id===request){status.textContent='Не удалось загрузить список. Введите номер сделки, чтобы открыть клиента.';render();}}
+  }
+  search.oninput=()=>{clearTimeout(timer);request++;data.recent=[];render();const query=search.value.trim();if(query.length>=2)timer=setTimeout(()=>load(query),250);else status.textContent='Для другого клиента введите имя или номер сделки.';};
+  dialog.addEventListener('close',()=>{clearTimeout(timer);request++;},{once:true});
+  await load('');
  }
  async function importDocuments(){
   if(af.busy||!HostedAssessment.ready()||!ServerDrafts.canSwitch()){afStatus('Сначала дождитесь загрузки черновика клиента.',true);return;}
