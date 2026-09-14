@@ -115,3 +115,22 @@ test('received-loan month is bounded by the operating day through validation and
  for(const [month,day,valid] of [['2026-09','2026-09-01',true],['2026-10','2026-09-30',false],['2027-01','2026-12-31',false],['2027-01','2027-01-01',true],['2099-01','2026-09-14',false]]){answer.value=month;const checked=checkAnswers(validateDraft(p),iin,day);assert.equal(checked.answersComplete,valid,month+' / '+day);if(valid)assert.ok(contractData(p,iin,[],day));else{assert.ok(checked.issues.some(i=>i.code==='FUTURE_LOAN_MONTH'&&i.group==='creditors'&&i.row===0));assert.throws(()=>contractData(p,iin,[],day),/ANSWERS_INCOMPLETE/);}}
  for(const invalid of ['0000-01','2026-13']){answer.value=invalid;assert.ok(has(checkAnswers(p,iin,'2026-09-14'),'n8038Start','INVALID_MONTH'));}
 });
+
+// These exercise the served fourth tool, rather than the retired static prototype page.
+test('active contract keeps enforcement separate from named loan participants',()=>{
+ const p=fixture();p.groups.find(g=>g.id==='creditors').rows[0].find(a=>a.key==='loanParticipants').value='SYNTHETIC PERSON — Гарант';
+ const data=contractData(p,iin);assert.equal(data.enforcement,'Нет');assert.match(data.guarantors,/SYNTHETIC PERSON/);
+});
+test('both active handoff outputs retain the lawyer note and exact documentary source',()=>{
+ const p=fixture();set(p,'lawyerNotesStatus','yes');set(p,'comment','SYNTHETIC FOLLOW-UP');
+ const evidence={key:'n8041',group:'creditors',row:0,value:'20.00',documentName:'synthetic.pdf',page:2,disposition:'confirmed'};
+ const result=compileAssessment(p,iin,[evidence]);
+ for(const card of [result.fullCard,result.lawyerCard]){assert.match(card,/SYNTHETIC FOLLOW-UP/);assert.match(card,/synthetic.pdf, стр. 2/);assert.match(card,/не удостоверяет подлинность/);}
+});
+test('active contract retains unknown property and cannot turn missing income or participants into zero or no',()=>{
+ const p=fixture();set(p,'holding:client:none','none',false);set(p,'holding:client:unknown','unknown',true);
+ assert.equal(contractData(p,iin).property,'Неизвестно — уточнить');
+ set(p,'count-clientjobs','');assert.throws(()=>contractData(p,iin),/ANSWERS_INCOMPLETE/);
+ set(p,'count-clientjobs','0');p.groups.find(g=>g.id==='creditors').rows[0].find(a=>a.key==='loanParticipants').value='';
+ assert.throws(()=>contractData(p,iin),/ANSWERS_INCOMPLETE/);
+});
