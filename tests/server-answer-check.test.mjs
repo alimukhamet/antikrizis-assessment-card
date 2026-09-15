@@ -20,3 +20,11 @@ test('document checks stay before the questionnaire and do not jump to unanswere
  await d.getElementById('checkDocuments').onclick();assert.notEqual(d.activeElement.id,'fio');assert.equal(s.preview.hidden,true);assert.equal(d.getElementById('documentCheckStatus').textContent,'Нужна проверка: 1.');assert.equal(d.querySelector('#documentReviewResults > details').open,false);assert.match(d.querySelector('#documentReviewResults li').textContent,/ЭЦП отдельно/);
  assert.ok([...section.querySelectorAll('button')].some(b=>b.textContent==='Загрузить проверенные документы в Bitrix'));assert.equal(d.getElementById('checkStatus').textContent,'');
 });
+
+test('client search leaves the current review and lawyer preview intact',async()=>{
+ const s=setup(async()=>({ok:true,json:async()=>({answersComplete:true,preview:{lawyerCard:'SYNTHETIC PREVIEW'},documents:{issues:[],manuallyReviewed:[]}})}));
+ await s.button.onclick();assert.equal(s.preview.hidden,false);
+ const search=s.w.document.createElement('input');search.type='search';s.w.document.body.append(search);search.value='11749';search.dispatchEvent(new s.w.Event('input',{bubbles:true}));
+ assert.equal(s.preview.hidden,false);assert.equal(s.preview.querySelector('pre').textContent,'SYNTHETIC PREVIEW');
+ s.edit();assert.equal(s.preview.hidden,true);s.w.close();
+});
