@@ -22,6 +22,25 @@ interface ExecutionContext {
   passThroughOnException(): void;
 }
 
+function isAssessmentIntakeMachineRequest(request: Request, url: URL): boolean {
+  const segments = url.pathname.split('/');
+  const manifest = segments.length === 5
+    && segments[1] === 'api'
+    && segments[2] === 'assessment'
+    && Boolean(segments[3])
+    && segments[4] === 'crm-intake'
+    && request.method === 'POST';
+  const original = segments.length === 7
+    && segments[1] === 'api'
+    && segments[2] === 'assessment'
+    && Boolean(segments[3])
+    && segments[4] === 'crm-intake'
+    && segments[5] === 'documents'
+    && Boolean(segments[6])
+    && request.method === 'GET';
+  return manifest || original;
+}
+
 // Image security config. SVG sources with .svg extension auto-skip the
 // optimization endpoint on the client side (served directly, no proxy).
 // To route SVGs through the optimizer (with security headers), set
@@ -31,6 +50,15 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    // These two exact paths perform their own dedicated HMAC, timestamp,
+    // replay and origin checks in the route handlers. Keep the exception
+    // narrow so every other API endpoint remains staff-session protected.
+    if (isAssessmentIntakeMachineRequest(request, url)) {
+      const response = await handler.fetch(request, env, ctx);
+      const secured = new Response(response.body, response);
+      secured.headers.set('cache-control', 'no-store');
+      return secured;
+    }
     const protectedPage = ['/', '/assessment-review', '/assessment-feedback', '/assessment-card', '/assessment-card.html', '/my-results', '/my-earnings'].includes(url.pathname);
     const protectedApi = url.pathname.startsWith('/api/') && url.pathname !== '/api/session';
     if (protectedPage || protectedApi) {
