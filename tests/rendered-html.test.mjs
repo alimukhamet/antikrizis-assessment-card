@@ -2,6 +2,7 @@ import {TEST_SECRET,testCookie} from './session-helper.mjs';
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import vm from 'node:vm';
 import { JSDOM } from 'jsdom';
 
 async function fetchBuilt(path = "/", headers = {}) {
@@ -69,18 +70,51 @@ test("captures every fact needed to build the later document checklist", async (
   assert.match(card, /marital:\s*\{bx:"UF_CRM_AI_MARITAL"\}/);
 });
 
-test("keeps contract creation and document upload as separate tasks", async () => {
-  const card = await readFile(new URL("../templates/assessment-card.html", import.meta.url), "utf8");
+test("both launcher URLs disable the first two tools even without JavaScript and keep tools three and four available", async () => {
+  for (const path of ['/assessment-card', '/assessment-card.html']) {
+    const response=await fetchBuilt(path);
+    assert.equal(response.status,200);
+    assert.match(response.headers.get('cache-control'),/no-store/);
+    const dom=new JSDOM(await response.text());
+    const cards=[...dom.window.document.querySelectorAll('.task-grid > .task-card')];
+    assert.equal(cards.length,4);
+    for (const card of cards.slice(0,2)) {
+      assert.equal(card.tagName,'BUTTON');
+      assert.equal(card.disabled,true);
+      assert.match(card.textContent,/Недоступно/);
+    }
+    assert.equal(cards[2].getAttribute('href'),'https://gkb-credit-analyzer-kz.mukhamet-ali-ma.chatgpt.site');
+    assert.equal(cards[3].getAttribute('href'),'/assessment-review');
+    assert.equal(cards[3].getAttribute('target'),'_top');
+    dom.window.close();
+  }
+});
 
-  assert.match(card, /<body data-view="home">/);
-  assert.match(card, /Создать договор и карточку/);
-  assert.match(card, /Загрузить документы/);
-  assert.match(card, /data-open-view="documents"/);
-  assert.match(card, /id="docsBtn"/);
-  assert.match(card, /Сохранить договор и карточку/);
-  assert.match(card, /PRIMARY_DOCS_MULTI_FIELD = "UF_CRM_ANK_PRIMARY_DOCS"/);
-  assert.match(card, /batch-preview/);
-  assert.match(card, /openFilePreview/);
+test("legacy navigation and action buttons lead to the new assessment without writing client data", async () => {
+  const html=await readFile(new URL('../templates/assessment-card.html',import.meta.url),'utf8');
+  const dom=new JSDOM(html);
+  const document=dom.window.document;
+  const targets=[];
+  const context=vm.createContext({document,$:id=>document.getElementById(id),URL,URLSearchParams,
+    window:{location:{origin:'https://site.test',search:'?dealId=11749'},top:{location:{assign:url=>targets.push(url)}}},
+    onChange(){throw Error('A retired form was opened');},
+    submitContractAndAssessment(){throw Error('Legacy contract write');},
+    uploadDocuments(){throw Error('Legacy document write');}
+  });
+  vm.runInContext(html.slice(html.indexOf('const VIEW_COPY='),html.indexOf('// ── Build Bitrix fields payload ──')),context);
+  vm.runInContext(html.slice(html.indexOf('$("contractBtn").onclick ='),html.indexOf('$("clearBtn").onclick =')),context);
+  for (const view of ['contract','documents']) vm.runInContext(`openView('${view}')`,context);
+  document.getElementById('contractBtn').click();
+  document.getElementById('docsBtn').click();
+  assert.deepEqual(targets,Array(4).fill('https://site.test/assessment-review?dealId=11749'));
+  assert.equal(document.body.dataset.view,'home');
+  document.getElementById('dealId').value='11223';
+  vm.runInContext('openCurrentAssessment()',context);
+  assert.equal(targets.at(-1),'https://site.test/assessment-review?dealId=11223');
+  document.getElementById('dealId').value='wrong';
+  vm.runInContext('openCurrentAssessment()',context);
+  assert.equal(targets.at(-1),'https://site.test/assessment-review');
+  dom.window.close();
 });
 
 test("adds the owned GKB analyzer as the third sales task", async () => {

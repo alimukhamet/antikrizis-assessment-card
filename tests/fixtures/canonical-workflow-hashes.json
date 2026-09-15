@@ -1,8 +1,9 @@
 {
-  "commit": "df0486737152303f95335d512d9d20be52d0a8a8",
   "file": "templates/assessment-card.html",
   "suffixHashes": {
-    "<div class=\"task-grid\">": "b851ee3d58ea904fdc2606b46dfddd487b4be7753d6c740de41bc3f81971c1c6",
-    "<header class=\"workflow-header\"": "5cb223a88313de339bc6dd745da65b5675545745487d878a9d64cb0e3860f60a"
-  }
+    "<div class=\"task-grid\">": "0e27c250cc1b70b66b21f4db7e3aae4c4912ead250b88936df119a98457c54a5",
+    "<header class=\"workflow-header\"": "c6f5371257e60a41b1a5daa46b3e7fc58f8e94da80ba420f7ac603de4e1b9124"
+  },
+  "baseCommit": "256d2e064d41888c78edc3e0e9d1a518b703dc03",
+  "change": "Retire tools 01 and 02; preserve canonical form, exports, and document renderer."
 }

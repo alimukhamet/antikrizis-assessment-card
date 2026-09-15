@@ -59,7 +59,10 @@
   .sales-summary-status.error{color:var(--red);font-weight:700}
   .task-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;text-align:left}
   .task-card{appearance:none;width:100%;min-height:250px;border:1px solid var(--border);border-radius:22px;background:#fff;padding:24px;text-align:left;text-decoration:none;color:var(--text);cursor:pointer;display:flex;flex-direction:column;transition:transform .18s,box-shadow .18s,border-color .18s;box-shadow:0 3px 12px rgba(24,54,34,.04)}
-  .task-card:hover{transform:translateY(-3px);border-color:#abc5b3;box-shadow:var(--shadow)}
+  .task-card:not(:disabled):hover{transform:translateY(-3px);border-color:#abc5b3;box-shadow:var(--shadow)}
+  .task-card:disabled{background:#edf1ed;cursor:not-allowed;box-shadow:none}
+  .task-card:disabled h2,.task-card:disabled p,.task-card:disabled .task-link{color:#617066}
+  .task-card[data-fourth-tool]{border-color:var(--green);background:var(--green-pale)}
   .task-card:focus-visible{outline:3px solid #b9d8c3;outline-offset:3px}
   .task-number{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:var(--green-pale);color:var(--green);font-size:.8rem;font-weight:800;margin-bottom:28px}
   .task-card h2{font-size:1.35rem;line-height:1.18;letter-spacing:-.02em;margin:0 0 9px;color:var(--green-dark)}
@@ -320,7 +323,7 @@
     <div class="home-hero">
       <div class="eyebrow">Работа со сделкой</div>
       <h1>Что нужно сделать?</h1>
-      <p>Выберите одну задачу. Внутри будут только нужные для неё поля и одно понятное действие.</p>
+      <p>Документы и договор — в инструменте 04 «Оценка клиента».</p>
       <section class="competition" aria-labelledby="competition-title">
 <div class="competition-head"><div><h2 id="competition-title">Результаты продаж</h2><p>Сделки, переданные юристам</p></div><div class="period-switch" aria-label="Период отчёта"><button data-sales-period="today" aria-pressed="false">Сегодня</button><button data-sales-period="current_week" aria-pressed="false">Неделя</button><button data-sales-period="current_month" aria-pressed="true">Месяц</button><button data-sales-period="custom" aria-pressed="false">Даты</button></div></div>
 <div class="payment-switch" aria-label="Вид оплаты"><button data-sales-payment="all" aria-pressed="true">Все</button><button data-sales-payment="423" aria-pressed="false">50/50</button><button data-sales-payment="261" aria-pressed="false">После определения</button><button data-sales-payment="263" aria-pressed="false">До определения</button></div>
@@ -338,17 +341,17 @@
         <a href="/my-earnings" target="_top"><span>Мой заработок</span><span aria-hidden="true">→</span></a>
       </nav>
       <div class="task-grid">
-        <button class="task-card" type="button" data-open-view="contract">
+        <button class="task-card" type="button" data-open-view="contract" disabled>
           <span class="task-number">01</span>
           <h2>Создать договор и карточку</h2>
-          <p>Заполнить оценку клиента, сформировать договор и сохранить данные в Bitrix.</p>
-          <span class="task-link"><span>Начать оформление</span><span>→</span></span>
+          <p>Перейдите к инструменту 04 «Оценка клиента».</p>
+          <span class="task-link">Недоступно</span>
         </button>
-        <button class="task-card" type="button" data-open-view="documents">
+        <button class="task-card" type="button" data-open-view="documents" disabled>
           <span class="task-number">02</span>
           <h2>Загрузить документы</h2>
-          <p>Прикрепить готовые документы к существующей сделке без заполнения договора и оценки.</p>
-          <span class="task-link"><span>Перейти к файлам</span><span>→</span></span>
+          <p>Перейдите к инструменту 04 «Оценка клиента».</p>
+          <span class="task-link">Недоступно</span>
         </button>
         <a class="task-card" href="https://gkb-credit-analyzer-kz.mukhamet-ali-ma.chatgpt.site" target="_blank" rel="noopener">
           <span class="task-number">03</span>
@@ -1961,7 +1964,15 @@ const VIEW_COPY={
   contract:{title:"Договор и карточка",subtitle:"Оценка клиента и оформление договора",clear:"Очистить форму"},
   documents:{title:"Загрузка документов",subtitle:"Отдельная отправка файлов в Bitrix",clear:"Очистить файлы"}
 };
+function openCurrentAssessment(){
+  const target=new URL('/assessment-review',window.location.origin);
+  const dealId=$("dealId").value.trim()||new URLSearchParams(window.location.search).get('dealId')||'';
+  if(/^[1-9]\d*$/.test(dealId))target.searchParams.set('dealId',dealId);
+  window.top.location.assign(target.href);
+}
 function openView(view){
+  // The two legacy forms are retired; retain their implementation for canonical exports.
+  if(view==='contract'||view==='documents'){openCurrentAssessment();return;}
   if(view==="documents"){
     if(!$("docClientName").value.trim()&&$("fio").value.trim()) $("docClientName").value=$("fio").value.trim();
     if(segVal.docSocialPayments===null&&getCheckedArray("socialStatus").length){
@@ -2489,8 +2500,8 @@ async function uploadDocuments(){
   }
 }
 
-$("contractBtn").onclick = submitContractAndAssessment;
-$("docsBtn").onclick = uploadDocuments;
+$("contractBtn").onclick = openCurrentAssessment;
+$("docsBtn").onclick = openCurrentAssessment;
 $("clearBtn").onclick = clearForm;
 $("dealId").addEventListener("input",()=>scheduleDealLookup());
 $("dealId").addEventListener("change",()=>scheduleDealLookup(0));
