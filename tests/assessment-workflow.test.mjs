@@ -37,6 +37,7 @@ function mountParticipants(s){s.run('(()=>{'+fs.readFileSync('public/loan-partic
 
 test('batch upload starts with the client owner and preserves a selected family exception',t=>{
  const s=setup(t);s.mount();const input=s.d.getElementById('previewDocuments');
+ assert.equal(s.d.getElementById('workflowCollection').hidden,true);assert.equal(s.d.querySelector('.wf-bottom-nav .btn-main').textContent,'Выберите клиента');
  const choose=name=>{Object.defineProperty(input,'files',{value:[new s.w.File(['synthetic'],name,{type:'application/pdf'})],configurable:true});input.dispatchEvent(new s.w.Event('change',{bubbles:true}));};
  choose('client.pdf');assert.equal(s.run('selectedFiles[0].person'),'Клиент');
  assert.equal(s.d.querySelector('.wf-file-assignments').open,false);
@@ -196,7 +197,7 @@ test('a partial batch names missing documents above the file list and opens the 
  assert.deepEqual([...notice.querySelectorAll('[data-package-state="missing"]')].map(e=>e.dataset.packageDocument),['Справка ЕНПФ','Доверенность']);
  const input=s.d.querySelector('[data-required-picker="Справка ЕНПФ"]');let chosen=0;input.addEventListener('click',e=>{e.preventDefault();chosen++;});
  notice.querySelector('[aria-label="Добавить: Справка ЕНПФ"]').click();assert.equal(chosen,1);
- assert.equal(s.d.querySelector('.wf-bottom-nav .btn-main').textContent,'Не хватает · 2');
+ assert.equal(s.d.querySelector('.wf-bottom-nav .btn-main').textContent,'Чего не хватает · 2');assert.equal(s.d.querySelector('.wf-bottom-nav .btn-main').getAttribute('aria-disabled'),'false');
  s.d.querySelector('.wf-bottom-nav .btn-main').click();assert.equal(s.d.activeElement,notice);
  const before=s.capture();s.w.AssessmentWorkflow.refresh();assert.deepEqual(s.capture(),before);assert.equal(s.calls.filter(c=>c.method!=='GET').length,0);
 });

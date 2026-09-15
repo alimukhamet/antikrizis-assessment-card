@@ -220,8 +220,9 @@ window.AssessmentWorkflow=(()=>{
    }
   }
   for(const [name,{button}]of tabs)if(name!=='documents'){button.setAttribute('aria-disabled',String(!state.ready));button.title=state.ready?'':'Сначала соберите обязательные документы';}
-  nextStep.setAttribute('aria-disabled',String(active==='documents'&&!state.ready));
-  if(active==='documents')nextStep.textContent=state.ready?'Далее: ответы →':af.busy?'Читаем документы…':absent.length?'Не хватает · '+absent.length:pending.length?'Завершите добавление':'Уточните список';
+  nextStep.setAttribute('aria-disabled',String(active==='documents'&&(af.busy||!HostedAssessment.ready())));
+  nextStep.classList.toggle('wf-missing-action',active==='documents'&&HostedAssessment.ready()&&!af.busy&&!state.ready);
+  if(active==='documents')nextStep.textContent=!HostedAssessment.ready()?'Выберите клиента':state.ready?'Далее: ответы →':af.busy?'Читаем документы…':absent.length?'Чего не хватает · '+absent.length:pending.length?'Завершите добавление':'Уточните список';
   if(active!=='documents'&&!state.ready)show('documents',{focus:false,remember:false});
  }
  function refresh(){
