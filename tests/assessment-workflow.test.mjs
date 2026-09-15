@@ -209,10 +209,10 @@ test('package status separates an unfinished upload from missing files and keeps
  assert.match(notice.querySelector('strong').textContent,/Завершите добавление · 1/);
  assert.equal(notice.querySelectorAll('[data-package-state="missing"]').length,0);assert.equal(notice.querySelectorAll('[data-package-state="pending"]').length,1);
  assert.equal(s.w.AssessmentWorkflow.collection().ready,false);
- s.run('af.busy=true');s.w.AssessmentWorkflow.refresh();assert.match(notice.textContent,/Определяем состав пакета/);assert.equal(notice.querySelectorAll('button').length,0);
+ s.run('af.busy=true');s.w.AssessmentWorkflow.refresh();assert.match(notice.textContent,/Получаем список документов/);assert.equal(notice.querySelectorAll('button').length,0);
  s.run(`af.busy=false;selectedFiles[0].storedDocumentId='uploaded-original';af.results.delete(selectedFiles[0].id);`);
  s.d.dispatchEvent(new s.w.Event('assessment-analysis-complete'));
- assert.equal(s.w.AssessmentWorkflow.collection().ready,true);assert.equal(notice.hidden,false);assert.match(notice.textContent,/Обязательные документы добавлены/);assert.match(notice.textContent,/8 из 8/);
+ assert.equal(s.w.AssessmentWorkflow.collection().ready,true);assert.equal(notice.hidden,false);assert.match(notice.textContent,/Проверьте замечания · 1/);assert.match(notice.textContent,/8 из 8/);
 });
 
 test('the missing package list updates with benefit and salary answers and after draft restoration',async t=>{
@@ -357,4 +357,26 @@ test('replacement actions become enabled when restored documents finish reading'
  s.w.HostedAssessment.adapt=item=>({kind:'other',type:item.type,identity:{iin:'991231300003'},fields:[],loans:[],properties:[],pageText:['SYNTHETIC'],server:{dealId:'11665',documentId:item.storedDocumentId,extractionId:'synthetic'},sourcePreview:'/synthetic.pdf'});
  await s.run('afAnalyze({cacheOnly:true})');
  const buttons=[...s.d.querySelectorAll('.af-replace-document')];assert.equal(buttons.length,7);assert.ok(buttons.every(button=>!button.disabled));
+});
+
+test('first intake requires the two context answers before any file analysis or CRM import',async t=>{
+ const s=setup(t);await s.load();s.mount();s.run(fs.readFileSync('public/client-workspace.js','utf8'));
+ const intake=s.d.getElementById('workflowDocumentIntake'),choose=s.d.getElementById('afChoose');
+ assert.equal(intake.parentElement.firstElementChild,intake);assert.equal(choose.disabled,true);
+ s.run("selectedFiles=[{id:1,type:'',person:'Клиент',file:{name:'client.pdf',size:10}}];");
+ const before=s.calls.length;await s.run('afAnalyze()');await s.w.ClientWorkspace.importDocuments();assert.equal(s.calls.length,before);assert.equal(s.d.activeElement.id,'needsSocialDoc');
+ s.d.getElementById('needsSocialDoc').value='0';s.w.AssessmentWorkflow.refresh();assert.equal(choose.disabled,true);
+ s.d.getElementById('needsSalaryDoc').value='none';s.w.AssessmentWorkflow.refresh();assert.equal(choose.disabled,false);assert.equal(s.d.getElementById('importCrmDocuments').disabled,false);
+});
+test('finished package exposes the exact attention message and jumps to the affected document',async t=>{
+ const s=setup(t);await s.load();collect(s);s.mount();
+ s.run("af.results.set(1,{blocked:true,findings:['SHORT_CONTRACT_ID_TRUNCATED'],identity:{iin:'991231300003'},server:{dealId:'11665',documentId:'synthetic-0'}});afRenderResults();afRefresh();");
+ const notice=s.d.getElementById('workflowCollection');assert.match(notice.textContent,/сокращён номер договора/);
+ notice.querySelector('[data-package-attention="1"] button').click();assert.equal(s.d.querySelector('.af-file[data-file-id="1"]').open,true);
+ s.run("af.busy=true;afAnalysisProgress(2,7)");assert.match(notice.textContent,/Прочитано документов · 2 из 7/);assert.equal(notice.querySelector('[data-package-attention]'),null);
+ s.run("af.busy=false;af.progress=null;document.dispatchEvent(new CustomEvent('assessment-analysis-complete',{detail:{showPackageSummary:true}}))");assert.equal(s.d.activeElement.id,'workflowCollection');assert.match(notice.textContent,/сокращён номер договора/);
+});
+test('automatic analysis requests only the new document and retains the stored result',async t=>{
+ const s=setup(t);await s.load();collect(s);s.mount();s.run("selectedFiles=selectedFiles.slice(0,1);selectedFiles.push({id:2,type:'',person:'Клиент',file:{name:'new.pdf',size:10}});var analyzed=[];HostedAssessment={...HostedAssessment,analyzeFile:async item=>{analyzed.push(item.id);throw Error('Synthetic file failure');}};");
+ await s.run('afAnalyze({onlyNew:true})');assert.equal(s.run('JSON.stringify(analyzed)'),'[2]');assert.equal(s.run('selectedFiles[0].storedDocumentId'),'synthetic-0');assert.match(s.d.getElementById('workflowCollection').textContent,/Synthetic file failure/);
 });

@@ -3,7 +3,7 @@ import type {Actor} from '../worker-session';
 import type {Analysis} from './analysis-service';
 import {analysisVersion} from './analysis-service';
 import {checkPowerRepresentative} from './power-validation';
-import {statementPeriod,type Representative} from './policy';
+import {statementPeriod,salaryStatementPeriod,enpfPeriod,type Representative} from './policy';
 export const DOCUMENT_REVIEW_KEY='document.manual-check.v1';
 export const MANUAL_DOCUMENT_TYPES:Record<string,string>={'Удостоверение личности':'identity','Ф6 об отсутствии имущества':'property','Справка ЕНПФ':'enpf','Справка по выплатам пенсии и пособий':'benefits','Выписка Kaspi Gold':'kaspi','Выписка зарплатного банка':'salary','Доверенность':'power_of_attorney'};
 type ManualCheck={version:1;type:string;iin:string;pages:number;complete:true;contentMatches:true;periodChecked:true;reason:string;issuedAt:string;expiresAt:string;from:string;to:string;representative:Representative|null;authorityChecked:boolean};
@@ -21,17 +21,14 @@ export function validateDocumentReview(raw:unknown,analysis:Analysis,record:Case
  if(parsed.kind!=='unknown'&&parsed.kind!==MANUAL_DOCUMENT_TYPES[type])throw new RepositoryError('DOCUMENT_TYPE_CONFLICT');
  if(!Number.isInteger(v.pages)||v.pages!==analysis.read.totalPages||Number(v.pages)<1||v.complete!==true||v.contentMatches!==true||v.periodChecked!==true||reason.length<10)throw new RepositoryError('DOCUMENT_INSPECTION_INCOMPLETE',400);
  if(!day(today)||issuedAt&&(!day(issuedAt)||issuedAt>today)||expiresAt&&(!day(expiresAt)||expiresAt<today)||issuedAt&&expiresAt&&issuedAt>expiresAt)throw new RepositoryError('DOCUMENT_DATE_NOT_ACCEPTABLE');
- // Preserve the existing contract's three-year ENPF coverage requirement.
- // Coverage is checked against the report issue date; no new freshness limit is imposed.
+ // Annual ENPF coverage is sufficient under the current intake rule.
  if(type==='Справка ЕНПФ'){
-  if(!day(issuedAt)||!day(from)||!day(to)||to<issuedAt||to>today)throw new RepositoryError('ENPF_PERIOD_NOT_ACCEPTABLE');
-  const end=new Date(issuedAt+'T00:00:00Z'),year=end.getUTCFullYear()-3,month=end.getUTCMonth();
-  const lastDay=new Date(Date.UTC(year,month+1,0)).getUTCDate();
-  const start=new Date(Date.UTC(year,month,Math.min(end.getUTCDate(),lastDay))).toISOString().slice(0,10);
-  if(from>start)throw new RepositoryError('ENPF_PERIOD_NOT_ACCEPTABLE');
+  if(enpfPeriod(from,to,issuedAt,today).length)throw new RepositoryError('ENPF_PERIOD_NOT_ACCEPTABLE');
+  if(parsed.coverage?.from&&parsed.coverage?.to&&(parsed.coverage.from!==from||parsed.coverage.to!==to||parsed.issuedAt!==issuedAt))throw new RepositoryError('ENPF_PERIOD_NOT_ACCEPTABLE');
  }
  if(type==='Удостоверение личности'&&!expiresAt)throw new RepositoryError('DOCUMENT_EXPIRY_REQUIRED',400);
- if(['Выписка зарплатного банка','Выписка Kaspi Gold'].includes(type)&&statementPeriod(from,to,today).length)throw new RepositoryError('STATEMENT_PERIOD_NOT_ACCEPTABLE');
+ if(type==='Выписка зарплатного банка'&&(salaryStatementPeriod(from,to,today).length||parsed.coverage&&(parsed.coverage.from!==from||parsed.coverage.to!==to)))throw new RepositoryError('STATEMENT_PERIOD_NOT_ACCEPTABLE');
+ if(type==='Выписка Kaspi Gold'&&statementPeriod(from,to,today).length)throw new RepositoryError('STATEMENT_PERIOD_NOT_ACCEPTABLE');
  if(type==='Выписка Kaspi Gold'){
   const bank=parsed.bankStatement;
   if(parsed.kind!=='kaspi'||!bank?.reconciled||!bank.rowsReadable||analysis.read.pages.length!==analysis.read.totalPages||analysis.read.pages.some(p=>p.needsOcr))throw new RepositoryError('STATEMENT_RECONCILIATION_REQUIRED');

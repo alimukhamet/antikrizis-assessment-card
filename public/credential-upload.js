@@ -27,6 +27,7 @@ window.CredentialUpload=(()=>{
  }
  document.addEventListener('assessment-case-opened',()=>{available=[];useExisting.hidden=true;showEditor(true);refreshStatus();});if(currentDeal())refreshStatus();
  document.addEventListener('change',event=>{if(event.target.type==='file'&&keys().length&&!verified())showEditor(true);});
+ document.addEventListener('assessment-files-selected',()=>{if(keys().length&&!verified())showEditor(true);statusChanged();});
  function offerExisting(fileId){if(verified()||! /^[1-9]\d*$/.test(fileId))return;if(!available.includes(fileId))available.push(fileId);useExisting.hidden=false;status.textContent='ЭЦП найдена в сделке. Подтвердите владельца, чтобы использовать её.';}
  useExisting.onclick=async()=>{
   if(busy||af.busy||!currentDeal()||!available.length)return;

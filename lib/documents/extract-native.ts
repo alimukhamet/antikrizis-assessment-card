@@ -1,11 +1,11 @@
 import labels from './kz-labels.json';
 import type { PageText } from './read-pdf';
 import {extractPowerParties,type PowerParties} from './power-of-attorney';
-export const EXTRACTION_VERSION = 'rules-native-14';
+export const EXTRACTION_VERSION = 'rules-native-15';
 export type Fact = { key: string; value: string; page: number; source: string };
 export type Credit = { contractNumber: string; contractCode?: string; page: number; facts: Fact[]; components: Record<string, string | null>; comparisonDebt?:Fact; relatedPartiesNotice?: {page:number;source:string} };
 export type BankStatement={from:string|null;to:string|null;credits:string;topUps:string;topUpsVerified:boolean;debits:string;transactions:number;reconciled:boolean;rowsReadable:boolean;sourcePage:number;reconciliation?:string;gambling?:{total:string;matches:Array<{date:string;amount:string;description:string;page:number}>}};
-export type NativeExtraction = { version: string; kind: string; identity: { iin: string | null; name: string | null }; issuedAt: string | null; facts: Fact[]; credits: Credit[]; findings: string[];creditList?:{complete:boolean;declared:number|null};bankStatement?:BankStatement;power?:PowerParties };
+export type NativeExtraction = { version: string; kind: string; identity: { iin: string | null; name: string | null }; issuedAt: string | null; facts: Fact[]; credits: Credit[]; findings: string[];creditList?:{complete:boolean;declared:number|null};bankStatement?:BankStatement;coverage?:{from:string|null;to:string|null};power?:PowerParties };
 export function validIin(s: string | null): s is string {
   if (!s || !/^\d{12}$/.test(s) || /^0+$/.test(s)) return false;
   const a = [...s].map(Number); let n = a.slice(0, 11).reduce((sum, x, i) => sum + x * (i + 1), 0) % 11;
@@ -44,6 +44,7 @@ export function extractNative(pages: PageText[]): NativeExtraction {
   const credit = /персональный кредитный отчет|жеке кредиттік есеп/.test(head);
   const kind = credit ? /краткая форма|қысқаша/.test(head) ? 'gkb_short' : 'gkb_full'
     : /kaspi/.test(head) && /выписка/.test(head) ? 'kaspi'
+    : /выписка по счету/.test(head) && /тип счета:[^\n]*зарплата/.test(head) && /народный банк казахстана|halykbank\.kz/.test(head) ? 'salary'
     : /об отсутствии \(наличии\) недвижимого имущества/.test(head) ? 'property'
     : /информация о пенсионных выплатах и пособиях/.test(head) ? 'benefits'
     : /выдача\s+информации\s+о\s+поступлении\s+и\s+движении\s+средств\s+вкладчика\s+единого\s+накопительного\s+пенсионного\s+фонда/.test(head) ? 'enpf'
@@ -68,10 +69,18 @@ export function extractNative(pages: PageText[]): NativeExtraction {
     const parts = ['Фамилия','Имя','Отчество'].map(label => value(new RegExp(label+':[ \\t]*([^\\n]+)'),front));
     if (parts[0] && parts[1]) output.identity.name = parts.filter(p => p && p !== 'Нет данных').join(' ');
     output.issuedAt = day(value(/Дата выдачи:\s*(\d{2}\.\d{2}\.\d{4})/,front));
-  } else if (['kaspi','property','benefits','identity'].includes(kind)) {
+  } else if (['kaspi','property','benefits','identity','salary'].includes(kind)) {
     const front = raw.slice(0,8000), iin = value(/(?:ИИН|ЖСН)\s*\/?\s*(?:ИИН)?\s*:?\s*(\d{12})\b/,front);
     if (validIin(iin)) output.identity.iin = iin;
     output.identity.name = kind === 'kaspi' ? value(/подтверждает,\s*что\s+([\s\S]+?),\s*ИИН/i,front)?.replace(/\s+/g,' ') || null : kind === 'property' ? value(/Выдан[ао]:\s*([^,\n]+)/i,front) : null;
+  }
+  if(kind==='salary'){
+    const front=pages[0]?.text||'';
+    output.identity.name=value(/ФИО:\s*([^\n]+?)(?=\s+Дата формирования выписки:|\n|$)/,front);
+    output.issuedAt=day(value(/Дата формирования выписки:\s*(\d{2}\.\d{2}\.\d{4})/,front));
+    const period=/Период выписки:\s*с\s*(\d{2}\.\d{2}\.\d{4})\s+по\s+(\d{2}\.\d{2}\.\d{4})/.exec(front);
+    output.coverage={from:day(period?.[1]||null),to:day(period?.[2]||null)};
+    // A salary account statement includes transfers as well as wages. Its totals are not income facts.
   }
   if(kind==='power_of_attorney'){
     output.power=extractPowerParties(raw);output.findings.push(...output.power.findings);
@@ -81,6 +90,8 @@ export function extractNative(pages: PageText[]): NativeExtraction {
     const owner=/\b(\d{12})\s*\n([^\n]+?)\s*ТАӘ\/ФИО:\s*ЖСН\/ИИН:/.exec(pages[0]?.text||'');
     if(owner&&validIin(owner[1]))output.identity={iin:owner[1],name:owner[2].trim()};
     output.issuedAt=day(value(/(\d{2}\.\d{2}\.\d{4})\s+\d{2}:\d{2}:\d{2}\s+Алу\s+күні\/Дата\s+получения:/,raw));
+    const period=/(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{2}\.\d{2}\.\d{4})\s+Период:/.exec(pages[0]?.text||'');
+    output.coverage={from:day(period?.[1]||null),to:day(period?.[2]||null)};
     extractEnpfPayers(pages,output);
   }
   if(kind==='identity'&&!output.identity.iin){
@@ -111,7 +122,7 @@ export function extractNative(pages: PageText[]): NativeExtraction {
       if (!/Фаза контракта:\s*Действующий/.test(block)) continue;
       const role=value(/Роль субъекта:[ \t]*([^\n]+)/,block);
       if (!role?.split(/[,;]/).some(r=>/^за[её]мщик$/i.test(r.trim()))) { output.findings.push('OTHER_BORROWER_ROLE_REQUIRES_REVIEW');continue; }
-      const contractNumber=value(/Номер договора:\s*([^\n]+)/,block), creditor=value(/Кредитор:\s*([^\n]+)/,block);
+      const contractNumber=value(/Номер договора:\s*([^\n]+)/,block), creditor=value(/Кредитор:\s*([\s\S]*?)(?=\n[^\n]*:|$)/,block)?.replace(/\s+/g,' ')||null;
       if (!contractNumber || !creditor) {output.findings.push('INCOMPLETE_CONTRACT');continue;}
       const page=starts.filter(p => p.at<=index+match[0].indexOf('Обязательство')).at(-1)!.page;
       const overdue=value(/Количество дней просрочки:\s*(\d+)\b/,block);

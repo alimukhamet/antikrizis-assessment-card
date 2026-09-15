@@ -22,7 +22,7 @@ test('the full report contract code links a different printed number to the shor
 });
 test('duplicate references do not trigger repeated cached extraction reads',async()=>{const s=fixture();s.add('doc','ГКБ — полный отчёт','gkb_full');s.payload.documents.push({...s.payload.documents[0]});const r=await s.run();assert.equal(s.reads(),1);assert.ok(r.issues.some(i=>i.code==='DUPLICATE_DOCUMENT_SELECTION'));});
 test('recognized non-GKB is not claimed fully validated while its rules are unfinished',async()=>{const s=fixture();s.add('id','Удостоверение личности','identity');const r=await s.run();assert.ok(r.issues.some(i=>i.code==='DOCUMENT_RULES_PENDING'));assert.equal(r.structurallyChecked.length,0);assert.equal(r.authenticity,'not_verified');});
-test('recognized ENPF asks for period inspection without a false document-type warning',async()=>{const s=fixture();s.add('enpf','Справка ЕНПФ','enpf');const r=await s.run();assert.ok(r.issues.some(i=>i.code==='DOCUMENT_RULES_PENDING'));assert.equal(r.issues.some(i=>i.code==='DOCUMENT_TYPE_UNVERIFIED'),false);});
+test('recognized ENPF asks for period inspection without a false document-type warning',async()=>{const s=fixture();s.add('enpf','Справка ЕНПФ','enpf');const r=await s.run();assert.ok(r.issues.some(i=>i.code==='ENPF_PERIOD_UNVERIFIED'));assert.equal(r.issues.some(i=>i.code==='DOCUMENT_TYPE_UNVERIFIED'),false);});
 test('short report review tells staff when contract numbers are shortened',async()=>{
  const s=fixture();s.add('short','ГКБ — краткий отчёт','gkb_short');s.sources.get('short').extraction.findings=['SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED'];
  const r=await s.run();assert.equal(r.structurallyChecked.length,0);assert.match(r.issues.find(i=>i.code==='SHORT_CREDIT_REVIEW_REQUIRED').message,/сокращены номера договоров/);
@@ -68,4 +68,11 @@ test('later benefit answers require their certificate despite an earlier no or b
  for(const social of ['0','']){const s=fixture();s.payload.docContext.social=social;s.payload.answers=[{key:'clientBenefitsCount',value:'1'}];const r=await s.run();assert.ok(r.required.includes('Справка по выплатам пенсии и пособий'));assert.ok(r.missing.includes('Справка по выплатам пенсии и пособий'));assert.equal(r.packageReady,false);}
  const s=fixture();s.payload.groups=[{id:'clientbenefits',rows:[[{key:'clientBenefitType',value:'Пенсия'}]]}];assert.ok((await s.run()).required.includes('Справка по выплатам пенсии и пособий'));
  s.payload.groups=[];s.payload.answers=[{key:'clientBenefitsCount',value:'0'}];assert.equal((await s.run()).required.includes('Справка по выплатам пенсии и пособий'),false);
+});
+test('a readable annual ENPF and a salary statement covering the year pass the document checks',async()=>{
+ for(const [type,kind,from]of [['Справка ЕНПФ','enpf','2025-09-10'],['Выписка зарплатного банка','salary','2025-09-01']]){
+  const s=fixture();s.add('doc',type,kind);s.sources.get('doc').extraction.coverage={from,to:'2026-09-10'};
+  assert.ok((await s.run()).structurallyChecked.includes(type));
+  s.sources.get('doc').extraction.coverage.from='2025-10-01';assert.equal((await s.run()).structurallyChecked.includes(type),false);
+ }
 });

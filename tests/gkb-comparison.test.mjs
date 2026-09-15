@@ -31,3 +31,9 @@ test('wrong owner, dates, stale reports, partial pages, and multiple reports can
  for(const mutate of [r=>r[1].identity.iin='other',r=>r[1].date='2026-09-13',r=>r.forEach(x=>x.date='2026-08-01'),r=>r.forEach(x=>x.date='2026-09-15'),r=>r[1].creditEvidence.readable=false,r=>r[1].creditEvidence.findings.push('PAGE_COMPLETENESS_UNVERIFIED'),r=>r[1].creditEvidence.creditList.complete=false,r=>r.push({...r[1],fileId:3,hash:'another'}),r=>r.pop()]){const r=reports();mutate(r);assert.equal(compare(r).status,'unavailable');}
  const r=reports();r.push({...r[1],fileId:3});assert.equal(compare(r).status,'matched','identical bytes should not count twice');
 });
+test('one truncated number does not hide the readable totals and independently matched rows',()=>{
+ const r=reports();r[0].blocked=true;r[0].creditEvidence.creditList.complete=false;r[0].creditEvidence.findings=['SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED'];r[0].creditEvidence.credits[0].contractNumber='PREFIX-123 ..';r[1].creditEvidence.credits[0].contractNumber='PREFIX-123-456';
+ const before=JSON.stringify(r),result=compare(r);assert.equal(result.shortTotal,'300.75');assert.equal(result.rows.length,2);assert.equal(result.rows[0].status,'matched');assert.equal(result.status,'unavailable','comparison does not approve an incomplete identifier list');assert.equal(JSON.stringify(r),before);
+ r[1].creditEvidence.credits.push({...structuredClone(r[1].creditEvidence.credits[0]),contractNumber:'PREFIX-123-789'});assert.equal(compare(r).rows[0].status,'unavailable');
+ r[0].creditEvidence.findings.push('SHORT_TOTAL_MISMATCH');assert.equal(compare(r).rows.length,0);
+});

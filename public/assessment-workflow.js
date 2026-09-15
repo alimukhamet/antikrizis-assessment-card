@@ -67,16 +67,17 @@ window.AssessmentWorkflow=(()=>{
  // Keep the actual file input and its handlers. No second visible batch picker.
  const fileInput=$('previewDocuments');fileInput.classList.add('wf-file-input');documentStep.append(fileInput);oldBatch.remove();
  documentStep.append(analysisActions);
- $('afChoose').textContent='Добавить файлы';$('afChoose').className='btn btn-main';$('afChoose').title='PDF до 35 МБ. Сохраняются в черновике.';
+ $('afChoose').textContent='Добавить файлы';$('afChoose').className='btn btn-main';$('afChoose').title='PDF или ZIP до 35 МБ. Сохраняются в черновике.';
  $('afAnalyze').className='btn btn-ghost';
  analysisActions.classList.add('wf-upload-actions');
  const uploadBox=make('div',null,'wf-upload-box'),documentTools=details('Ещё','wf-document-tools'),toolsBody=make('div',null,'wf-tools-content');documentTools.id='workflowDocumentTools';
  $('afAnalyze').textContent='Распознать повторно';documentTools.append(toolsBody);toolsBody.append($('afAnalyze'));
  analysisActions.prepend(headings[0]);analysisActions.append(documentTools);uploadBox.append(analysisActions,progress);
- const fileAssignments=details('Тип и владелец','wf-file-assignments');fileAssignments.append(make('p','По умолчанию — документы клиента. Здесь можно выбрать другого владельца.','hint'),$('selectedDocuments'),$('documentsStatus'));toolsBody.append(fileAssignments,packageList);documentStep.prepend(uploadBox);uploadBox.after(fileResults,conditions,credential);
+ const fileAssignments=details('Тип и владелец','wf-file-assignments');fileAssignments.append(make('p','По умолчанию — документы клиента. Здесь можно выбрать другого владельца.','hint'),$('selectedDocuments'),$('documentsStatus'));toolsBody.append(fileAssignments,packageList);documentStep.prepend(uploadBox);uploadBox.after(fileResults,credential);
+ const intake=make('section',null,'wf-document-intake'),intakeTitle=make('h3','Сначала уточните у клиента');intake.id='workflowDocumentIntake';intake.append(intakeTitle,conditions);documentStep.prepend(intake);
  const collectionNotice=make('div',null,'wf-collection-notice');collectionNotice.id='workflowCollection';collectionNotice.setAttribute('role','status');collectionNotice.tabIndex=-1;uploadBox.after(collectionNotice);
- $('needsSocialDoc').closest('.field').querySelector('label').firstChild.textContent='Пенсия или пособия? ';
- $('needsSalaryDoc').closest('.field').querySelector('label').firstChild.textContent='Зарплатный банк ';
+ $('needsSocialDoc').closest('.field').querySelector('label').firstChild.textContent='Клиент получает пенсию или пособия? ';
+ $('needsSalaryDoc').closest('.field').querySelector('label').firstChild.textContent='Куда поступает зарплата? ';
  fileResults.open=true;
  // Replace the former implementation explanation with a short, accurate worker instruction.
  for(const note of [...documentStep.querySelectorAll(':scope > p.hint')])if(note.id!=='documentsStatus')note.remove();
@@ -115,7 +116,7 @@ window.AssessmentWorkflow=(()=>{
 
  const floating=make('nav',null,'wf-bottom-nav');floating.setAttribute('aria-label','Переход между этапами');
  const previous=action('← Назад',()=>show(active==='contract'?'answers':'documents'));
- const nextStep=action('Далее: ответы →',()=>{if(active==='documents')show('answers');else if(active==='answers')show('contract');else $('saveAssessment').click();},true);
+ const nextStep=action('Далее: ответы →',()=>{if(active==='documents'){if(prepareUpload())show('answers');}else if(active==='answers')show('contract');else $('saveAssessment').click();},true);
  const stepCaption=make('span','Документы','wf-bottom-caption');floating.append(previous,stepCaption,nextStep);document.body.append(floating);
  // Participants are scoped to each obligation. Keep the old shared answer for reference only.
  function compactLoans(){
@@ -171,23 +172,39 @@ window.AssessmentWorkflow=(()=>{
    const belongs=item=>{const result=af.results.get(item.id);return !(result?.identity?.iin&&client?.iin&&result.identity.iin!==client.iin)&&(!result?.server||result.server.dealId===deal);};
    const own=candidates.filter(belongs);
    const present=own.some(item=>{const source=af.results.get(item.id)?.server;return Boolean(source?source.documentId:item.storedDocumentId);});
-   return {type,state:present?'present':own.length?'pending':'missing',wrongClient:!own.length&&candidates.length>0};
+   return {type,state:present?'present':own.length?'pending':'missing',wrongClient:!own.length&&candidates.length>0,fileId:(own[0]||candidates[0])?.id};
   });
   const missing=rows.filter(row=>row.state!=='present').map(row=>row.type);
   const context=['needsSocialDoc','needsSalaryDoc'].filter(id=>!$(id).value);
   const unassigned=selectedFiles.filter(item=>item.person==='Клиент'&&(!item.type||item.type==='Другой документ')&&!afExcluded(item)).length;
-  return {rows,missing,context,unassigned,provided:rows.length-missing.length,ready:Boolean(deal&&!af.busy&&!missing.length&&!context.length)};
+  const attention=selectedFiles.flatMap(item=>{const issue=afDocumentAttention(item);return issue&&!rows.some(row=>row.state!=='present'&&row.fileId===item.id)?[{fileId:item.id,label:item.type&&item.type!=='Другой документ'?item.type:item.file.name,...issue}]:[];});
+  return {rows,missing,context,unassigned,attention,provided:rows.length-missing.length,ready:Boolean(deal&&!af.busy&&!missing.length&&!context.length)};
+ }
+ function prepareUpload(){
+  if(!HostedAssessment.ready())return false;
+  const id=collection().context[0];if(!id)return true;
+  show('documents',{focus:false});$(id).focus();$(id).scrollIntoView({block:'center'});return false;
+ }
+ function focusFile(id){
+  const row=[...$('afFileResults').children].find(node=>node.dataset.fileId===String(id));
+  if(row){row.open=true;row.querySelector('summary').focus({preventScroll:true});row.scrollIntoView({block:'start',behavior:'smooth'});}
  }
  function collectionStatus(){
   const state=collection();
   const absent=state.rows.filter(row=>row.state==='missing'),pending=state.rows.filter(row=>row.state==='pending');
-  const signature=JSON.stringify([HostedAssessment.ready(),af.busy,state]);
+  const waitingForContext=state.context.length>0,uploadDisabled=af.busy||waitingForContext||!HostedAssessment.ready();
+  intakeTitle.hidden=!waitingForContext;intake.classList.toggle('wf-intake-required',waitingForContext);
+  $('afChoose').disabled=uploadDisabled;$('afAnalyze').disabled=uploadDisabled||!selectedFiles.length;
+  if($('importCrmDocuments'))$('importCrmDocuments').disabled=uploadDisabled;
+  for(const input of documentStep.querySelectorAll('[data-required-picker],#previewDocuments'))input.disabled=uploadDisabled;
+  const signature=JSON.stringify([HostedAssessment.ready(),af.busy,af.unpacking,af.progress,af.transferFailures,state]);
   if(signature!==collectionSignature){
-   collectionSignature=signature;collectionNotice.hidden=!HostedAssessment.ready();collectionNotice.replaceChildren();
+   collectionSignature=signature;collectionNotice.hidden=!HostedAssessment.ready()||(waitingForContext&&!selectedFiles.length&&!af.busy);collectionNotice.replaceChildren();
    collectionNotice.classList.toggle('wf-collection-incomplete',!af.busy&&absent.length>0);
    collectionNotice.classList.toggle('wf-collection-complete',state.ready);
    const heading=make('div',null,'wf-collection-header');
-   const title=af.busy?'Определяем состав пакета…':absent.length?'Не хватает документов · '+absent.length:pending.length?'Завершите добавление · '+pending.length:state.context.length?'Основные документы добавлены':'Обязательные документы добавлены';
+   const progress=af.progress;
+   const title=af.busy?af.unpacking?'Открываем ZIP…':progress?.total?'Прочитано документов · '+progress.done+' из '+progress.total:'Получаем список документов…':absent.length?'Не хватает документов · '+absent.length:pending.length?'Завершите добавление · '+pending.length:state.context.length?'Основные документы добавлены':state.attention.length?'Проверьте замечания · '+state.attention.length:'Обязательные документы добавлены';
    heading.append(make('strong',title,'wf-collection-title'),make('span',state.provided+' из '+state.rows.length+' в пакете','wf-collection-count'));collectionNotice.append(heading);
    const focusCredential=()=>{credential.scrollIntoView({block:'center'});const field=credential.querySelector('input:not([type=file]):not([hidden])');(field||credential.querySelector('[data-required-picker]'))?.focus({preventScroll:true});};
    const list=(rows,waiting=false)=>{
@@ -196,14 +213,17 @@ window.AssessmentWorkflow=(()=>{
      const entry=make('li'),copy=make('span'),label=row.type==='ЭЦП файл'?'ЭЦП и пароль':row.type;
      entry.dataset.packageDocument=row.type;entry.dataset.packageState=row.state;copy.append(make('span',label));
      if(row.wrongClient)copy.append(make('small','Загружен документ другого клиента'));
-     else if(waiting&&row.type!=='ЭЦП файл')copy.append(make('small','Файл выбран, но ещё не сохранён'));
-     const add=action(waiting?'Завершить':'Добавить',()=>{
+     else if(waiting&&row.type!=='ЭЦП файл')copy.append(make('small',af.results.get(row.fileId)?.error||'Файл выбран, но ещё не сохранён'));
+     const add=action(row.wrongClient?'Заменить':waiting?'Повторить':'Добавить',()=>{
       if(af.busy)return;
+      if(!prepareUpload())return;
+      if(row.wrongClient){const item=selectedFiles.find(item=>item.id===row.fileId);if(item&&window.DocumentReplacement)DocumentReplacement.button(item).click();else focusFile(row.fileId);return;}
       if(row.type==='ЭЦП файл'){focusCredential();return;}
       if(waiting){$('afAnalyze').click();return;}
       const input=[...document.querySelectorAll('[data-required-picker]')].find(input=>input.dataset.requiredPicker===row.type);input?.click();
      });
-     add.setAttribute('aria-label',(waiting?'Завершить добавление: ':'Добавить: ')+label);entry.append(copy,add);entries.append(entry);
+     if(waiting&&row.type==='ЭЦП файл')add.textContent='Завершить';
+     add.setAttribute('aria-label',(row.wrongClient?'Заменить: ':waiting?'Завершить добавление: ':'Добавить: ')+label);entry.append(copy,add);entries.append(entry);
     }
     collectionNotice.append(entries);
    };
@@ -211,6 +231,13 @@ window.AssessmentWorkflow=(()=>{
    if(!af.busy){
     list(absent);
     if(pending.length){if(absent.length)collectionNotice.append(make('strong','Завершите добавление · '+pending.length,'wf-collection-subtitle'));list(pending,true);}
+    if(state.attention.length){
+     if(absent.length||pending.length)collectionNotice.append(make('strong','Проверьте замечания · '+state.attention.length,'wf-collection-subtitle'));
+     const issues=make('ul',null,'wf-collection-list');
+     for(const issue of state.attention){const row=make('li'),copy=make('span');row.dataset.packageAttention=String(issue.fileId);copy.append(make('span',issue.label),make('small',issue.message));const inspect=action('Посмотреть',()=>focusFile(issue.fileId));inspect.setAttribute('aria-label','Посмотреть замечание: '+issue.label);row.append(copy,inspect);issues.append(row);}
+     collectionNotice.append(issues);
+    }
+    if(af.transferFailures?.length){const problem=make('div',null,'wf-collection-context');problem.append(make('strong','Не всё добавлено'));for(const message of af.transferFailures)problem.append(make('p',message,'wf-transfer-error'));collectionNotice.append(problem);}
     if(state.unassigned){const line=make('div',null,'wf-collection-context');line.append(make('span','Без типа · '+state.unassigned),action('Указать тип',()=>{documentTools.open=true;fileAssignments.open=true;fileAssignments.querySelector('select')?.focus();}));collectionNotice.append(line);}
     if(state.context.length){
      const context=make('div',null,'wf-collection-context');context.append(make('span','Уточните, нужны ли дополнительные документы:'));
@@ -222,7 +249,7 @@ window.AssessmentWorkflow=(()=>{
   for(const [name,{button}]of tabs)if(name!=='documents'){button.setAttribute('aria-disabled',String(!state.ready));button.title=state.ready?'':'Сначала соберите обязательные документы';}
   nextStep.setAttribute('aria-disabled',String(active==='documents'&&(af.busy||!HostedAssessment.ready())));
   nextStep.classList.toggle('wf-missing-action',active==='documents'&&HostedAssessment.ready()&&!af.busy&&!state.ready);
-  if(active==='documents')nextStep.textContent=!HostedAssessment.ready()?'Выберите клиента':state.ready?'Далее: ответы →':af.busy?'Читаем документы…':absent.length?'Чего не хватает · '+absent.length:pending.length?'Завершите добавление':'Уточните список';
+  if(active==='documents')nextStep.textContent=!HostedAssessment.ready()?'Выберите клиента':state.ready?'Далее: ответы →':af.busy?'Читаем документы…':waitingForContext?'Уточнить список':absent.length?'Чего не хватает · '+absent.length:pending.length?'Завершите добавление':'Уточните список';
   if(active!=='documents'&&!state.ready)show('documents',{focus:false,remember:false});
  }
  function refresh(){
@@ -271,9 +298,9 @@ window.AssessmentWorkflow=(()=>{
  document.addEventListener('assessment-checked',event=>{lastCheck=event.detail;refresh();});
  for(const name of ['input','change'])document.addEventListener(name,event=>{if(!event.target.closest?.('[data-document-review]'))lastCheck=null;queueMicrotask(refresh);});
  document.addEventListener('assessment-draft-restored',()=>{lastCheck=null;refresh();try{const saved=sessionStorage.getItem('assessment-step:'+HostedAssessment.getContext().client.external.dealId);if(saved)show(saved,{focus:false});}catch{/* Keep the document step when storage is unavailable. */}});
- document.addEventListener('assessment-analysis-complete',()=>{lastCheck=null;fileResults.open=true;refresh();});
+ document.addEventListener('assessment-analysis-complete',event=>{lastCheck=null;fileResults.open=true;refresh();if(event.detail?.showPackageSummary&&active==='documents'&&!collectionNotice.hidden){collectionNotice.focus({preventScroll:true});collectionNotice.scrollIntoView({block:'start',behavior:'smooth'});}});
  document.addEventListener('assessment-credentials-changed',()=>queueMicrotask(refresh));
  const previousRender=renderDocuments;renderDocuments=function(){previousRender();lastCheck=null;refresh();};
  show(active,{focus:false});updateCase();refresh();visibilityRules();
- return{show,reveal,refresh,collection};
+ return{show,reveal,refresh,collection,prepareUpload};
 })();

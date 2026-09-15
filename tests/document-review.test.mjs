@@ -12,7 +12,7 @@ test('identity, content, completeness and expiry cannot be bypassed by a checkbo
  assert.throws(()=>review.validateDocumentReview(input(),{...analysis,extraction:{kind:'gkb_full',identity:{iin:null}}},record,'2026-09-10'),/DOCUMENT_TYPE_CONFLICT/);
 });
 test('manual review never overrides GKB or separate credential requirements',()=>{for(const type of ['ГКБ — полный отчёт','ЭЦП файл'])assert.throws(()=>check({...input(),type}),/MANUAL_TYPE_NOT_SUPPORTED/);});
-test('salary periods and powers retain additional requirements',()=>{const v={...input(),type:'Выписка зарплатного банка',from:'2025-09-01',to:'2026-08-31'};assert.equal(check(v).from,'2025-09-01');assert.throws(()=>check({...v,to:'2026-09-10'}),/STATEMENT_PERIOD_NOT_ACCEPTABLE/);
+test('salary periods and powers retain additional requirements',()=>{const v={...input(),type:'Выписка зарплатного банка',from:'2025-09-01',to:'2026-08-31'};assert.equal(check(v).from,'2025-09-01');assert.equal(check({...v,to:'2026-09-10'}).to,'2026-09-10');assert.throws(()=>check({...v,from:'2025-10-01'}),/STATEMENT_PERIOD_NOT_ACCEPTABLE/);
  const power={...input(),type:'Доверенность',authorityChecked:true,representative:{kind:'person',legalName:'Synthetic person',identifier:'synthetic-approved'}};assert.equal(check(power).authorityChecked,true);assert.throws(()=>check({...power,authorityChecked:false}),/POWER_AUTHORITY_REVIEW_REQUIRED/);assert.throws(()=>check({...power,representative:{...power.representative,identifier:'other'}}),/REPRESENTATIVE_NOT_APPROVED/);
 });
 test('reviews bind to current case identity, stored extraction and actor',async()=>{let saved;const repository={document:async()=>({id:'doc',original_sha256:'hash'}),cached:async()=>({extraction:{id:'extract'},result:analysis}),appendReview:async(value,actor)=>{saved={value,actor};return{id:'review'};}};
@@ -36,13 +36,13 @@ test('Kaspi owner inspection retains automatic transaction, page and exact perio
  assert.throws(()=>review.validateDocumentReview(value,statement,record,'2026-10-01'),/STATEMENT_PERIOD_NOT_ACCEPTABLE/);
 });
 
-test('ENPF requires three years of dated coverage and rechecks old approvals',async()=>{
- const v={...input(),type:'Справка ЕНПФ',issuedAt:'2026-09-10',expiresAt:'',from:'2023-09-10',to:'2026-09-10'};
- assert.equal(check(v).from,'2023-09-10');
- for(const change of [{from:'2025-09-01'},{from:'2023-09-11'},{to:'2026-09-09'},{from:''},{issuedAt:''},{to:'2026-09-11'}])assert.throws(()=>check({...v,...change}),/ENPF_PERIOD_NOT_ACCEPTABLE/);
+test('ENPF accepts annual dated coverage and rechecks incomplete approvals',async()=>{
+ const v={...input(),type:'Справка ЕНПФ',issuedAt:'2026-09-10',expiresAt:'',from:'2025-09-10',to:'2026-09-10'};
+ assert.equal(check(v).from,'2025-09-10');
+ for(const change of [{from:'2025-10-01'},{from:'2025-09-11'},{to:'2026-09-09'},{from:''},{issuedAt:''},{to:'2026-09-11'}])assert.throws(()=>check({...v,...change}),/ENPF_PERIOD_NOT_ACCEPTABLE/);
  const old={...v,from:'',to:''};
  const repository={currentReviews:async()=>[{id:'old',fact_key:review.DOCUMENT_REVIEW_KEY,value_json:JSON.stringify(old)}]};
  assert.equal(await review.currentDocumentReview(repository,record,'doc','ext',analysis,'Справка ЕНПФ','2026-09-10'),null);
- const leap={...v,issuedAt:'2024-02-29',from:'2021-02-28',to:'2024-02-29'};
- assert.equal(review.validateDocumentReview(leap,analysis,record,'2024-02-29').from,'2021-02-28');
+ const leap={...v,issuedAt:'2024-02-29',from:'2023-02-28',to:'2024-02-29'};
+ assert.equal(review.validateDocumentReview(leap,analysis,record,'2024-02-29').from,'2023-02-28');
 });

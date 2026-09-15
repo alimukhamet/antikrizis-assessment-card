@@ -24,6 +24,21 @@ export function statementPeriod(from:string|null,to:string|null,assessmentDay:st
  const annual=start>=anniversary&&start.getTime()<=anniversary.getTime()+86400000;
  return annual&&end>=latestCompletedMonth&&end<=assessment?[]:[{code:'STATEMENT_PERIOD_NOT_ACCEPTABLE',severity:'block'}];
 }
+/** Coverage checks do not turn a statement's aggregate inflows into annual income. */
+export function salaryStatementPeriod(from:string|null,to:string|null,assessmentDay:string):Finding[]{
+ const assessment=parseDay(assessmentDay),start=from?parseDay(from):null,end=to?parseDay(to):null;
+ if(!assessment||!start||!end)return [{code:'STATEMENT_PERIOD_UNVERIFIED',severity:'block'}];
+ const latestCompletedMonth=new Date(Date.UTC(assessment.getUTCFullYear(),assessment.getUTCMonth(),0));
+ const anniversary=new Date(Date.UTC(end.getUTCFullYear()-1,end.getUTCMonth(),Math.min(end.getUTCDate(),new Date(Date.UTC(end.getUTCFullYear()-1,end.getUTCMonth()+1,0)).getUTCDate())));
+ return start.getTime()<=anniversary.getTime()+86400000&&end>=latestCompletedMonth&&end<=assessment?[]:[{code:'STATEMENT_PERIOD_NOT_ACCEPTABLE',severity:'block'}];
+}
+export function enpfPeriod(from:string|null,to:string|null,issuedAt:string|null,assessmentDay:string):Finding[]{
+ const issued=issuedAt?parseDay(issuedAt):null,start=from?parseDay(from):null,end=to?parseDay(to):null,today=parseDay(assessmentDay);
+ if(!issued||!start||!end||!today)return [{code:'ENPF_PERIOD_UNVERIFIED',severity:'review'}];
+ const year=issued.getUTCFullYear()-1,month=issued.getUTCMonth();
+ const minimum=new Date(Date.UTC(year,month,Math.min(issued.getUTCDate(),new Date(Date.UTC(year,month+1,0)).getUTCDate())));
+ return start<=minimum&&end>=issued&&end<=today?[]:[{code:'ENPF_PERIOD_NOT_ACCEPTABLE',severity:'block'}];
+}
 function parseDay(value: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const result = new Date(value + 'T00:00:00.000Z');

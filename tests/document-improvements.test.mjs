@@ -78,3 +78,21 @@ test('questionnaire loan categories follow financing and the full goods object, 
   if(type){assert.equal(type.page,1);assert.ok(type.source.includes(purpose));assert.ok(type.source.includes(object.replace(/\s+/g,' ')));}
  }
 });
+
+test('salary Halyk is recognised from document content without treating inflows as wages',()=>{
+ const text='АО "Народный Банк Казахстана"\nВыписка по счету\nФИО: ТЕСТОВА КЛАРА КАПАШОВНА   Дата формирования выписки: 15.09.2026\nИИН: 991231300003   Период выписки: с 08.09.2025 по 15.09.2026\nТип счета: Текущий счет в карточной базе («Зарплата»)\nВсего: 4390108.83 -4669056.45 -2750.00';
+ const r=rules.extractNative(pages(text));assert.equal(r.kind,'salary');assert.equal(r.identity.iin,'991231300003');assert.equal(r.identity.name,'ТЕСТОВА КЛАРА КАПАШОВНА');assert.equal(r.coverage.from,'2025-09-08');assert.equal(r.coverage.to,'2026-09-15');assert.equal(r.facts.some(f=>/salary|income|statement/.test(f.key)),false);
+ assert.equal(rules.extractNative(pages(text.replace('«Зарплата»','«Текущий»'))).kind,'unknown');
+ assert.equal(policy.salaryStatementPeriod(r.coverage.from,r.coverage.to,'2026-09-15').length,0);
+ assert.equal(policy.salaryStatementPeriod('2025-10-01','2026-09-15','2026-09-15').length,1);
+});
+test('ENPF uses the printed annual coverage; missing and shorter coverage is explicit',()=>{
+ const text='Выдача информации о поступлении и движении средств вкладчика единого накопительного пенсионного фонда\n991231300003\nТЕСТОВА КЛАРА КАПАШОВНА ТАӘ/ФИО:\nЖСН/ИИН:\n15.09.2025 - 15.09.2026 Период:\n15.09.2026 11:10:06 Алу күні/Дата получения:';
+ const r=rules.extractNative(pages(text));assert.equal(r.coverage.from,'2025-09-15');assert.equal(policy.enpfPeriod(r.coverage.from,r.coverage.to,r.issuedAt,'2026-09-15').length,0);
+ assert.equal(policy.enpfPeriod('2025-10-01',r.coverage.to,r.issuedAt,'2026-09-15')[0].code,'ENPF_PERIOD_NOT_ACCEPTABLE');
+ assert.equal(policy.enpfPeriod(null,null,r.issuedAt,'2026-09-15')[0].code,'ENPF_PERIOD_UNVERIFIED');
+});
+test('a wrapped creditor name remains complete and stops at the next bureau field',()=>{
+ const text='Персональный кредитный отчет\nОбязательство 1\nРоль субъекта: Заёмщик\nКредитор: Товарищество с ограниченной ответственностью\n"Специальная финансовая компания TEST"\nБИН: 111111111111\nНомер договора: TEST-1\nФаза контракта: Действующий\nСтраница 1 из 1';
+ const r=rules.extractNative(pages(text));assert.equal(r.credits[0].facts.find(f=>f.key==='creditor').value,'Товарищество с ограниченной ответственностью "Специальная финансовая компания TEST"');
+});

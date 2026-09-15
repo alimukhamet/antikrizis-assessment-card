@@ -1,13 +1,13 @@
 import type {EvidenceRepository,CaseRow} from './repository';
 import {analysisVersion,type Analysis} from './analysis-service';
-import {gkbFreshness,requiresDocumentValidation,statementPeriod} from './policy';
+import {gkbFreshness,requiresDocumentValidation,statementPeriod,salaryStatementPeriod,enpfPeriod} from './policy';
 import type {DraftPayload} from '../questionnaire/draft';
 import {currentDocumentReview,MANUAL_DOCUMENT_TYPES} from './document-review';
 import {checkPowerRepresentative} from './power-validation';
 import {matchShortReport,shortReportMismatchReasons,type CreditMatch} from './credit-report-match';
 import {creditorKey,loanRowKey} from './loan-identity';
 export const REQUIRED_DOCUMENTS=['ГКБ — краткий отчёт','ГКБ — полный отчёт','Справка ЕНПФ','Ф6 об отсутствии имущества','Удостоверение личности','Доверенность','Выписка Kaspi Gold','ЭЦП файл'];
-const kinds:Record<string,string>={'ГКБ — краткий отчёт':'gkb_short','ГКБ — полный отчёт':'gkb_full','Справка ЕНПФ':'enpf','Ф6 об отсутствии имущества':'property','Удостоверение личности':'identity','Доверенность':'power_of_attorney','Выписка Kaspi Gold':'kaspi','Справка по выплатам пенсии и пособий':'benefits'};
+const kinds:Record<string,string>={'ГКБ — краткий отчёт':'gkb_short','ГКБ — полный отчёт':'gkb_full','Справка ЕНПФ':'enpf','Ф6 об отсутствии имущества':'property','Удостоверение личности':'identity','Доверенность':'power_of_attorney','Выписка Kaspi Gold':'kaspi','Справка по выплатам пенсии и пособий':'benefits','Выписка зарплатного банка':'salary'};
 export type PackageIssue={code:string;documentId?:string;type?:string;message:string};
 /** No OCR/AI is started here; absent/current-version cache requires explicit processing. */
 export async function checkDocumentPackage(repository:EvidenceRepository,record:CaseRow,payload:DraftPayload,day:string){
@@ -65,7 +65,11 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
    if(!parsed.bankStatement?.reconciled||!parsed.bankStatement.rowsReadable)issue('STATEMENT_RECONCILIATION_REQUIRED','Не удалось сверить операции и остатки по выписке.');
    else if(statementPeriod(parsed.bankStatement.from,parsed.bankStatement.to,day).length)issue('STATEMENT_PERIOD_NOT_ACCEPTABLE','Нужна выписка за последние 12 месяцев (полный год до даты выписки).');
    else available.add(selected.type);
-  }else issue('DOCUMENT_RULES_PENDING','Для этого типа документа ещё не завершена проверка содержания, периода или полномочий.');
+  }else if(parsed.kind==='enpf'||parsed.kind==='salary'){
+   const problems=parsed.kind==='enpf'?enpfPeriod(parsed.coverage?.from||null,parsed.coverage?.to||null,parsed.issuedAt,day):salaryStatementPeriod(parsed.coverage?.from||null,parsed.coverage?.to||null,day);
+   if(problems.length)issue(problems[0].code,parsed.kind==='enpf'?'Нужна справка ЕНПФ за 12 месяцев до даты выдачи. Сверьте указанный период.':'Нужна зарплатная выписка, охватывающая последние 12 месяцев. Сверьте указанный период.');
+   else available.add(selected.type);
+  }else issue('DOCUMENT_RULES_PENDING','Сверьте владельца, даты и содержание документа по оригиналу.');
  }
  for(const short of pendingShort){
   const candidates=fullReports.flatMap(full=>{const matches=matchShortReport(short.analysis,full.analysis,record.client_iin,day);return matches?[{documentId:short.documentId,fullDocumentId:full.documentId,matches}]:[];});

@@ -167,20 +167,34 @@ function afApply(){
  renderDocuments();afRenderResults();afRenderConflicts();kaspi();visibilityRules();afRefresh();afStatus('Распознанные ответы перенесены. Проверьте отмеченные поля и заполните оставшиеся. Ваши ответы не перезаписывались.');
 }
 $af('afApply').onclick=afApply;
+// Keep employee-facing reasons consistent in the package summary and the original-file row.
+function afDocumentAttention(item){
+ const r=af.results.get(item.id);if(!r||afExcluded(item))return null;
+ if(r.identity?.iin&&HostedAssessment.getContext()?.client.iin&&r.identity.iin!==HostedAssessment.getContext().client.iin&&item.person==='Клиент')return {kind:'error',message:'Другой владелец'+(r.identity.fio?': '+r.identity.fio:'')+'. Замените файл или укажите, чей он.'};
+ if(r.error)return {kind:'error',message:r.error};
+ const findings=r.findings||[];
+ const reason=['ENPF_PERIOD_NOT_ACCEPTABLE','ENPF_PERIOD_UNVERIFIED','SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED','GKB_TOO_OLD','GKB_DATE_NOT_ACCEPTABLE','FUTURE_DOCUMENT_DATE','STATEMENT_PERIOD_NOT_ACCEPTABLE','STATEMENT_RECONCILIATION_REQUIRED'].find(code=>findings.includes(code));
+ if(reason)return {kind:'error',message:HostedAssessment.error(reason)};
+ if(r.blocked)return {kind:'manual',message:item.type==='Доверенность'?'Сверьте владельца, срок и полномочия по оригиналу.':findings.includes('DOCUMENT_TYPE_UNVERIFIED')?'Не удалось определить тип. Откройте файл и укажите тип документа.':findings.includes('OCR_OR_PAGE_REVIEW_REQUIRED')?'Часть страниц не прочитана. Проверьте их по оригиналу.':'Сверьте владельца и срок по оригиналу.'};
+ return null;
+}
+function afAnalysisProgress(done,total){
+ af.progress={done,total};$af('afProgress').value=done;$af('afProgress').max=Math.max(1,total);window.AssessmentWorkflow?.refresh();
+}
 function afRenderResults(){
  const root=$af('afFileResults');root.replaceChildren();
  for(const item of selectedFiles){const r=af.results.get(item.id)||(item.storedDocumentId?{sourceOnly:true}:null);if(!r)continue;
   const shortType={'ГКБ — краткий отчёт':'ГКБ краткий','ГКБ — полный отчёт':'ГКБ полный','Справка ЕНПФ':'ЕНПФ','Выписка Kaspi Gold':'Kaspi','Удостоверение личности':'Удостоверение','Ф6 об отсутствии имущества':'Ф6','Справка по выплатам пенсии и пособий':'Пенсии и пособия'};
   const displayType=item.type&&item.type!=='Другой документ'?shortType[item.type]||item.type:r.type&&r.kind!=='other'?shortType[r.type]||r.type:item.file.name;
-  const box=afEl('details',undefined,'af-file'),summary=afEl('summary'),name=afEl('strong',afExcluded(item)?'Ключ ЭЦП':displayType);summary.title=item.file.name;
+  const box=afEl('details',undefined,'af-file'),summary=afEl('summary'),name=afEl('strong',afExcluded(item)?'Ключ ЭЦП':displayType);summary.title=item.file.name;box.dataset.fileId=String(item.id);
   const wrongOwner=Boolean(r.identity?.iin&&HostedAssessment.getContext()?.client.iin&&r.identity.iin!==HostedAssessment.getContext().client.iin&&item.person==='Клиент');
   const state=r.sourceOnly?'Сохранён':r.error?'Не прочитан':wrongOwner?'Другой клиент':r.blocked?'Сверить вручную':r.excluded?'Отдельно':r.duplicate?'Повтор':'Прочитан';
   summary.append(name,afEl('span',state,'af-file-state'+(r.error||wrongOwner?' needs-review':'')));box.append(summary);
   box.append(afEl('p',afExcluded(item)?'Ключ ЭЦП':item.file.name,'af-original-name'));box.append(afEl('p',(r.pages||0)+' стр.'+(item.person?' · '+item.person:''),'hint'));
-  if(r.error)box.append(afEl('p',r.error,'error'));
+  const attention=afDocumentAttention(item);if(attention)box.append(afEl('p',attention.message,'af-document-attention'+(attention.kind==='error'?' error':'')));
   if(r.statement){const st=r.statement;box.append(afEl('p','Период: '+st.period+' · операций: '+st.transactions+' · поступления: '+Number(st.credits).toLocaleString('ru-RU')+' ₸. '+(st.reconciled?'Операции сверены.':'Нужна сверка операций.'),'hint'));}
-  if(wrongOwner)box.append(afEl('p','В документе указан другой ИИН. Замените файл.','error'));
-  else if(r.blocked)box.append(afEl('p',item.type==='Доверенность'?'Сверьте владельца, срок и полномочия в документе.':'Откройте документ и сверьте владельца и срок. Автоматическое чтение не завершено.','hint'));
+  if(r.coverage?.from&&r.coverage?.to)box.append(afEl('p','Период: '+r.coverage.from+' — '+r.coverage.to,'hint'));
+  if(wrongOwner){const owner=afEl('button','Указать владельца','btn btn-ghost');owner.type='button';owner.onclick=()=>{document.querySelector('.wf-document-tools').open=true;document.querySelector('.wf-file-assignments').open=true;$af('doc-'+item.id+'-person')?.focus();};box.append(owner);}
   const notes=afEl('ul');(r.notes||[]).filter(t=>!t.startsWith('Подлинность документа')&&!t.startsWith('Использован ранее')).forEach(t=>notes.append(afEl('li',t)));
   if(notes.children.length){const info=afEl('details',undefined,'af-document-notes');info.append(afEl('summary','Подробности чтения'),notes);box.append(info);}
   if(r.sourcePreview||item.storedDocumentId){const b=afEl('button','Открыть документ');b.type='button';b.className='btn btn-ghost';b.onclick=()=>afSource({fileId:item.id,page:1});box.append(b);}
@@ -190,16 +204,15 @@ function afRenderResults(){
 }
 
 async function afAnalyze(preferences={}){
- if(af.busy)return;if(!HostedAssessment.ready()){afStatus('Сначала откройте сделку.',true);return;}if(!selectedFiles.length){afStatus('Сначала выберите документы клиента.',true);$af('previewDocuments').click();return;}
+ if(af.busy)return;if(!HostedAssessment.ready()){afStatus('Сначала откройте сделку.',true);return;}if(window.AssessmentWorkflow&&!AssessmentWorkflow.prepareUpload())return;if(!selectedFiles.length){afStatus('Сначала выберите документы клиента.',true);$af('previewDocuments').click();return;}
  if(!$af('afDate').value){afStatus('Укажите дату оценки.',true);return;}
  const afLocked=[...$af('documentStep').querySelectorAll('input,select,button')].map(e=>[e,e.disabled]);afLocked.forEach(([e])=>e.disabled=true);$af('documentStep').classList.add('af-busy');
  af.busy=true;$af('afAnalyze').disabled=true;$af('afChoose').disabled=true;$af('afProgress').hidden=false;
- afRefresh();
- const files=[...selectedFiles],hashes=new Map();let done=0,fail=0;
- $af('afProgress').max=files.length;
+ const files=selectedFiles.filter(item=>!preferences.onlyNew||!item.storedDocumentId&&!af.results.get(item.id)?.server),hashes=new Map();let done=0,fail=0;
+ afAnalysisProgress(0,files.length);
  try{
   for(const item of files){
-   afStatus('Читаем '+(++done)+' из '+files.length+': '+(afExcluded(item)?'ключ ЭЦП — пропущен':item.file.name));$af('afProgress').value=done-1;
+   afStatus('Читаем '+(++done)+' из '+files.length+': '+(afExcluded(item)?'ключ ЭЦП — пропущен':item.file.name));afAnalysisProgress(done-1,files.length);
    if(afExcluded(item)){item.type='ЭЦП файл';if(!item.person)item.person='Клиент';af.results.set(item.id,{excluded:true,type:'ЭЦП файл',notes:['Не передавался на распознавание.'],pages:0});continue;}
    try{
     let r;
@@ -210,12 +223,12 @@ async function afAnalyze(preferences={}){
     for(const [fieldId,source]of af.sources)if(source.server?.documentId===r.server?.documentId&&source.server?.extractionId!==r.server?.extractionId){source.stale=true;source.pending=true;if($af(fieldId))afBadge($af(fieldId),source);}
     af.results.set(item.id,r);if(!item.person&&r.identity?.iin===HostedAssessment.getContext().client.iin)item.person='Клиент';if(r.type&&r.kind!=='other')item.type=r.type;
    }catch(e){fail++;af.results.set(item.id,{error:e.message,notes:['Файл не заполнен автоматически. Проверьте вручную.']});}
-   afRenderResults();
+   afRenderResults();afAnalysisProgress(done,files.length);
   }
   $af('afProgress').value=files.length;afClientChoices();if($af('afClient').value&&[...af.results.values()].some(r=>!r.blocked&&!r.error))afApply();else afStatus('Распознавание завершено. Выберите клиента, если предложен список. Нераспознанные ответы заполните вручную.');
   if(fail)afStatus('Не удалось обработать файлов: '+fail+'. Остальные результаты сохранены. Проверьте результаты по документам.',true);
   $af('afFiles').open=true;renderDocuments();afRefresh();
- }finally{afLocked.forEach(([e,disabled])=>e.disabled=disabled);$af('documentStep').classList.remove('af-busy');af.busy=false;$af('afAnalyze').disabled=false;$af('afChoose').disabled=false;afRefresh();document.dispatchEvent(new Event('assessment-analysis-complete'));}
+ }finally{afLocked.forEach(([e,disabled])=>e.disabled=disabled);$af('documentStep').classList.remove('af-busy');af.busy=false;af.progress=null;$af('afAnalyze').disabled=false;$af('afChoose').disabled=false;afRefresh();document.dispatchEvent(new CustomEvent('assessment-analysis-complete',{detail:{showPackageSummary:true}}));}
 }
 $af('afAnalyze').onclick=afAnalyze;
 document.addEventListener('input',e=>{if(!af.applying&&af.sources.has(e.target.id)){const src=af.sources.get(e.target.id);src.pending=true;src.edited=true;src.stale=false;afBadge(e.target,src);}queueMicrotask(afRefresh);});
@@ -240,4 +253,4 @@ const afBaseRender=renderDocuments;renderDocuments=function(){afBaseRender();for
 
 
 // Reading and draft storage happen after file selection; CRM submission is a separate final action.
-document.addEventListener('change',event=>{if(event.target?.type==='file'&&event.target.closest('#documentStep'))setTimeout(()=>{if(HostedAssessment.ready()&&!af.busy&&selectedFiles.some(item=>!afExcluded(item)&&!item.storedDocumentId&&!af.results.get(item.id)?.server))afAnalyze();},0);});
+document.addEventListener('change',event=>{if(event.target?.type==='file'&&event.target.closest('#documentStep'))setTimeout(()=>{if(HostedAssessment.ready()&&!af.busy&&selectedFiles.some(item=>!afExcluded(item)&&!item.storedDocumentId&&!af.results.get(item.id)?.server))afAnalyze({onlyNew:true});},0);});

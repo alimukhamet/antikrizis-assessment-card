@@ -4,11 +4,19 @@ const debt=credit=>fact(credit,'debtOutstanding')||credit.comparisonDebt;
 const bank=credit=>String(fact(credit,'creditor')?.value||'').normalize('NFKC').toLocaleLowerCase('ru-RU').replace(/\s+/g,'');
 const ids=credit=>[credit.contractNumber,credit.contractCode].filter(Boolean).map(s=>s.trim());
 const truncated=credit=>ids(credit).some(s=>/\.\.|…/.test(s));
-const sameLoan=(a,b)=>bank(a)&&bank(a)===bank(b)&&!truncated(a)&&!truncated(b)&&ids(a).some(id=>ids(b).includes(id));
+function numberMatches(a,b){
+ if(a===b&&!/\.\.|…/.test(a))return true;
+ if(/\.\.|…/.test(b))return false;
+ const parts=a.split(/\.{2,}|…/).map(s=>s.trim());
+ return parts.length===2&&parts.join('').length>=6&&b.length>parts.join('').length&&b.startsWith(parts[0])&&b.endsWith(parts[1]);
+}
+const sameLoan=(a,b)=>bank(a)&&bank(a)===bank(b)&&ids(a).some(x=>ids(b).some(y=>numberMatches(x,y)));
+const shortenedOnly=report=>report.kind==='gkbShort'&&report.creditEvidence?.findings?.includes('SHORT_CONTRACT_ID_TRUNCATED')&&report.creditEvidence.findings.every(f=>['SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED'].includes(f));
+const listRead=report=>report.creditEvidence.creditList?.complete||shortenedOnly(report)&&report.creditEvidence.creditList?.declared===report.creditEvidence.credits.length;
 function cents(value){if(!/^\d+(?:\.\d{1,2})?$/.test(value||''))return null;const [whole,part='']=value.split('.');return BigInt(whole)*100n+BigInt(part.padEnd(2,'0'));}
 const money=value=>`${value/100n}.${String(value%100n).padStart(2,'0')}`;
 function total(report){
- if(!report.creditEvidence.creditList?.complete)return null;
+ if(!listRead(report))return null;
  const amounts=report.creditEvidence.credits.map(c=>cents(debt(c)?.value));
  return amounts.some(v=>v===null)?null:money(amounts.reduce((sum,v)=>sum+v,0n));
 }
@@ -30,7 +38,7 @@ export function compareGkb(reports,{iin,day}={}){
  if(!short.date||short.date!==full.date)return unavailable('У отчётов разные даты или дата не прочитана. Нужна пара на одну дату.');
  const elapsed=(Date.parse(day+'T00:00:00Z')-Date.parse(short.date+'T00:00:00Z'))/86400000;
  if(!Number.isFinite(elapsed)||elapsed<0||elapsed>30)return unavailable('Для сверки нужны ГКБ не старше 30 дней.');
- if(list.some(r=>r.error||r.blocked||!r.creditEvidence?.readable||r.creditEvidence.findings?.some(f=>['PAGE_COMPLETENESS_UNVERIFIED','OCR_OR_PAGE_REVIEW_REQUIRED'].includes(f))))return unavailable('Есть непрочитанные страницы или отчёт ещё не прошёл проверку.');
+ if(list.some(r=>r.error||r.blocked&&!shortenedOnly(r)||!r.creditEvidence?.readable||r.creditEvidence.findings?.some(f=>['PAGE_COMPLETENESS_UNVERIFIED','OCR_OR_PAGE_REVIEW_REQUIRED'].includes(f))))return unavailable('Есть непрочитанные страницы или отчёт ещё не прошёл проверку.');
  const a=short.creditEvidence.credits,b=full.creditEvidence.credits,rows=[],used=new Set();
  const complete=short.creditEvidence.creditList?.complete===true&&full.creditEvidence.creditList?.complete===true;
  for(const credit of a){

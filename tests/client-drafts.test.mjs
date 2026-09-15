@@ -45,7 +45,7 @@ test('older drafts default an unassigned document to the client and retain all e
  assert.equal(await s.w.ServerDrafts.save(),true);assert.deepEqual(s.store.payload.documents.map(d=>d.person),['Клиент','Супруг(а)','Ребёнок','Другое']);
 });
 test('CRM import defaults new files to the client without changing an existing family assignment',async t=>{
- const s=await setup(t);await s.load();s.mountWorkspace();
+ const s=await setup(t);await s.load();s.edit('needsSocialDoc','0');s.edit('needsSalaryDoc','none');s.mountWorkspace();
  s.run("selectedFiles=[{id:1,file:{name:'spouse.pdf'},type:'Другой документ',person:'Супруг(а)',storedDocumentId:'spouse-file'}];fileSequence=1;");
  const originalFetch=s.w.fetch;
  s.w.fetch=async(path,options={})=>{
