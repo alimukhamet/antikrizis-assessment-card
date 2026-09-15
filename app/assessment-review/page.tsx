@@ -8,5 +8,5 @@ export default async function AssessmentReviewPage({searchParams}:{searchParams:
  const suffix=id?'?dealId='+id:'',h=await headers();
  const actor=await verifySession(readSessionCookie(h.get('cookie')),process.env.SITE_SESSION_TOKEN??'');
  if(!actor)redirect('/login?returnTo='+encodeURIComponent('/assessment-review'+suffix));
- return <main className="tool-shell"><SessionBar name={actor.displayName}/><ReviewFrame initialDealId={id}/></main>;
+ return <main className="tool-shell"><SessionBar name={actor.displayName} showToolsLink/><ReviewFrame initialDealId={id}/></main>;
 }
