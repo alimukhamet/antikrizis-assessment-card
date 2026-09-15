@@ -4,7 +4,7 @@ function load(path,imports={}){const exports={};vm.runInNewContext(ts.transpileM
 const json=path=>JSON.parse(fs.readFileSync(new URL('../'+path,import.meta.url),'utf8'));
 const schema=json('lib/questionnaire/schema.json'),native=load('lib/documents/extract-native.ts',{'./power-of-attorney':load('lib/documents/power-of-attorney.ts'),'./kz-labels.json':json('lib/documents/kz-labels.json')});
 const {checkAnswers}=load('lib/questionnaire/check-answers.ts',{'./schema.json':schema,'../documents/extract-native':native,'../../public/payment-schedule.mjs':schedule,'../../public/loan-participants.mjs':participants});
-const {validateDraft}=load('lib/questionnaire/draft.ts',{'./schema.json':schema,'../documents/repository':load('lib/documents/repository.ts')});
+const {validateDraft}=load('lib/questionnaire/draft.ts',{'./schema.json':schema,'./draft-recovery':load('lib/questionnaire/draft-recovery.ts'),'../documents/repository':load('lib/documents/repository.ts')});
 const iin='000000000010';
 function fixture(){const values={fio:'SYNTHETIC ONLY',enforcementDetails:'Нет',guarantors:'Нет',iin,dognum:'TEST',marital:'Холост / не замужем',dependents:'0',childrenTotal:'0',procedure:'199','count-clientjobs':'0','count-clientunofficial':'0',clientBenefitsCount:'0',c8037:'0',hardshipReason:'Платежи вношу, трудностей нет',kaspiAnnual:'0',gamblingTransfers:'no',lawyerNotesStatus:'no',n8044:'0',summa:'500000',contractDate:'2026-09-10',months:'5',payDay:'7',grafType:'423'};
  const credit={n8038:'TEST BANK',n8038Start:'2025-01',n8039:'Потребительский кредит',n8040:'100.25',n8041:'20.00',n8042:'0',n8043:'Жильё',loanParticipants:'Нет'};
@@ -138,4 +138,15 @@ test('legacy unknown property blocks final saving and cannot turn missing income
 test('retired document source remains a blocker after draft serialization',()=>{
  const p=fixture();p.answers.find(a=>a.key==='fio').sourceReplaced=true;
  const restored=validateDraft(JSON.parse(JSON.stringify(p)));assert.equal(restored.answers.find(a=>a.key==='fio').sourceReplaced,true);assert.ok(has(checkAnswers(restored,iin),'fio','ANSWER_SOURCE_REPLACED'));assert.throws(()=>compileAssessment(restored,iin),/ANSWERS_INCOMPLETE/);
+});
+
+test('claim inclusion defaults to yes for legacy loans; exclusion reaches the lawyer without reducing recorded debt',()=>{
+ const p=fixture(),group=p.groups.find(g=>g.id==='creditors');
+ group.rows[0]=group.rows[0].filter(a=>a.key!=='loanClaimIncluded');
+ let c=compileAssessment(p,iin);assert.match(c.lawyerCard,/Включить в иск: Да/);assert.doesNotMatch(c.lawyerCard,/НЕ ВКЛЮЧАТЬ В ИСК/);
+ group.rows[0].push({key:'loanClaimIncluded',value:'on',checked:false});
+ const second=structuredClone(group.rows[0]);second.find(a=>a.key==='loanClaimIncluded').checked=true;second.find(a=>a.key==='n8038').value='SECOND BANK';second.find(a=>a.key==='n8040').value='200.50';group.rows.push(second);group.rowKeys.push(null);
+ c=compileAssessment(p,iin);assert.equal(c.values.debt,'300.75');assert.match(c.lawyerCard,/НЕ ВКЛЮЧАТЬ В ИСК\n• Кредит 1: TEST BANK · 100.25 ₸/);assert.doesNotMatch(c.lawyerCard.split('ОБЩИЕ СВЕДЕНИЯ')[0],/SECOND BANK/);assert.match(c.lawyerCard,/Включить в иск: Нет/);assert.match(c.fullCard,/НЕ ВКЛЮЧАТЬ В ИСК/);assert.equal(validateDraft(p).groups.find(g=>g.id==='creditors').rows[0].find(a=>a.key==='loanClaimIncluded').checked,false);
+ assert.equal(contractData(p,iin).total_debt,'300,75');
+ group.rows[0].find(a=>a.key==='loanParticipants').value='';assert.equal(run(p).answersComplete,false);
 });

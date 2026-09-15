@@ -11,7 +11,7 @@ function load(file,imports={}) {
 const policy=load('lib/documents/policy.ts');
 const {analysisResponse}=load('lib/documents/analysis-service.ts',{
  './read-pdf':{PDF_READER_VERSION:'test'},'./extract-native':{EXTRACTION_VERSION:'test'},
- './policy':policy,'./request-context':{operatingDay:()=> '2026-09-10'},'./repository':{},
+ './analysis-version':{analysisVersion:'test:test'},'./policy':policy,'./request-context':{operatingDay:()=> '2026-09-10'},'./repository':{},
 });
 async function analyze(findings=[],issuedAt='2026-08-11',iin='test-client') {
  let reviewReads=0;
@@ -34,4 +34,15 @@ test('thirty-day GKB is eligible but thirty-one-day and future reports cannot re
 test('cached extraction is rechecked against the current deal identity',async()=>{
  const {result,reviewReads}=await analyze([],'2026-09-10','different-client');
  assert.equal(result.eligibleForAutofill,false);assert.equal(reviewReads,0);assert.ok(result.findings.includes('WRONG_CLIENT'));
+});
+
+test('valid employee inspection stays visible on reopen but never approves OCR facts or a different identity',async()=>{
+ const repo=load('lib/documents/repository.ts'),manual=load('lib/documents/document-review.ts',{'./repository':repo,'./analysis-version':{analysisVersion:'test:test'},'./policy':policy});
+ const {analysisResponse:respond}=load('lib/documents/analysis-service.ts',{'./analysis-version':{analysisVersion:'test:test'},'./policy':policy,'./request-context':{operatingDay:()=> '2026-09-10'},'./repository':repo,'./document-review':manual});
+ const review={type:'Удостоверение личности',iin:'test-client',pages:1,complete:true,contentMatches:true,periodChecked:true,reason:'Synthetic complete employee inspection',issuedAt:'2020-01-01',expiresAt:'2030-01-01',from:'',to:''};
+ const record={id:'case',client_iin:'test-client',identity_revision:2},stored={document:{id:'pdf'},extraction:{id:'extraction'},result:{read:{totalPages:1,pages:[{needsOcr:true}]},extraction:{kind:'unknown',identity:{iin:null},findings:['OCR_REQUIRED']}}};
+ const repository={currentReviews:async(caseId,documentId,extractionId,revision)=>{assert.equal(caseId,'case');assert.equal(documentId,'pdf');assert.equal(extractionId,'extraction');assert.equal(revision,2);return [{id:'review',actor_id:'worker:test',created_at:'2026-09-10',fact_key:manual.DOCUMENT_REVIEW_KEY,value_json:JSON.stringify(review)}];}};
+ let r=await respond({iin:'test-client'},record,repository,stored,true);assert.equal(r.documentReview.reviewId,'review');assert.equal(r.documentReview.type,review.type);assert.equal(r.eligibleForAutofill,false);assert.equal(r.reviews.length,0);assert.equal(r.reviewContext.pages,1);
+ review.expiresAt='2026-09-09';r=await respond({iin:'test-client'},record,repository,stored,true);assert.equal(r.documentReview,null);
+ review.expiresAt='2030-01-01';stored.result.extraction.identity.iin='other';r=await respond({iin:'test-client'},record,repository,stored,true);assert.equal(r.documentReview,null);assert.equal(r.eligibleForAutofill,false);
 });

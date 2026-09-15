@@ -8,7 +8,7 @@ async function setup(t,store={}){
  w.crypto.randomUUID=()=>webcrypto.randomUUID();w.HTMLElement.prototype.getClientRects=function(){return this.isConnected&&!this.closest('.hidden')?[{}]:[];};w.HTMLElement.prototype.scrollIntoView=function(){};w.HTMLDialogElement.prototype.showModal=function(){this.open=true};w.HTMLDialogElement.prototype.close=function(){this.open=false};
  let readGate=null,writeGate=null,failure=false;const writes=[];
  w.fetch=async(path,options={})=>{
-  if(path==='/api/assessment/11665')return{ok:true,json:async()=>({identityRevision:1,client:{external:{dealId:'11665'},iin:null,title:'SYNTHETIC A'}})};
+  if(path==='/api/assessment/11665')return{ok:true,json:async()=>({identityRevision:store.currentIdentityRevision||1,client:{external:{dealId:'11665'},iin:store.currentIin||null,title:'SYNTHETIC A'}})};
   if(path.endsWith('/draft')){
    if(options.method==='POST'){
     const body=JSON.parse(options.body);writes.push(body);if(writeGate)await writeGate;
@@ -16,7 +16,7 @@ async function setup(t,store={}){
     store.payload=body.payload;store.revision=(store.revision||0)+1;return{ok:true,json:async()=>({revision:store.revision,latestRevision:store.revision})};
    }
    if(readGate)await readGate;
-   return{ok:true,json:async()=>({draft:store.payload?{payload:store.payload,revision:store.revision,identityRevision:1,updatedAt:'2026-09-12T10:00:00Z'}:null})};
+   return{ok:true,json:async()=>({draft:store.payload?{payload:store.payload,revision:store.revision,identityRevision:store.identityRevision||1,recovery:store.recovery,updatedAt:'2026-09-12T10:00:00Z'}:null})};
   }
   if(path.endsWith('/submission'))return{ok:true,json:async()=>({submission:null})};
   if(path.endsWith('/credentials'))return{ok:true,json:async()=>({credentials:{verified:false},identityRevision:1})};
@@ -100,4 +100,34 @@ test('legacy participant answers and old unknown flags survive without disabling
  const c=await setup(t,b.store);await c.load();const restored=[...c.d.querySelectorAll('#creditors textarea[id^="loanParticipants"]')];
  assert.equal(restored[0].value,'SYNTHETIC PERSON — Гарант');assert.equal(restored[1].value,'');assert.equal(restored[1].disabled,false);assert.equal(c.w.ServerDrafts.capture().groups.find(g=>g.id==='creditors').rows[1].find(a=>a.key==='unknown:loanParticipants').checked,true);
  assert.equal(c.d.getElementById('guarantors').value,'LEGACY ANSWER — no loan association');
+});
+
+test('an upload-only draft resumes after an IIN was added and saves under the current identity',async t=>{
+ const a=await setup(t);await a.load();const payload=JSON.parse(JSON.stringify(a.w.ServerDrafts.capture()));
+ payload.documents=[{documentId:'saved-pdf',originalName:'source.pdf',type:'Справка ЕНПФ',person:'Клиент'}];payload.docContext={social:'0',salary:'0',salaryBank:'none'};
+ const s=await setup(t,{payload,revision:8,identityRevision:1,currentIdentityRevision:2,currentIin:'810110300027',recovery:{mode:'documents-only',identityRevision:2}});s.run('afAnalyze=async()=>{}');await s.load();
+ assert.equal(s.w.ServerDrafts.capture().documents.length,1);assert.equal(s.d.getElementById('iin').value,'810110300027');assert.equal(s.w.ServerDrafts.canSwitch(),true);
+ assert.equal(await s.w.ServerDrafts.save(),true);assert.equal(s.writes[0].expectedRevision,8);assert.equal(s.writes[0].identityRevision,2);assert.equal(s.writes[0].payload.answers.find(a=>a.key==='fio').value,'');
+});
+test('a different identity cannot silently restore answered drafts or confirmations',async t=>{
+ const a=await setup(t);await a.load();a.edit('fio','PREVIOUS PERSON');const payload=JSON.parse(JSON.stringify(a.w.ServerDrafts.capture()));
+ const s=await setup(t,{payload,revision:8,identityRevision:1,currentIdentityRevision:2,currentIin:'810110300027'});await s.load();
+ assert.equal(s.d.getElementById('fio').value,'');assert.equal(s.w.ServerDrafts.canSwitch(),false);assert.equal(s.writes.length,0);assert.match(s.d.getElementById('draftStatus').textContent,/прежним данным/);
+});
+test('contracted search results require the explicit archive option and cannot use the ID fallback',async t=>{
+ const s=await setup(t);await s.load();s.mountWorkspace();const base=s.w.fetch;s.w.fetch=async(path,options)=>path.includes('/clients')?{ok:true,json:async()=>({drafts:[],recent:path.includes('?q=')?[{dealId:'123',title:'SAVED CONTRACT',hasContract:true,fileCount:3}]:[]})}:base(path,options);
+ await s.w.ClientWorkspace.open();const search=s.d.querySelector('.client-dialog input[type=search]');search.value='123';search.dispatchEvent(new s.w.Event('input'));await new Promise(resolve=>setTimeout(resolve,300));
+ assert.equal(s.d.querySelectorAll('.client-directory-row').length,0);assert.doesNotMatch(s.d.querySelector('.client-dialog').textContent,/Открыть сделку № 123/);
+ const archive=s.d.querySelector('.client-archive-toggle input');archive.checked=true;archive.dispatchEvent(new s.w.Event('change'));assert.equal(s.d.querySelectorAll('.client-directory-row').length,1);assert.match(s.d.querySelector('.client-directory-row').textContent,/Договор уже оформлен/);
+});
+
+test('each loan defaults into the claim and explicit exclusion survives reopening and source refresh',async t=>{
+ const a=await setup(t);await a.load();const first=a.d.querySelector('#creditors [data-loan-claim]');assert.equal(first.checked,true);
+ a.run("af.client='test-client';var row=afRow('creditors','test-client|TEST BANK|1');afRowFields(row,{n8038:'TEST BANK',n8040:'100.25'},{fileId:1});var other=add(document.getElementById('creditors'));");
+ assert.equal(a.d.querySelectorAll('#creditors > .repeat-rows > .repeat-item').length,2);
+ const flags=a.d.querySelectorAll('#creditors [data-loan-claim]');flags[0].checked=false;flags[0].dispatchEvent(new a.w.Event('change',{bubbles:true}));assert.equal(flags[1].checked,true);await a.w.ServerDrafts.save();
+ const b=await setup(t,a.store);await b.load();assert.deepEqual([...b.d.querySelectorAll('#creditors [data-loan-claim]')].map(e=>e.checked),[false,true]);
+ b.run("afRowFields(afRow('creditors','test-client|TEST BANK|1'),{n8038:'TEST BANK',n8040:'100.25'},{fileId:1})");assert.equal(b.d.querySelector('#creditors [data-loan-claim]').checked,false);
+ const legacy=structuredClone(a.store);for(const group of legacy.payload.groups)if(group.id==='creditors')group.rows=group.rows.map(row=>row.filter(answer=>answer.key!=='loanClaimIncluded'));
+ const c=await setup(t,legacy);await c.load();assert.ok([...c.d.querySelectorAll('#creditors [data-loan-claim]')].every(e=>e.checked));
 });

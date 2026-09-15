@@ -21,42 +21,57 @@ window.DocumentReview={render(container,result,dealId,selection,onSaved){
   const note=document.createElement('p');note.textContent=conflict.clientConfirmedAmount!==undefined?'Сумма для анкеты уточнена у клиента: '+conflict.clientConfirmedAmount+' ₸. Расхождение источников сохранено; это не подтверждение суммы по документам.':'Сверьте значения в исходных отчётах. Если выбран устаревший или неверный файл, уберите его из пакета и добавьте актуальный. Если актуальные отчёты противоречат друг другу, запросите уточнение у источника. Простое изменение ответа анкеты не снимает расхождение.';section.append(note);container.append(section);
  }
  const supported=['Удостоверение личности','Ф6 об отсутствии имущества','Справка ЕНПФ','Справка по выплатам пенсии и пособий','Выписка зарплатного банка','Выписка Kaspi Gold','Доверенность'];
+ const files=typeof selectedFiles==='undefined'?[]:selectedFiles,results=typeof af==='undefined'?new Map():af.results;
+ for(const item of files){const source=results.get(item.id);if(!source?.server)continue;source.documentReview=result.documents?.manuallyReviewed?.find(review=>review.documentId===source.server.documentId&&review.type===item.type)||null;}
+ if(typeof afRenderResults==='function')afRenderResults();if(typeof refreshRequiredDocuments==='function')refreshRequiredDocuments();window.AssessmentWorkflow?.refresh();
  for(const selected of selection.filter(s=>s.person==='Клиент'&&supported.includes(s.type))){
-  if(result.documents.structurallyChecked?.includes(selected.type)&&!result.documents.issues?.some(i=>i.documentId===selected.documentId)&&!result.documents.manuallyReviewed?.some(r=>r.documentId===selected.documentId&&r.type===selected.type))continue;
-  const section=document.createElement('details');section.dataset.documentReview='';
-  const title=document.createElement('summary');title.textContent=selected.type+' — '+(result.documents.manuallyReviewed?.some(r=>r.documentId===selected.documentId&&r.type===selected.type)?'проверено сотрудником':'проверить документ');section.append(title);
-  const link=document.createElement('a');link.textContent='Открыть исходный PDF';link.href=`/document-viewer.html?dealId=${encodeURIComponent(dealId)}&documentId=${encodeURIComponent(selected.documentId)}`;link.target='_blank';link.rel='noopener';section.append(link);
-  const fields={};
-  const input=(key,label,type='text')=>{const wrapper=document.createElement('label');wrapper.style.display='block';wrapper.textContent=label;const field=document.createElement('input');field.type=type;wrapper.append(field);section.append(wrapper);fields[key]=field;return field;};
-  input('iin','ИИН владельца, указанный в документе');input('pages','Количество проверенных страниц','number').min='1';
-  input('issuedAt','Дата выдачи (если указана)','date');input('expiresAt','Действует до (обязательно для удостоверения и доверенности)','date');
-  if(['Выписка зарплатного банка','Выписка Kaspi Gold','Справка ЕНПФ'].includes(selected.type)){input('from','Начало периода','date');input('to','Конец периода','date');}
-  if(selected.type==='Справка ЕНПФ'){const periodNote=document.createElement('p');periodNote.textContent='Нужна выписка за 12 месяцев до даты выдачи. Укажите дату выдачи и период из документа.';section.append(periodNote);}
-  input('complete','Просмотрены все страницы; документ полный и читаемый','checkbox');input('contentMatches','Содержание соответствует выбранному типу и указанному владельцу','checkbox');input('periodChecked','Проверены срок действия и необходимый период документа','checkbox');
-  if(selected.type==='Доверенность'){
-   const label=document.createElement('label');label.textContent='Поверенный';const kind=document.createElement('select');for(const [value,text]of[['person','Физическое лицо'],['organization','Организация']]){const option=document.createElement('option');option.value=value;option.textContent=text;kind.append(option);}label.append(kind);section.append(label);fields.kind=kind;
-   input('legalName','Полное имя / наименование поверенного из документа');input('identifier','ИИН / БИН поверенного из документа');input('authorityChecked','Проверены исполнение, срок, полномочия на поручение и сведения об отмене доверенности','checkbox');
-  }
-  input('reason','Что проверено, где указаны владелец, даты и необходимые сведения');
-  const note=document.createElement('p');note.textContent='Это запись проверки сотрудником. Она не удостоверяет подлинность и не подтверждает автоматически ответы анкеты.';section.append(note);
-  const save=document.createElement('button');save.type='button';save.className='btn btn-ghost';save.textContent='Сохранить проверку';const status=document.createElement('p');status.setAttribute('role','status');section.append(save,status);container.append(section);
   const approved=result.documents.manuallyReviewed?.find(r=>r.documentId===selected.documentId&&r.type===selected.type);
+  if(result.documents.structurallyChecked?.includes(selected.type)&&!result.documents.issues?.some(i=>i.documentId===selected.documentId)&&!approved)continue;
+  const section=document.createElement('details');section.dataset.documentReview='';section.dataset.reviewDocumentId=selected.documentId;
+  const title=document.createElement('summary');title.textContent=selected.type+' — '+(approved?'проверено сотрудником':'сверить');section.append(title);
+  const link=document.createElement('a');link.textContent='Открыть документ';link.href=`/document-viewer.html?dealId=${encodeURIComponent(dealId)}&documentId=${encodeURIComponent(selected.documentId)}`;link.target='_blank';link.rel='noopener';section.append(link);container.append(section);
+  const status=document.createElement('p');status.setAttribute('role','status');
   if(approved){
-   const reason=input('withdrawReason','Причина отмены проверки');const withdraw=document.createElement('button');withdraw.type='button';withdraw.className='btn btn-ghost';withdraw.textContent='Отменить проверку';section.append(withdraw);let withdrawal=null;
+   const note=document.createElement('p');note.textContent='Проверка сохранена · '+new Date(approved.reviewedAt).toLocaleDateString('ru-RU');section.append(note);
+   const cancelDetails=document.createElement('details'),cancelTitle=document.createElement('summary');cancelTitle.textContent='Отменить проверку';cancelDetails.append(cancelTitle);
+   const reason=document.createElement('input');reason.placeholder='Причина отмены';reason.setAttribute('aria-label','Причина отмены проверки');
+   const withdraw=document.createElement('button');withdraw.type='button';withdraw.className='btn btn-ghost';withdraw.textContent='Отменить проверку';cancelDetails.append(reason,withdraw);section.append(cancelDetails,status);let withdrawal=null;
    withdraw.onclick=async()=>{
     const payload={action:'withdraw',documentId:selected.documentId,reviewId:approved.reviewId,identityRevision:result.identityRevision,reason:reason.value.trim()};
-    if(payload.reason.length<10){status.textContent='Укажите причину отмены не короче 10 символов.';return;}
-    const signature=JSON.stringify(payload);if(withdrawal?.signature!==signature)withdrawal={signature,requestId:crypto.randomUUID()};withdraw.disabled=true;save.disabled=true;
-    try{const response=await fetch(`/api/assessment/${encodeURIComponent(dealId)}/document-reviews`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,requestId:withdrawal.requestId})});const data=await response.json();if(!response.ok)throw Error(data.error==='REVIEW_CHANGED'?'Проверка уже изменилась. Проверьте анкету заново.':'Отмена не подтверждена. Повторите действие.');status.textContent='Проверка отменена; история сохранена.';onSaved();}catch(error){status.textContent=error.message;}finally{withdraw.disabled=false;save.disabled=false;}
-   };
+    if(payload.reason.length<10){status.textContent='Кратко поясните причину отмены (не менее 10 символов).';return;}
+    const signature=JSON.stringify(payload);if(withdrawal?.signature!==signature)withdrawal={signature,requestId:crypto.randomUUID()};withdraw.disabled=true;
+    try{const response=await fetch(`/api/assessment/${encodeURIComponent(dealId)}/document-reviews`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,requestId:withdrawal.requestId})});const data=await response.json();if(!response.ok)throw Error(data.error==='REVIEW_CHANGED'?'Проверка уже изменилась. Обновите её.':'Отмена не подтверждена. Повторите действие.');await onSaved();}catch(error){status.textContent=error.message;}finally{withdraw.disabled=false;}
+   };continue;
   }
-  let attempt=null;
+  const item=files.find(item=>(results.get(item.id)?.server?.documentId||item.storedDocumentId)===selected.documentId),source=item?results.get(item.id):null,known=source?.reviewContext||{};
+  const form=document.createElement('div');form.className='document-review-fields';section.append(form);
+  const fields={};
+  const input=(key,label,type='text',value='')=>{const wrapper=document.createElement('label');wrapper.textContent=label;const field=document.createElement('input');field.type=type;field.value=value;wrapper.append(field);form.append(wrapper);fields[key]=field;return field;};
+  input('iin','ИИН в документе','text',known.iin||window.HostedAssessment?.getContext()?.client.iin||'');
+  const pages=Number(known.pages||source?.pages||0);const pageNote=document.createElement('p');pageNote.className='hint';pageNote.textContent=pages+' стр. · Сверьте данные с открытым документом.';form.prepend(pageNote);
+  const periodType=['Выписка зарплатного банка','Выписка Kaspi Gold','Справка ЕНПФ'].includes(selected.type);
+  if(['Удостоверение личности','Доверенность','Справка ЕНПФ'].includes(selected.type))input('issuedAt','Дата выдачи','date',known.issuedAt||'');
+  if(['Удостоверение личности','Доверенность'].includes(selected.type))input('expiresAt','Действует до','date',known.expiresAt||'');
+  if(periodType){input('from','Начало периода','date',known.from||'');input('to','Конец периода','date',known.to||'');}
+  if(selected.type==='Доверенность'){
+   const label=document.createElement('label');label.textContent='Поверенный';const kind=document.createElement('select');for(const [value,text]of[['person','Физическое лицо'],['organization','Организация']]){const option=document.createElement('option');option.value=value;option.textContent=text;kind.append(option);}kind.value=known.representative?.kind||'person';label.append(kind);form.append(label);fields.kind=kind;
+   input('legalName','Имя / наименование поверенного','text',known.representative?.legalName||'');input('identifier','ИИН / БИН поверенного','text',known.representative?.identifier||'');
+  }
+  input('confirmed',selected.type==='Доверенность'?'Я просмотрел все страницы и проверил владельца, срок и полномочия поверенного.':'Я просмотрел все страницы и проверил владельца, содержание и срок документа.','checkbox');
+  const extra=document.createElement('details'),extraTitle=document.createElement('summary');extraTitle.textContent='Добавить примечание';extra.append(extraTitle);form.append(extra);const reason=input('reason','Примечание');extra.append(reason.parentElement);
+  const save=document.createElement('button');save.type='button';save.className='btn btn-main';save.textContent='Документ проверен';section.append(save,status);let attempt=null;
   save.onclick=async()=>{
+   if(!fields.confirmed.checked){status.textContent='Подтвердите, что сверили документ.';fields.confirmed.focus();return;}
    const value=key=>fields[key]?.value.trim()||'';
-   const review={type:selected.type,iin:value('iin'),pages:Number(value('pages')),issuedAt:value('issuedAt'),expiresAt:value('expiresAt'),from:value('from'),to:value('to'),complete:fields.complete.checked,contentMatches:fields.contentMatches.checked,periodChecked:fields.periodChecked.checked,reason:value('reason'),authorityChecked:fields.authorityChecked?.checked===true,representative:fields.kind?{kind:value('kind'),legalName:value('legalName'),identifier:value('identifier')}:null};
+   const review={type:selected.type,iin:value('iin'),pages,issuedAt:fields.issuedAt?value('issuedAt'):known.issuedAt||'',expiresAt:value('expiresAt'),from:value('from'),to:value('to'),complete:true,contentMatches:true,periodChecked:true,reason:value('reason')||'Сотрудник просмотрел все страницы и подтвердил владельца, содержание и сроки документа.',authorityChecked:selected.type==='Доверенность',representative:fields.kind?{kind:value('kind'),legalName:value('legalName'),identifier:value('identifier')}:null};
    const payload={documentId:selected.documentId,identityRevision:result.identityRevision,review},signature=JSON.stringify(payload);if(attempt?.signature!==signature)attempt={signature,requestId:crypto.randomUUID()};
-   save.disabled=true;status.textContent='Сохраняю проверку…';
-   try{const response=await fetch(`/api/assessment/${encodeURIComponent(dealId)}/document-reviews`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,requestId:attempt.requestId})});const data=await response.json();if(!response.ok)throw Error(({DOCUMENT_CLIENT_UNVERIFIED:'ИИН не совпал с клиентом сделки.',DOCUMENT_IDENTITY_CONFLICT:'В извлечённых данных указан другой ИИН. Нужна сверка файла.',DOCUMENT_TYPE_CONFLICT:'Содержимое определено как другой тип документа.',DOCUMENT_INSPECTION_INCOMPLETE:'Укажите число страниц, отметьте проверки и добавьте пояснение не короче 10 символов.',DOCUMENT_DATE_NOT_ACCEPTABLE:'Проверьте даты: документ не должен быть будущим или просроченным.',DOCUMENT_EXPIRY_REQUIRED:'Укажите срок действия удостоверения.',STATEMENT_RECONCILIATION_REQUIRED:'Операции и остатки Kaspi должны пройти автоматическую сверку; ручная проверка владельца её не заменяет.',ENPF_PERIOD_NOT_ACCEPTABLE:'Укажите дату выдачи и период ЕНПФ: он должен охватывать 12 месяцев до даты выдачи.',STATEMENT_PERIOD_NOT_ACCEPTABLE:'Период должен совпадать с выпиской и охватывать последние 12 месяцев, включая год до даты выписки.',POWER_AUTHORITY_REVIEW_REQUIRED:'Укажите даты доверенности и подтвердите проверку полномочий.',REPRESENTATIVE_NOT_APPROVED:'Реквизиты поверенного не совпали с Айжан или Aplus Corporation.',CASE_IDENTITY_CHANGED:'Клиент сделки изменился. Откройте сделку заново.',DOCUMENT_PROCESSING_REQUIRED:'Сначала обработайте этот файл.'})[data.error]||'Сохранение не подтверждено. Проверьте поля и повторите.');status.textContent='Проверка сохранена.';onSaved();}catch(error){status.textContent=error.message;}finally{save.disabled=false;}
+   save.disabled=true;status.textContent='Сохраняем проверку…';
+   try{const response=await fetch(`/api/assessment/${encodeURIComponent(dealId)}/document-reviews`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,requestId:attempt.requestId})});const data=await response.json();if(!response.ok)throw Error(({DOCUMENT_CLIENT_UNVERIFIED:'ИИН не совпал с клиентом сделки.',DOCUMENT_IDENTITY_CONFLICT:'В документе указан другой ИИН. Замените файл или проверьте его владельца.',DOCUMENT_TYPE_CONFLICT:'Содержание относится к другому типу документа.',DOCUMENT_INSPECTION_INCOMPLETE:'Проверьте число страниц и подтверждение просмотра.',DOCUMENT_DATE_NOT_ACCEPTABLE:'Проверьте даты документа.',DOCUMENT_EXPIRY_REQUIRED:'Укажите срок действия удостоверения.',STATEMENT_RECONCILIATION_REQUIRED:'Операции и остатки Kaspi не сошлись. Проверьте полноту выписки.',ENPF_PERIOD_NOT_ACCEPTABLE:'Нужен период ЕНПФ за 12 месяцев до даты выдачи.',STATEMENT_PERIOD_NOT_ACCEPTABLE:'Период должен совпадать с выпиской и охватывать последние 12 месяцев.',POWER_AUTHORITY_REVIEW_REQUIRED:'Укажите даты доверенности и подтвердите проверку полномочий.',REPRESENTATIVE_NOT_APPROVED:'Реквизиты поверенного не совпали с Айжан или Aplus Corporation.',CASE_IDENTITY_CHANGED:'Клиент сделки изменился. Откройте сделку заново.',DOCUMENT_PROCESSING_REQUIRED:'Сначала обработайте этот файл.'})[data.error]||'Проверка не сохранена. Проверьте данные и повторите.');await onSaved();}catch(error){status.textContent=error.message;}finally{save.disabled=false;}
   };
  }
+},async open(documentId){
+ await window.AssessmentCheck?.documents();
+ const section=[...document.querySelectorAll('[data-review-document-id]')].find(node=>node.dataset.reviewDocumentId===documentId);if(!section)return;
+ for(let parent=section;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
+ section.scrollIntoView({block:'start',behavior:'smooth'});section.querySelector('input')?.focus({preventScroll:true});
 }};

@@ -1,8 +1,10 @@
-import {readPdf,PDF_READER_VERSION}from'./read-pdf';import{extractNative,EXTRACTION_VERSION}from'./extract-native';import{gkbFreshness}from'./policy';import{operatingDay}from'./request-context';import type{EvidenceRepository,CaseRow,DocumentRow,ExtractionRow}from'./repository';import type{ClientContext}from'../crm/bitrix';import {RepositoryError}from'./repository';
+import {readPdf}from'./read-pdf';import{extractNative}from'./extract-native';import{gkbFreshness}from'./policy';import{operatingDay}from'./request-context';import type{EvidenceRepository,CaseRow,DocumentRow,ExtractionRow}from'./repository';import type{ClientContext}from'../crm/bitrix';import {RepositoryError}from'./repository';
 import type{Actor}from'../worker-session';
 import {requiresDocumentValidation,statementPeriod,salaryStatementPeriod,enpfPeriod}from'./policy';
 import {checkPowerRepresentative}from'./power-validation';
-export const analysisVersion=PDF_READER_VERSION+':'+EXTRACTION_VERSION;
+import {analysisVersion} from './analysis-version';
+import {DOCUMENT_REVIEW_KEY,validateDocumentReview} from './document-review';
+export {analysisVersion};
 export type Analysis={read:Awaited<ReturnType<typeof readPdf>>;extraction:ReturnType<typeof extractNative>};
 export async function analysisResponse(client:ClientContext,record:CaseRow,repository:EvidenceRepository,stored:{document:DocumentRow;extraction:ExtractionRow;result:unknown},cacheHit:boolean){
  const{read,extraction}=stored.result as Analysis,today=operatingDay(),findings=[...extraction.findings];
@@ -16,7 +18,14 @@ export async function analysisResponse(client:ClientContext,record:CaseRow,repos
  const blockers=['DEAL_IDENTITY_UNVERIFIED','DOCUMENT_IDENTITY_UNVERIFIED','WRONG_CLIENT','GKB_TOO_OLD','FUTURE_DOCUMENT_DATE','DATE_UNVERIFIED','PAGE_COMPLETENESS_UNVERIFIED'];
  const eligible=!requiresDocumentValidation(findings)&&!findings.some(f=>blockers.includes(f)||f.startsWith('STATEMENT_PERIOD_'));
  const reviews=eligible?await repository.currentReviews(record.id,stored.document.id,stored.extraction.id,record.identity_revision):[];
- return{reviews,client,document:{...read,extraction},powerValidation,assessmentDay:today,findings:[...new Set(findings)],eligibleForAutofill:eligible,reviewRequired:true,authenticity:'not_verified',persisted:true,caseId:record.id,identityRevision:record.identity_revision,documentId:stored.document.id,extractionId:stored.extraction.id,cacheHit};
+ let documentReview=null;
+ if(!extraction.kind.startsWith('gkb_')&&client.iin&&(!extraction.identity.iin||extraction.identity.iin===client.iin)){
+  const current=eligible?reviews:await repository.currentReviews(record.id,stored.document.id,stored.extraction.id,record.identity_revision);
+  const saved=current.find(review=>review.fact_key===DOCUMENT_REVIEW_KEY);
+  if(saved)try{const value=validateDocumentReview(JSON.parse(saved.value_json),stored.result as Analysis,record,today);documentReview={reviewId:saved.id,type:value.type,actorId:saved.actor_id,reviewedAt:saved.created_at};}catch(error){if(!(error instanceof RepositoryError||error instanceof SyntaxError))throw error;}
+ }
+ const reviewContext={iin:extraction.identity.iin||client.iin||'',pages:read.totalPages,issuedAt:extraction.issuedAt||'',from:extraction.coverage?.from||extraction.bankStatement?.from||'',to:extraction.coverage?.to||extraction.bankStatement?.to||'',representative:extraction.power?.representative||null};
+ return{reviews,documentReview,reviewContext,client,document:{...read,extraction},powerValidation,assessmentDay:today,findings:[...new Set(findings)],eligibleForAutofill:eligible,reviewRequired:true,authenticity:'not_verified',persisted:true,caseId:record.id,identityRevision:record.identity_revision,documentId:stored.document.id,extractionId:stored.extraction.id,cacheHit};
 }
 export async function storedAnalysis(client:ClientContext,record:CaseRow,repository:EvidenceRepository,document:DocumentRow,actor:Actor,cacheOnly=false){
  const cached=await repository.cached(record.id,document.original_sha256,analysisVersion);if(cached)return analysisResponse(client,record,repository,cached,true);

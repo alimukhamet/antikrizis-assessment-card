@@ -94,12 +94,12 @@ function afRow(group,key,loan=null){
   // Manual additions/corrections keep their separate row for employee review.
   for(const other of candidates.slice(1)){
    const controls=[...other.querySelectorAll('input,select,textarea')].filter(e=>!e.closest('.af-source'));
-   const entirelySourced=loan&&controls.every(e=>{const field=e.id.replace(/_r\d+$/,'');return e.type==='checkbox'?!e.checked:!e.value||String(loan.fields[field])===e.value||(field==='n8038'&&loan.fields[field]&&afCreditorKey(loan.fields[field])===afCreditorKey(e.value));});
+   const entirelySourced=loan&&controls.every(e=>{const field=e.id.replace(/_r\d+$/,'');return field==='loanClaimIncluded'?e.checked:e.type==='checkbox'?!e.checked:!e.value||String(loan.fields[field])===e.value||(field==='n8038'&&loan.fields[field]&&afCreditorKey(loan.fields[field])===afCreditorKey(e.value));});
    if(entirelySourced){for(const e of controls)af.sources.delete(e.id);for(const [k,id]of af.rowKeys)if(id===other.id)af.rowKeys.delete(k);other.remove();renumber(g);}
   }
   for(const [k,id]of af.rowKeys)if(id===target.id&&k!==canonical)af.rowKeys.delete(k);af.rowKeys.set(canonical,target.id);return target;
  }
- const empty=[...g.querySelector(':scope > .repeat-rows').children].find(r=>![...r.querySelectorAll('input,select,textarea')].some(e=>e.type==='checkbox'?e.checked:Boolean(e.value)));
+ const empty=[...g.querySelector(':scope > .repeat-rows').children].find(r=>![...r.querySelectorAll('input,select,textarea')].some(e=>e.id.replace(/_r\d+$/,'')==='loanClaimIncluded'?!e.checked:e.type==='checkbox'?e.checked:Boolean(e.value)));
  const row=empty||add(g);if(!row.id)row.id='af-row-'+(++nextRow);af.rowKeys.set(canonical,row.id);return row;
 }
 function afRowFields(row,fields,src){for(const [key,value]of Object.entries(fields)){const e=[...row.querySelectorAll('input,select,textarea')].find(e=>e.id===key||e.id.startsWith(key+'_r'));if(key==='n8038'&&e?.value&&e.value!==String(value)&&afCreditorKey(e.value)===afCreditorKey(value))continue;afPut(e,value,{...src,serverFactKey:src.fieldKeys?.[key],...src.fieldReview?.[key]});}}
@@ -172,6 +172,7 @@ function afDocumentAttention(item){
  const r=af.results.get(item.id);if(!r||afExcluded(item))return null;
  if(r.identity?.iin&&HostedAssessment.getContext()?.client.iin&&r.identity.iin!==HostedAssessment.getContext().client.iin&&item.person==='Клиент')return {kind:'error',message:'Другой владелец'+(r.identity.fio?': '+r.identity.fio:'')+'. Замените файл или укажите, чей он.'};
  if(r.error)return {kind:'error',message:r.error};
+ if(r.documentReview?.type===item.type)return null;
  const findings=r.findings||[];
  const reason=['ENPF_PERIOD_NOT_ACCEPTABLE','ENPF_PERIOD_UNVERIFIED','SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED','GKB_TOO_OLD','GKB_DATE_NOT_ACCEPTABLE','FUTURE_DOCUMENT_DATE','STATEMENT_PERIOD_NOT_ACCEPTABLE','STATEMENT_RECONCILIATION_REQUIRED'].find(code=>findings.includes(code));
  if(reason)return {kind:'error',message:HostedAssessment.error(reason)};
@@ -188,13 +189,14 @@ function afRenderResults(){
   const displayType=item.type&&item.type!=='Другой документ'?shortType[item.type]||item.type:r.type&&r.kind!=='other'?shortType[r.type]||r.type:item.file.name;
   const box=afEl('details',undefined,'af-file'),summary=afEl('summary'),name=afEl('strong',afExcluded(item)?'Ключ ЭЦП':displayType);summary.title=item.file.name;box.dataset.fileId=String(item.id);
   const wrongOwner=Boolean(r.identity?.iin&&HostedAssessment.getContext()?.client.iin&&r.identity.iin!==HostedAssessment.getContext().client.iin&&item.person==='Клиент');
-  const state=r.sourceOnly?'Сохранён':r.error?'Не прочитан':wrongOwner?'Другой клиент':r.blocked?'Сверить вручную':r.excluded?'Отдельно':r.duplicate?'Повтор':'Прочитан';
+  const state=r.sourceOnly?'Сохранён':r.error?'Не прочитан':wrongOwner?'Другой клиент':r.documentReview?.type===item.type?'Проверено сотрудником':r.blocked?'Сверить вручную':r.excluded?'Отдельно':r.duplicate?'Повтор':'Прочитан';
   summary.append(name,afEl('span',state,'af-file-state'+(r.error||wrongOwner?' needs-review':'')));box.append(summary);
   box.append(afEl('p',afExcluded(item)?'Ключ ЭЦП':item.file.name,'af-original-name'));box.append(afEl('p',(r.pages||0)+' стр.'+(item.person?' · '+item.person:''),'hint'));
   const attention=afDocumentAttention(item);if(attention)box.append(afEl('p',attention.message,'af-document-attention'+(attention.kind==='error'?' error':'')));
   if(r.statement){const st=r.statement;box.append(afEl('p','Период: '+st.period+' · операций: '+st.transactions+' · поступления: '+Number(st.credits).toLocaleString('ru-RU')+' ₸. '+(st.reconciled?'Операции сверены.':'Нужна сверка операций.'),'hint'));}
   if(r.coverage?.from&&r.coverage?.to)box.append(afEl('p','Период: '+r.coverage.from+' — '+r.coverage.to,'hint'));
   if(wrongOwner){const owner=afEl('button','Указать владельца','btn btn-ghost');owner.type='button';owner.onclick=()=>{document.querySelector('.wf-document-tools').open=true;document.querySelector('.wf-file-assignments').open=true;$af('doc-'+item.id+'-person')?.focus();};box.append(owner);}
+  if(item.storedDocumentId&&item.person==='Клиент'&&attention?.kind==='manual'&&!wrongOwner){const inspect=afEl('button','Проверить документ','btn btn-ghost');inspect.type='button';inspect.onclick=()=>window.DocumentReview?.open(item.storedDocumentId);box.append(inspect);}
   const notes=afEl('ul');(r.notes||[]).filter(t=>!t.startsWith('Подлинность документа')&&!t.startsWith('Использован ранее')).forEach(t=>notes.append(afEl('li',t)));
   if(notes.children.length){const info=afEl('details',undefined,'af-document-notes');info.append(afEl('summary','Подробности чтения'),notes);box.append(info);}
   if(r.sourcePreview||item.storedDocumentId){const b=afEl('button','Открыть документ');b.type='button';b.className='btn btn-ghost';b.onclick=()=>afSource({fileId:item.id,page:1});box.append(b);}

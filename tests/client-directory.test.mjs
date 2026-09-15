@@ -24,3 +24,10 @@ test('the draft directory lists each client once using the latest saved version'
  for(const [id,c,revision,day]of [['v1','a',1,'2026-09-10'],['v2','a',2,'2026-09-12'],['v3','b',1,'2026-09-11']])insert.run(id,c,revision,1,id,JSON.stringify({documents:[]}),id,'worker:ali',day);
  const rows=await repo.recent();assert.deepEqual(rows.map(r=>[r.dealId,r.revision]),[['123',2],['124',1]]);assert.equal(rows.some(r=>'payload_json'in r),false);sql.close();
 });
+
+test('contract status requires both saved contract details and does not claim a signature',async()=>{
+ assert.equal(directory.hasPreparedContract({UF_CRM_AI_DOGNUM:'reserved'}),false);assert.equal(directory.hasPreparedContract({UF_CRM_1778499926844:'2026-09-15'}),false);
+ assert.equal(directory.hasPreparedContract({UF_CRM_AI_DOGNUM:'123',UF_CRM_1778499926844:'2026-09-15'}),true);
+ let request;const states=await directory.draftContractStates('https://crm.example/rest/test/',['123','123','124'],async(url,options)=>{request=JSON.parse(options.body);return Response.json({result:[{ID:'123',UF_CRM_AI_DOGNUM:'123',UF_CRM_1778499926844:'2026-09-15'},{ID:'124'},{ID:'999',UF_CRM_AI_DOGNUM:'123',UF_CRM_1778499926844:'2026-09-15'}]});});
+ assert.deepEqual(Array.from(request.filter.ID),['123','124']);assert.equal(states.get('123'),true);assert.equal(states.get('124'),false);assert.equal(states.has('999'),false);
+});

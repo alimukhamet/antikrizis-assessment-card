@@ -126,7 +126,8 @@ window.AssessmentWorkflow=(()=>{
    const get=key=>[...row.querySelectorAll('input,select')].find(e=>e.id.replace(/_r\d+$/,'')===key)?.value||'';
    const missing=[...row.querySelectorAll('input,select,textarea')].filter(e=>!e.closest('.af-source')&&afLogicalVisible(e)&&!e.hasAttribute('data-optional')&&!['checkbox','file'].includes(e.type)&&(!e.value.trim()||!e.checkValidity())).length;
    const summary=fold.querySelector('summary'),amount=get('n8040'),title=get('n8038')||'Новый кредит';
-   summary.textContent=title+(amount?' · '+Number(amount).toLocaleString('ru-RU')+' ₸':'')+(missing?' · заполнить: '+missing:'');
+   const excluded=row.querySelector('[data-loan-claim]')?.checked===false;
+   summary.textContent=title+(amount?' · '+Number(amount).toLocaleString('ru-RU')+' ₸':'')+(excluded?' · Не включать в иск':'')+(missing?' · заполнить: '+missing:'');
   }
  }
 

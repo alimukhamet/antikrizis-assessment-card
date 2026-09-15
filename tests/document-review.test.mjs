@@ -1,7 +1,7 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';import ts from 'typescript';
 function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>imports[n],Date,Map,Set});return exports;}
 const repo=load('lib/documents/repository.ts'),policy=load('lib/documents/policy.ts');
-const review=load('lib/documents/document-review.ts',{'./repository':repo,'./analysis-service':{analysisVersion:'v'},'./policy':policy,'./power-validation':{checkPowerRepresentative:p=>({representativeMatched:p?.representative?.identifier==='synthetic-approved'})}});
+const review=load('lib/documents/document-review.ts',{'./repository':repo,'./analysis-version':{analysisVersion:'v'},'./policy':policy,'./power-validation':{checkPowerRepresentative:p=>({representativeMatched:p?.representative?.identifier==='synthetic-approved'})}});
 const record={id:'case',client_iin:'test-client',identity_revision:2};
 const analysis={read:{totalPages:2,pages:[{needsOcr:true},{needsOcr:true}]},extraction:{kind:'unknown',identity:{iin:null}}};
 const input=()=>({type:'Удостоверение личности',iin:'test-client',pages:2,complete:true,contentMatches:true,periodChecked:true,reason:'Synthetic inspection of all pages',issuedAt:'2020-01-01',expiresAt:'2030-01-01',from:'',to:''});

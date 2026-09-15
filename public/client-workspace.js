@@ -35,21 +35,22 @@ window.ClientWorkspace=(()=>{
   const heading=el('h2','Выбрать клиента');heading.id='clientDirectoryTitle';
   const exit=button('Закрыть',close),search=el('input');search.type='search';search.placeholder='Имя клиента или номер сделки';search.setAttribute('aria-label','Найти клиента');
   const status=el('p','Загружаем черновики…','hint'),list=el('div',null,'client-directory-list');status.setAttribute('role','status');search.maxLength=80;
-  dialog.append(heading,exit,search,status,list);dialog.addEventListener('close',()=>{dialog.remove();if(directory===dialog)directory=null;},{once:true});document.body.append(dialog);dialog.showModal();
+  const archiveLabel=el('label',null,'client-archive-toggle'),archive=el('input');archive.type='checkbox';archiveLabel.append(archive,document.createTextNode(' Показать клиентов с договором'));archive.onchange=render;dialog.append(heading,exit,search,archiveLabel,status,list);dialog.addEventListener('close',()=>{dialog.remove();if(directory===dialog)directory=null;},{once:true});document.body.append(dialog);dialog.showModal();
   let data={drafts:[],recent:[]},timer,request=0;
   function render(){
-    list.replaceChildren();const query=search.value.trim().toLocaleLowerCase('ru-RU'),seen=new Set();let total=0;
+    list.replaceChildren();const query=search.value.trim().toLocaleLowerCase('ru-RU'),seen=new Set(),hiddenContracts=new Set();let total=0;
     for(const [title,items,draft]of [['Сохранённые черновики',data.drafts,true],['Клиенты в Bitrix',query.length>=2?data.recent:[],false]]){
      const rows=items.filter(item=>!seen.has(item.dealId)&&(!query||(item.title+' '+item.dealId).toLocaleLowerCase('ru-RU').includes(query)));
-     if(!rows.length)continue;list.append(el('h3',title));
-     for(const item of rows){
+     for(const item of rows)if(item.hasContract&&!archive.checked)hiddenContracts.add(item.dealId);
+     const visible=rows.filter(item=>archive.checked||!item.hasContract);if(!visible.length)continue;list.append(el('h3',title));
+     for(const item of visible){
       seen.add(item.dealId);total++;const row=button('',()=>switchTo(item.dealId));row.className='client-directory-row';
-      const copy=el('span'),name=el('strong',item.title||'Сделка № '+item.dealId),meta=el('span','№ '+item.dealId+(draft?' · Сохранено '+new Date(item.updatedAt).toLocaleDateString('ru-RU'):'')+' · Файлов: '+item.fileCount,'hint');copy.append(name,meta);
+      const copy=el('span'),name=el('strong',item.title||'Сделка № '+item.dealId),meta=el('span','№ '+item.dealId+(draft?' · Сохранено '+new Date(item.updatedAt).toLocaleDateString('ru-RU'):'')+' · Файлов: '+item.fileCount+(item.hasContract?' · Договор уже оформлен':''),'hint');copy.append(name,meta);
       const current=HostedAssessment.getContext()?.client.external.dealId===item.dealId;row.disabled=current;row.append(copy,el('span',current?'Открыт':draft?'Продолжить →':'Открыть →'));list.append(row);
      }
     }
-    if(!total)list.append(el('p',query?'Совпадений нет.':'Пока нет сохранённых черновиков.','hint'));
-    if(/^[1-9]\d*$/.test(query)&&!seen.has(query))list.append(button('Открыть сделку № '+query,()=>switchTo(query)));
+    if(!total)list.append(el('p',hiddenContracts.size?'У найденных клиентов уже оформлен договор. Включите показ клиентов с договором, чтобы открыть сохранённую работу.':query?'Совпадений нет.':'Пока нет незавершённых черновиков.','hint'));
+    if(/^[1-9]\d*$/.test(query)&&!seen.has(query)&&!hiddenContracts.has(query))list.append(button('Открыть сделку № '+query,()=>switchTo(query)));
   }
   async function load(query){
    const id=++request;status.textContent=query?'Ищем клиента…':'Загружаем черновики…';

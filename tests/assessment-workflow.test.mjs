@@ -276,14 +276,14 @@ test('an existing CRM key can be reused after owner confirmation, with a safe do
  s.w.fetch=async(path,options={})=>{
   if(!path.endsWith('/credentials'))return original(path,options);
   if(options.method==='POST'){posts.push(JSON.parse(options.body));imported=true;return {ok:true,json:async()=>({verified:true})};}
-  return {ok:true,json:async()=>({credentials:imported?{verified:true,requestId:'00000000-0000-0000-0000-000000000001',files:[{id:'22',name:'ЭЦП.p12',byteSize:3}],passwordStored:true}:null})};
+  return {ok:true,json:async()=>({identityRevision:1,credentials:imported?{verified:true,requestId:'00000000-0000-0000-0000-000000000001',files:[{id:'22',name:'ЭЦП.p12',byteSize:3}],passwordStored:true}:null})};
  };
  s.w.CredentialUpload.offerExisting('22');assert.equal(s.w.CredentialUpload.verified(),false);assert.equal(posts.length,0);
  const button=[...s.d.querySelectorAll('button')].find(b=>b.textContent==='Взять ЭЦП из Bitrix'),password=s.d.getElementById('previewEdsPassword'),owner=password.closest('.field').querySelector('input[type="checkbox"]');
  await button.onclick();assert.equal(posts.length,0);assert.equal(s.d.activeElement,owner);
  owner.checked=true;await button.onclick();assert.equal(posts.length,1);assert.deepEqual(posts[0].fileIds,['22']);assert.equal(posts[0].action,'import');assert.equal(posts[0].ownerConfirmed,true);assert.equal('password' in posts[0],false);assert.equal('files' in posts[0],false);
  assert.equal(s.w.CredentialUpload.verified(),true);assert.equal(password.hidden,true);const link=s.d.querySelector('.credential-stored a');assert.equal(link.textContent,'Скачать ЭЦП.p12');assert.match(link.href,/requestId=.*fileId=22/);assert.equal(s.capture().documents.length,0);
- s.d.querySelector('.credential-stored button').click();assert.equal(password.hidden,false);
+ let pickerOpened=false;const picker=s.d.querySelector('[data-required-document="ЭЦП файл"] input[type=file]');picker.click=()=>{pickerOpened=true;};s.d.querySelector('.credential-stored button').click();assert.equal(pickerOpened,true);assert.equal(password.hidden,true);
  s.run("selectedFiles.push({id:99,type:'ЭЦП файл',person:'Клиент',file:new File(['NEW SYNTHETIC'],'replacement.p12')})");s.d.getElementById('previewDocuments').dispatchEvent(new s.w.Event('change',{bubbles:true}));assert.equal(s.w.CredentialUpload.verified(),false);assert.equal(password.hidden,false);
 });
 

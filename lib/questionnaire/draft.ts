@@ -1,5 +1,6 @@
 import schema from './schema.json';
 import {RepositoryError}from'../documents/repository';
+import {distinctDraftDocuments} from './draft-recovery';
 export type Answer={key:string;value:string;checked:boolean;clientConfirmed?:true;sourceReplaced?:true};
 export type DraftPayload={schemaVersion:1;answers:Answer[];groups:Array<{id:string;rows:Answer[][];rowKeys:(string|null)[]}>;docContext:{social:string;salary:string;salaryBank?:'kaspi'|'other'|'none'|''};documents:Array<{documentId:string;type:string;person:string}>;pendingFiles:string[]};
 function object(value:unknown):Record<string,unknown>{if(!value||typeof value!=='object'||Array.isArray(value))throw new RepositoryError('INVALID_DRAFT',400);return value as Record<string,unknown>;}
@@ -20,7 +21,7 @@ export function validateDraft(value:unknown):DraftPayload{
  const ctx=object(draft.docContext);if(!['','0','1'].includes(String(ctx.social))||!['','0','1'].includes(String(ctx.salary)))throw new RepositoryError('INVALID_DRAFT',400);
  if(ctx.salaryBank!==undefined&&(!['','kaspi','other','none'].includes(String(ctx.salaryBank))||ctx.salary!==(ctx.salaryBank==='other'?'1':ctx.salaryBank?'0':'')))throw new RepositoryError('INVALID_SALARY_BANK',400);
  if(!Array.isArray(draft.documents)||draft.documents.length>200||!Array.isArray(draft.pendingFiles)||draft.pendingFiles.length>200)throw new RepositoryError('INVALID_DRAFT',400);
- const documents=draft.documents.map(item=>{const d=object(item);return{documentId:text(d.documentId,80),type:text(d.type,160),person:text(d.person,80)};});
+ const documents=distinctDraftDocuments(draft.documents.map(item=>{const d=object(item);return{documentId:text(d.documentId,80),type:text(d.type,160),person:text(d.person,80)};}));
  if(documents.some(d=>/эцп/i.test(d.type)))throw new RepositoryError('CREDENTIAL_NOT_IN_DRAFT',400);
  const scalarAnswers=answers(draft.answers,scalar);for(const answer of scalarAnswers){const target=definitions.get(answer.key)?.groupTarget;if(target&&/^\d+$/.test(answer.value)){const group=groups.find(g=>g.id===target);if(!group||group.rows.length!==Number(answer.value))throw new RepositoryError('DRAFT_COUNT_MISMATCH',400);}}
  return {schemaVersion:1,answers:scalarAnswers,groups,docContext:{social:String(ctx.social),salary:String(ctx.salary),...(ctx.salaryBank!==undefined?{salaryBank:ctx.salaryBank as DraftPayload['docContext']['salaryBank']}:{})},documents,pendingFiles:draft.pendingFiles.map(f=>text(f,240))};

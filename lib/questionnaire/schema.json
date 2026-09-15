@@ -1616,6 +1616,13 @@
           "conditions": []
         },
         {
+          "key": "loanClaimIncluded",
+          "type": "checkbox",
+          "label": "Включить в иск",
+          "required": false,
+          "conditions": []
+        },
+        {
           "key": "loanParticipants",
           "type": "textarea",
           "label": "Есть созаёмщик, гарант, поручитель или залогодатель по этому кредиту?*",

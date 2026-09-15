@@ -19,7 +19,7 @@
  const contract=document.createElement('button');contract.type='button';contract.className='btn btn-ghost';contract.textContent='Скачать предварительный договор';contract.hidden=true;preview.append(contract);let contractValues=null;
  for(const event of ['input','change','assessment-case-opened'])document.addEventListener(event,event=>{if(event.target.closest?.('[data-document-review]'))return;upload.invalidate();submission.invalidate();preview.hidden=true;documents.textContent='';contract.hidden=true;contractValues=null;});
  contract.onclick=async()=>{if(!contractValues)return;contract.disabled=true;try{const selected=contractValues,blob=await ContractRenderer.render(selected);if(contractValues!==selected)throw Error('Ответы изменились. Проверьте анкету заново.');const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='Предварительный договор.docx';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(error){document.getElementById('checkStatus').textContent=error.message;}finally{contract.disabled=false;}};
- window.AssessmentCheck={run:()=>check('answers'),result:()=>lastResult};
+ window.AssessmentCheck={run:()=>check('answers'),documents:()=>check('documents'),result:()=>lastResult};
  button.onclick=()=>check('answers');
  documentButton.onclick=()=>check('documents');
  async function check(mode){
@@ -40,7 +40,7 @@
    lastResult=result;
    upload.checked(result,{dealId,payload,signature:JSON.stringify(payload)});
    submission.checked(result,{dealId,payload,bindings,signature:snapshot});
-   DocumentReview.render(documents,result,dealId,payload.documents,()=>documentButton.click());
+   DocumentReview.render(documents,result,dealId,payload.documents,()=>check('documents'));
    document.dispatchEvent(new CustomEvent('assessment-checked',{detail:{...result,checkMode:mode}}));
    if(mode==='documents'){
     const issues=result.documents?.issues||[];

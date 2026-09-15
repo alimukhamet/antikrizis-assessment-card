@@ -1,7 +1,7 @@
 import {RepositoryError,type CaseRow,type EvidenceRepository} from './repository';
 import type {Actor} from '../worker-session';
 import type {Analysis} from './analysis-service';
-import {analysisVersion} from './analysis-service';
+import {analysisVersion} from './analysis-version';
 import {checkPowerRepresentative} from './power-validation';
 import {statementPeriod,salaryStatementPeriod,enpfPeriod,type Representative} from './policy';
 export const DOCUMENT_REVIEW_KEY='document.manual-check.v1';

@@ -39,7 +39,7 @@ window.HostedAssessment=(()=>{
   const findings=[...(payload.findings||[])];
   const notes=findings.map(f=>errors[f]||({TOTAL_DEBT_REQUIRES_RECONCILIATION:'Общую задолженность нужно сверить: есть отдельные суммы просрочки или санкций.',DETAILED_EXTRACTION_PENDING:'Подробные поля этого типа документа пока заполняются вручную.',OCR_OR_PAGE_REVIEW_REQUIRED:'Есть страницы, требующие распознавания или ручной проверки.',DOCUMENT_TYPE_UNVERIFIED:'Тип документа не установлен по содержимому.',CONTRACT_LIST_INCOMPLETE_OR_OTHER_ROLES:'Проверьте полноту списка и роль клиента в обязательствах.'}[f]||'Есть сведения, требующие ручной проверки.'));
   if(payload.powerValidation?.representativeMatched)notes.push('Реквизиты поверенного совпали с Айжан или Aplus Corporation. Срок и полномочия ещё требуют проверки.');notes.push('Подлинность документа не проверена.');if(payload.cacheHit)notes.push('Использован ранее сохранённый результат; даты и личность проверены заново.');
-  return {engineVersion:3,creditEvidence,kind:kinds[data.kind]||'other',type:types[data.kind]||'Другой документ',identity:{iin:data.identity.iin,fio:data.identity.name},fields,loans,properties:[],gambling:data.facts.find(f=>f.key==='statement.gambling'),statement:data.bankStatement?{...data.bankStatement,period:data.bankStatement.from+' — '+data.bankStatement.to}:null,pages:read.totalPages,pageText:read.pages.map(p=>p.text),date:data.issuedAt,hash:read.pdfSha256,ocrPages:[],coverage:data.coverage||null,findings,notes,blocked:!payload.eligibleForAutofill,server,sourcePreview:'/api/assessment/'+server.dealId+'/documents/'+server.documentId+'?view=pdf'};
+  return {engineVersion:3,creditEvidence,kind:kinds[data.kind]||'other',type:types[data.kind]||'Другой документ',identity:{iin:data.identity.iin,fio:data.identity.name},fields,loans,properties:[],gambling:data.facts.find(f=>f.key==='statement.gambling'),statement:data.bankStatement?{...data.bankStatement,period:data.bankStatement.from+' — '+data.bankStatement.to}:null,pages:read.totalPages,pageText:read.pages.map(p=>p.text),date:data.issuedAt,hash:read.pdfSha256,ocrPages:[],coverage:data.coverage||null,documentReview:payload.documentReview||null,reviewContext:payload.reviewContext||null,findings,notes,blocked:!payload.eligibleForAutofill,server,sourcePreview:'/api/assessment/'+server.dealId+'/documents/'+server.documentId+'?view=pdf'};
  }
  async function review(input,src){
   if(!ready()||!src.server||!src.serverFactKey||src.server.dealId!==context.client.external.dealId)throw Error('У ответа нет действующего источника для этой сделки. Повторите распознавание.');
@@ -52,7 +52,7 @@ window.HostedAssessment=(()=>{
  }
  function acceptableFile(item){
   if(item.type==='ЭЦП файл')return Boolean(window.CredentialUpload?.verified());
-  const r=af.results.get(item.id);return !!r&&!r.blocked&&!r.error&&r.type===item.type&&r.server?.dealId===context?.client.external.dealId;
+  const r=af.results.get(item.id);return !!r&&!r.error&&(r.documentReview?.type===item.type||!r.blocked&&r.type===item.type)&&r.server?.dealId===context?.client.external.dealId;
  }
  function mount(){
   missingDocuments=function(){return requiredDocumentLabels().filter(type=>!(type==='ЭЦП файл'&&window.CredentialUpload?.verified())&&!selectedFiles.some(item=>item.type===type&&item.person==='Клиент'&&acceptableFile(item)));};

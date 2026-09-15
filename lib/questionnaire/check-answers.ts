@@ -43,6 +43,9 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   if(f.legacy||!active(f.conditions,row)||f.key.startsWith('exact:'))return;
   if((row?.get(f.key)||all.get(f.key))?.sourceReplaced)issue(f.key,'ANSWER_SOURCE_REPLACED','Источник заменён: '+f.label,group,index);
   if(f.type==='checkbox'){
+   if(group==='creditors'&&f.key==='loanClaimIncluded'){
+    displayAnswers.push({key:f.key,label:'Включить в иск',value:row?.get(f.key)?.checked===false?'Нет':'Да',group,row:index});return;
+   }
    if(!f.key.startsWith('unknown:')&&!f.key.startsWith('choice:debtPurpose:')&&checked(f.key))displayAnswers.push({key:f.key,label:f.label,value:f.key.split(':').at(-1)||''});
    return;
   }

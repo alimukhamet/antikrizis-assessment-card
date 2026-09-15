@@ -36,6 +36,12 @@ export function compileAssessment(payload:DraftPayload,trustedIin:string|null,ev
  const debt=sumDebt(payload),scheduleText=paymentScheduleText(checked.schedule);
  function card(includeContract:boolean){
   const lines=['КАРТОЧКА КЛИЕНТА','Ответы анкеты. Статус проверки документов и извлечённых сведений учитывается отдельно.'];
+  const excluded=checked.displayAnswers.filter(a=>a.group==='creditors'&&a.key==='loanClaimIncluded'&&a.value==='Нет');
+  if(excluded.length){
+   lines.push('','НЕ ВКЛЮЧАТЬ В ИСК');
+   for(const loan of excluded){const answers=checked.displayAnswers.filter(a=>a.group==='creditors'&&a.row===loan.row);lines.push(`• Кредит ${loan.row!+1}: ${answers.find(a=>a.key==='n8038')?.value} · ${answers.find(a=>a.key==='n8040')?.value} ₸`);}
+   lines.push('Отмечено сотрудником для юриста. Эти обязательства сохранены в общем долге клиента.');
+  }
   const append=(a:DisplayAnswer)=>{if(a.value)lines.push(`• ${a.label.replace(/\*/g,'').trim()}: ${displayAnswer(a)}`);};
   lines.push('','ОБЩИЕ СВЕДЕНИЯ');
   checked.displayAnswers.filter(a=>!a.group&&!salesOnly.has(a.key)).forEach(append);

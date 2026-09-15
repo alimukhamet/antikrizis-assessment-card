@@ -1,6 +1,7 @@
 import {test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import vm from'node:vm';import{JSDOM}from'jsdom';import{webcrypto}from'node:crypto';import ts from'typescript';
 const schema=JSON.parse(fs.readFileSync('lib/questionnaire/schema.json','utf8'));const exports={};class RepositoryError extends Error{}
-vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/questionnaire/draft.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>n==='./schema.json'?schema:{RepositoryError},Map,Set});
+const recovery={};vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/questionnaire/draft-recovery.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:recovery});
+vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/questionnaire/draft.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>n==='./schema.json'?schema:n==='./draft-recovery'?recovery:{RepositoryError},Map,Set});
 test('server draft roundtrip preserves safe answers, repeat rows and conditional sections without HTML persistence',async()=>{
  const html=fs.readFileSync('public/questionnaire.html','utf8'),dom=new JSDOM(html,{url:'http://local.test/questionnaire.html',runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window,context=dom.getInternalVMContext();
  const run=s=>vm.runInContext(s,context);let stored=null,revision=0;
