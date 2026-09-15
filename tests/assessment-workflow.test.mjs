@@ -22,7 +22,7 @@ function setup(t){
   throw Error('Unexpected test request: '+path);
  };
  for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))run(match[1]);
- for(const name of ['hosted-assessment','assessment-review','server-drafts','document-review','document-upload','credential-upload','submission-flow','server-answer-check','client-confirmed-amount','required-answers','document-replacement'])run(fs.readFileSync('public/'+name+'.js','utf8'));
+ for(const name of ['loan-status','money-input','hosted-assessment','assessment-review','server-drafts','document-review','document-upload','credential-upload','submission-flow','server-answer-check','client-confirmed-amount','required-answers','document-replacement'])run(fs.readFileSync('public/'+name+'.js','utf8'));
  t.after(async()=>{await new Promise(resolve=>setTimeout(resolve,0));dom.window.close();});
  const capture=()=>JSON.parse(JSON.stringify(w.ServerDrafts.capture()));
  return{w,d,run,calls,capture,mount(){run(fs.readFileSync('public/assessment-workflow.js','utf8'));},async load(){d.getElementById('hostDealId').value='11665';await d.getElementById('hostLoadDeal').onclick();await new Promise(resolve=>setTimeout(resolve,0));}};
@@ -42,6 +42,7 @@ test('batch upload starts with the client owner and preserves a selected family 
  choose('client.pdf');assert.equal(s.run('selectedFiles[0].person'),'Клиент');
  assert.equal(s.d.querySelector('.wf-file-assignments').open,false);
  const owner=s.d.getElementById('doc-1-person');owner.value='Супруг(а)';owner.dispatchEvent(new s.w.Event('change',{bubbles:true}));
+ assert.match(owner.getAttribute('aria-label'),/Чей документ: client\.pdf/);for(const id of ['saveDraft','afExport','hostLoadDeal'])assert.ok(s.d.getElementById(id).getAttribute('aria-label'),id);
  choose('second-client.pdf');assert.deepEqual(JSON.parse(s.run('JSON.stringify(selectedFiles.map(f=>f.person))')),['Супруг(а)','Клиент']);
  assert.equal(s.run('af.sources.size'),0);assert.equal(s.calls.length,0);
 });
@@ -394,6 +395,14 @@ test('the document next action targets the missing EDS step and checks once befo
  assert.equal(s.d.body.dataset.assessmentWorkflow,'answers');assert.equal(s.calls.filter(c=>c.path.endsWith('/check')).length,1);
  assert.equal(s.calls.filter(c=>c.method==='POST'&&c.path.endsWith('/credentials')).length,0);
  assert.doesNotMatch(JSON.stringify(s.capture()),/SYNTHETIC-SECRET|SYNTHETIC KEY/);
+});
+
+test('loan status hides monthly payment for default and keeps identifiers visible in summaries and exports',async t=>{
+ const s=setup(t);await s.load();collect(s);s.mount();s.w.AssessmentWorkflow.show('answers',{focus:false});const row=s.d.querySelector('#creditors .repeat-item'),find=id=>[...row.querySelectorAll('input,select')].find(control=>control.id.replace(/_r\d+$/,'')===id);
+ find('n8038').value='SYNTHETIC BANK';find('loanContractId').value='CARD-002';find('n8040').value='1806000.00';find('n8042').value='322';find('n8042').dispatchEvent(new s.w.Event('change',{bubbles:true}));await Promise.resolve();
+ assert.equal(find('loanStatus').value,'В просрочке — требуют полную сумму');assert.equal(find('n8041').required,false);assert.ok(find('n8041').closest('.field').classList.contains('hidden'));assert.match(row.querySelector('details.wf-loan > summary').textContent,/CARD-002.*В просрочке.*1\s806\s000/);
+ row.querySelector('[data-loan-claim]').checked=false;let exported='';s.run('afDownload=(name,content)=>{globalThis.__exported=content}');s.d.getElementById('afExport').click();exported=s.run('__exported');assert.match(exported,/Включить в иск: Нет/);assert.match(exported,/1\s806\s000 ₸/);assert.match(exported,/Договор и оплата · юристы не видят/);assert.doesNotMatch(exported,/Договор и оплатаюристы/);
+ find('loanStatus').value='Платится по графику';find('loanStatus').dispatchEvent(new s.w.Event('change',{bubbles:true}));await Promise.resolve();assert.equal(find('n8041').required,true);assert.equal(find('n8041').closest('.field').classList.contains('hidden'),false);
 });
 
 test('a failed document check stays on documents and displays an actionable error',async t=>{

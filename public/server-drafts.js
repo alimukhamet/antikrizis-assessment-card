@@ -50,7 +50,7 @@ window.ServerDrafts=(()=>{
     revision=result.revision;request=null;baselineSnapshot=JSON.stringify(payload);
     if(result.latestRevision!==result.revision)throw Object.assign(Error(message('DRAFT_CHANGED')),{code:'DRAFT_CHANGED'});
     $('loadDraft').classList.add('hidden');
-    showDraftStatus('Черновик сохранён · '+new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})+(payload.pendingFiles.length?' · Файлы ещё не сохранены: '+payload.pendingFiles.length:''));
+    showDraftStatus('Черновик сохранён · '+new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})+(payload.pendingFiles.length?' · выбрать заново: '+payload.pendingFiles.length:''));
     document.dispatchEvent(new Event('assessment-draft-saved'));return true;
    }catch(e){if(['DRAFT_CHANGED','CASE_IDENTITY_CHANGED'].includes(e.code)){baselineLoaded=false;$('loadDraft').classList.remove('hidden');}showDraftStatus(e.message);return false;}
    finally{$('saveDraft').disabled=false;}
@@ -85,7 +85,7 @@ window.ServerDrafts=(()=>{
   baselineSnapshot=JSON.stringify(capture());
   if(recovered&&HostedAssessment.getContext().client.iin)$('iin').value=HostedAssessment.getContext().client.iin;
   if(selectedFiles.length)await afAnalyze({cacheOnly:true});
-  showDraftStatus((recovered?'Файлы восстановлены после обновления ИИН. ':'')+'Черновик загружен · версия '+revision+'. Файлы восстановлены: '+selectedFiles.length+'.'+(failed.length?' Не удалось получить файлов: '+failed.length+'.':'')+(p.pendingFiles.length?' Не загруженные ранее файлы нужно выбрать снова: '+p.pendingFiles.length+'.':''));
+  showDraftStatus('Черновик загружен · версия '+revision+' · в облаке: '+selectedFiles.length+'.'+(recovered?' Документы восстановлены после обновления ИИН.':'')+(failed.length?' Не удалось получить: '+failed.length+'.':'')+(p.pendingFiles.length?' Выбрать заново: '+p.pendingFiles.length+'.':''));
  }catch(e){showDraftStatus(e.message);}finally{loading=false;$('loadDraft').disabled=false;changed();}}
  function mount(){
   $('saveDraft').onclick=()=>save();$('loadDraft').onclick=()=>restore();$('saveDraft').disabled=false;

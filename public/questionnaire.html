@@ -321,7 +321,7 @@
     </div>
   </section>
 <section class="card" data-flow="contract">
-    <div class="card-title">Договор и оплата<span class="sub">юристы не видят</span></div>
+    <div class="card-title">Договор и оплата<span class="sub"> · юристы не видят</span></div>
     <div class="fields">
       <div class="field" data-k="dognum">
         <label class="lbl" for="dognum">Номер договора<span class="req">*</span></label>
@@ -439,6 +439,6 @@ document.getElementById('needsSocialDoc').addEventListener('change',syncBenefitA
 ['needsSocialDoc','needsSalaryDoc'].forEach(id=>document.getElementById(id).addEventListener('change',refreshRequiredDocuments));document.getElementById('previewEdsPassword').addEventListener('input',refreshRequiredDocuments);
 document.getElementById('checkQuestions').addEventListener('click',e=>{const missing=missingDocuments();if(missing.length){e.stopImmediatePropagation();document.querySelectorAll('[data-required-document]').forEach(row=>row.classList.toggle('missing',missing.includes(row.dataset.requiredDocument)));document.getElementById('checkStatus').textContent='Не хватает документов: '+missing.join('; ')+'. Можно сохранить черновик.';document.getElementById('documentStep').scrollIntoView({block:'start'});}},true);
 refreshRequiredDocuments();
-</script><script src="document-package.js"></script><script src="hosted-assessment.js"></script><script src="assessment-review.js"></script><script src="server-drafts.js"></script><script src="contract-renderer.js"></script><script src="document-review.js"></script><script src="document-upload.js"></script><script src="credential-upload.js"></script><script src="submission-destination.js"></script><script src="submission-flow.js"></script><script src="server-answer-check.js"></script><script src="assessment-workflow.js"></script><script src="russian-month.js"></script><script type="module" src="loan-participants-editor.mjs"></script>
+</script><script src="document-package.js"></script><script src="loan-status.js"></script><script src="money-input.js"></script><script src="hosted-assessment.js"></script><script src="assessment-review.js"></script><script src="server-drafts.js"></script><script src="contract-renderer.js"></script><script src="document-review.js"></script><script src="document-upload.js"></script><script src="credential-upload.js"></script><script src="submission-destination.js"></script><script src="submission-flow.js"></script><script src="server-answer-check.js"></script><script src="assessment-workflow.js"></script><script src="russian-month.js"></script><script type="module" src="loan-participants-editor.mjs"></script>
 <script src="required-answers.js"></script><script src="document-replacement.js"></script><script src="client-workspace.js"></script>
 <script src="gambling-review.js"></script><script src="lawyer-notes.js"></script><script src="debt-purpose.js"></script><script type="module" src="gkb-comparison-ui.mjs"></script><script type="module" src="payment-preview.mjs"></script><script src="/tool-feedback.js"></script></body></html>

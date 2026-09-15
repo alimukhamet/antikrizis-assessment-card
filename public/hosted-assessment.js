@@ -28,7 +28,7 @@ window.HostedAssessment=(()=>{
   // never to the comparison between the two original reports.
   const creditEvidence={credits:data.credits.map(c=>({...c,facts:c.facts.map(f=>({...f}))})),creditList:data.creditList,findings:[...new Set([...(data.findings||[]),...(payload.findings||[])])],readable:read.pages.length>0&&read.pages.every(p=>!p.needsOcr)};
   const keys={'identity.iin':'iin','identity.name':'fio','statement.topUps':'kaspiAnnual','employment.payersCount':'count-clientjobs','benefits.count':'clientBenefitsCount'};
-  const loanKeys={creditor:'n8038',startedAtMonth:'n8038Start',monthlyPayment:'n8041',overdueDays:'n8042',debtOutstanding:'n8040',creditType:'n8039',relatedParties:'loanParticipants'};
+  const loanKeys={creditor:'n8038',contractIdentifier:'loanContractId',loanStatus:'loanStatus',startedAtMonth:'n8038Start',monthlyPayment:'n8041',overdueDays:'n8042',debtOutstanding:'n8040',creditType:'n8039',relatedParties:'loanParticipants'};
   const server={dealId:payload.client.external.dealId,documentId:payload.documentId,extractionId:payload.extractionId,identityRevision:payload.identityRevision};
   const reviews=new Map((payload.reviews||[]).map(r=>[r.fact_key,r]));
   const reviewed=(key,f)=>{const review=reviews.get(key);if(!review)return{value:f.value};let value;try{value=JSON.parse(review.value_json);}catch{return{value:f.value};}return typeof value==='string'?{value,originalValue:f.value,priorReview:review}:{value:f.value};};

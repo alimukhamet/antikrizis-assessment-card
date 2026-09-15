@@ -1,7 +1,7 @@
 import labels from './kz-labels.json';
 import type { PageText } from './read-pdf';
 import {extractPowerParties,type PowerParties} from './power-of-attorney';
-export const EXTRACTION_VERSION = 'rules-native-15';
+export const EXTRACTION_VERSION = 'rules-native-16';
 export type Fact = { key: string; value: string; page: number; source: string };
 export type Credit = { contractNumber: string; contractCode?: string; page: number; facts: Fact[]; components: Record<string, string | null>; comparisonDebt?:Fact; relatedPartiesNotice?: {page:number;source:string} };
 export type BankStatement={from:string|null;to:string|null;credits:string;topUps:string;topUpsVerified:boolean;debits:string;transactions:number;reconciled:boolean;rowsReadable:boolean;sourcePage:number;reconciliation?:string;gambling?:{total:string;matches:Array<{date:string;amount:string;description:string;page:number}>}};
@@ -122,18 +122,26 @@ export function extractNative(pages: PageText[]): NativeExtraction {
       if (!/Фаза контракта:\s*Действующий/.test(block)) continue;
       const role=value(/Роль субъекта:[ \t]*([^\n]+)/,block);
       if (!role?.split(/[,;]/).some(r=>/^за[её]мщик$/i.test(r.trim()))) { output.findings.push('OTHER_BORROWER_ROLE_REQUIRES_REVIEW');continue; }
-      const contractNumber=value(/Номер договора:\s*([^\n]+)/,block), creditor=value(/Кредитор:\s*([\s\S]*?)(?=\n[^\n]*:|$)/,block)?.replace(/\s+/g,' ')||null;
+      const contractNumber=value(/Номер договора:\s*([^\n]+)/,block), contractCode=value(/Код контракта:\s*([^\n]+)/,block), creditor=value(/Кредитор:\s*([\s\S]*?)(?=\n[^\n]*:|$)/,block)?.replace(/\s+/g,' ')||null;
       if (!contractNumber || !creditor) {output.findings.push('INCOMPLETE_CONTRACT');continue;}
       const page=starts.filter(p => p.at<=index+match[0].indexOf('Обязательство')).at(-1)!.page;
       const overdue=value(/Количество дней просрочки:\s*(\d+)\b/,block);
       const remaining=amount('Остаточная (использованная) сумма',block) ?? amount('Сумма предстоящих платежей',block);
       const arrears=amount('Сумма просроченных взносов',block), aggregatePenalty=amount('Сумма непогашенной неустойки',block), unpaidFine=amount('Сумма непогашенного штрафа',block), penalty=aggregatePenalty??unpaidFine, interest=amount('Пеня',block), fine=amount('Штраф',block);
-      const payment=amount('Ежемесячная сумма взноса',block) ?? amount('Сумма предстоящего платежа',block) ?? amount('Сумма ежемесячного платежа',block);
+      const scheduledPayment=amount('Ежемесячная сумма взноса',block) ?? amount('Сумма ежемесячного платежа',block);
+      const nextPayment=amount('Сумма предстоящего платежа',block);
+      const defaulted=overdue!==null&&Number(overdue)>0;
       const start=day(value(/Дата начала срока действия контракта:\s*(\d{2}\.\d{2}\.\d{4})/,block));
       const facts: Fact[]=[]; const add=(key:string,v:string|null,source:string,needle=source)=>{if(v!==null){const offset=block.indexOf(needle),factPage=offset<0?page:starts.filter(p=>p.at<=index+match[0].length+offset).at(-1)!.page;facts.push({key,value:v,page:factPage,source});}};
-      add('creditor',creditor,'Кредитор');add('startedAtMonth',start?.slice(0,7)||null,'Дата начала срока действия контракта');add('monthlyPayment',payment,'Платёж по договору',/Ежемесячная сумма взноса|Сумма предстоящего платежа|Сумма ежемесячного платежа/.exec(block)?.[0]||'');add('overdueDays',overdue,'Количество дней просрочки');
-      const ambiguous = overdue === null || Number(overdue)>0 || arrears===null || Number(arrears)>0 || [penalty,interest,fine].some(v => v!==null && Number(v)>0);
-      if (remaining !== null && !ambiguous) add('debtOutstanding',remaining,'Остаток / предстоящие платежи при отсутствии показанной просрочки; требуется проверка',amount('Остаточная (использованная) сумма',block)!==null?'Остаточная (использованная) сумма':'Сумма предстоящих платежей');
+      add('creditor',creditor,'Кредитор');
+      add('contractIdentifier',contractCode??contractNumber,contractCode?'Код контракта':'Номер договора');
+      add('loanStatus',overdue===null?null:defaulted?'В просрочке — требуют полную сумму':'Платится по графику','Статус по количеству дней просрочки','Количество дней просрочки');
+      add('startedAtMonth',start?.slice(0,7)||null,'Дата начала срока действия контракта');
+      if(!defaulted)add('monthlyPayment',scheduledPayment??nextPayment,'Ежемесячный платёж по графику',scheduledPayment!==null?(/Ежемесячная сумма взноса|Сумма ежемесячного платежа/.exec(block)?.[0]||''):'Сумма предстоящего платежа');
+      add('overdueDays',overdue,'Количество дней просрочки');
+      const ambiguous = overdue === null || arrears===null || Number(arrears)>0 || [penalty,interest,fine].some(v => v!==null && Number(v)>0);
+      if(defaulted&&nextPayment!==null)add('debtOutstanding',nextPayment,'Полная сумма к погашению по просроченному обязательству','Сумма предстоящего платежа');
+      else if (remaining !== null && !ambiguous) add('debtOutstanding',remaining,'Остаток / предстоящие платежи при отсутствии показанной просрочки; требуется проверка',amount('Остаточная (использованная) сумма',block)!==null?'Остаточная (использованная) сумма':'Сумма предстоящих платежей');
       else output.findings.push('TOTAL_DEBT_REQUIRES_RECONCILIATION');
       const financing=value(/Вид финансирования:\s*([^\n]+)/,block),purpose=value(/Цель кредита:\s*([^\n]+)/,block),object=value(/Объект кредитования:\s*([\s\S]*?)(?=\n[^\n]*:|$)/,block)?.replace(/\s+/g,' ')||null;
       const type=questionnaireCreditType(financing,purpose,object);
@@ -164,7 +172,7 @@ export function extractNative(pages: PageText[]): NativeExtraction {
        const sum=cents(remaining)+cents(arrears)+cents(penalty),number=`${sum/BigInt(100)}.${String(sum%BigInt(100)).padStart(2,'0')}`;
        comparisonDebt={key:'debtComponentsTotal',value:number,page,source:`Расчёт по полному ГКБ: остаток / предстоящие платежи ${remaining} + просроченные взносы ${arrears} + ${aggregatePenalty!==null?'неустойка':'непогашенный штраф'} ${penalty} = ${number} ₸.`};
       }
-      output.credits.push({contractNumber,...(value(/Код контракта:\s*([^\n]+)/,block)?{contractCode:value(/Код контракта:\s*([^\n]+)/,block)!}:{}),page,facts,components:{remaining,arrears,penalty,interest,fine},...(comparisonDebt?{comparisonDebt}:{}),...(relatedPartiesNotice?{relatedPartiesNotice}:{})});
+      output.credits.push({contractNumber,...(contractCode?{contractCode}:{}),page,facts,components:{remaining,arrears,penalty,interest,fine},...(comparisonDebt?{comparisonDebt}:{}),...(relatedPartiesNotice?{relatedPartiesNotice}:{})});
     }
     // A borrower can also be the pledgor of the same loan. The role total can
     // therefore exceed the number of debts; use the borrower's summary row.

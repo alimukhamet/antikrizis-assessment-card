@@ -35,6 +35,10 @@ test('a full report preserves both the bank contract code and the printed agreem
  const r=rules.extractNative(pages('Персональный кредитный отчет\nОбязательство 1\nРоль субъекта: Заёмщик\nФаза контракта: Действующий\nКредитор: TEST BANK\nКод контракта: CODE-123\nНомер договора: AGREEMENT-456\nСтраница 1 из 1'));
  assert.equal(r.credits[0].contractCode,'CODE-123');assert.equal(r.credits[0].contractNumber,'AGREEMENT-456');
 });
+test('a defaulted loan maps the demanded full amount and never presents it as monthly',()=>{
+ const r=rules.extractNative(pages('Персональный кредитный отчет\nИИН: 991231300003\nОбязательство 1\nРоль субъекта: Заёмщик\nФаза контракта: Действующий\nКредитор: TEST BANK\nКод контракта: CODE-123\nНомер договора: AGREEMENT-456\nСумма предстоящего платежа / валюта: 1806000.00 KZT\nКоличество дней просрочки: 322\nСтраница 1 из 1'));
+ const facts=new Map(r.credits[0].facts.map(f=>[f.key,f]));assert.equal(facts.get('contractIdentifier').value,'CODE-123');assert.equal(facts.get('loanStatus').value,'В просрочке — требуют полную сумму');assert.equal(facts.get('debtOutstanding').value,'1806000.00');assert.equal(facts.has('monthlyPayment'),false);assert.equal(r.findings.includes('TOTAL_DEBT_REQUIRES_RECONCILIATION'),false);
+});
 test('named related people keep their exact role, loan and source page; incomplete identity never becomes None',()=>{
  const first='Персональный кредитный отчет\nОбязательство 1\nРоль субъекта: Заёмщик\nФаза контракта: Действующий\nКредитор: TEST BANK\nНомер договора: TEST-LOAN\nСтраница 1 из 2';
  const second='Связанные субъекты\nРоль субъекта: ФИО/Наименование субъекта: ИИН/БИН: Вид документа: Номер документа:\nКепіл беруші ТЕСТОВ ТЕСТ\nТЕСТОВИЧ\n991231300003 Жеке куәлік 123456789\nИнформация о просрочках\nСтраница 2 из 2';

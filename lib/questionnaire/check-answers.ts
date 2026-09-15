@@ -37,6 +37,7 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   if(c==='transfer-other')return value('n8033',row)==='Другое';
   if(c==='purpose-other')return value('n8043',row)==='Другое';
   if(c==='benefit-other')return value('clientBenefitType',row)==='Другая государственная выплата'||value('partnerBenefitType',row)==='Другая государственная выплата';
+  if(c==='loan-scheduled')return value('loanStatus',row)==='Платится по графику';
   throw Error('UNMAPPED_QUESTIONNAIRE_CONDITION:'+c);
  });}
  function field(f:Definition,row?:Map<string,Answer>,group?:string,index?:number){
@@ -78,7 +79,9 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   const counted=schema.scalar.find(f=>'groupTarget' in f&&f.groupTarget===g.id);
   if(!counted&&!rows.length)issue(g.id,'ROW_REQUIRED','Добавьте запись',g.id);
   if(counted&&g.id.endsWith('cars')&&!rows.length)issue(g.id,'ROW_REQUIRED','Добавьте выбранный автомобиль',g.id);
-  rows.forEach((r,i)=>{const row=new Map(r.map(a=>[a.key,a]));for(const f of g.fields)field(f,row,g.id,i);});
+  rows.forEach((r,i)=>{const row=new Map(r.map(a=>[a.key,a]));for(const f of g.fields)field(f,row,g.id,i);
+   if(g.id==='creditors'&&/^\d+$/.test(value('n8042',row))){const defaulted=Number(value('n8042',row))>0,status=value('loanStatus',row);if(status&&(defaulted!==(status==='В просрочке — требуют полную сумму')))issue('loanStatus','LOAN_STATUS_CONFLICT','Статус кредита не совпадает с количеством дней просрочки',g.id,i);}
+  });
  }
  for(const prefix of ['choice:socialStatus:', 'holding:client:',...(married?['holding:partner:']:[])]){
   const selected=payload.answers.filter(a=>a.key.startsWith(prefix)&&a.checked).map(a=>a.key.slice(prefix.length));

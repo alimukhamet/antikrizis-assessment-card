@@ -18,15 +18,15 @@ window.AssessmentWorkflow=(()=>{
  const top=make('header',null,'wf-header'),toolbar=document.querySelector('.draft-toolbar');
  intro.before(top);top.append(toolbar);
  const more=details('Действия','wf-more'),moreContent=make('div',null,'wf-more-content');more.append(moreContent);
- for(const button of [...toolbar.querySelectorAll('button')])if(button.id!=='loadDraft')moreContent.append(button);
- moreContent.append($('afExport'));toolbar.append(more);
+ for(const button of [...toolbar.querySelectorAll('button')])if(button.id!=='loadDraft'){if(!button.getAttribute('aria-label'))button.setAttribute('aria-label',button.textContent.trim());moreContent.append(button);}
+ $('afExport').setAttribute('aria-label',$('afExport').textContent.trim());moreContent.append($('afExport'));toolbar.append(more);
  document.addEventListener('click',event=>{if(more.open&&!more.contains(event.target))more.open=false;});
  more.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();more.open=false;more.querySelector('summary').focus();}});
  const draftStatus=$('draftStatus');draftStatus.setAttribute('role','status');toolbar.prepend(draftStatus);
  const originalDraftStatus=showDraftStatus;
  showDraftStatus=function(text){
-  const safeSaved=/^Черновик (сохранён|загружен)/.test(text)&&!/не (сохранены|загруженные)|не удалось/i.test(text);
-  const compact=safeSaved?'Черновик сохранён':text==='Есть несохранённые изменения…'?'Сохраняем…':text==='Ответы будут сохраняться автоматически.'?'Сохраняется автоматически':text==='Сохраняем черновик…'?'Сохраняем…':text==='Открываем черновик клиента…'?'Загрузка…':text;
+  const saved=/^Черновик (сохранён|загружен)/.exec(text),retry=/выбрать заново:\s*(\d+)/i.exec(text);
+  const compact=saved&&!/Не удалось/.test(text)?(saved[1]==='загружен'?'Черновик загружен':'Черновик сохранён')+(retry?' · выбрать снова: '+retry[1]:''):text==='Есть несохранённые изменения…'?'Сохраняем…':text==='Ответы будут сохраняться автоматически.'?'Сохраняется автоматически':text==='Сохраняем черновик…'?'Сохраняем…':text==='Открываем черновик клиента…'?'Загрузка…':text;
   originalDraftStatus(compact);draftStatus.title=text;draftStatus.classList.toggle('wf-status-detail',compact===text&&text.length>35);
  };
  draftStatus.textContent='Черновик';
@@ -41,6 +41,7 @@ window.AssessmentWorkflow=(()=>{
  const analysisActions=$('afAnalyze').closest('.af-actions');
  const fileResults=$('afFiles'),questions=$('afQuestions'),conflicts=$('afConflicts'),oldName=$('hostDealName');
  workspace.replaceChildren(client,status,identity,oldName);workspace.className='wf-client';oldName.hidden=true;top.prepend(workspace);moreContent.append(picker);
+ for(const button of moreContent.querySelectorAll('button'))if(!button.getAttribute('aria-label'))button.setAttribute('aria-label',button.textContent.trim());
  picker.open=false;picker.hidden=true;
  const draftNote=make('p','Черновик в инструменте. В Bitrix — при скачивании договора.','wf-draft-note');top.append(draftNote);
 
@@ -130,22 +131,23 @@ window.AssessmentWorkflow=(()=>{
  // Participants are scoped to each obligation. Keep the old shared answer for reference only.
  function compactLoans(){
   for(const row of $('creditors').querySelector(':scope > .repeat-rows').children){
+   window.LoanStatus?.sync(row);
    let fold=row.querySelector(':scope > details.wf-loan');
    if(!fold){fold=details('Кредит','wf-loan');for(const child of [...row.children])fold.append(child);row.append(fold);}
    const get=key=>[...row.querySelectorAll('input,select')].find(e=>e.id.replace(/_r\d+$/,'')===key)?.value||'';
    const missing=[...row.querySelectorAll('input,select,textarea')].filter(e=>!e.closest('.af-source')&&afLogicalVisible(e)&&!e.hasAttribute('data-optional')&&!['checkbox','file'].includes(e.type)&&(!e.value.trim()||!e.checkValidity())).length;
-   const summary=fold.querySelector('summary'),amount=get('n8040'),title=get('n8038')||'Новый кредит';
+   const summary=fold.querySelector('summary'),amount=get('n8040'),title=get('n8038')||'Новый кредит',contract=get('loanContractId'),status=get('loanStatus');
    const excluded=row.querySelector('[data-loan-claim]')?.checked===false;
-   summary.textContent=title+(amount?' · '+Number(amount).toLocaleString('ru-RU')+' ₸':'')+(excluded?' · Не включать в иск':'')+(missing?' · заполнить: '+missing:'');
+   summary.textContent=title+(contract?' · № '+contract:'')+(status?' · '+status:'')+(amount?' · '+Number(amount).toLocaleString('ru-RU')+' ₸':'')+(excluded?' · Не включать в иск':'')+(missing?' · заполнить: '+missing:'');
   }
  }
 
  function debtTotal(){
   const amounts=[...$('creditors').querySelectorAll('.repeat-rows input')].filter(input=>input.id.replace(/_r\d+$/,'')==='n8040');
   const known=amounts.filter(input=>input.value.trim()&&Number.isFinite(Number(input.value))&&Number(input.value)>=0);
-  if(!known.length)return {text:'—',hint:'Укажите текущую задолженность по кредитам.'};
+  if(!known.length)return {text:'—',hint:'Укажите сумму задолженности к погашению по кредитам.'};
   const total=known.reduce((sum,input)=>sum+Math.round(Number(input.value)*100),0)/100,partial=known.length<amounts.length;
-  return {text:(partial?'от ':'')+total.toLocaleString('ru-RU',{maximumFractionDigits:2})+' ₸',hint:partial?'Сумма заполненных задолженностей. По части кредитов сумма ещё не указана.':'Общая текущая задолженность по всем кредитам в анкете.'};
+  return {text:(partial?'от ':'')+total.toLocaleString('ru-RU',{maximumFractionDigits:2})+' ₸',hint:partial?'Сумма заполненных задолженностей. По части кредитов сумма ещё не указана.':'Общая сумма задолженности к погашению по всем кредитам в анкете.'};
  }
 
  function show(name,{focus=true,remember=true}={}){
@@ -316,7 +318,7 @@ window.AssessmentWorkflow=(()=>{
  document.addEventListener('assessment-draft-restored',()=>{lastCheck=null;refresh();try{const saved=sessionStorage.getItem('assessment-step:'+HostedAssessment.getContext().client.external.dealId);if(saved)show(saved,{focus:false});}catch{/* Keep the document step when storage is unavailable. */}});
  document.addEventListener('assessment-analysis-complete',event=>{lastCheck=null;fileResults.open=true;refresh();if(event.detail?.showPackageSummary&&active==='documents'&&!collectionNotice.hidden){collectionNotice.focus({preventScroll:true});collectionNotice.scrollIntoView({block:'start',behavior:'smooth'});}});
  document.addEventListener('assessment-credentials-changed',()=>queueMicrotask(refresh));
- const previousRender=renderDocuments;renderDocuments=function(){previousRender();lastCheck=null;refresh();};
+ const previousRender=renderDocuments;renderDocuments=function(){previousRender();for(const select of $('selectedDocuments').querySelectorAll('select')){const name=select.closest('.document-row')?.querySelector('.document-name')?.textContent||'файл',kind=select.previousElementSibling?.textContent||'Параметр';select.setAttribute('aria-label',kind+': '+name);}lastCheck=null;refresh();};
  show(active,{focus:false});updateCase();refresh();visibilityRules();
  return{show,reveal,refresh,collection,prepareUpload};
 })();

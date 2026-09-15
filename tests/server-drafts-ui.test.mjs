@@ -14,7 +14,7 @@ test('server draft roundtrip preserves safe answers, repeat rows and conditional
   }
   throw Error('Unexpected API '+url);
  };
- for(const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g))run(m[1]);for(const file of ['hosted-assessment.js','assessment-review.js','server-drafts.js'])run(fs.readFileSync('public/'+file,'utf8'));
+ for(const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g))run(m[1]);for(const file of ['loan-status.js','money-input.js','hosted-assessment.js','assessment-review.js','server-drafts.js'])run(fs.readFileSync('public/'+file,'utf8'));
  const d=w.document;d.getElementById('hostDealId').value='11665';await d.getElementById('hostLoadDeal').onclick();await w.ServerDrafts.inspect();
  d.getElementById('fio').value='SYNTHETIC DRAFT';d.getElementById('summa').value='500123';d.getElementById('marital').value='В браке';d.getElementById('marital').dispatchEvent(new w.Event('change',{bubbles:true}));
  run('setCount(document.getElementById("count-clientjobs"),2)');d.getElementById('count-clientjobs').dispatchEvent(new w.Event('change',{bubbles:true}));const jobs=d.querySelectorAll('#clientjobs .repeat-rows input[type=number]');jobs[0].value='120000';jobs[1].value='80000';

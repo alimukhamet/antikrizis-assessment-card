@@ -6,7 +6,7 @@ import {loanRowKey} from '../documents/loan-identity';
 export type ReviewBinding={key:string;group?:string;row?:number;documentId:string;extractionId:string;factKey:string;reviewId:string|null};
 export type ApprovedAnswerEvidence=ReviewBinding&{reviewId:string;value:string;page:number;source:string;documentSha256:string;documentName:string;reviewedAt:string;reviewActorId:string;disposition:string};
 const direct:Record<string,string>={'identity.iin':'iin','identity.name':'fio','statement.topUps':'kaspiAnnual','employment.payersCount':'count-clientjobs','benefits.count':'clientBenefitsCount','statement.gambling':'n8044'};
-const loans:Record<string,string>={creditor:'n8038',startedAtMonth:'n8038Start',monthlyPayment:'n8041',overdueDays:'n8042',debtOutstanding:'n8040',creditType:'n8039',purpose:'n8043',relatedParties:'loanParticipants'};
+const loans:Record<string,string>={creditor:'n8038',contractIdentifier:'loanContractId',loanStatus:'loanStatus',startedAtMonth:'n8038Start',monthlyPayment:'n8041',overdueDays:'n8042',debtOutstanding:'n8040',creditType:'n8039',purpose:'n8043',relatedParties:'loanParticipants'};
 export function parseReviewBindings(value:unknown):ReviewBinding[]{
  if(value===undefined)return [];
  if(!Array.isArray(value)||value.length>1500)throw new RepositoryError('INVALID_REVIEW_BINDINGS',400);

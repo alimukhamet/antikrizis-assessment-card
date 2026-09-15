@@ -7,7 +7,7 @@ const {checkAnswers}=load('lib/questionnaire/check-answers.ts',{'./schema.json':
 const {validateDraft}=load('lib/questionnaire/draft.ts',{'./schema.json':schema,'./draft-recovery':load('lib/questionnaire/draft-recovery.ts'),'../documents/repository':load('lib/documents/repository.ts')});
 const iin='000000000010';
 function fixture(){const values={fio:'SYNTHETIC ONLY',enforcementDetails:'Нет',guarantors:'Нет',iin,dognum:'TEST',marital:'Холост / не замужем',dependents:'0',childrenTotal:'0',procedure:'199','count-clientjobs':'0','count-clientunofficial':'0',clientBenefitsCount:'0',c8037:'0',hardshipReason:'Платежи вношу, трудностей нет',kaspiAnnual:'0',gamblingTransfers:'no',lawyerNotesStatus:'no',n8044:'0',summa:'500000',contractDate:'2026-09-10',months:'5',payDay:'7',grafType:'423'};
- const credit={n8038:'TEST BANK',n8038Start:'2025-01',n8039:'Потребительский кредит',n8040:'100.25',n8041:'20.00',n8042:'0',n8043:'Жильё',loanParticipants:'Нет'};
+ const credit={n8038:'TEST BANK',loanContractId:'TEST-001',n8038Start:'2025-01',n8039:'Потребительский кредит',loanStatus:'Платится по графику',n8040:'100.25',n8041:'20.00',n8042:'0',n8043:'Жильё',loanParticipants:'Нет'};
  return {schemaVersion:1,answers:schema.scalar.map(f=>({key:f.key,value:values[f.key]||'',checked:['choice:socialStatus:Нет','holding:client:none','choice:debtPurpose:Жильё'].includes(f.key)})),groups:schema.groups.map(g=>({id:g.id,rows:g.id==='creditors'?[g.fields.map(f=>({key:f.key,value:credit[f.key]||'',checked:false}))]:[],rowKeys:g.id==='creditors'?[null]:[]})),docContext:{social:'0',salary:'0'},documents:[],pendingFiles:[]};}
 const set=(p,key,value,checked)=>{const a=p.answers.find(a=>a.key===key);a.value=value;if(checked!==undefined)a.checked=checked;};
 const run=p=>checkAnswers(validateDraft(p),iin);
@@ -18,6 +18,12 @@ test('married clients require spouse income, assets and bank answers',()=>{const
 test('other overall purpose requires an explanation only when selected',()=>{const p=fixture();set(p,'choice:debtPurpose:Другое','Другое',true);assert.ok(has(run(p),'debtPurposeOther'));set(p,'debtPurposeOther','TEST EXPLANATION');assert.ok(!has(run(p),'debtPurposeOther'));set(p,'choice:debtPurpose:Другое','Другое',false);assert.ok(!compileAssessment(p,iin).lawyerCard.includes('TEST EXPLANATION'));assert.ok(schema.groups.find(g=>g.id==='transfers').fields.some(f=>f.key==='transferOther'));});
 test('selected property requires a row; incompatible none choice is rejected',()=>{const p=fixture();set(p,'holding:client:real','real',true);const r=run(p);assert.ok(has(r,'clientreal','ROW_REQUIRED'));assert.ok(has(r,'holding:client:','CONFLICTING_CHOICES'));});
 test('negative amounts, fractional overdue days, invalid schedule and wrong identity fail',()=>{const p=fixture(),credit=p.groups.find(g=>g.id==='creditors').rows[0];credit.find(a=>a.key==='n8040').value='-1';credit.find(a=>a.key==='n8042').value='1.5';set(p,'months','61');set(p,'iin','000000000011');const r=run(p);for(const key of ['n8040','n8042','summa','iin'])assert.ok(has(r,key),key);});
+test('defaulted loans require the full amount but not a monthly payment',()=>{
+ const p=fixture(),row=p.groups.find(g=>g.id==='creditors').rows[0],put=(key,value)=>row.find(a=>a.key===key).value=value;
+ put('loanStatus','В просрочке — требуют полную сумму');put('n8042','322');put('n8041','');assert.equal(run(p).answersComplete,true,JSON.stringify(run(p).issues));
+ put('loanStatus','Платится по графику');assert.ok(has(run(p),'n8041','ANSWER_REQUIRED'));assert.ok(has(run(p),'loanStatus','LOAN_STATUS_CONFLICT'));
+ put('n8042','0');assert.ok(!has(run(p),'loanStatus','LOAN_STATUS_CONFLICT'));
+});
 test('bank turnover above threshold requires an explanation even with zero official jobs',()=>{const p=fixture();set(p,'kaspiAnnual','1.00');assert.ok(has(run(p),'kaspiWhy'));set(p,'kaspiWhy','TEST turnover explanation');assert.ok(!has(run(p),'kaspiWhy'));});
 test('gambling requires an explicit answer consistent with the amount',()=>{
  const p=fixture();set(p,'gamblingTransfers','');assert.ok(has(run(p),'gamblingTransfers','ANSWER_REQUIRED'));

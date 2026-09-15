@@ -1541,6 +1541,13 @@
           "conditions": []
         },
         {
+          "key": "loanContractId",
+          "type": "text",
+          "label": "Номер договора / идентификатор",
+          "required": false,
+          "conditions": []
+        },
+        {
           "key": "n8038Start",
           "type": "month",
           "label": "Когда получили кредит / возникло обязательство?*",
@@ -1569,9 +1576,21 @@
           "conditions": []
         },
         {
+          "key": "loanStatus",
+          "type": "select-one",
+          "label": "Статус кредита*",
+          "options": [
+            "",
+            "Платится по графику",
+            "В просрочке — требуют полную сумму"
+          ],
+          "required": true,
+          "conditions": []
+        },
+        {
           "key": "n8040",
           "type": "number",
-          "label": "Текущая сумма задолженности, ₸*",
+          "label": "Сумма задолженности к погашению, ₸*",
           "required": true,
           "conditions": [],
           "min": "0"
@@ -1579,9 +1598,11 @@
         {
           "key": "n8041",
           "type": "number",
-          "label": "Платёж по договору, ₸/мес*",
+          "label": "Ежемесячный платёж по графику, ₸/мес*",
           "required": true,
-          "conditions": [],
+          "conditions": [
+            "loan-scheduled"
+          ],
           "min": "0"
         },
         {

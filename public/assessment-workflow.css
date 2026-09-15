@@ -231,7 +231,7 @@ body[data-assessment-workflow] .wf-final-actions{padding:18px;border:1px solid #
 .submission-destination{width:min(520px,calc(100vw - 32px));max-height:85vh;overflow:auto;box-sizing:border-box;padding:24px;border:1px solid #ccd9cf;border-radius:14px;color:#21392c;background:#fff}
 .submission-destination::backdrop{background:#17332566}.submission-destination h2{font-size:20px;margin:0 0 16px}.submission-destination p{line-height:1.6;margin:8px 0}.submission-destination strong{overflow-wrap:anywhere}
 .submission-destination label{display:flex;align-items:flex-start;gap:10px;margin:20px 0;font-size:14px}.submission-destination .af-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
-@media(max-width:650px){.wf-header{grid-template-columns:minmax(0,1fr)}.wf-header .draft-toolbar{justify-content:flex-start;margin:0}.wf-client #openClients{flex-shrink:0;font-size:12px;padding:8px 10px}.wf-draft-note{font-size:11px}}
+@media(max-width:650px){.wf-header{grid-template-columns:minmax(0,1fr)}.wf-header .draft-toolbar{justify-content:flex-start;flex-wrap:wrap;margin:0;width:100%}.wf-header #draftStatus{flex:1 1 100%;max-width:none;margin:2px 0}.wf-header .wf-more{margin-left:auto}.wf-client #openClients{flex-shrink:0;font-size:12px;padding:8px 10px}.wf-draft-note{font-size:11px}}
 
 .wf-document-intake{padding:0 0 20px;margin:0 0 20px;border-bottom:1px solid #dbe3dc;scroll-margin-top:90px}
 .wf-document-intake h3{font-size:18px;margin:0 0 16px;color:#245c36}
@@ -250,3 +250,4 @@ body[data-assessment-workflow] .af-busy .af-file{opacity:.6}
 .client-archive-toggle{display:flex;align-items:center;gap:8px;margin:14px 0;font-size:15px}.client-archive-toggle input{width:18px;height:18px;margin:0}
 
 .loan-claim-choice .lbl{display:flex;align-items:center;gap:10px;margin:0}.loan-claim-choice input[type="checkbox"]{width:20px;height:20px;flex:none;accent-color:#255d39}
+.money-native{position:absolute!important;width:1px!important;height:1px!important;min-width:1px!important;min-height:1px!important;padding:0!important;margin:0!important;opacity:0!important;pointer-events:none!important;clip-path:inset(50%)}
