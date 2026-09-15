@@ -7,7 +7,8 @@ window.ServerDrafts=(()=>{
   const root=$('questionnaireStep'),answer=e=>({key:controlKey(e),value:e.value,checked:Boolean(e.checked),...(e.dataset.sourceReplaced?{sourceReplaced:true}:{})});
   const values=controls(root).filter(e=>!e.closest('.repeat-item')).map(answer).filter(a=>a.key);
   const groups=[...root.querySelectorAll('.repeat')].map(g=>({id:g.id,rows:[...g.querySelector(':scope > .repeat-rows').children].map(row=>controls(row).map(answer).filter(a=>a.key)),rowKeys:[...g.querySelector(':scope > .repeat-rows').children].map(row=>[...af.rowKeys].find(([,id])=>id===row.id)?.[0]||null)}));
-  const documents=[],pendingFiles=missingFiles.filter(name=>!selectedFiles.some(item=>item.file.name===name));
+  // A confirmed replacement key supersedes old transient key names, never missing PDFs.
+  const documents=[],pendingFiles=missingFiles.filter(name=>!selectedFiles.some(item=>item.file.name===name)&&!(window.CredentialUpload?.collected?.()&&/\.(p12|pfx|key)$/i.test(name)));
   for(const item of selectedFiles){if(item.type==='ЭЦП файл'&&!window.CredentialUpload?.verified())pendingFiles.push(item.file.name);if(afExcluded(item))continue;const source=af.results.get(item.id)?.server;if((source&&source.dealId===HostedAssessment.getContext().client.external.dealId)||(!source&&item.storedDocumentId))documents.push({documentId:source?.documentId||item.storedDocumentId,type:item.type,person:item.person});else pendingFiles.push(item.file.name);}
   return {schemaVersion:1,answers:values,groups,docContext:{social:$('needsSocialDoc').value,salary:$('needsSalaryDoc').value==='1'?'1':$('needsSalaryDoc').value?'0':'',salaryBank:$('needsSalaryDoc').value==='1'?'other':$('needsSalaryDoc').value},documents,pendingFiles};
  }

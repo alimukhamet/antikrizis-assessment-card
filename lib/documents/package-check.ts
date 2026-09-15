@@ -3,7 +3,7 @@ import {analysisVersion,type Analysis} from './analysis-service';
 import {gkbFreshness,requiresDocumentValidation,statementPeriod,salaryStatementPeriod,enpfPeriod} from './policy';
 import type {DraftPayload} from '../questionnaire/draft';
 import {currentDocumentReview,MANUAL_DOCUMENT_TYPES} from './document-review';
-import {checkPowerRepresentative} from './power-validation';
+import {checkPowerTemplate} from './power-validation';
 import {matchShortReport,shortReportMismatchReasons,type CreditMatch} from './credit-report-match';
 import {creditorKey,loanRowKey} from './loan-identity';
 export const REQUIRED_DOCUMENTS=['ГКБ — краткий отчёт','ГКБ — полный отчёт','Справка ЕНПФ','Ф6 об отсутствии имущества','Удостоверение личности','Доверенность','Выписка Kaspi Gold','ЭЦП файл'];
@@ -39,9 +39,9 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
   if(!kinds[selected.type]||parsed.kind!==kinds[selected.type]){issue('DOCUMENT_TYPE_UNVERIFIED','Содержимое пока не подтверждает выбранный тип документа.');continue;}
   if(parsed.kind==='gkb_full')fullReports.push({documentId:document.id,analysis:cached.result as Analysis});
   if(parsed.kind==='power_of_attorney'){
-   const power=checkPowerRepresentative(parsed.power);
-   if(!power.representativeMatched)issue('REPRESENTATIVE_NOT_APPROVED','Поверенный не подтверждён как Айжан или Aplus Corporation по сохранённым реквизитам.');
-   else issue('POWER_AUTHORITY_REVIEW_REQUIRED','Поверенный совпал. Ещё нужно проверить срок, полномочия и действительность доверенности.');
+   const power=checkPowerTemplate(cached.result as Analysis,day);
+   if(power.accepted)available.add(selected.type);
+   else for(const code of power.findings)issue(code,({REPRESENTATIVE_NOT_APPROVED:'Реквизиты поверенного не совпали с утверждёнными.',REPRESENTATIVE_IDENTITY_UNVERIFIED:'Не удалось прочитать реквизиты поверенного.',POWER_DATES_UNVERIFIED:'Не удалось прочитать дату выдачи или срок. Укажите даты по оригиналу.',POWER_DATE_NOT_ACCEPTABLE:'Срок доверенности истёк или указана будущая дата выдачи. Проверьте даты.',POWER_SCOPE_REVIEW_REQUIRED:'Текст полномочий отличается от рабочего шаблона. Подтвердите по оригиналу.',DOCUMENT_COMPLETENESS_UNVERIFIED:'Часть доверенности не прочитана. Проверьте все страницы.'} as Record<string,string>)[code]||'Проверьте владельца доверенности.');
    continue;
   }
   if(parsed.findings.includes('SHORT_CREDIT_LIST_UNVERIFIED')){

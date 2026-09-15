@@ -197,8 +197,8 @@ test('a partial batch names missing documents above the file list and opens the 
  assert.deepEqual([...notice.querySelectorAll('[data-package-state="missing"]')].map(e=>e.dataset.packageDocument),['Справка ЕНПФ','Доверенность']);
  const input=s.d.querySelector('[data-required-picker="Справка ЕНПФ"]');let chosen=0;input.addEventListener('click',e=>{e.preventDefault();chosen++;});
  notice.querySelector('[aria-label="Добавить: Справка ЕНПФ"]').click();assert.equal(chosen,1);
- assert.equal(s.d.querySelector('.wf-bottom-nav .btn-main').textContent,'Чего не хватает · 2');assert.equal(s.d.querySelector('.wf-bottom-nav .btn-main').getAttribute('aria-disabled'),'false');
- s.d.querySelector('.wf-bottom-nav .btn-main').click();assert.equal(s.d.activeElement,notice);
+ assert.equal(s.d.querySelector('.wf-bottom-nav .btn-main').textContent,'Добавить: Справка ЕНПФ');assert.equal(s.d.querySelector('.wf-bottom-nav .btn-main').getAttribute('aria-disabled'),'false');
+ s.d.querySelector('.wf-bottom-nav .btn-main').click();assert.equal(chosen,2);
  const before=s.capture();s.w.AssessmentWorkflow.refresh();assert.deepEqual(s.capture(),before);assert.equal(s.calls.filter(c=>c.method!=='GET').length,0);
 });
 
@@ -379,4 +379,40 @@ test('finished package exposes the exact attention message and jumps to the affe
 test('automatic analysis requests only the new document and retains the stored result',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();s.run("selectedFiles=selectedFiles.slice(0,1);selectedFiles.push({id:2,type:'',person:'Клиент',file:{name:'new.pdf',size:10}});var analyzed=[];HostedAssessment={...HostedAssessment,analyzeFile:async item=>{analyzed.push(item.id);throw Error('Synthetic file failure');}};");
  await s.run('afAnalyze({onlyNew:true})');assert.equal(s.run('JSON.stringify(analyzed)'),'[2]');assert.equal(s.run('selectedFiles[0].storedDocumentId'),'synthetic-0');assert.match(s.d.getElementById('workflowCollection').textContent,/Synthetic file failure/);
+});
+
+
+test('the document next action targets the missing EDS step and checks once before opening answers',async t=>{
+ const s=setup(t);await s.load();const collected=s.w.CredentialUpload.collected;collect(s);s.w.CredentialUpload.collected=collected;
+ s.run("selectedFiles.push({id:99,type:'ЭЦП файл',person:'Клиент',file:new File(['SYNTHETIC KEY'],'synthetic.p12')})");s.mount();
+ const password=s.d.getElementById('previewEdsPassword'),owner=password.closest('.field').querySelector('input[type=checkbox]'),next=s.d.querySelector('.wf-bottom-nav .btn-main');
+ assert.equal(next.textContent,'Указать пароль ЭЦП');next.click();assert.equal(s.d.activeElement,password);
+ password.value='SYNTHETIC-SECRET';password.dispatchEvent(new s.w.Event('input',{bubbles:true}));await Promise.resolve();
+ assert.equal(next.textContent,'Подтвердить владельца ЭЦП');next.click();assert.equal(s.d.activeElement,owner);
+ owner.checked=true;owner.dispatchEvent(new s.w.Event('change',{bubbles:true}));await Promise.resolve();
+ assert.equal(next.textContent,'Проверить и продолжить →');next.click();next.click();await new Promise(resolve=>setTimeout(resolve,0));
+ assert.equal(s.d.body.dataset.assessmentWorkflow,'answers');assert.equal(s.calls.filter(c=>c.path.endsWith('/check')).length,1);
+ assert.equal(s.calls.filter(c=>c.method==='POST'&&c.path.endsWith('/credentials')).length,0);
+ assert.doesNotMatch(JSON.stringify(s.capture()),/SYNTHETIC-SECRET|SYNTHETIC KEY/);
+});
+
+test('a failed document check stays on documents and displays an actionable error',async t=>{
+ const s=setup(t);await s.load();collect(s);s.mount();const fetch=s.w.fetch;
+ s.w.fetch=async(path,options)=>path.endsWith('/check')?{ok:false,json:async()=>({})}:fetch(path,options);
+ s.d.querySelector('.wf-bottom-nav .btn-main').click();await new Promise(resolve=>setTimeout(resolve,0));
+ assert.equal(s.d.body.dataset.assessmentWorkflow,'documents');assert.equal(s.d.querySelector('.wf-review-details').open,true);
+ assert.match(s.d.getElementById('documentCheckStatus').textContent,/Не удалось/);assert.equal(s.d.querySelector('.wf-bottom-nav .btn-main').textContent,'Проверить и продолжить →');
+});
+
+
+test('a confirmed replacement EDS key clears only obsolete key reminders in the restored draft',async t=>{
+ const s=setup(t);await s.load();const payload=s.capture();payload.pendingFiles=['old-synthetic.p12','missing-synthetic.pdf'];
+ await s.w.ServerDrafts.restore({automatic:true,draft:{payload,revision:2,identityRevision:1}});
+ s.run("selectedFiles=[{id:99,type:'ЭЦП файл',person:'Клиент',file:new File(['SYNTHETIC KEY'],'replacement.p12')}]");
+ assert.deepEqual(s.capture().pendingFiles,['old-synthetic.p12','missing-synthetic.pdf','replacement.p12']);
+ const password=s.d.getElementById('previewEdsPassword'),owner=password.closest('.field').querySelector('input[type=checkbox]');
+ password.value='SYNTHETIC SECRET';owner.checked=true;
+ assert.deepEqual(s.capture().pendingFiles,['missing-synthetic.pdf','replacement.p12']);
+ assert.doesNotMatch(JSON.stringify(s.capture()),/SYNTHETIC SECRET|SYNTHETIC KEY/);
+ s.run("selectedFiles[0].person='Супруг(а)'");assert.ok(s.capture().pendingFiles.includes('old-synthetic.p12'));
 });

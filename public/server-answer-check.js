@@ -33,7 +33,7 @@
   try{
    const response=await fetch(`/api/assessment/${encodeURIComponent(dealId)}/check`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({payload,bindings})});
    const result=await response.json();
-   if(!response.ok)throw Error('Не удалось проверить ответы. Сохраните черновик и повторите проверку.');
+   if(!response.ok)throw Error(mode==='documents'?'Не удалось проверить документы. Нажмите «Проверить и продолжить» ещё раз.':'Не удалось проверить ответы. Сохраните черновик и повторите проверку.');
    if(!HostedAssessment.ready()||HostedAssessment.getContext().client.external.dealId!==dealId||JSON.stringify({payload:ServerDrafts.capture(),bindings:ServerDrafts.reviewBindings()})!==snapshot){status.textContent='Ответы или сделка изменились. Запустите проверку ещё раз.';return;}
    documents.replaceChildren();
    if(result.documents?.issues.length){const notes=document.createElement('details'),heading=document.createElement('summary'),list=document.createElement('ul');heading.textContent='Замечания · '+result.documents.issues.length;for(const message of new Set(result.documents.issues.map(i=>i.message))){const item=document.createElement('li');item.textContent=message;list.append(item);}notes.append(heading,list);documents.append(notes);}
@@ -44,8 +44,9 @@
    document.dispatchEvent(new CustomEvent('assessment-checked',{detail:{...result,checkMode:mode}}));
    if(mode==='documents'){
     const issues=result.documents?.issues||[];
-    status.textContent=issues.length?'Нужна проверка: '+issues.length+'.':'Документы проверены.';
-    return;
+    const visible=issues.filter(issue=>issue.code!=='EDS_SEPARATE_UPLOAD_REQUIRED'||!window.CredentialUpload?.collected());
+    status.textContent=visible.length?'Проверка обновлена · замечаний: '+visible.length+'.':'Документы проверены. Можно перейти к ответам.';
+    return result;
    }
    if(result.evidence?.issues.length){status.textContent=`Нужна повторная проверка ответов из документов: ${result.evidence.issues.length}. Откройте источники и подтвердите актуальные значения.`;return;}
    if(result.answersComplete){text.textContent=result.preview?.lawyerCard||'';preview.hidden=!text.textContent;contractValues=result.preview?.contractData||null;contract.hidden=!contractValues;status.textContent=result.readyToSubmit?'Ответы и документы проверены. Можно сохранить карточку и скачать договор.':'Обязательные ответы заполнены. Можно скачать предварительный договор для проверки. Перед сохранением завершите проверку документов.';return;}

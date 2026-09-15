@@ -1,4 +1,5 @@
-import {analysisVersion}from'./analysis-service';
+import {analysisVersion,type Analysis}from'./analysis-service';
+import {checkPowerTemplate}from'./power-validation';
 import {RepositoryError,EvidenceRepository,type CaseRow,type ExtractionRow,type DocumentRow} from './repository';
 import type {Actor} from '../worker-session';
 import type {NativeExtraction} from './extract-native';
@@ -15,7 +16,9 @@ export function assertReviewAllowed(record:CaseRow,document:DocumentRow,extracti
  if(record.identity_revision!==input.identityRevision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
  const parsed=result.extraction;
  if(!record.client_iin||record.client_iin!==parsed.identity.iin)throw new RepositoryError('CLIENT_IDENTITY_UNVERIFIED');
- if(requiresDocumentValidation(parsed.findings))throw new RepositoryError('DOCUMENT_REQUIRES_VALIDATION');
+ if(parsed.kind==='power_of_attorney'){
+  if(!checkPowerTemplate(result as Analysis,assessmentDay).accepted)throw new RepositoryError('DOCUMENT_REQUIRES_VALIDATION');
+ }else if(requiresDocumentValidation(parsed.findings))throw new RepositoryError('DOCUMENT_REQUIRES_VALIDATION');
  if(parsed.kind.startsWith('gkb_')&&gkbFreshness(parsed.issuedAt||'',assessmentDay).length)throw new RepositoryError('GKB_DATE_NOT_ACCEPTABLE');
  if(parsed.kind==='kaspi'&&statementPeriod(parsed.bankStatement?.from||null,parsed.bankStatement?.to||null,assessmentDay).length)throw new RepositoryError('STATEMENT_PERIOD_NOT_ACCEPTABLE');
  const fact=extractFactMap(parsed).get(input.factKey);if(!fact)throw new RepositoryError('FACT_NOT_IN_EXTRACTION',400);

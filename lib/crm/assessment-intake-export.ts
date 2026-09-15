@@ -414,7 +414,7 @@ export async function assessmentIntakeFromExport(input: unknown, options: Assess
   const evidence: AssessmentEvidenceReference[] = [];
   const seenArtifactIds = new Set<string>();
   const selectedReviewIds = new Set(parsedPayload.reviewIds as string[]);
-  for (const [index, raw] of parsedPayload.evidence.entries()) {
+  for (const [index, raw] of (parsedPayload.evidence as UnknownRecord[]).entries()) {
     const ref = raw as UnknownRecord;
     const documentId = String(ref.documentId);
     if (!selectedReviewIds.has(String(ref.reviewId))) {

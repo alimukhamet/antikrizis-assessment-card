@@ -174,6 +174,8 @@ function afDocumentAttention(item){
  if(r.error)return {kind:'error',message:r.error};
  if(r.documentReview?.type===item.type)return null;
  const findings=r.findings||[];
+ const powerReason=['POWER_DATES_UNVERIFIED','POWER_DATE_NOT_ACCEPTABLE','POWER_SCOPE_REVIEW_REQUIRED','REPRESENTATIVE_NOT_APPROVED','REPRESENTATIVE_IDENTITY_UNVERIFIED'].find(code=>findings.includes(code));
+ if(powerReason)return {kind:'manual',message:HostedAssessment.error(powerReason)};
  const reason=['ENPF_PERIOD_NOT_ACCEPTABLE','ENPF_PERIOD_UNVERIFIED','SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED','GKB_TOO_OLD','GKB_DATE_NOT_ACCEPTABLE','FUTURE_DOCUMENT_DATE','STATEMENT_PERIOD_NOT_ACCEPTABLE','STATEMENT_RECONCILIATION_REQUIRED'].find(code=>findings.includes(code));
  if(reason)return {kind:'error',message:HostedAssessment.error(reason)};
  if(r.blocked)return {kind:'manual',message:item.type==='Доверенность'?'Сверьте владельца, срок и полномочия по оригиналу.':findings.includes('DOCUMENT_TYPE_UNVERIFIED')?'Не удалось определить тип. Откройте файл и укажите тип документа.':findings.includes('OCR_OR_PAGE_REVIEW_REQUIRED')?'Часть страниц не прочитана. Проверьте их по оригиналу.':'Сверьте владельца и срок по оригиналу.'};
@@ -210,7 +212,7 @@ async function afAnalyze(preferences={}){
  if(!$af('afDate').value){afStatus('Укажите дату оценки.',true);return;}
  const afLocked=[...$af('documentStep').querySelectorAll('input,select,button')].map(e=>[e,e.disabled]);afLocked.forEach(([e])=>e.disabled=true);$af('documentStep').classList.add('af-busy');
  af.busy=true;$af('afAnalyze').disabled=true;$af('afChoose').disabled=true;$af('afProgress').hidden=false;
- const files=selectedFiles.filter(item=>!preferences.onlyNew||!item.storedDocumentId&&!af.results.get(item.id)?.server),hashes=new Map();let done=0,fail=0;
+ const files=selectedFiles.filter(item=>preferences.onlyPending?Boolean(af.results.get(item.id)?.error)||!item.storedDocumentId&&!af.results.get(item.id)?.server:!preferences.onlyNew||!item.storedDocumentId&&!af.results.get(item.id)?.server),hashes=new Map();let done=0,fail=0;
  afAnalysisProgress(0,files.length);
  try{
   for(const item of files){

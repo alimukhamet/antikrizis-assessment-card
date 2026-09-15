@@ -64,6 +64,7 @@ body[data-assessment-workflow] .chips label:focus-within{outline:3px solid #88ad
 .wf-collection-list:empty{display:none}
 .wf-collection-list>li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:8px 0;border-top:1px solid #e9e1cc}
 .wf-collection-list>li>span{min-width:0;overflow-wrap:anywhere}
+.wf-collection-list>li>.btn{min-width:0;max-width:45%;white-space:normal}
 .wf-collection-list small{display:block;font-size:15px;color:#796343;margin-top:2px}
 body[data-assessment-workflow] .wf-collection-notice .btn{font-size:14px;font-weight:500;padding:6px 10px;min-height:36px;flex-shrink:0}
 .wf-collection-subtitle{display:block;margin-top:12px;font-size:14px;color:#526457}
@@ -108,7 +109,7 @@ body[data-assessment-workflow] .af-file>.btn{margin:6px 0 14px}
 .wf-credential .required-document strong{display:none}
 .wf-credential .required-document [data-document-status]{margin:0 0 7px}
 .wf-credential>.field{padding:0}
-.wf-credential>.field>label:has(input[type=checkbox]){display:flex;align-items:flex-start;gap:7px;font-size:13px;line-height:1.4;margin:12px 0}
+.wf-credential>.field>label:has(input[type=checkbox]){display:flex;align-items:flex-start;gap:7px;font-size:15px;line-height:1.4;margin:12px 0}
 .wf-credential input[type=checkbox]{margin-top:1px}
 body[data-assessment-workflow] .document-row{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;border:0;border-bottom:1px solid #e1e6e2;border-radius:0;padding:12px 0;background:none}
 body[data-assessment-workflow] .document-name{grid-column:1/-1;font-size:13px;font-weight:500;overflow-wrap:anywhere}
@@ -188,7 +189,7 @@ body[data-assessment-workflow] .wf-final-actions{padding:18px;border:1px solid #
 .wf-final-actions>details{padding:14px 0;font-size:14px;line-height:1.6}
 .wf-bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:20;display:flex;align-items:center;gap:12px;padding:11px 24px;padding-bottom:calc(11px + env(safe-area-inset-bottom));background:#ffffffed;backdrop-filter:blur(10px);border-top:1px solid #dbe3dc}
 .wf-bottom-caption{flex:1;font-size:12px;text-align:center;color:#596f60}
-.wf-bottom-nav .btn-main{min-width:160px}
+.wf-bottom-nav .btn-main{min-width:160px;max-width:520px;white-space:normal}
 #crmImportStatus{font-size:13px;margin:8px 0 0}
 #crmImportStatus:empty{display:none}
 .client-dialog{width:min(700px,calc(100vw - 32px));max-height:85vh;overscroll-behavior:contain;padding:24px;border:1px solid #dde4de;border-radius:12px;background:#fff;color:#24312a;box-shadow:0 20px 60px #14251c33}

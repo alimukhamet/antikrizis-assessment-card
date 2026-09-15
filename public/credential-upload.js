@@ -27,6 +27,20 @@ window.CredentialUpload=(()=>{
  const pendingOnly=pending=>{const names=keys().map(item=>item.file.name);return Array.isArray(pending)&&pending.every(name=>{const index=names.indexOf(name);if(index<0)return false;names.splice(index,1);return true;});};
  const invalidate=()=>{verifiedDeal=null;verifiedIdentity=null;verifiedSelection=null;statusChanged();};
  const collected=()=>verified()||Boolean(currentDeal()&&keys().length&&keys().length<=10&&keys().every(item=>item.person==='Клиент'&&item.file.size>0)&&keys().reduce((sum,item)=>sum+item.file.size,0)<=2*1024*1024&&owner.checked&&password.value.trim());
+ function nextAction(){
+  const chosen=keys();if(collected())return null;
+  if(!chosen.length&&available.length)return owner.checked?{label:'Использовать ЭЦП из сделки',message:'Владелец подтверждён. Получите сохранённую ЭЦП.',target:useExisting}:{label:'Подтвердить владельца ЭЦП',message:'Подтвердите, что ЭЦП в сделке принадлежит этому клиенту.',target:owner};
+  if(!chosen.length||chosen.some(item=>!item.file.size)||chosen.length>10||chosen.reduce((sum,item)=>sum+item.file.size,0)>2*1024*1024)return {label:'Выбрать ЭЦП клиента',message:chosen.length?'Выберите ключ заново. До 10 файлов общим размером 2 МБ.':'Выберите файл ключа клиента.',target:keyRow?.querySelector('input[type=file]')};
+  const other=chosen.find(item=>item.person!=='Клиент');if(other)return {label:'Указать владельца ЭЦП',message:'Укажите владельца выбранного ключа.',target:document.getElementById('doc-'+other.id+'-person')};
+  if(!password.value.trim())return {label:'Указать пароль ЭЦП',message:'Ключ выбран. Осталось ввести пароль и подтвердить владельца.',target:password};
+  return {label:'Подтвердить владельца ЭЦП',message:'Пароль указан. Подтвердите, что ключ принадлежит этому клиенту.',target:owner};
+ }
+ function focusNext(){
+  refreshSelection();const next=nextAction();if(!next)return;
+  const target=next.target;for(let parent=target?.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
+  if(target?.type==='file'||target===useExisting){target.click();return;}
+  target?.scrollIntoView({block:'center'});target?.focus({preventScroll:true});
+ }
  function restoreCancellation(deal,data){if(currentDeal()!==deal||busy)return;cancellable=data.unsent?{deal,requestId:data.unsent.requestId}:null;cancel.hidden=!cancellable;}
  async function refreshCancellation(){const deal=currentDeal();if(!deal)return;try{const response=await fetch(`/api/assessment/${encodeURIComponent(deal)}/credentials`),data=await response.json();if(response.ok)restoreCancellation(deal,data);}catch{/* Preserve an already confirmed unsent operation. */}}
  async function refreshStatus(){
@@ -48,6 +62,7 @@ window.CredentialUpload=(()=>{
   catch(error){status.textContent=error.message;}finally{busy=false;useExisting.disabled=false;statusChanged();}
  };
  password.addEventListener('input',()=>{invalidate();refreshSelection();});
+ owner.addEventListener('change',statusChanged);
  async function submit(){
   if(verified())return true;if(busy)throw Error('Дождитесь сохранения ключа.');const deal=currentDeal(),identity=HostedAssessment.getContext()?.identityRevision,chosen=keys(),signature=selection();
   if(!deal||!chosen.length||chosen.some(item=>item.person!=='Клиент')||!owner.checked||!password.value.trim()){throw Error('Выберите ключ ЭЦП, укажите пароль и подтвердите владельца в разделе документов.');}
@@ -75,5 +90,5 @@ window.CredentialUpload=(()=>{
  };
  button.onclick=()=>submit().catch(error=>{status.textContent=error.message;});
  if(typeof renderDocuments==='function'){const previousRender=renderDocuments;renderDocuments=function(){previousRender();refreshSelection();};}refreshSelection();
- return {verified,collected,submit,pendingOnly,offerExisting};
+ return {verified,collected,submit,pendingOnly,offerExisting,nextAction,focusNext};
 })();

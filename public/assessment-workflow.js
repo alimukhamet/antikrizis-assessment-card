@@ -7,7 +7,7 @@ window.AssessmentWorkflow=(()=>{
  const step=(node,name)=>{node.dataset.assessmentStep=name;return node;};
  const root=$('questionnaireStep'),documentStep=$('documentStep'),intro=document.querySelector('.workflow-intro');
  if(!root||!documentStep||!intro)return null;
- let active='documents',lastCheck=null,collectionSignature='';
+ let active='documents',lastCheck=null,collectionSignature='',checkingDocuments=false;
  const socialLabel=$('socialStatusChips').closest('.field').querySelector('label.lbl');
  socialLabel.removeAttribute('for');socialLabel.id='workflowSocialStatusLabel';
  $('socialStatusChips').setAttribute('role','group');$('socialStatusChips').setAttribute('aria-labelledby',socialLabel.id);
@@ -116,7 +116,16 @@ window.AssessmentWorkflow=(()=>{
 
  const floating=make('nav',null,'wf-bottom-nav');floating.setAttribute('aria-label','Переход между этапами');
  const previous=action('← Назад',()=>show(active==='contract'?'answers':'documents'));
- const nextStep=action('Далее: ответы →',()=>{if(active==='documents'){if(prepareUpload())show('answers');}else if(active==='answers')show('contract');else $('saveAssessment').click();},true);
+ const nextStep=action('Проверить и продолжить →',async()=>{
+  if(active==='documents'){
+   if(checkingDocuments||af.busy||!HostedAssessment.ready()||!prepareUpload())return;
+   const state=collection();
+   if(!state.ready){openCollectionAction(state.rows.find(row=>row.state!=='present'));return;}
+   checkingDocuments=true;collectionStatus();
+   try{const result=await window.AssessmentCheck.documents();if(result&&collection().ready)show('answers');else{reviewDetails.open=true;$('documentCheckStatus').scrollIntoView({block:'center'});}}
+   finally{checkingDocuments=false;collectionStatus();}
+  }else if(active==='answers')show('contract');else $('saveAssessment').click();
+ },true);
  const stepCaption=make('span','Документы','wf-bottom-caption');floating.append(previous,stepCaption,nextStep);document.body.append(floating);
  // Participants are scoped to each obligation. Keep the old shared answer for reference only.
  function compactLoans(){
@@ -190,6 +199,19 @@ window.AssessmentWorkflow=(()=>{
   const row=[...$('afFileResults').children].find(node=>node.dataset.fileId===String(id));
   if(row){row.open=true;row.querySelector('summary').focus({preventScroll:true});row.scrollIntoView({block:'start',behavior:'smooth'});}
  }
+ function collectionAction(row){
+  if(!row)return '';
+  if(row.wrongClient)return 'Заменить: '+row.type;
+  if(row.type==='ЭЦП файл')return window.CredentialUpload?.nextAction()?.label||'Добавить ЭЦП';
+  return row.state==='pending'?'Повторить загрузку':'Добавить: '+row.type;
+ }
+ function openCollectionAction(row){
+  if(!row||af.busy||!prepareUpload())return;
+  if(row.wrongClient){const item=selectedFiles.find(item=>item.id===row.fileId);if(item&&window.DocumentReplacement)DocumentReplacement.button(item).click();else focusFile(row.fileId);return;}
+  if(row.type==='ЭЦП файл'){window.CredentialUpload?.focusNext();return;}
+  if(row.state==='pending'){afAnalyze({onlyPending:true});return;}
+  [...document.querySelectorAll('[data-required-picker]')].find(input=>input.dataset.requiredPicker===row.type)?.click();
+ }
  function collectionStatus(){
   const state=collection();
   const absent=state.rows.filter(row=>row.state==='missing'),pending=state.rows.filter(row=>row.state==='pending');
@@ -198,7 +220,8 @@ window.AssessmentWorkflow=(()=>{
   $('afChoose').disabled=uploadDisabled;$('afAnalyze').disabled=uploadDisabled||!selectedFiles.length;
   if($('importCrmDocuments'))$('importCrmDocuments').disabled=uploadDisabled;
   for(const input of documentStep.querySelectorAll('[data-required-picker],#previewDocuments'))input.disabled=uploadDisabled;
-  const signature=JSON.stringify([HostedAssessment.ready(),af.busy,af.unpacking,af.progress,af.transferFailures,state]);
+  const credentialAction=window.CredentialUpload?.nextAction();
+  const signature=JSON.stringify([HostedAssessment.ready(),af.busy,af.unpacking,af.progress,af.transferFailures,state,credentialAction?.label]);
   if(signature!==collectionSignature){
    collectionSignature=signature;collectionNotice.hidden=!HostedAssessment.ready()||(waitingForContext&&!selectedFiles.length&&!af.busy);collectionNotice.replaceChildren();
    collectionNotice.classList.toggle('wf-collection-incomplete',!af.busy&&absent.length>0);
@@ -207,23 +230,15 @@ window.AssessmentWorkflow=(()=>{
    const progress=af.progress;
    const title=af.busy?af.unpacking?'Открываем ZIP…':progress?.total?'Прочитано документов · '+progress.done+' из '+progress.total:'Получаем список документов…':absent.length?'Не хватает документов · '+absent.length:pending.length?'Завершите добавление · '+pending.length:state.context.length?'Основные документы добавлены':state.attention.length?'Проверьте замечания · '+state.attention.length:'Обязательные документы добавлены';
    heading.append(make('strong',title,'wf-collection-title'),make('span',state.provided+' из '+state.rows.length+' в пакете','wf-collection-count'));collectionNotice.append(heading);
-   const focusCredential=()=>{credential.scrollIntoView({block:'center'});const field=credential.querySelector('input:not([type=file]):not([hidden])');(field||credential.querySelector('[data-required-picker]'))?.focus({preventScroll:true});};
    const list=(rows,waiting=false)=>{
     const entries=make('ul',null,'wf-collection-list');
     for(const row of rows){
      const entry=make('li'),copy=make('span'),label=row.type==='ЭЦП файл'?'ЭЦП и пароль':row.type;
      entry.dataset.packageDocument=row.type;entry.dataset.packageState=row.state;copy.append(make('span',label));
      if(row.wrongClient)copy.append(make('small','Загружен документ другого клиента'));
+     else if(row.type==='ЭЦП файл'&&credentialAction)copy.append(make('small',credentialAction.message));
      else if(waiting&&row.type!=='ЭЦП файл')copy.append(make('small',af.results.get(row.fileId)?.error||'Файл выбран, но ещё не сохранён'));
-     const add=action(row.wrongClient?'Заменить':waiting?'Повторить':'Добавить',()=>{
-      if(af.busy)return;
-      if(!prepareUpload())return;
-      if(row.wrongClient){const item=selectedFiles.find(item=>item.id===row.fileId);if(item&&window.DocumentReplacement)DocumentReplacement.button(item).click();else focusFile(row.fileId);return;}
-      if(row.type==='ЭЦП файл'){focusCredential();return;}
-      if(waiting){$('afAnalyze').click();return;}
-      const input=[...document.querySelectorAll('[data-required-picker]')].find(input=>input.dataset.requiredPicker===row.type);input?.click();
-     });
-     if(waiting&&row.type==='ЭЦП файл')add.textContent='Завершить';
+     const add=action(row.type==='ЭЦП файл'?collectionAction(row):row.wrongClient?'Заменить':waiting?'Повторить загрузку':'Добавить',()=>openCollectionAction(row));
      add.setAttribute('aria-label',(row.wrongClient?'Заменить: ':waiting?'Завершить добавление: ':'Добавить: ')+label);entry.append(copy,add);entries.append(entry);
     }
     collectionNotice.append(entries);
@@ -235,7 +250,7 @@ window.AssessmentWorkflow=(()=>{
     if(state.attention.length){
      if(absent.length||pending.length)collectionNotice.append(make('strong','Проверьте замечания · '+state.attention.length,'wf-collection-subtitle'));
      const issues=make('ul',null,'wf-collection-list');
-     for(const issue of state.attention){const row=make('li'),copy=make('span');row.dataset.packageAttention=String(issue.fileId);copy.append(make('span',issue.label),make('small',issue.message));const inspect=action('Посмотреть',()=>focusFile(issue.fileId));inspect.setAttribute('aria-label','Посмотреть замечание: '+issue.label);row.append(copy,inspect);issues.append(row);}
+     for(const issue of state.attention){const row=make('li'),copy=make('span');row.dataset.packageAttention=String(issue.fileId);copy.append(make('span',issue.label),make('small',issue.message));const inspect=action(issue.kind==='manual'?'Проверить':'Посмотреть',()=>{const item=selectedFiles.find(item=>item.id===issue.fileId);if(issue.kind==='manual'&&item?.storedDocumentId)window.DocumentReview?.open(item.storedDocumentId);else focusFile(issue.fileId);});inspect.setAttribute('aria-label','Посмотреть замечание: '+issue.label);row.append(copy,inspect);issues.append(row);}
      collectionNotice.append(issues);
     }
     if(af.transferFailures?.length){const problem=make('div',null,'wf-collection-context');problem.append(make('strong','Не всё добавлено'));for(const message of af.transferFailures)problem.append(make('p',message,'wf-transfer-error'));collectionNotice.append(problem);}
@@ -248,9 +263,9 @@ window.AssessmentWorkflow=(()=>{
    }
   }
   for(const [name,{button}]of tabs)if(name!=='documents'){button.setAttribute('aria-disabled',String(!state.ready));button.title=state.ready?'':'Сначала соберите обязательные документы';}
-  nextStep.setAttribute('aria-disabled',String(active==='documents'&&(af.busy||!HostedAssessment.ready())));
+  nextStep.setAttribute('aria-disabled',String(active==='documents'&&(checkingDocuments||af.busy||!HostedAssessment.ready())));
   nextStep.classList.toggle('wf-missing-action',active==='documents'&&HostedAssessment.ready()&&!af.busy&&!state.ready);
-  if(active==='documents')nextStep.textContent=!HostedAssessment.ready()?'Выберите клиента':state.ready?'Далее: ответы →':af.busy?'Читаем документы…':waitingForContext?'Уточнить список':absent.length?'Чего не хватает · '+absent.length:pending.length?'Завершите добавление':'Уточните список';
+  if(active==='documents')nextStep.textContent=!HostedAssessment.ready()?'Выберите клиента':checkingDocuments?'Проверяем изменения…':af.busy?'Читаем документы…':waitingForContext?'Ответить на вопросы':state.ready?'Проверить и продолжить →':collectionAction(state.rows.find(row=>row.state!=='present'));
   if(active!=='documents'&&!state.ready)show('documents',{focus:false,remember:false});
  }
  function refresh(){

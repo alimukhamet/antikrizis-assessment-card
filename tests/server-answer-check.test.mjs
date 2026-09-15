@@ -17,7 +17,7 @@ test('withdrawal UI targets the displayed approval and reuses request ID after a
 test('document checks stay before the questionnaire and do not jump to unanswered fields',async()=>{
  const s=setup(async()=>({ok:true,json:async()=>({identityRevision:1,answersComplete:false,issues:[{key:'fio',label:'ФИО'}],documents:{issues:[{code:'EDS_SEPARATE_UPLOAD_REQUIRED',message:'ЭЦП отдельно'}],manuallyReviewed:[]}})}));
  const d=s.w.document,section=d.getElementById('documentReviewStep');assert.equal(d.getElementById('documentStep').nextElementSibling,section);assert.equal(section.nextElementSibling.id,'questionnaireStep');
- await d.getElementById('checkDocuments').onclick();assert.notEqual(d.activeElement.id,'fio');assert.equal(s.preview.hidden,true);assert.equal(d.getElementById('documentCheckStatus').textContent,'Нужна проверка: 1.');assert.equal(d.querySelector('#documentReviewResults > details').open,false);assert.match(d.querySelector('#documentReviewResults li').textContent,/ЭЦП отдельно/);
+ await d.getElementById('checkDocuments').onclick();assert.notEqual(d.activeElement.id,'fio');assert.equal(s.preview.hidden,true);assert.equal(d.getElementById('documentCheckStatus').textContent,'Проверка обновлена · замечаний: 1.');assert.equal(d.querySelector('#documentReviewResults > details').open,false);assert.match(d.querySelector('#documentReviewResults li').textContent,/ЭЦП отдельно/);
  assert.ok([...section.querySelectorAll('button')].some(b=>b.textContent==='Загрузить проверенные документы в Bitrix'));assert.equal(d.getElementById('checkStatus').textContent,'');
 });
 
