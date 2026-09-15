@@ -194,6 +194,7 @@ async function afAnalyze(preferences={}){
  if(!$af('afDate').value){afStatus('Укажите дату оценки.',true);return;}
  const afLocked=[...$af('documentStep').querySelectorAll('input,select,button')].map(e=>[e,e.disabled]);afLocked.forEach(([e])=>e.disabled=true);$af('documentStep').classList.add('af-busy');
  af.busy=true;$af('afAnalyze').disabled=true;$af('afChoose').disabled=true;$af('afProgress').hidden=false;
+ afRefresh();
  const files=[...selectedFiles],hashes=new Map();let done=0,fail=0;
  $af('afProgress').max=files.length;
  try{

@@ -67,6 +67,7 @@ window.ClientWorkspace=(()=>{
   if(af.busy||!HostedAssessment.ready()||!ServerDrafts.canSwitch()){afStatus('Сначала дождитесь загрузки черновика клиента.',true);return;}
   const context=HostedAssessment.getContext(),base='/api/assessment/'+context.client.external.dealId+'/crm-documents',notice=$('crmImportStatus');
   const locked=[...$('documentStep').querySelectorAll('input,select,button')].map(node=>[node,node.disabled]);locked.forEach(([node])=>node.disabled=true);af.busy=true;
+  afRefresh();
   let imported=0,reused=0,keysSkipped=0;const failures=[],seen=new Set();
   try{
    const {files}=await json(base);if(!files.length){notice.textContent='В сделке пока нет загруженных документов.';return;}

@@ -54,10 +54,21 @@ body[data-assessment-workflow] .chips label:focus-within{outline:3px solid #88ad
 .wf-step[aria-current=step] strong{font-weight:650}
 [data-assessment-step],body[data-assessment-workflow] .field{scroll-margin-top:90px;scroll-margin-bottom:96px}
 .wf-upload-box{margin:0 0 10px;padding:0}
-.wf-collection-notice{padding:11px 12px;margin:8px 0;border:1px solid #dce5d9;border-radius:8px;background:#f4f7f0;font-size:13px}
-.wf-collection-title{display:block;color:#526457;margin-bottom:6px}
-.wf-collection-links{display:flex;flex-wrap:wrap;gap:6px}
-body[data-assessment-workflow] .wf-collection-links .btn{font-size:12px;font-weight:500;padding:5px 8px}
+.wf-collection-notice{padding:14px 16px;margin:8px 0 16px;border:1px solid #dce5d9;border-radius:9px;background:#f4f7f0;font-size:14px;line-height:1.5}
+.wf-collection-incomplete{border-color:#e6cd94;background:#fffaee}
+.wf-collection-header{display:flex;align-items:baseline;justify-content:space-between;gap:6px 16px;flex-wrap:wrap}
+.wf-collection-title{color:#294b36;font-weight:650}
+.wf-collection-incomplete .wf-collection-title{color:#83550e}
+.wf-collection-count{font-size:13px;color:#697267;white-space:nowrap}
+.wf-collection-list{list-style:none;padding:0;margin:8px 0 0}
+.wf-collection-list:empty{display:none}
+.wf-collection-list>li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:8px 0;border-top:1px solid #e9e1cc}
+.wf-collection-list>li>span{min-width:0;overflow-wrap:anywhere}
+.wf-collection-list small{display:block;font-size:13px;color:#796343;margin-top:2px}
+body[data-assessment-workflow] .wf-collection-notice .btn{font-size:14px;font-weight:500;padding:6px 10px;min-height:36px;flex-shrink:0}
+.wf-collection-subtitle{display:block;margin-top:12px;font-size:14px;color:#526457}
+.wf-collection-context{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:12px;color:#596b60;font-size:14px}
+.wf-collection-context>span{flex:1 1 100%}
 .wf-step[aria-disabled=true]{color:#869089;background:#f7f8f6}
 .wf-bottom-nav .btn[aria-disabled=true]{background:#e9efe7;color:#5d715f;border-color:#d5dfd3}
 body[data-assessment-workflow] .af-conflict{font-size:13px;line-height:1.5}

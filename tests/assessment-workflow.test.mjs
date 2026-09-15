@@ -186,6 +186,53 @@ test('the complete applicable document package gates all navigation without requ
  assert.equal(s.calls.filter(c=>c.method!=='GET').length,0);
 });
 
+test('a partial batch names missing documents above the file list and opens the exact add picker',async t=>{
+ const s=setup(t);await s.load();collect(s);
+ s.run(`selectedFiles=selectedFiles.filter(item=>!['Справка ЕНПФ','Доверенность'].includes(item.type));selectedFiles.push({...selectedFiles[0],id:80},{id:81,type:'Доверенность',person:'Супруг(а)',storedDocumentId:'spouse-power',file:{name:'power.pdf',size:10}});`);
+ s.mount();const notice=s.d.getElementById('workflowCollection');
+ assert.equal(notice.hidden,false);assert.equal(notice.closest('details'),null);assert.equal(notice.nextElementSibling.id,'afFiles');
+ assert.match(notice.querySelector('strong').textContent,/Не хватает документов · 2/);
+ assert.equal(notice.querySelector('.wf-collection-count').textContent,'6 из 8 в пакете');
+ assert.deepEqual([...notice.querySelectorAll('[data-package-state="missing"]')].map(e=>e.dataset.packageDocument),['Справка ЕНПФ','Доверенность']);
+ const input=s.d.querySelector('[data-required-picker="Справка ЕНПФ"]');let chosen=0;input.addEventListener('click',e=>{e.preventDefault();chosen++;});
+ notice.querySelector('[aria-label="Добавить: Справка ЕНПФ"]').click();assert.equal(chosen,1);
+ assert.equal(s.d.querySelector('.wf-bottom-nav .btn-main').textContent,'Не хватает · 2');
+ s.d.querySelector('.wf-bottom-nav .btn-main').click();assert.equal(s.d.activeElement,notice);
+ const before=s.capture();s.w.AssessmentWorkflow.refresh();assert.deepEqual(s.capture(),before);assert.equal(s.calls.filter(c=>c.method!=='GET').length,0);
+});
+
+test('package status separates an unfinished upload from missing files and keeps manual-review scans present',async t=>{
+ const s=setup(t);await s.load();collect(s);s.mount();
+ s.run(`delete selectedFiles[0].storedDocumentId;af.results.set(selectedFiles[0].id,{error:'Synthetic upload failed'});af.results.set(selectedFiles[4].id,{blocked:true,kind:'other'});`);
+ s.w.AssessmentWorkflow.refresh();const notice=s.d.getElementById('workflowCollection');
+ assert.match(notice.querySelector('strong').textContent,/Завершите добавление · 1/);
+ assert.equal(notice.querySelectorAll('[data-package-state="missing"]').length,0);assert.equal(notice.querySelectorAll('[data-package-state="pending"]').length,1);
+ assert.equal(s.w.AssessmentWorkflow.collection().ready,false);
+ s.run('af.busy=true');s.w.AssessmentWorkflow.refresh();assert.match(notice.textContent,/Определяем состав пакета/);assert.equal(notice.querySelectorAll('button').length,0);
+ s.run(`af.busy=false;selectedFiles[0].storedDocumentId='uploaded-original';af.results.delete(selectedFiles[0].id);`);
+ s.d.dispatchEvent(new s.w.Event('assessment-analysis-complete'));
+ assert.equal(s.w.AssessmentWorkflow.collection().ready,true);assert.equal(notice.hidden,false);assert.match(notice.textContent,/Обязательные документы добавлены/);assert.match(notice.textContent,/8 из 8/);
+});
+
+test('the missing package list updates with benefit and salary answers and after draft restoration',async t=>{
+ const s=setup(t);await s.load();collect(s);s.mount();
+ const choose=async(id,value)=>{s.d.getElementById(id).value=value;s.d.getElementById(id).dispatchEvent(new s.w.Event('change',{bubbles:true}));await Promise.resolve();};
+ await choose('needsSocialDoc','1');await choose('needsSalaryDoc','1');
+ const notice=s.d.getElementById('workflowCollection');assert.match(notice.querySelector('.wf-collection-count').textContent,/8 из 10/);
+ assert.match(notice.textContent,/Справка по выплатам пенсии и пособий/);assert.match(notice.textContent,/Выписка зарплатного банка/);
+ await choose('needsSocialDoc','0');await choose('needsSalaryDoc','kaspi');assert.equal(s.w.AssessmentWorkflow.collection().ready,true);assert.equal(notice.querySelectorAll('[data-package-document]').length,0);
+ await choose('needsSocialDoc','');assert.equal(s.w.AssessmentWorkflow.collection().ready,false);assert.match(notice.textContent,/Уточните, нужны ли дополнительные документы/);assert.doesNotMatch(notice.textContent,/Справка по выплатам/);
+ s.run(`selectedFiles=selectedFiles.filter(item=>item.type!=='Доверенность')`);s.d.dispatchEvent(new s.w.Event('assessment-draft-restored'));assert.ok(notice.querySelector('[aria-label="Добавить: Доверенность"]'));
+});
+
+test('a document for another client cannot complete the package and unassigned files have a visible type action',async t=>{
+ const s=setup(t);await s.load();collect(s);s.mount();
+ s.run(`af.results.set(selectedFiles[0].id,{identity:{iin:'990101300002'}});selectedFiles.push({id:90,type:'Другой документ',person:'Клиент',storedDocumentId:'unclassified',file:{name:'unknown.pdf',size:10}});renderDocuments();`);
+ s.w.AssessmentWorkflow.refresh();const notice=s.d.getElementById('workflowCollection');
+ assert.equal(s.w.AssessmentWorkflow.collection().ready,false);assert.match(notice.textContent,/ГКБ — краткий отчёт/);assert.match(notice.textContent,/другого клиента/);assert.match(notice.textContent,/Без типа · 1/);
+ [...notice.querySelectorAll('button')].find(b=>b.textContent==='Указать тип').click();assert.equal(s.d.getElementById('workflowDocumentTools').open,true);assert.equal(s.d.querySelector('.wf-file-assignments').open,true);
+});
+
 test('participants use explicit choices and role rows; partial entries survive without passing completeness',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();mountParticipants(s);
  const input=s.d.querySelector('#creditors textarea[id^="loanParticipants"]'),shadow=input.nextElementSibling.shadowRoot,choice=shadow.querySelector('select');
