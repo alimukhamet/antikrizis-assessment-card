@@ -1,12 +1,14 @@
 import {requireStaffRequest} from '../../../staff-access';
 import {boundedJson,evidenceContext,evidenceError,operatingDay} from '../../../../../lib/documents/request-context';
 import {RepositoryError} from '../../../../../lib/documents/repository';
+import type {EvidenceRepository} from '../../../../../lib/documents/repository';
 import {assertSubmissionDestination} from '../../../../../lib/questionnaire/submission-destination';
 import {SubmissionRepository,type SubmissionRow} from '../../../../../lib/questionnaire/submission-repository';
 import {prepareFinalSubmission,commitFinalSubmission,reconcileFinalSubmission,cancelFinalPreparation,savedContract} from '../../../../../lib/questionnaire/final-submission';
 import {saveSubmissionHistory} from '../../../../../lib/questionnaire/submission-history';
 import {createAssessmentHistoryAdapter} from '../../../../../lib/crm/assessment-history';
 import {createAssessmentAdapter,AssessmentWriteError} from '../../../../../lib/crm/assessment-write';
+import {syncAssessmentIntake,type AssessmentIntakeSyncResult} from '../../../../../lib/crm/assessment-intake-sync';
 export async function POST(request:Request,context:{params:Promise<{dealId:string}>}){
  const denied=await requireStaffRequest(request);if(denied)return denied;
  try{
@@ -28,13 +30,29 @@ export async function POST(request:Request,context:{params:Promise<{dealId:strin
   else if(body.action==='history')row=await saveSubmissionHistory(submissions,createAssessmentHistoryAdapter(process.env.BITRIX_WEBHOOK??''),record,actor,body.requestId);
   else row=await commitFinalSubmission(repository,submissions,adapter,record,actor,body.requestId,operatingDay());
   if(!row)throw new RepositoryError('SUBMISSION_NOT_FOUND',404);
-  return Response.json(present(row),{headers:{'cache-control':'no-store'}});
+  const assessmentIntakeSync=row.state==='verified'?await boundedVerifiedAssessmentIntakeSync(repository,dealId,row):undefined;
+  return Response.json(present(row,assessmentIntakeSync),{headers:{'cache-control':'no-store'}});
  }catch(error){return evidenceError(error instanceof AssessmentWriteError?new RepositoryError(error.code):error);}
 }
 
-function present(row:SubmissionRow){
+async function verifiedAssessmentIntakeSync(repository:EvidenceRepository,dealId:string,row:SubmissionRow):Promise<AssessmentIntakeSyncResult>{
+ const secret=process.env.ASSESSMENT_INTAKE_HMAC_SECRET,crmOrigin=process.env.CRM_ASSESSMENT_INTAKE_ORIGIN,sourceOrigin=process.env.ASSESSMENT_INTAKE_SOURCE_ORIGIN;
+ if(!secret||!crmOrigin||!sourceOrigin)return {status:'disabled',reason:'assessment_intake_sync_not_configured'};
+ try{return await syncAssessmentIntake({dealId,repository,sourceSubmissionId:row.id,secret,crmOrigin,sourceOrigin});}
+ catch{return {status:'pending',reason:'assessment_intake_sync_retryable',sourceSubmissionId:row.id};}
+}
+
+const ASSESSMENT_INTAKE_SYNC_TIMEOUT_MS=5_000;
+async function boundedVerifiedAssessmentIntakeSync(repository:EvidenceRepository,dealId:string,row:SubmissionRow):Promise<AssessmentIntakeSyncResult>{
+ let timer:ReturnType<typeof setTimeout>|undefined;
+ const timeout=new Promise<AssessmentIntakeSyncResult>(resolve=>{timer=setTimeout(()=>resolve({status:'pending',reason:'assessment_intake_sync_timeout',sourceSubmissionId:row.id}),ASSESSMENT_INTAKE_SYNC_TIMEOUT_MS);});
+ try{return await Promise.race([verifiedAssessmentIntakeSync(repository,dealId,row),timeout]);}
+ finally{if(timer!==undefined)clearTimeout(timer);}
+}
+
+function present(row:SubmissionRow,assessmentIntakeSync?:AssessmentIntakeSyncResult){
  const payload=JSON.parse(row.payload_json);
- return {requestId:row.request_id,state:row.state,assessmentSaved:row.state==='verified',outcomeCode:row.outcome_code,historySaved:row.history_state==='verified',historyState:row.history_state,historyOutcomeCode:row.history_outcome_code,reviewText:payload.values?.card||'',clientName:payload.values?.fio||'',contractNumber:payload.values?.dognum||'',completed:false,remainingSteps:[...(row.history_state==='verified'?[]:['timeline-history']),'final-contract-download','separate-document-upload']};
+ return {requestId:row.request_id,state:row.state,assessmentSaved:row.state==='verified',outcomeCode:row.outcome_code,historySaved:row.history_state==='verified',historyState:row.history_state,historyOutcomeCode:row.history_outcome_code,reviewText:payload.values?.card||'',clientName:payload.values?.fio||'',contractNumber:payload.values?.dognum||'',completed:false,remainingSteps:[...(row.history_state==='verified'?[]:['timeline-history']),'final-contract-download','separate-document-upload'],...(assessmentIntakeSync?{assessmentIntakeSync}:{})};
 }
 export async function GET(request:Request,context:{params:Promise<{dealId:string}>}){
  const denied=await requireStaffRequest(request);if(denied)return denied;

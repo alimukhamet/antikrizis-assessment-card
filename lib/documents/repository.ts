@@ -17,6 +17,9 @@ export class EvidenceRepository {
   const row=await this.db.prepare('SELECT * FROM assessment_cases WHERE external_system=? AND external_id=?').bind(client.external.system,client.external.dealId).first<CaseRow>();
   if(!row)throw new RepositoryError('CASE_PERSISTENCE_FAILED',503);return row;
  }
+ async findCaseByExternal(externalSystem:string,externalId:string){
+  return this.db.prepare('SELECT * FROM assessment_cases WHERE external_system=? AND external_id=?').bind(externalSystem,externalId).first<CaseRow>();
+ }
  async document(caseId:string,documentId:string){return this.db.prepare('SELECT * FROM assessment_documents WHERE id=? AND case_id=?').bind(documentId,caseId).first<DocumentRow>();}
  async credentialStatus(record:CaseRow){
   const row=await this.db.prepare("SELECT * FROM assessment_upload_manifests WHERE case_id=? AND identity_revision=? AND json_extract(manifest_json,'$.scope')='credentials' AND state<>'cancelled' ORDER BY rowid DESC LIMIT 1").bind(record.id,record.identity_revision).first<UploadRow>();
@@ -28,6 +31,17 @@ export class EvidenceRepository {
  }
  async extraction(caseId:string,documentId:string,extractionId:string){return this.db.prepare('SELECT e.* FROM assessment_extractions e JOIN assessment_documents d ON d.id=e.document_id WHERE e.id=? AND d.id=? AND d.case_id=?').bind(extractionId,documentId,caseId).first<ExtractionRow>();}
  async original(document:DocumentRow){const file=await this.files.get(document.original_key);if(!file)throw new RepositoryError('ORIGINAL_FILE_MISSING',503);const bytes=new Uint8Array(await file.arrayBuffer());if(await sha256(bytes)!==document.original_sha256)throw new RepositoryError('ORIGINAL_INTEGRITY_FAILED',503);return bytes;}
+ async originalStream(document:DocumentRow){
+  const file=await this.files.get(document.original_key);if(!file)throw new RepositoryError('ORIGINAL_FILE_MISSING',503);
+  const candidate=file as unknown as {body?:ReadableStream<Uint8Array>|null;customMetadata?:Record<string,string>;size?:number};
+  // Files written by this repository carry both immutable hash and size
+  // metadata.  Returning that R2 body keeps the transfer streamed.  Older
+  // objects without those proofs take the verified buffered path below.
+  if(candidate.body&&candidate.customMetadata?.sha256===document.original_sha256&&candidate.size===document.byte_size)return candidate.body;
+  const bytes=new Uint8Array(await file.arrayBuffer());
+  if(bytes.byteLength!==document.byte_size||await sha256(bytes)!==document.original_sha256)throw new RepositoryError('ORIGINAL_INTEGRITY_FAILED',503);
+  return new ReadableStream<Uint8Array>({start(controller){controller.enqueue(bytes);controller.close();}});
+ }
  async cached(caseId:string,originalHash:string,version:string){
   const document=await this.db.prepare('SELECT * FROM assessment_documents WHERE case_id=? AND original_sha256=?').bind(caseId,originalHash).first<DocumentRow>();if(!document)return null;
   const extraction=await this.db.prepare('SELECT * FROM assessment_extractions WHERE document_id=? AND version=?').bind(document.id,version).first<ExtractionRow>();if(!extraction)return null;
