@@ -58,6 +58,12 @@ test('ranged transfers reject shifted ranges, changed files, oversized totals an
   await assert.rejects(read({id:'22'}),e=>['CRM_FILE_RANGE_MISMATCH','CRM_FILE_LENGTH_MISMATCH','CRM_FILE_TOO_LARGE'].includes(e.code));if(variant!=='changed')assert.equal(reads,1);
  }
 });
+test('weak ETags and generated Last-Modified dates are not sent as If-Range validators',async()=>{
+ let parts=0;const reader=createCrmDocumentReader(webhook,'11665',iin,async(url,o)=>{
+  if(o.method==='POST')return metadata();const start=parts++*8192;assert.equal(o.headers['if-range'],undefined);
+  return new Response(new Uint8Array(8192),{status:206,headers:{'content-range':`bytes ${start}-${start+8191}/16384`,'content-length':'8192',etag:'W/"weak"','last-modified':new Date().toUTCString()}});
+ });assert.equal((await reader({id:'22'})).length,16384);assert.equal(parts,2);
+});
 
 
 test('PDF import preserves safe names but excludes signing keys before reading their body',async()=>{

@@ -64,14 +64,14 @@ export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin
     function range(response:Response,start:number,end:number,total?:number){
      const match=/^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers.get('content-range')||'');
      const actual=match?.slice(1).map(Number);
-     if(response.status!==206||!actual||actual.some(n=>!Number.isSafeInteger(n))||actual[0]!==start||actual[2]<=0||actual[1]!==Math.min(end,actual[2]-1)||(total!==undefined&&actual[2]!==total)||response.headers.get('content-encoding')){void response.body?.cancel().catch(()=>{});throw new DocumentUploadError('CRM_FILE_RANGE_MISMATCH');}
+     if(response.status!==206||!actual||actual.some(n=>!Number.isSafeInteger(n))||actual[0]!==start||actual[2]<=0||actual[1]!==Math.min(end,actual[2]-1)||(total!==undefined&&actual[2]!==total)||response.headers.get('content-encoding')){console.warn('assessment-file-range',JSON.stringify({status:response.status,start,end,actual:actual??null,encoded:Boolean(response.headers.get('content-encoding'))}));void response.body?.cancel().catch(()=>{});throw new DocumentUploadError('CRM_FILE_RANGE_MISMATCH');}
      if(actual[2]>limit){void response.body?.cancel().catch(()=>{});throw new DocumentUploadError('CRM_FILE_TOO_LARGE');}
      return actual[2];
     }
     const total=range(download,0,RANGE_BYTES-1),first=await bytes(download);
     if(first.length!==Math.min(RANGE_BYTES,total))throw new DocumentUploadError('CRM_FILE_LENGTH_MISMATCH');
     const result=new Uint8Array(total);result.set(first);let cursor=first.length;
-    const stopped=new AbortController(),validator=download.headers.get('etag')||download.headers.get('last-modified');
+    const stopped=new AbortController(),etag=download.headers.get('etag'),validator=etag?.startsWith('"')?etag:null;
     async function part(start:number){
      const end=Math.min(start+RANGE_BYTES,total)-1,headers:Record<string,string>={...bitrixHeaders(webhook,'file'),range:`bytes=${start}-${end}`};
      if(validator)headers['if-range']=validator;

@@ -23,8 +23,8 @@ export async function GET(request:Request,context:{params:Promise<{dealId:string
    if(manifest.scope==='credentials'||!['writing','uncertain','verified'].includes(prior.state)||!record.client_iin||prior.identity_revision!==record.identity_revision)throw new RepositoryError('UPLOAD_NOT_STARTED');
    const started=Date.now(),trace:Array<Record<string,string|number>>=[],webhook=process.env.BITRIX_WEBHOOK??'';
    const reader=createCrmDocumentReader(webhook,dealId,record.client_iin,fetch,{onProgress:event=>{if(trace.length<100)trace.push(event);}}),adapter=createDocumentUploadAdapter(webhook,reader);
-   try{const receipt=await adapter.reconcile(dealId,record.client_iin,manifest.baseline,manifest.files,manifest.reused);return Response.json({verified:true,filesVerified:receipt.files.length,elapsedMs:Date.now()-started,trace},{headers:{'cache-control':'no-store'}});}
-   catch(error){return Response.json({verified:false,error:error instanceof DocumentUploadError?error.code:'UPLOAD_OUTCOME_UNCERTAIN',elapsedMs:Date.now()-started,trace},{headers:{'cache-control':'no-store'}});}
+   try{const receipt=await adapter.reconcile(dealId,record.client_iin,manifest.baseline,manifest.files,manifest.reused);const result={verified:true,filesVerified:receipt.files.length,elapsedMs:Date.now()-started};console.info('assessment-upload-inspection',JSON.stringify(result));return Response.json({...result,trace},{headers:{'cache-control':'no-store'}});}
+   catch(error){const result={verified:false,error:error instanceof DocumentUploadError?error.code:'UPLOAD_OUTCOME_UNCERTAIN',elapsedMs:Date.now()-started};console.info('assessment-upload-inspection',JSON.stringify(result));return Response.json({...result,trace},{headers:{'cache-control':'no-store'}});}
   }
   return Response.json({unsent:await new UploadManifestRepository(runtime.DB).unsentForActor(record,actor,'documents')},{headers:{'cache-control':'no-store'}});
  }catch(error){return evidenceError(error);}
