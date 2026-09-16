@@ -62,6 +62,11 @@ test('download and its controls do not wait for optional recovery status after c
 test('a failed check gives a visible reason instead of a silent download no-op',async()=>{
  const s=setup();s.w.AssessmentCheck={run:async()=>{},result:()=>null};await s.save.onclick();assert.match(s.w.document.getElementById('status').textContent,/Проверка не завершена/);assert.equal(s.downloads(),0);s.w.close();
 });
+test('document blockers stop the download, report the real phase and open document review',async()=>{
+ const s=setup(),progress=[],blocked=[];const result={answersComplete:true,readyToSubmit:false,evidence:{issues:[]},documents:{issues:[{code:'ENPF_PERIOD_UNVERIFIED',documentId:'enpf'},{code:'DOCUMENT_TYPE_UNVERIFIED',documentId:'identity'}]}};
+ s.w.document.addEventListener('assessment-submission-progress',event=>progress.push({...event.detail}));s.w.document.addEventListener('assessment-submission-blocked',event=>blocked.push(event.detail));s.w.AssessmentCheck={run:async()=>{},result:()=>result};
+ await s.save.onclick();assert.equal(progress.find(event=>event.busy)?.label,'Проверяю…');assert.equal(progress.some(event=>event.busy&&event.label==='Готовлю договор…'),false);assert.equal(blocked.length,1);assert.equal(blocked[0].reason,'documents');assert.equal(blocked[0].result,result);assert.match(s.w.document.getElementById('status').textContent,/Договор не скачан.*документы \(2\)/);assert.equal(s.calls.length,0);assert.equal(s.downloads(),0);s.w.close();
+});
 test('direct file link refuses a stale client or answer snapshot',async()=>{
  for(const change of [s=>s.w.HostedAssessment.getContext=()=>({client:{external:{dealId:'other'}}}),s=>s.w.ServerDrafts.capture=()=>({answers:['CHANGED']})]){
   const s=setup();s.check(true);await s.save.onclick();change(s);const link=s.w.document.getElementById('downloadContractFile'),event=new s.w.MouseEvent('click',{cancelable:true});link.dispatchEvent(event);assert.equal(event.defaultPrevented,true);assert.equal(link.hidden,true);s.w.close();

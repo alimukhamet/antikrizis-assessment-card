@@ -377,6 +377,17 @@ test('finished package exposes the exact attention message and jumps to the affe
  s.run("af.busy=true;afAnalysisProgress(2,7)");assert.match(notice.textContent,/Прочитано документов · 2 из 7/);assert.equal(notice.querySelector('[data-package-attention]'),null);
  s.run("af.busy=false;af.progress=null;document.dispatchEvent(new CustomEvent('assessment-analysis-complete',{detail:{showPackageSummary:true}}))");assert.equal(s.d.activeElement.id,'workflowCollection');assert.match(notice.textContent,/сокращён номер договора/);
 });
+test('an unreadable ENPF period offers direct manual review',async t=>{
+ const s=setup(t);await s.load();collect(s);s.mount();let opened=null;s.w.DocumentReview.open=async id=>{opened=id;};
+ const id=s.run(`(()=>{const item=selectedFiles.find(item=>item.type==='Справка ЕНПФ');af.results.set(item.id,{findings:['ENPF_PERIOD_UNVERIFIED'],identity:{iin:'991231300003'},server:{dealId:'11665',documentId:item.storedDocumentId}});afRenderResults();afRefresh();return item.id;})()`);
+ const action=s.d.querySelector(`[data-package-attention="${id}"] button`);assert.equal(action.textContent,'Проверить');action.click();assert.equal(opened,s.run(`selectedFiles.find(item=>item.id===${id}).storedDocumentId`));
+});
+test('a blocked download returns to the exact document review',async t=>{
+ const s=setup(t);await s.load();collect(s);s.mount();s.w.AssessmentWorkflow.show('contract',{focus:false});
+ const review=s.d.createElement('details'),summary=s.d.createElement('summary');review.dataset.documentReview='';review.dataset.reviewDocumentId='enpf';summary.textContent='Справка ЕНПФ — сверить';review.append(summary);s.d.getElementById('documentReviewResults').append(review);
+ s.d.dispatchEvent(new s.w.CustomEvent('assessment-submission-blocked',{detail:{reason:'documents',result:{documents:{issues:[{code:'ENPF_PERIOD_UNVERIFIED',documentId:'enpf'}]}}}}));
+ assert.equal(s.d.body.dataset.assessmentWorkflow,'documents');assert.equal(s.d.querySelector('.wf-review-details').open,true);assert.equal(review.open,true);assert.equal(s.d.activeElement,summary);assert.match(s.d.getElementById('documentCheckStatus').textContent,/проверьте документы: 1/);
+});
 test('automatic analysis requests only the new document and retains the stored result',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();s.run("selectedFiles=selectedFiles.slice(0,1);selectedFiles.push({id:2,type:'',person:'Клиент',file:{name:'new.pdf',size:10}});var analyzed=[];HostedAssessment={...HostedAssessment,analyzeFile:async item=>{analyzed.push(item.id);throw Error('Synthetic file failure');}};");
  await s.run('afAnalyze({onlyNew:true})');assert.equal(s.run('JSON.stringify(analyzed)'),'[2]');assert.equal(s.run('selectedFiles[0].storedDocumentId'),'synthetic-0');assert.match(s.d.getElementById('workflowCollection').textContent,/Synthetic file failure/);
@@ -411,6 +422,16 @@ test('a failed document check stays on documents and displays an actionable erro
  s.d.querySelector('.wf-bottom-nav .btn-main').click();await new Promise(resolve=>setTimeout(resolve,0));
  assert.equal(s.d.body.dataset.assessmentWorkflow,'documents');assert.equal(s.d.querySelector('.wf-review-details').open,true);
  assert.match(s.d.getElementById('documentCheckStatus').textContent,/Не удалось/);assert.equal(s.d.querySelector('.wf-bottom-nav .btn-main').textContent,'Проверить и продолжить →');
+});
+
+test('check and continue opens unresolved document inspection before advancing to answers',async t=>{
+ const s=setup(t);await s.load();collect(s);s.mount();const fetch=s.w.fetch;
+ const selected=s.capture().documents.find(item=>item.type==='Справка ЕНПФ');
+ s.w.fetch=async(path,options)=>path.endsWith('/check')?{ok:true,json:async()=>({identityRevision:1,answersComplete:true,readyToSubmit:false,issues:[],evidence:{issues:[]},documents:{issues:[{code:'ENPF_PERIOD_UNVERIFIED',documentId:selected.documentId,message:'Сверьте период по оригиналу.'}],manuallyReviewed:[]}})}:fetch(path,options);
+ s.d.querySelector('.wf-bottom-nav .btn-main').click();await new Promise(resolve=>setTimeout(resolve,0));
+ const review=s.d.querySelector(`[data-review-document-id="${selected.documentId}"]`);
+ assert.equal(s.d.body.dataset.assessmentWorkflow,'documents');assert.equal(review.open,true);assert.equal(s.d.activeElement,review.querySelector('summary'));assert.match(review.textContent,/Сверьте период по оригиналу/);
+ assert.equal(s.calls.some(call=>call.method==='POST'&&call.path.endsWith('/submission')),false);
 });
 
 

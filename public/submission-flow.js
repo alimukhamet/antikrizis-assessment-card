@@ -4,9 +4,10 @@ window.SubmissionFlow={mount(anchor,status){
  function clearFile(){if(fileUrl)URL.revokeObjectURL(fileUrl);fileUrl=null;fileLink.hidden=true;fileLink.removeAttribute('href');}
  const recovery=document.createElement('details'),summary=document.createElement('summary'),savedText=document.createElement('pre'),resume=document.createElement('button'),cancel=document.createElement('button');
  summary.textContent='Сохранённая версия анкеты';savedText.style.whiteSpace='pre-wrap';resume.type=cancel.type='button';resume.className=cancel.className='btn btn-ghost';cancel.textContent='Отменить подготовку';recovery.append(summary,savedText,resume,cancel);recovery.hidden=true;save.after(recovery);
- let checked=null,attempt=null,latest=null,busy=false,generation=0,destination=null,destinationSnapshot=null;
- const progress=()=>document.dispatchEvent(new CustomEvent('assessment-submission-progress',{detail:{busy,message:status.textContent}}));
+ let checked=null,attempt=null,latest=null,busy=false,busyLabel='Скачать договор',generation=0,destination=null,destinationSnapshot=null;
+ const progress=()=>document.dispatchEvent(new CustomEvent('assessment-submission-progress',{detail:{busy,label:busy?busyLabel:'Скачать договор',message:status.textContent}}));
  const report=text=>{status.textContent=text;progress();};
+ const phase=(label,message)=>{busyLabel=label;save.textContent=label;if(message!==undefined)report(message);else progress();};
  new MutationObserver(()=>{if(busy)progress();}).observe(status,{childList:true,characterData:true,subtree:true});
  const currentDeal=()=>HostedAssessment.ready()?HostedAssessment.getContext().client.external.dealId:null;
  const signature=()=>JSON.stringify({payload:ServerDrafts.capture(),bindings:ServerDrafts.reviewBindings()});
@@ -40,33 +41,41 @@ window.SubmissionFlow={mount(anchor,status){
   const requestId=row.requestId;if(currentDeal()!==dealId)throw Error('Открыта другая сделка.');
   if(row.state==='prepared'){
    if(guard&&!guard()){await post(dealId,{action:'cancel',requestId});throw Error('Ответы изменились. Проверьте анкету заново.');}
-   status.textContent='Сохраняю карточку в Bitrix…';row=await post(dealId,{action:'commit',requestId});
-  }else if(['writing','uncertain'].includes(row.state)){status.textContent='Проверяю результат сохранения…';row=await post(dealId,{action:'reconcile',requestId});}
+   phase('Сохраняю…','Сохраняю карточку в Bitrix…');row=await post(dealId,{action:'commit',requestId});
+  }else if(['writing','uncertain'].includes(row.state)){phase('Проверяю…','Проверяю результат сохранения…');row=await post(dealId,{action:'reconcile',requestId});}
   if(!row.assessmentSaved)throw Error('Сохранение карточки ещё не подтверждено. Повторите проверку через сохранённую версию; повторной отправки не будет.');
-  if(!row.historySaved){status.textContent='Сохраняю анкету в историю сделки…';row=await post(dealId,{action:'history',requestId});}
+  if(!row.historySaved){phase('Сохраняю…','Сохраняю анкету в историю сделки…');row=await post(dealId,{action:'history',requestId});}
   if(!row.historySaved)throw Error('Карточка сохранена. История ещё не подтверждена; продолжите из сохранённой версии.');
-  report('Готовлю сохранённый договор…');await download(dealId,requestId);report('Договор готов. Если скачивание не началось, нажмите «Скачать готовый файл договора» ниже. Карточка, документы и история сохранены в сделке.');
+  phase('Готовлю договор…','Готовлю сохранённый договор…');await download(dealId,requestId);report('Договор готов. Если скачивание не началось, нажмите «Скачать готовый файл договора» ниже. Карточка, документы и история сохранены в сделке.');
  }
- async function operate(action){if(busy)return;busy=true;destination=null;destinationSnapshot=null;clearFile();save.disabled=resume.disabled=cancel.disabled=true;save.textContent='Готовлю договор…';report('Проверяю данные для договора…');try{await action();}catch(error){report(error.message);}finally{busy=false;resume.disabled=cancel.disabled=false;save.disabled=false;save.textContent='Скачать договор';progress();void refresh();}}
+ async function operate(action){if(busy)return;busy=true;busyLabel='Проверяю…';destination=null;destinationSnapshot=null;clearFile();save.disabled=resume.disabled=cancel.disabled=true;save.textContent=busyLabel;report('Проверяю данные для договора…');try{await action();}catch(error){report(error.message);}finally{busy=false;busyLabel='Скачать договор';resume.disabled=cancel.disabled=false;save.disabled=false;save.textContent=busyLabel;progress();void refresh();}}
  save.onclick=()=>operate(async()=>{
   if(!checked||currentDeal()!==checked.dealId||signature()!==checked.signature){
    await window.AssessmentCheck?.run();
-   const result=window.AssessmentCheck?.result();
+   let result=window.AssessmentCheck?.result();
    const issues=result?.documents?.issues||[],pending=ServerDrafts.capture().pendingFiles||[];
    const keysOnly=issues.some(i=>i.code==='EDS_SEPARATE_UPLOAD_REQUIRED')&&issues.every(i=>i.code==='EDS_SEPARATE_UPLOAD_REQUIRED'||i.code==='DOCUMENT_UPLOAD_PENDING')&&(!pending.length||window.CredentialUpload?.pendingOnly(pending));
    if(!checked&&result?.answersComplete&&!result.evidence?.issues.length&&keysOnly){
     await confirmDestination();guardDestination();await window.CredentialUpload?.submit();await window.AssessmentCheck.run();
+    result=window.AssessmentCheck?.result();
    }
-   if(!checked)throw Error(status.textContent&&status.textContent!=='Проверяю данные для договора…'?status.textContent:'Проверка не завершена. Нажмите «Проверить» и исправьте замечания перед скачиванием.');
+   if(!checked){
+    const documentIssues=result?.documents?.issues||[],evidenceIssues=result?.evidence?.issues||[];
+    if(result?.answersComplete&&!evidenceIssues.length&&documentIssues.length){
+     document.dispatchEvent(new CustomEvent('assessment-submission-blocked',{detail:{reason:'documents',result}}));
+     throw Error(`Договор не скачан: сначала проверьте документы (${documentIssues.length}). Замечания открыты в разделе документов.`);
+    }
+    throw Error(status.textContent&&status.textContent!=='Проверяю данные для договора…'?status.textContent:'Проверка не завершена. Нажмите «Проверить» и исправьте замечания перед скачиванием.');
+   }
   }
   if(currentDeal()!==checked.dealId||signature()!==checked.signature)throw Error('Ответы изменились. Проверьте анкету ещё раз.');
-  report('Проверяю получателя договора…');await confirmDestination();
+  phase('Проверяю…','Проверяю получателя договора…');await confirmDestination();
   const selected=checked;
-  report('Сохраняю черновик…');if(window.ServerDrafts.save&&!await window.ServerDrafts.save({automatic:true}))throw Error('Сначала сохраните черновик.');
+  phase('Сохраняю…','Сохраняю черновик…');if(window.ServerDrafts.save&&!await window.ServerDrafts.save({automatic:true}))throw Error('Сначала сохраните черновик.');
   guardDestination();if(window.AssessmentDocumentUpload)await window.AssessmentDocumentUpload.submit({onProgress:report});
   if(currentDeal()!==selected.dealId||signature()!==selected.signature)throw Error('Ответы изменились во время сохранения документов. Проверьте анкету ещё раз.');
   if(attempt?.signature!==selected.signature||attempt?.dealId!==selected.dealId)attempt={signature:selected.signature,dealId:selected.dealId,requestId:crypto.randomUUID()};
-  status.textContent='Фиксирую проверенную версию анкеты…';
+  phase('Сохраняю…','Фиксирую проверенную версию анкеты…');
   const row=await post(selected.dealId,{action:'prepare',requestId:attempt.requestId,identityRevision:selected.identityRevision,payload:selected.payload,bindings:selected.bindings});
   await advance(selected.dealId,row,()=>currentDeal()===selected.dealId&&signature()===selected.signature);
  });

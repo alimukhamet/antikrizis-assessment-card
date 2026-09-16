@@ -88,7 +88,7 @@ test('floating download action shows live progress, blocks repeated clicks and e
  assert.equal(s.w.AssessmentWorkflow.show('contract'),true);
  let finish;s.w.AssessmentCheck.run=()=>new Promise(resolve=>finish=resolve);
  const button=s.d.querySelector('.wf-bottom-nav > .btn-main');button.click();await tick();
- assert.equal(button.disabled,true);assert.match(button.textContent,/Готовлю/);assert.equal(s.d.getElementById('workflowDownloadStatus').hidden,false);
+ assert.equal(button.disabled,true);assert.match(button.textContent,/Проверяю/);assert.equal(s.d.getElementById('workflowDownloadStatus').hidden,false);
  finish();await tick();assert.equal(button.disabled,false);assert.match(s.d.getElementById('workflowDownloadStatus').textContent,/Проверка не завершена/);
  s.w.AssessmentWorkflow.show('answers');assert.equal(s.d.getElementById('workflowDownloadStatus').hidden,true);assert.equal(button.disabled,false);
 });

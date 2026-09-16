@@ -29,6 +29,8 @@ window.DocumentReview={render(container,result,dealId,selection,onSaved){
   if(result.documents.structurallyChecked?.includes(selected.type)&&!result.documents.issues?.some(i=>i.documentId===selected.documentId)&&!approved)continue;
   const section=document.createElement('details');section.dataset.documentReview='';section.dataset.reviewDocumentId=selected.documentId;
   const title=document.createElement('summary');title.textContent=selected.type+' — '+(approved?'проверено сотрудником':'сверить');section.append(title);
+  const issues=result.documents.issues?.filter(issue=>issue.documentId===selected.documentId&&issue.message)||[];
+  if(!approved&&issues.length){const note=document.createElement('p');note.textContent=[...new Set(issues.map(issue=>issue.message))].join(' ');section.append(note);}
   const link=document.createElement('a');link.textContent='Открыть документ';link.href=`/document-viewer.html?dealId=${encodeURIComponent(dealId)}&documentId=${encodeURIComponent(selected.documentId)}`;link.target='_blank';link.rel='noopener';section.append(link);container.append(section);
   const status=document.createElement('p');status.setAttribute('role','status');
   if(approved){

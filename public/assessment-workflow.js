@@ -123,7 +123,7 @@ window.AssessmentWorkflow=(()=>{
    const state=collection();
    if(!state.ready){openCollectionAction(state.rows.find(row=>row.state!=='present'));return;}
    checkingDocuments=true;collectionStatus();
-   try{const result=await window.AssessmentCheck.documents();if(result&&collection().ready)show('answers');else{reviewDetails.open=true;$('documentCheckStatus').scrollIntoView({block:'center'});}}
+   try{const result=await window.AssessmentCheck.documents();const issues=(result?.documents?.issues||[]).filter(issue=>issue.code!=='EDS_SEPARATE_UPLOAD_REQUIRED'||!window.CredentialUpload?.collected());if(result&&issues.length)openDocumentIssues(result);else if(result&&collection().ready)show('answers');else{reviewDetails.open=true;$('documentCheckStatus').scrollIntoView({block:'center'});}}
    finally{checkingDocuments=false;collectionStatus();}
   }else if(active==='answers')show('contract');else $('saveAssessment').click();
  },true);
@@ -132,7 +132,7 @@ window.AssessmentWorkflow=(()=>{
  function downloadProgress(){
   downloadNotice.hidden=active!=='contract'||!downloadState.message;downloadNotice.textContent=downloadState.message;
   nextStep.disabled=active==='contract'&&downloadState.busy;nextStep.setAttribute('aria-busy',String(nextStep.disabled));
-  if(active==='contract')nextStep.textContent=downloadState.busy?'Готовлю договор…':'Скачать договор';
+  if(active==='contract')nextStep.textContent=downloadState.busy?(downloadState.label||'Проверяю…'):'Скачать договор';
  }
  document.addEventListener('assessment-submission-progress',event=>{downloadState=event.detail;downloadProgress();});
  document.addEventListener('assessment-case-opened',()=>{downloadState={busy:false,message:''};downloadProgress();});
@@ -324,6 +324,14 @@ window.AssessmentWorkflow=(()=>{
  document.addEventListener('assessment-identity-confirmed',()=>{lastCheck=null;updateCase();});
  document.addEventListener('assessment-case-opened',()=>{lastCheck=null;for(const {fold}of answerSections)fold.open=false;updateCase();show('documents',{focus:false,remember:false});});
  document.addEventListener('assessment-checked',event=>{lastCheck=event.detail;refresh();});
+ function openDocumentIssues(result){
+  lastCheck=result||lastCheck;refresh();show('documents',{focus:false});reviewDetails.open=true;
+  const issues=result?.documents?.issues||[];$('documentCheckStatus').textContent=`Перед скачиванием договора проверьте документы: ${issues.length}.`;
+  const sections=[...reviewDetails.querySelectorAll('[data-document-review]')],target=issues.map(issue=>sections.find(section=>section.dataset.reviewDocumentId===issue.documentId)).find(Boolean)||$('documentReviewResults').querySelector('details');
+  if(target){for(let parent=target;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;const summary=target.querySelector('summary');summary.tabIndex=-1;summary.focus({preventScroll:true});target.scrollIntoView({block:'start',behavior:'smooth'});}
+  else{collectionNotice.focus({preventScroll:true});collectionNotice.scrollIntoView({block:'start',behavior:'smooth'});}
+ }
+ document.addEventListener('assessment-submission-blocked',event=>{if(event.detail?.reason==='documents')openDocumentIssues(event.detail.result);});
  let refreshQueued=false;
  for(const name of ['input','change'])document.addEventListener(name,event=>{if(!event.target.closest?.('#questionnaireStep,#documentStep')&&event.target.id!=='afDate')return;if(!event.target.closest?.('[data-document-review]'))lastCheck=null;if(!af.applying)afQueueRefresh();});
  document.addEventListener('assessment-draft-restored',()=>{lastCheck=null;refresh();try{const saved=sessionStorage.getItem('assessment-step:'+HostedAssessment.getContext().client.external.dealId);if(saved)show(saved,{focus:false});}catch{/* Keep the document step when storage is unavailable. */}});

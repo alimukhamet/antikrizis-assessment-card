@@ -257,7 +257,8 @@ function afDocumentAttention(item){
  const findings=r.findings||[];
  const powerReason=['POWER_DATES_UNVERIFIED','POWER_DATE_NOT_ACCEPTABLE','POWER_SCOPE_REVIEW_REQUIRED','REPRESENTATIVE_NOT_APPROVED','REPRESENTATIVE_IDENTITY_UNVERIFIED'].find(code=>findings.includes(code));
  if(powerReason)return {kind:'manual',message:HostedAssessment.error(powerReason)};
- const reason=['ENPF_PERIOD_NOT_ACCEPTABLE','ENPF_PERIOD_UNVERIFIED','SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED','GKB_TOO_OLD','GKB_DATE_NOT_ACCEPTABLE','FUTURE_DOCUMENT_DATE','STATEMENT_PERIOD_NOT_ACCEPTABLE','STATEMENT_RECONCILIATION_REQUIRED'].find(code=>findings.includes(code));
+ if(findings.includes('ENPF_PERIOD_UNVERIFIED'))return {kind:'manual',message:HostedAssessment.error('ENPF_PERIOD_UNVERIFIED')};
+ const reason=['ENPF_PERIOD_NOT_ACCEPTABLE','SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED','GKB_TOO_OLD','GKB_DATE_NOT_ACCEPTABLE','FUTURE_DOCUMENT_DATE','STATEMENT_PERIOD_NOT_ACCEPTABLE','STATEMENT_RECONCILIATION_REQUIRED'].find(code=>findings.includes(code));
  if(reason)return {kind:'error',message:HostedAssessment.error(reason)};
  if(!HostedAssessment.getContext()?.client.iin)return null; // The missing deal identity is shown once, with its next action.
  if(r.blocked)return {kind:'manual',message:item.type==='Доверенность'?'Сверьте владельца, срок и полномочия по оригиналу.':findings.includes('DOCUMENT_TYPE_UNVERIFIED')?'Не удалось определить тип. Откройте файл и укажите тип документа.':findings.includes('OCR_OR_PAGE_REVIEW_REQUIRED')?'Часть страниц не прочитана. Проверьте их по оригиналу.':'Сверьте владельца и срок по оригиналу.'};
