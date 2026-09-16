@@ -21,6 +21,17 @@ test('the full report contract code links a different printed number to the shor
  const r=await s.run();assert.equal(r.conflicts.length,1);assert.equal(r.conflicts[0].contractNumber,'CONTRACT1');assert.ok(r.issues.some(i=>i.code==='CREDIT_REPORT_CONFLICT'));
 });
 test('duplicate references do not trigger repeated cached extraction reads',async()=>{const s=fixture();s.add('doc','ГКБ — полный отчёт','gkb_full');s.payload.documents.push({...s.payload.documents[0]});const r=await s.run();assert.equal(s.reads(),1);assert.ok(r.issues.some(i=>i.code==='DUPLICATE_DOCUMENT_SELECTION'));});
+test('saved document reads run in bounded parallel groups and keep deterministic findings',async()=>{
+ let active=0,peak=0,reads=0;
+ const payload={documents:Array.from({length:8},(_,i)=>({documentId:String(i),type:'ГКБ — полный отчёт',person:'Клиент'})),pendingFiles:[],docContext:{social:'0',salary:'0'}};
+ const repository={document:async(c,id)=>({id,original_sha256:id}),cached:async()=>{
+  reads++;active++;peak=Math.max(peak,active);await new Promise(r=>setTimeout(r,5));active--;
+  return {extraction:{id:'parsed'},result:{read:{pages:[{needsOcr:false}]},extraction:{identity:{iin:'wrong-person'},kind:'gkb_full',findings:[]}}};
+ }};
+ const result=await checkDocumentPackage(repository,{id:'case',client_iin:'client'},payload,'2026-09-16');
+ assert.equal(reads,8);assert.equal(peak,4);
+ assert.deepEqual(Array.from(result.issues.filter(i=>i.documentId),i=>i.documentId),['0','1','2','3','4','5','6','7']);
+});
 test('recognized non-GKB is not claimed fully validated while its rules are unfinished',async()=>{const s=fixture();s.add('id','Удостоверение личности','identity');const r=await s.run();assert.ok(r.issues.some(i=>i.code==='DOCUMENT_RULES_PENDING'));assert.equal(r.structurallyChecked.length,0);assert.equal(r.authenticity,'not_verified');});
 test('recognized ENPF asks for period inspection without a false document-type warning',async()=>{const s=fixture();s.add('enpf','Справка ЕНПФ','enpf');const r=await s.run();assert.ok(r.issues.some(i=>i.code==='ENPF_PERIOD_UNVERIFIED'));assert.equal(r.issues.some(i=>i.code==='DOCUMENT_TYPE_UNVERIFIED'),false);});
 test('short report review tells staff when contract numbers are shortened',async()=>{

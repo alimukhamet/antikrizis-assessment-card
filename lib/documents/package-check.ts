@@ -23,17 +23,25 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
  const matchedShortReports:Array<{documentId:string;fullDocumentId:string;matches:CreditMatch[]}>=[];
  const seen=new Set<string>(),available=new Set<string>();
  const credits=new Map<string,Array<{documentId:string;creditor:string;issuedAt:string|null;values:Record<string,string>;pages:Record<string,number>}>>();
- for(const selected of payload.documents.filter(document=>scope==='handoff'?document.type==='Доверенность':!['Доверенность','Подписанный договор'].includes(document.type))){
+ const selectedDocuments=payload.documents.filter(document=>scope==='handoff'?document.type==='Доверенность':!['Доверенность','Подписанный договор'].includes(document.type));
+ // Bounded parallel reads of immutable saved results; no cross-request identity cache.
+ const loaded=new Map<string,{document:Awaited<ReturnType<EvidenceRepository['document']>>;cached:Awaited<ReturnType<EvidenceRepository['cached']>>;review:Awaited<ReturnType<typeof currentDocumentReview>>}>();
+ const ids=[...new Set(selectedDocuments.map(d=>d.documentId))];let nextDocument=0;
+ await Promise.all(Array.from({length:Math.min(4,ids.length)},async()=>{while(nextDocument<ids.length){
+  const id=ids[nextDocument++],selected=selectedDocuments.find(d=>d.documentId===id)!,document=await repository.document(record.id,id);
+  const cached=document?await repository.cached(record.id,document.original_sha256,analysisVersion):null;
+  const review=cached&&selected.person==='Клиент'&&MANUAL_DOCUMENT_TYPES[selected.type]?await currentDocumentReview(repository,record,id,cached.extraction.id,cached.result as Analysis,selected.type,day):null;
+  loaded.set(id,{document,cached,review});
+ }}));
+ for(const selected of selectedDocuments){
   const issue=(code:string,message:string)=>issues.push({code,message,documentId:selected.documentId,type:selected.type});
   if(seen.has(selected.documentId)){issue('DUPLICATE_DOCUMENT_SELECTION','Один файл выбран несколько раз.');continue;}seen.add(selected.documentId);
-  const document=await repository.document(record.id,selected.documentId);
+  const {document,cached,review}=loaded.get(selected.documentId)!;
   if(!document){issue('DOCUMENT_NOT_IN_CASE','Файл не принадлежит этой оценке.');continue;}
-  const cached=await repository.cached(record.id,document.original_sha256,analysisVersion);
   if(!cached){issue('DOCUMENT_PROCESSING_REQUIRED','Запустите обработку сохранённого файла.');continue;}
   const {extraction:parsed,read}=cached.result as Analysis;
   if(selected.person!=='Клиент'){issue('FAMILY_IDENTITY_VALIDATION_REQUIRED','Для документа родственника ещё нужна проверка владельца и родства.');continue;}
   if(MANUAL_DOCUMENT_TYPES[selected.type]){
-   const review=await currentDocumentReview(repository,record,document.id,cached.extraction.id,cached.result as Analysis,selected.type,day);
    if(review){available.add(selected.type);manuallyReviewed.push({documentId:document.id,reviewId:review.id,type:selected.type,actorId:review.actorId,reviewedAt:review.reviewedAt});continue;}
   }
   if(!record.client_iin||parsed.identity.iin!==record.client_iin){issue('DOCUMENT_CLIENT_UNVERIFIED','Владелец документа не подтверждён как клиент этой сделки.');continue;}

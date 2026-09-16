@@ -37,7 +37,7 @@ window.ClientWorkspace=(()=>{
   const status=el('p','Загружаем черновики…','hint'),list=el('div',null,'client-directory-list');status.setAttribute('role','status');search.maxLength=80;
   const archiveLabel=el('label',null,'client-archive-toggle'),archive=el('input');archive.type='checkbox';archiveLabel.append(archive,document.createTextNode(' Показать клиентов с договором'));archive.onchange=render;dialog.append(heading,exit,search,archiveLabel,status,list);dialog.addEventListener('close',()=>{dialog.remove();if(directory===dialog)directory=null;},{once:true});document.body.append(dialog);dialog.showModal();
   archive.checked=new URLSearchParams(location.search).get('mode')==='handoff';
-  let data={drafts:[],recent:[]},timer,request=0;
+  let data={drafts:[],recent:[]},timer,request=0,controller;
   function render(){
     list.replaceChildren();const query=search.value.trim().toLocaleLowerCase('ru-RU'),seen=new Set(),hiddenContracts=new Set();let total=0;
     for(const [title,items,draft]of [['Сохранённые черновики',data.drafts,true],['Клиенты в Bitrix',query.length>=2?data.recent:[],false]]){
@@ -54,15 +54,15 @@ window.ClientWorkspace=(()=>{
     if(/^[1-9]\d*$/.test(query)&&!seen.has(query)&&!hiddenContracts.has(query))list.append(button('Открыть сделку № '+query,()=>switchTo(query)));
   }
   async function load(query){
-   const id=++request;status.textContent=query?'Ищем клиента…':'Загружаем черновики…';
+   controller?.abort();controller=new AbortController();const id=++request;status.textContent=query?'Ищем клиента…':'Загружаем черновики…';
    try{
-    const result=await json('/api/assessment/clients'+(query?'?q='+encodeURIComponent(query):''));
-    if(directory!==dialog||id!==request)return;data=result;render();
+    const result=await json('/api/assessment/clients'+(query?'?q='+encodeURIComponent(query):''),{signal:controller.signal});
+    if(directory!==dialog||id!==request)return;data={...data,...result};render();
     status.textContent=[result.draftsUnavailable?'Не удалось загрузить черновики.':'',result.recentUnavailable?'Не удалось найти клиента в Bitrix.':'',query?'':'Для другого клиента введите имя или номер сделки.'].filter(Boolean).join(' ');
    }catch{if(directory===dialog&&id===request){status.textContent='Не удалось загрузить список. Введите номер сделки, чтобы открыть клиента.';render();}}
   }
-  search.oninput=()=>{clearTimeout(timer);request++;data.recent=[];render();const query=search.value.trim();if(query.length>=2)timer=setTimeout(()=>load(query),250);else status.textContent='Для другого клиента введите имя или номер сделки.';};
-  dialog.addEventListener('close',()=>{clearTimeout(timer);request++;},{once:true});
+  search.oninput=()=>{clearTimeout(timer);controller?.abort();request++;data.recent=[];render();const query=search.value.trim();if(query.length>=2){status.textContent='Ищем клиента…';timer=setTimeout(()=>load(query),250);}else status.textContent='Для другого клиента введите имя или номер сделки.';};
+  dialog.addEventListener('close',()=>{clearTimeout(timer);controller?.abort();request++;},{once:true});
   await load('');
  }
  async function importDocuments(){

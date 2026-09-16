@@ -28,9 +28,13 @@
   const status=mode==='documents'?documentStatus:document.getElementById('checkStatus');
   if(!HostedAssessment.ready()){status.textContent='Сначала откройте сделку.';return;}
   const dealId=HostedAssessment.getContext().client.external.dealId;
-  const payload=ServerDrafts.capture(),bindings=ServerDrafts.reviewBindings(),snapshot=JSON.stringify({payload,bindings});
+  const initialPayload=JSON.stringify(ServerDrafts.capture());
   upload.invalidate();submission.invalidate();button.disabled=true;documentButton.disabled=true;preview.hidden=true;contract.hidden=true;contractValues=null;status.textContent=mode==='documents'?'Проверяю документы…':'Проверяю ответы…';
   try{
+   // A single explicit review replaces dozens of separate field confirmations.
+   if(mode==='answers'&&!await afConfirmPending()){status.textContent='Подтверждение отменено. Ответы не отправлены на итоговую проверку.';return;}
+   if(!HostedAssessment.ready()||HostedAssessment.getContext().client.external.dealId!==dealId||JSON.stringify(ServerDrafts.capture())!==initialPayload){status.textContent='Ответы или сделка изменились. Запустите проверку ещё раз.';return;}
+   const payload=ServerDrafts.capture(),bindings=ServerDrafts.reviewBindings(),snapshot=JSON.stringify({payload,bindings});
    const result=await HostedAssessment.requestJson(`/api/assessment/${encodeURIComponent(dealId)}/check`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({payload,bindings})},{message:()=>mode==='documents'?'Не удалось проверить документы. Нажмите «Проверить и продолжить» ещё раз.':'Не удалось проверить ответы. Сохраните черновик и повторите проверку.'});
    if(!HostedAssessment.ready()||HostedAssessment.getContext().client.external.dealId!==dealId||JSON.stringify({payload:ServerDrafts.capture(),bindings:ServerDrafts.reviewBindings()})!==snapshot){status.textContent='Ответы или сделка изменились. Запустите проверку ещё раз.';return;}
    documents.replaceChildren();

@@ -50,6 +50,18 @@ test('production portal starts with no client, no random deal, and no writes',as
  assert.equal(s.calls.some(c=>c.method==='POST'),false);
 });
 const storedDraft=(answers=[],groups=[],documents=[{documentId:'gkb',type:'ГКБ — полный отчёт',person:'Клиент',originalName:'synthetic-gkb.pdf'}])=>({revision:3,identityRevision:1,payload:{schemaVersion:1,answers,groups,docContext:{social:'0',salary:'0',salaryBank:'none'},pendingFiles:[],documents}});
+test('client search does not recalculate or mutate the questionnaire on each keystroke',async t=>{
+ const s=await setup(t);await s.load();await s.w.ClientWorkspace.open();
+ const before=JSON.stringify(s.w.ServerDrafts.capture());let refreshes=0,styles=0;
+ const refresh=s.w.AssessmentWorkflow.refresh,style=s.w.getComputedStyle;
+ s.w.AssessmentWorkflow.refresh=(...args)=>{refreshes++;return refresh(...args);};
+ s.w.getComputedStyle=(...args)=>{styles++;return style(...args);};
+ const search=s.d.querySelector('input[aria-label="Найти клиента"]');
+ for(const character of 'Darhan'){search.value+=character;search.dispatchEvent(new s.w.Event('input',{bubbles:true}));await tick();}
+ assert.equal(refreshes,0);assert.equal(styles,0);
+ assert.equal(JSON.stringify(s.w.ServerDrafts.capture()),before);
+ assert.equal(s.calls.some(c=>c.method==='POST'),false);
+});
 test('transfer year survives digit-by-digit typing, UI refreshes, new rows and draft restoration',async t=>{
  const s=await setup(t);await s.load();s.d.getElementById('c8037').value='1';s.d.getElementById('c8037').dispatchEvent(new s.w.Event('change',{bubbles:true}));
  const input=s.d.querySelector('#transfers > .repeat-rows input[type="month"]'),editor=input.nextElementSibling.shadowRoot,month=editor.querySelector('select'),year=editor.querySelector('input');
@@ -96,7 +108,7 @@ test('document IIN is confirmed once, enables verified flow and preserves manual
  s.run('selectedFiles.push({id:1,file:{name:"synthetic.pdf"},storedDocumentId:"gkb",type:"ГКБ — полный отчёт",person:"Клиент"})');
  s.run('af.results.set(1,HostedAssessment.adapt('+JSON.stringify(p)+'));afClientChoices()');
  let confirmations=0;s.w.confirm=()=>{confirmations++;return false;};await s.run('afApply()');assert.equal(s.d.getElementById('iin').value,'');assert.equal(confirmations,1);
- s.w.confirm=()=>{confirmations++;return true;};await s.run('afApply()');assert.equal(confirmations,2);assert.equal(s.d.getElementById('iin').value,'000000000010');assert.equal(s.d.getElementById('fio').value,'OLD DOCUMENT NAME');assert.equal(s.d.querySelector('[data-for="iin"]').textContent.includes('Верно'),true);assert.equal(s.d.getElementById('uxIdentityWarning').hidden,true);
+ s.w.confirm=()=>{confirmations++;return true;};await s.run('afApply()');assert.equal(confirmations,2);assert.equal(s.d.getElementById('iin').value,'000000000010');assert.equal(s.d.getElementById('fio').value,'OLD DOCUMENT NAME');assert.equal(s.d.querySelector('[data-for="iin"]').textContent.includes('Верно'),false);assert.equal(s.d.getElementById('uxIdentityWarning').hidden,true);
  const rows=()=>s.d.querySelectorAll('#creditors > .repeat-rows > *').length;assert.equal(rows(),1);s.run('af.rowKeys.clear();afApply()');assert.equal(rows(),1,'Legacy/manual row with the same lender and contract is reused');assert.equal(confirmations,2);
  s.d.getElementById('fio').value='MANUAL NAME';s.run('afApply()');assert.equal(s.d.getElementById('fio').value,'MANUAL NAME');const take=[...s.d.querySelectorAll('#afConflicts button')].find(b=>b.textContent==='Взять из документа');assert.ok(take);let savesScheduled=0;const changed=s.w.ServerDrafts.changed;s.w.ServerDrafts.changed=()=>{savesScheduled++;changed();};take.click();assert.equal(s.d.getElementById('fio').value,'OLD DOCUMENT NAME');assert.equal(savesScheduled,1,'Taking a report value must schedule autosave');
  assert.equal(s.calls.some(c=>c.path.endsWith('/reviews')),false);assert.equal(s.w.HostedAssessment.getContext().client.iin,'000000000010');assert.equal(s.calls.filter(c=>c.path.endsWith('/identity')).length,1);

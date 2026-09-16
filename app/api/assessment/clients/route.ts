@@ -5,6 +5,11 @@ export async function GET(request:Request){
  const denied=await requireStaffRequest(request);if(denied)return denied;
  const query=new URL(request.url).searchParams.get('q')?.trim()||'';
  if(query.length>80)return Response.json({error:'INVALID_SEARCH'},{status:400});
+ // Searching must not wait for the unrelated saved-draft contract-status lookup.
+ if(query){
+  try{return Response.json({recent:await searchClients(process.env.BITRIX_WEBHOOK??'',query),recentUnavailable:false},{headers:{'cache-control':'no-store'}});}
+  catch{return Response.json({recent:[],recentUnavailable:true},{headers:{'cache-control':'no-store'}});}
+ }
  const [drafts,recent]=await Promise.allSettled([draftRepository().then(repo=>repo.recent()),searchClients(process.env.BITRIX_WEBHOOK??'',query)]);
  const saved=drafts.status==='fulfilled'?drafts.value:[];
  let states=new Map<string,boolean>();try{states=await draftContractStates(process.env.BITRIX_WEBHOOK??'',saved.map(item=>item.dealId));}catch{/* Keep saved work accessible when CRM status is unavailable. */}

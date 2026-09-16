@@ -1,16 +1,12 @@
 import { validIin } from '../documents/extract-native';
 export type ClientContext = { internalClientId: string | null; external: { system: 'bitrix'; dealId: string }; title: string; iin: string | null; retrievedAt: string };
-const pendingContexts=new Map<string,Promise<ClientContext>>();
 /** All Bitrix field IDs are confined to this adapter. */
 export async function readClientContext(dealId: string, webhook: string, send: typeof fetch = fetch): Promise<ClientContext> {
   if (!/^[1-9]\d*$/.test(dealId)) throw new Error('INVALID_DEAL_ID');
   if (!webhook) throw new Error('BITRIX_NOT_CONFIGURED');
-  // Share only requests that are currently in flight, never a stale identity cache.
-  // Fresh reads after completion (including final submissions) still reach Bitrix.
-  if(send!==fetch)return fetchClientContext(dealId,webhook,send);
-  const key=webhook+'|'+dealId,existing=pendingContexts.get(key);if(existing)return existing;
-  const task=fetchClientContext(dealId,webhook,send);pendingContexts.set(key,task);
-  try{return await task;}finally{if(pendingContexts.get(key)===task)pendingContexts.delete(key);}
+  // Each Worker invocation owns its I/O. A canceled invocation's pending
+  // promise must never be reused by later requests for the same client.
+  return fetchClientContext(dealId,webhook,send);
 }
 async function fetchClientContext(dealId:string,webhook:string,send:typeof fetch):Promise<ClientContext>{
   // Order reads by when they began, not by when a slow response arrived.

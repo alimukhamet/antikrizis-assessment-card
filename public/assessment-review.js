@@ -24,41 +24,52 @@ async function afSource(src){
  preview.textContent='Открываем PDF…';
  try{const viewer=await import('/pdf-preview.mjs');if(!dialog.open||preview.dataset.request!==token)return;await viewer.mount(preview,{url:sourceUrl,page:src.page||1,onPage:update});}catch{preview.textContent='Не удалось открыть просмотр. Обновите страницу и повторите.';}
 }
-function afLogicalVisible(e){
+function afLogicalVisible(e,styles){
  if(!e||!e.isConnected||e.disabled||e.closest('.hidden,[hidden],[data-legacy-answer]'))return false;
  if(!e.closest('[data-assessment-step]'))return e.getClientRects().length>0;
  // A workflow step only hides presentation. Conditional fields still follow their business rules.
  for(let node=e;node&&node!==document.body;node=node.parentElement){
-  if(!node.hasAttribute('data-assessment-step')&&getComputedStyle(node).display==='none')return false;
+  if(!node.hasAttribute('data-assessment-step')){let display=styles?.get(node);if(display===undefined){display=getComputedStyle(node).display;styles?.set(node,display);}if(display==='none')return false;}
  }
  return true;
 }
-function afControls(){return [...$af('questionnaireStep').querySelectorAll('input,select,textarea')].filter(e=>!e.closest('.af-source')&&afLogicalVisible(e));}
+function afControls(){const styles=new WeakMap();return [...$af('questionnaireStep').querySelectorAll('input,select,textarea')].filter(e=>!e.closest('.af-source')&&afLogicalVisible(e,styles));}
 function afLabel(e){return e.closest('.field')?.querySelector('label.lbl')?.textContent.trim()||e.getAttribute('aria-label')||e.id||'Ответ';}
 function afMissing(){return afControls().filter(e=>e.dataset.sourceReplaced||!e.hasAttribute('data-optional')&&!['checkbox','file','button'].includes(e.type)&&(!e.value.trim()||!e.checkValidity()));}
 function afMissingGroups(){return [...$af('questionnaireStep').querySelectorAll('.holdings,.chips')].filter(g=>afLogicalVisible(g)&&!g.querySelector('input:checked'));}
 function afPending(){return [...af.sources].filter(([id,s])=>s.pending&&afLogicalVisible($af(id)));}
 function afRefresh(){
- const missing=afMissing(),pending=afPending();$af('afFilled').textContent=[...af.sources].filter(([id])=>$af(id)).length;$af('afReview').textContent=pending.length;$af('afMissing').textContent=missing.length+afMissingGroups().length;
+ const missing=afMissing(),pending=afPending(),groups=afMissingGroups();$af('afFilled').textContent=[...af.sources].filter(([id])=>$af(id)).length;$af('afReview').textContent=pending.length;$af('afMissing').textContent=missing.length+groups.length;
  const todo=$af('afTodo');todo.replaceChildren();missing.forEach(e=>{const b=afEl('button',afLabel(e));b.type='button';b.onclick=()=>afFocus(e);todo.append(b);});
- for(const g of afMissingGroups()){const b=afEl('button',g.getAttribute('aria-label')||g.closest('.field')?.querySelector('label.lbl')?.textContent||g.querySelector('label.lbl')?.textContent||'Выберите социальный статус');b.type='button';b.onclick=()=>afFocus(g.querySelector('input'));todo.append(b);}
- $af('afNext').disabled=!(missing.length+afMissingGroups().length);$af('afNextReview').disabled=!pending.length;
- window.AssessmentWorkflow?.refresh();
+ for(const g of groups){const b=afEl('button',g.getAttribute('aria-label')||g.closest('.field')?.querySelector('label.lbl')?.textContent||g.querySelector('label.lbl')?.textContent||'Выберите социальный статус');b.type='button';b.onclick=()=>afFocus(g.querySelector('input'));todo.append(b);}
+ $af('afNext').disabled=!(missing.length+groups.length);$af('afNextReview').disabled=!pending.length;
+ window.AssessmentWorkflow?.refresh({missing,pending,groups});
 }
 function afFocus(e){if(!e)return;if(window.AssessmentWorkflow?.reveal(e)===false)return;document.querySelectorAll('.af-field-focus').forEach(x=>x.classList.remove('af-field-focus'));const field=e.closest('.field')||e;field.classList.add('af-field-focus');field.scrollIntoView({behavior:'smooth',block:'center'});e.focus({preventScroll:true});}
 $af('afNext').onclick=()=>{const list=afMissing();if(list.length)afFocus(list[0]);else if(afMissingGroups().length)afFocus(afMissingGroups()[0].querySelector('input'));};$af('afNextReview').onclick=()=>{const list=afPending();if(list.length)afFocus($af(list[0][0]));};
 function afBadge(e,src){
  const field=e.closest('.field')||e.parentElement;field.querySelectorAll(':scope > .af-source').forEach(x=>{if(x.dataset.for===e.id)x.remove();});
  const box=afEl('div',undefined,'af-source'+(src.pending?' pending':''));box.dataset.for=e.id;
- const hint=(src.stale?'Перепроверить':src.pending?'Проверить':src.edited?'Исправлено':'Подтверждено')+' · стр. '+(src.page||1);
+ const hint=(src.stale?'Перепроверить':src.pending?'Из документа':src.edited?'Исправлено':'Подтверждено')+' · стр. '+(src.page||1);
  const label=afEl('span',hint);label.title=(selectedFiles.find(x=>x.id===src.fileId)?.file.name||'Документ')+(src.date?' · '+src.date:'');box.append(label);
  const open=afEl('button','Источник');open.type='button';open.onclick=()=>afSource(src);box.append(open);
  if(src.pending&&src.edited){const label=afEl('label','Причина исправления');const reason=afEl('textarea');reason.id=e.id+'-review-reason';label.htmlFor=reason.id;reason.setAttribute('data-optional','');reason.value=src.correctionReason||'';reason.addEventListener('input',()=>src.correctionReason=reason.value);box.append(label,reason);}
  if(src.stale&&!selectedFiles.some(item=>item.id===src.fileId)){
   label.textContent='Источник заменён. Сверьте ответ с новым документом.';
   const clear=afEl('button','Очистить ответ');clear.type='button';clear.onclick=()=>{if(e.type==='checkbox')e.checked=false;else e.value='';af.sources.delete(e.id);delete e.dataset.sourceReplaced;e.setCustomValidity('');box.remove();e.dispatchEvent(new Event('change',{bubbles:true}));afRefresh();};box.append(clear);
- }else if(src.pending&&src.server?.draftOnly){box.append(afEl("span","Из ГКБ · подтвердите клиента для сохранения ИИН"));}else if(src.pending){const yes=afEl('button',src.edited?'Сохранить исправление':'Верно');yes.type='button';yes.onclick=async()=>{yes.disabled=true;try{await HostedAssessment.review(e,src);delete e.dataset.sourceReplaced;e.setCustomValidity('');field.querySelectorAll('[data-replacement-notice]').forEach(node=>node.remove());src.pending=false;src.stale=false;afBadge(e,src);afRefresh();}catch(error){afStatus(error.message,true);yes.disabled=false;}};box.append(yes);}
+ }else if(src.pending&&src.server?.draftOnly){box.append(afEl("span","Из ГКБ · подтвердите клиента для сохранения ИИН"));}else if(src.pending&&src.edited){const yes=afEl('button','Сохранить исправление');yes.type='button';yes.onclick=async()=>{yes.disabled=true;try{await HostedAssessment.review(e,src);delete e.dataset.sourceReplaced;e.setCustomValidity('');field.querySelectorAll('[data-replacement-notice]').forEach(node=>node.remove());src.pending=false;src.stale=false;afBadge(e,src);afRefresh();}catch(error){afStatus(error.message,true);yes.disabled=false;}};box.append(yes);}
  field.append(box);
+}
+async function afConfirmPending(){
+ const pending=afPending();if(!pending.length)return true;
+ if(af.conflicts.length)throw Error('Сначала разберите расхождения с документами.');
+ if(pending.some(([,src])=>src.stale||src.server?.draftOnly))throw Error('Есть заменённые или неподтверждённые источники. Проверьте документы клиента.');
+ const entries=pending.map(([id,src])=>[$af(id),src]);
+ const correction=entries.find(([input,src])=>input.value!==String(src.value)&&!src.correctionReason?.trim());
+ if(correction){afFocus(correction[0]);throw Error('Укажите причину исправления ответа из документа.');}
+ const client=HostedAssessment.getContext().client;
+ if(!window.confirm('Подтверждаете заполненные ответы из документов: '+entries.length+'?\n\n'+client.title+' · сделка № '+client.external.dealId+'\n\nНажимая ОК, вы подтверждаете, что сверили эти ответы. Источники и причины исправлений сохранятся.'))return false;
+ try{await HostedAssessment.reviewMany(entries);return true;}finally{afRefresh();}
 }
 function afDispatchChange(e){const previous=af.applying;af.applying=true;try{e.dispatchEvent(new Event('change',{bubbles:true}));}finally{af.applying=previous;}}
 function afPut(e,value,src){
@@ -289,8 +300,8 @@ $af('afAnalyze').onclick=afAnalyze;
 document.addEventListener('assessment-analysis-complete',afClientChoices);
 let afRefreshQueued=false;
 function afQueueRefresh(){if(afRefreshQueued)return;afRefreshQueued=true;queueMicrotask(()=>{afRefreshQueued=false;afRefresh();});}
-document.addEventListener('input',e=>{if(af.applying)return;if(af.sources.has(e.target.id)){const src=af.sources.get(e.target.id);src.pending=true;src.edited=true;src.stale=false;afBadge(e.target,src);}afQueueRefresh();});
-document.addEventListener('change',e=>{if(af.applying)return;if(af.sources.has(e.target.id)){const src=af.sources.get(e.target.id);src.pending=true;src.edited=true;src.stale=false;afBadge(e.target,src);}afQueueRefresh();});
+document.addEventListener('input',e=>{if(af.applying||!e.target.closest?.('#questionnaireStep,#documentStep')&&e.target.id!=='afDate')return;if(af.sources.has(e.target.id)){const src=af.sources.get(e.target.id);const needsBadge=!src.pending||!src.edited;src.pending=true;src.edited=true;src.stale=false;if(needsBadge)afBadge(e.target,src);}afQueueRefresh();});
+document.addEventListener('change',e=>{if(af.applying||!e.target.closest?.('#questionnaireStep,#documentStep')&&e.target.id!=='afDate')return;if(af.sources.has(e.target.id)){const src=af.sources.get(e.target.id);const needsBadge=!src.pending||!src.edited;src.pending=true;src.edited=true;src.stale=false;if(needsBadge)afBadge(e.target,src);}afQueueRefresh();});
 document.addEventListener('click',e=>{if(e.target.closest('.add-row,.remove-row'))queueMicrotask(afRefresh);});
 function afDownload(name,content,type){const url=URL.createObjectURL(new Blob([content],{type}));const a=afEl('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $af('afExport').onclick=()=>{
@@ -300,7 +311,7 @@ $af('afExport').onclick=()=>{
  afDownload('assessment-'+$af('afDate').value+'.txt',lines.join('\n'),'text/plain;charset=utf-8');
 };
 // API controls and file selectors must never become questionnaire-required fields.
-visibilityRules=function(){document.querySelectorAll('input:not([type="checkbox"]),select,textarea').forEach(e=>{e.required=!e.hasAttribute('data-optional')&&!e.closest('#afWorkspace,#afSourceDialog,#selectedDocuments')&&e.type!=='file'&&afLogicalVisible(e);});};
+visibilityRules=function(){const styles=new WeakMap(),states=[...document.querySelectorAll('input:not([type="checkbox"]),select,textarea')].map(e=>[e,!e.hasAttribute('data-optional')&&!e.closest('#afWorkspace,#afSourceDialog,#selectedDocuments,.af-source')&&e.type!=='file'&&afLogicalVisible(e,styles)]);for(const [e,required]of states)if(e.required!==required)e.required=required;};
 $af('afIdentity').style.display='none';
 $af('afFiles').addEventListener('toggle',()=>visibilityRules());
 setTimeout(afRefresh,50);

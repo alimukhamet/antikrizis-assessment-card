@@ -6,9 +6,9 @@ window.HostedAssessment=(()=>{
  const el=id=>document.getElementById(id);
  // Bound the entire response, including its body. A stalled connection must not lock the card forever.
  async function requestJson(url,options={},settings={}){
-  const controller=new AbortController();let timer;
+  const controller=new AbortController();let timer;const cancel=()=>controller.abort();if(options.signal?.aborted)cancel();else options.signal?.addEventListener('abort',cancel,{once:true});
   try{return await Promise.race([(async()=>{const response=await fetch(url,{...options,signal:controller.signal}),body=await response.json();if(!response.ok)throw Object.assign(Error((settings.message||error)(body.error)),{code:body.error});return body;})(),new Promise((_,reject)=>{timer=setTimeout(()=>{reject(Object.assign(Error('Сервер не ответил вовремя. Повторите действие. Сохранённые данные не удалены.'),{code:'REQUEST_TIMEOUT'}));controller.abort();},settings.timeoutMs||30000);})]);}
-  finally{clearTimeout(timer);}
+  finally{clearTimeout(timer);options.signal?.removeEventListener('abort',cancel);}
  }
  const json=requestJson;
  async function load(){
@@ -60,14 +60,35 @@ window.HostedAssessment=(()=>{
   if(payload.powerValidation?.accepted)notes.push('Рабочий шаблон: поверенный, даты и текст полномочий совпали.');else if(payload.powerValidation?.representativeMatched)notes.push('Реквизиты поверенного совпали. Уточните отмеченные данные.');notes.push('Подлинность документа не проверена.');if(payload.cacheHit)notes.push('Использован ранее сохранённый результат; даты и личность проверены заново.');
   return {engineVersion:3,draftOnly,creditEvidence,kind:kinds[data.kind]||'other',type:types[data.kind]||'Другой документ',identity:{iin:data.identity.iin,fio:data.identity.name},fields,loans,properties:[],gambling:data.facts.find(f=>f.key==='statement.gambling'),statement:data.bankStatement?{...data.bankStatement,period:data.bankStatement.from+' — '+data.bankStatement.to}:null,pages:read.totalPages,pageText:read.pages.map(p=>p.text),date:data.issuedAt,hash:read.pdfSha256,ocrPages:[],coverage:data.coverage||null,documentReview:payload.documentReview||null,reviewContext:payload.reviewContext||null,findings,notes,blocked:!payload.eligibleForAutofill,server,sourcePreview:'/api/assessment/'+server.dealId+'/documents/'+server.documentId+'?view=pdf'};
  }
- async function review(input,src){
+ function reviewPayload(input,src){
   if(!ready()||!src.server||!src.serverFactKey||src.server.dealId!==context.client.external.dealId)throw Error('У ответа нет действующего источника для этой сделки. Повторите распознавание.');
   const corrected=String(input.value)!==String(src.value);let reason='';
   if(corrected){reason=String(src.correctionReason||'');if(!reason.trim())throw Error('Для исправления нужно пояснение.');src.correctionReason=reason;}
   const payload={...src.server,factKey:src.serverFactKey,value:input.value,disposition:corrected?'corrected':'confirmed',reason};delete payload.dealId;
   const signature=JSON.stringify(payload);if(src.reviewRequest?.signature!==signature)src.reviewRequest={signature,requestId:crypto.randomUUID()};payload.requestId=src.reviewRequest.requestId;
+  return payload;
+ }
+ async function review(input,src){
+  const payload=reviewPayload(input,src);
   const response=await json(base()+'/reviews',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  if(!response.ok||!response.review?.id)throw Error('Сохранение не подтверждено. Повторите действие.');src.reviewId=response.review.id;src.edited=corrected;
+  if(!response.ok||!response.review?.id)throw Error('Сохранение не подтверждено. Повторите действие.');src.reviewId=response.review.id;src.edited=payload.disposition==='corrected';
+ }
+ async function reviewMany(entries){
+  const before=context,prepared=entries.map(([input,src])=>({input,src,payload:reviewPayload(input,src),value:input.value}));let failure=null;
+  for(let offset=0;offset<prepared.length;offset+=100){
+   const batch=prepared.slice(offset,offset+100);
+   const response=await json(base()+'/reviews/batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reviews:batch.map(item=>item.payload)})});
+   if(context!==before)throw Error('Клиент изменился. Откройте карточку заново.');
+   for(const item of batch){
+    const saved=response.outcomes?.find(row=>row.requestId===item.payload.requestId);
+    if(!saved?.review?.id){failure ||= error(saved?.error);continue;}
+    // A response for an older value must never approve a newer edit or replacement source.
+    if(!item.input.isConnected||af.sources.get(item.input.id)!==item.src||item.input.value!==item.value||item.src.stale||JSON.stringify(reviewPayload(item.input,item.src))!==JSON.stringify(item.payload)){failure ||= 'Ответы изменились во время проверки. Проверьте текущие значения.';continue;}
+    item.src.reviewId=saved.review.id;item.src.edited=item.payload.disposition==='corrected';item.src.pending=false;
+    afBadge(item.input,item.src);
+   }
+  }
+  if(failure)throw Error(failure);
  }
  function acceptableFile(item){
   if(item.type==='ЭЦП файл')return Boolean(window.CredentialUpload?.verified());
@@ -83,5 +104,5 @@ window.HostedAssessment=(()=>{
   const query=new URLSearchParams(location.search);const id=query.get('dealId');if(id&&/^[1-9]\d*$/.test(id)){el('hostDealId').value=id;if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{if(!context)load();},{once:true});else load();}
   const button=document.createElement('button');button.type='button';button.className='btn btn-ghost';button.textContent='Скачать историю и доказательства';button.onclick=()=>{if(!ready()){afStatus('Сначала откройте сделку.',true);return;}location.assign(base()+'/export');};document.querySelector('.draft-toolbar').append(button);
  }
- return {mount,ready,adapt,review,error,requestJson,analyzeFile,confirmIdentity,uploadPath:()=>base()+'/documents',getContext:()=>context};
+ return {mount,ready,adapt,review,reviewMany,error,requestJson,analyzeFile,confirmIdentity,uploadPath:()=>base()+'/documents',getContext:()=>context};
 })();

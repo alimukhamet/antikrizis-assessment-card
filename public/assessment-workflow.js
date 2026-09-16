@@ -112,7 +112,7 @@ window.AssessmentWorkflow=(()=>{
  contractCard.before(contractIntro);
  const finalActions=step(root.querySelector('.preview-check'),'contract');finalActions.classList.add('wf-final-actions');
  $('checkQuestions').textContent='Проверить';$('checkQuestions').className='btn btn-ghost';
- const finalHelp=make('p','Карточка и документы сохранятся в Bitrix. Договор скачается.','hint');$('checkQuestions').before(finalHelp);
+ const finalHelp=make('p','Нажмите «Проверить»: ответы из документов подтверждаются один раз, без кнопки у каждого поля. Карточка и документы сохранятся в Bitrix. Договор скачается.','hint');$('checkQuestions').before(finalHelp);
  const reviewLink=action('Вернуться к документам',()=>show('documents'));reviewLink.hidden=true;reviewLink.id='workflowDocumentIssues';finalActions.append(reviewLink);
 
  const floating=make('nav',null,'wf-bottom-nav');floating.setAttribute('aria-label','Переход между этапами');
@@ -271,7 +271,7 @@ window.AssessmentWorkflow=(()=>{
   if(active==='documents')nextStep.textContent=!HostedAssessment.ready()?'Выберите клиента':checkingDocuments?'Проверяем изменения…':af.busy?'Читаем документы…':waitingForContext?'Ответить на вопросы':state.ready?'Проверить и продолжить →':collectionAction(state.rows.find(row=>row.state!=='present'));
   if(active!=='documents'&&!state.ready)show('documents',{focus:false,remember:false});
  }
- function refresh(){
+ function refresh(snapshot){
   const legacy=$('legacyLoanParticipants');legacy.hidden=!$('guarantors').value&&!legacy.querySelector('[data-legacy-unknown]').checked;legacy.querySelector('[data-legacy-unknown]').disabled=true;
   compactLoans();
   for(const hint of root.querySelectorAll('.field > .hint')){
@@ -281,7 +281,7 @@ window.AssessmentWorkflow=(()=>{
    if(!['count-clientjobs','count-partnerjobs','clientCarCount','partnerCarCount','proofDetails','grafType'].includes(fieldId))continue;
    const help=details('?','wf-help');help.querySelector('summary').setAttribute('aria-label','Подсказка: '+(hint.closest('.field').querySelector('label.lbl')?.textContent.trim()||'Поле'));hint.before(help);help.append(hint);
   }
-  const emptyAnswers=afMissing(),emptyGroups=afMissingGroups();
+  const emptyAnswers=snapshot?.missing||afMissing(),emptyGroups=snapshot?.groups||afMissingGroups();
   for(const {card,fold,title}of answerSections){
    const count=emptyAnswers.filter(node=>card.contains(node)).length+emptyGroups.filter(node=>card.contains(node)).length;
    const summary=fold.querySelector('summary'),label=make('span',title),remaining=make('span',count?String(count):'','wf-section-count');remaining.hidden=!count;remaining.title='Осталось заполнить';remaining.setAttribute('aria-label','Осталось заполнить: '+count);
@@ -294,7 +294,7 @@ window.AssessmentWorkflow=(()=>{
   packageList.querySelector('summary').textContent=`Нужные документы · ${packageState.provided} из ${packageState.rows.length}`;
   headings[0].textContent='Файлы'+(selectedFiles.length?' · '+selectedFiles.length:'');
   const missing=emptyAnswers.filter(node=>node.closest('[data-assessment-step]')?.dataset.assessmentStep==='answers').length+emptyGroups.length;
-  const pending=afPending().length;
+  const pending=(snapshot?.pending||afPending()).length;
   $('afMissing').textContent=missing;
   for(const tab of tabs.values())tab.note.textContent='';
   $('afNext').textContent='Заполнить'+(missing?' · '+missing:'');$('afNextReview').textContent='Проверить'+(pending?' · '+pending:'');
@@ -317,7 +317,7 @@ window.AssessmentWorkflow=(()=>{
  document.addEventListener('assessment-case-opened',()=>{lastCheck=null;for(const {fold}of answerSections)fold.open=false;updateCase();show('documents',{focus:false,remember:false});});
  document.addEventListener('assessment-checked',event=>{lastCheck=event.detail;refresh();});
  let refreshQueued=false;
- for(const name of ['input','change'])document.addEventListener(name,event=>{if(!event.target.closest?.('[data-document-review]'))lastCheck=null;if(af.applying||refreshQueued)return;refreshQueued=true;queueMicrotask(()=>{refreshQueued=false;refresh();});});
+ for(const name of ['input','change'])document.addEventListener(name,event=>{if(!event.target.closest?.('#questionnaireStep,#documentStep')&&event.target.id!=='afDate')return;if(!event.target.closest?.('[data-document-review]'))lastCheck=null;if(!af.applying)afQueueRefresh();});
  document.addEventListener('assessment-draft-restored',()=>{lastCheck=null;refresh();try{const saved=sessionStorage.getItem('assessment-step:'+HostedAssessment.getContext().client.external.dealId);if(saved)show(saved,{focus:false});}catch{/* Keep the document step when storage is unavailable. */}});
  document.addEventListener('assessment-analysis-complete',event=>{lastCheck=null;fileResults.open=true;refresh();if(event.detail?.showPackageSummary&&active==='documents'&&!collectionNotice.hidden){collectionNotice.focus({preventScroll:true});collectionNotice.scrollIntoView({block:'start',behavior:'smooth'});}});
  document.addEventListener('assessment-credentials-changed',()=>queueMicrotask(refresh));
