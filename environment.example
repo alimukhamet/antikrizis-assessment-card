@@ -1,0 +1,17 @@
+# Required secrets. Supply through the production secret manager.
+BITRIX_WEBHOOK=
+SITE_SESSION_TOKEN=
+ASSESSMENT_INTAKE_HMAC_SECRET=
+
+# Required integration origins. Replace with final Anti-Krizis HTTPS origins.
+ASSESSMENT_INTAKE_APPROVED_ORIGIN=
+ASSESSMENT_INTAKE_SOURCE_ORIGIN=
+CRM_ASSESSMENT_INTAKE_ORIGIN=
+
+# Optional operational settings.
+AUTH_PROVIDER=payment-control
+SITE_STATUS=
+OLD_SITE_REPLACEMENT_URL=
+
+# Isolated local testing only; do not use as production authentication.
+SITE_ACCESS_PASSWORD=

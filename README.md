@@ -1,5 +1,9 @@
 # Antikrizis assessment and document intake
 
+For deployment outside ChatGPT Sites, start with
+[OWN_HOSTING_HANDOFF.md](OWN_HOSTING_HANDOFF.md) and
+[environment.example](environment.example).
+
 Fourth tool on the existing Assessment Card Site. Publication alongside the existing three tools was authorized on 14 September 2026. The original contract, document-upload and credit-report entries remain available; this is not a retirement of the old workflow.
 
 Canonical Site: https://antikrizis-assessment-card.mukhamet-ali-ma.chatgpt.site
