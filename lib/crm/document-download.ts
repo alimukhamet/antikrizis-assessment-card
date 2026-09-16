@@ -18,20 +18,19 @@ export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin
   const limit=options.credentialsOnly?2*1024*1024:MAX_BYTES;
   const declared=response.headers.get('content-length');if(declared&&Number(declared)>limit){await response.body.cancel();throw new DocumentUploadError('CRM_FILE_TOO_LARGE');}
   const length=Number(declared),framedLength=!response.headers.get('content-encoding')&&Number.isSafeInteger(length)&&length>0?length:null;
-  const reader=response.body.getReader(),chunks:Uint8Array[]=[];let total=0;
-  try{for(;;){
-   const {done,value}=await reader.read();if(done)break;total+=value.length;
-   if(total>limit){void reader.cancel().catch(()=>{});throw new DocumentUploadError('CRM_FILE_TOO_LARGE');}
-   if(framedLength&&total>framedLength){void reader.cancel().catch(()=>{});throw new DocumentUploadError('CRM_FILE_LENGTH_MISMATCH');}
-   chunks.push(value);if(chunks.length===1)options.onProgress?.({phase:'first-bytes',bytes:total});
-   // An uncompressed Content-Length frames the complete HTTP body. Do not wait
-   // for a stalled trailing stream close after all declared bytes arrived.
-   if(framedLength&&total===framedLength){void reader.cancel().catch(()=>{});break;}
-  }}catch(error){options.onProgress?.({phase:'body-interrupted',bytes:total,declaredBytes:framedLength??0});throw error;}
+  let total=0;const bounded=new TransformStream<Uint8Array,Uint8Array>({transform(value,controller){
+   const first=total===0;total+=value.length;
+   if(total>limit)throw new DocumentUploadError('CRM_FILE_TOO_LARGE');
+   if(framedLength&&total>framedLength)throw new DocumentUploadError('CRM_FILE_LENGTH_MISMATCH');
+   controller.enqueue(value);if(first)options.onProgress?.({phase:'first-bytes',bytes:total});
+   if(framedLength&&total===framedLength)controller.terminate();
+  }});
+  let buffer:ArrayBuffer;try{buffer=await new Response(response.body.pipeThrough(bounded)).arrayBuffer();}
+  catch(error){options.onProgress?.({phase:'body-interrupted',bytes:total,declaredBytes:framedLength??0});throw error;}
   if(framedLength&&total!==framedLength)throw new DocumentUploadError('CRM_FILE_LENGTH_MISMATCH');
   options.onProgress?.({phase:'body-complete',bytes:total});
   if(!total)throw new DocumentUploadError('CRM_FILE_EMPTY');
-  const result=new Uint8Array(total);let offset=0;for(const chunk of chunks){result.set(chunk,offset);offset+=chunk.length;}return result;
+  return new Uint8Array(buffer);
  }
  return async (reference:CrmFileRef,snapshot?:Record<string,unknown>)=>{
   if(!/^[1-9]\d*$/.test(reference.id))throw new DocumentUploadError('INVALID_FILE_ID');
