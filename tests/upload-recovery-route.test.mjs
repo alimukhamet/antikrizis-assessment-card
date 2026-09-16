@@ -21,11 +21,11 @@ function setup(state,options={}){
   '../../../../../lib/documents/package-check':{checkDocumentPackage:async()=>{writes++;throw Error('Recovery reached upload preparation');}},
   '../../../../../lib/documents/upload-manifest':{UploadManifestRepository:Manifests},
   '../../../../../lib/documents/upload-service':{uploadStoredDocuments:async()=>{writes++;throw Error('Recovery reached upload');}},
-  '../../../../../lib/crm/document-download':{createVerifiedDocumentUploadAdapter:()=>({reconcile:async()=>{reads++;if(options.failure)throw new RepositoryError(options.failure);return{verified:true,files};}})},
-  '../../../../../lib/crm/document-upload':{DocumentUploadError:RepositoryError},
+  '../../../../../lib/crm/document-download':{createCrmDocumentReader:()=>()=>{},createVerifiedDocumentUploadAdapter:()=>({reconcile:async()=>{reads++;if(options.failure)throw new RepositoryError(options.failure);return{verified:true,files};}})},
+  '../../../../../lib/crm/document-upload':{DocumentUploadError:RepositoryError,createDocumentUploadAdapter:()=>({reconcile:async()=>{reads++;if(options.failure)throw new RepositoryError(options.failure);return {verified:true,files};}})},
   'cloudflare:workers':{env:{DB:{}}},
  };
- const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync('app/api/assessment/[dealId]/uploads/route.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>{if(!(n in imports))throw Error('Unexpected import '+n);return imports[n];},Response,URL,process:{env:{}},console:{warn(){}}});
+ const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync('app/api/assessment/[dealId]/uploads/route.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>{if(!(n in imports))throw Error('Unexpected import '+n);return imports[n];},Response,URL,fetch,process:{env:{}},console:{warn(){}}});
  return{run:()=>exports.POST(new Request('https://synthetic.invalid/api/assessment/11665/uploads',{method:'POST',body:JSON.stringify({action:'reconcile',payload:{},requestId:'root',batchIndex:0,identityRevision:1})}),{params:Promise.resolve({dealId:'11665'})}),inspect:()=>exports.GET(new Request('https://synthetic.invalid/api/assessment/11665/uploads?verify=synthetic-batch'),{params:Promise.resolve({dealId:'11665'})}),writes:()=>writes,reads:()=>reads,finishes:()=>finishes};
 }
 test('automatic upload recovery cannot prepare or write missing, unsent or cancelled work',async()=>{
