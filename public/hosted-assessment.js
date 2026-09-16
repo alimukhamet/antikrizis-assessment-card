@@ -80,7 +80,7 @@ window.HostedAssessment=(()=>{
    if(found.length&&!found.some(acceptableFile))row.querySelector('[data-document-status]').textContent='Файл выбран, но проверка не пройдена';
   });};
   el('hostLoadDeal').onclick=load;el('afDate').disabled=true;el('afApply').style.display='none';el('afClient').disabled=true;
-  const query=new URLSearchParams(location.search);const id=query.get('dealId');if(id&&/^[1-9]\d*$/.test(id)){el('hostDealId').value=id;load();}
+  const query=new URLSearchParams(location.search);const id=query.get('dealId');if(id&&/^[1-9]\d*$/.test(id)){el('hostDealId').value=id;if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{if(!context)load();},{once:true});else load();}
   const button=document.createElement('button');button.type='button';button.className='btn btn-ghost';button.textContent='Скачать историю и доказательства';button.onclick=()=>{if(!ready()){afStatus('Сначала откройте сделку.',true);return;}location.assign(base()+'/export');};document.querySelector('.draft-toolbar').append(button);
  }
  return {mount,ready,adapt,review,error,requestJson,analyzeFile,confirmIdentity,uploadPath:()=>base()+'/documents',getContext:()=>context};
