@@ -27,6 +27,16 @@ test('oversize or expired downloads fail without leaking token-bearing errors',a
 test('verified upload factory uses CRM byte download for content readback',async()=>{let uploaded=false;const adapter=createVerifiedDocumentUploadAdapter(webhook,'11665',iin,async(url,o)=>{if(url.includes('crm.item.update')){const body=await new Response(o.body).json();assert.equal(body.fields.ufCrmAnkPrimaryDocs[0][1],'AQID');uploaded=true;return metadata();}if(url.includes('crm.item.get'))return uploaded?metadata():metadata({ufCrmAnkPrimaryDocs:[]});return new Response(new Uint8Array([1,2,3]));});const r=await adapter.append('11665',iin,[],[{name:'SYNTHETIC.pdf',bytes:new Uint8Array([1,2,3])}]);assert.equal(r.verified,true);assert.equal(r.files[0].id,'22');});
 
 test('malformed download configuration exposes only a fixed error code',()=>{assert.throws(()=>createCrmDocumentReader('not-a-url-containing-synthetic-secret','11665',iin),e=>e.code==='INVALID_DOWNLOAD_CONFIGURATION'&&!e.message.includes('synthetic-secret'));});
+test('complete Content-Length bytes finish even if the upstream never closes the stream',async()=>{
+ let cancelled=false;const progress=[];
+ const read=createCrmDocumentReader(webhook,'11665',iin,async(url,o)=>o.method==='POST'?metadata():new Response(new ReadableStream({start(c){c.enqueue(new Uint8Array([1,2,3]));},cancel(){cancelled=true;return new Promise(()=>{});}}),{headers:{'content-length':'3'}}),{onProgress:e=>progress.push(e)});
+ let timer;try{assert.deepEqual(await Promise.race([read({id:'22'}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Waiting for a stream close after complete body')),100);})]),new Uint8Array([1,2,3]));}finally{clearTimeout(timer);}
+ assert.equal(cancelled,true);assert.equal(progress.at(-1).phase,'body-complete');assert.equal(progress.at(-1).bytes,3);
+});
+test('truncated and overlong uncompressed bodies fail, while compressed wire length is not decoded length',async()=>{
+ for(const length of ['2','4']){const read=createCrmDocumentReader(webhook,'11665',iin,async(url,o)=>o.method==='POST'?metadata():new Response(new Uint8Array([1,2,3]),{headers:{'content-length':length}}));await assert.rejects(read({id:'22'}),/CRM_FILE_LENGTH_MISMATCH/);}
+ const read=createCrmDocumentReader(webhook,'11665',iin,async(url,o)=>o.method==='POST'?metadata():new Response(new Uint8Array([1,2,3]),{headers:{'content-length':'2','content-encoding':'gzip'}}));assert.equal((await read({id:'22'})).length,3);
+});
 
 
 test('PDF import preserves safe names but excludes signing keys before reading their body',async()=>{
