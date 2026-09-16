@@ -1,0 +1,39 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "antikrizis-assessment-card",
+  "main": "dist/server/index.js",
+  "compatibility_date": "2026-09-16",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "assets": {
+    "directory": "dist/client",
+    "binding": "ASSETS",
+    "html_handling": "none"
+  },
+  "images": {
+    "binding": "IMAGES"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "antikrizis-assessment-card-production-db",
+      "database_id": "52579528-2df1-42ca-9ec7-526893d7727f",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "antikrizis-assessment-card-production-files"
+    }
+  ],
+  "vars": {
+    "AUTH_PROVIDER": "payment-control",
+    "ASSESSMENT_INTAKE_APPROVED_ORIGIN": "https://platform.anti-krizis.kz",
+    "ASSESSMENT_INTAKE_SOURCE_ORIGIN": "https://assessment.anti-krizis.kz",
+    "CRM_ASSESSMENT_INTAKE_ORIGIN": "https://platform.anti-krizis.kz"
+  }
+}

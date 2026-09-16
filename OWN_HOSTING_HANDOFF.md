@@ -21,8 +21,14 @@ not a static HTML page. The application expects:
 - `IMAGES`: image transformation for the Worker image route;
 - Bitrix, session and assessment-intake configuration from `environment.example`.
 
-The lowest-change independent deployment is a Cloudflare Worker in an
-Anti-Krizis-owned account and domain, with Anti-Krizis-owned D1 and R2 resources.
+The independent deployment uses the Cloudflare Worker configuration in
+`wrangler.anti-krizis.jsonc`, under the Anti-Krizis-owned account, with dedicated
+D1 and R2 resources. The dedicated filename keeps Vinext's generated local-test
+bindings separate from the production bindings. Static assets are served before
+the Worker so compiled CSS and JavaScript remain available under `/assets/`;
+HTML filename handling stays disabled because the embedded tools intentionally
+load `/questionnaire.html` and `/assessment-card.html` by their exact names.
+Run `npm run build:anti-krizis` for this target.
 For Node.js/PostgreSQL/S3 hosting, adapt `db/index.ts`,
 `lib/documents/storage.ts`, the D1 repositories, dynamic `cloudflare:workers`
 imports, and `worker/index.ts`.
@@ -68,4 +74,3 @@ Never replay a pending, writing or uncertain Bitrix operation during migration;
 resolve it by readback against its original destination.
 
 Use only synthetic Bitrix deal `11665` for external-write acceptance tests.
-

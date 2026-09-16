@@ -8,6 +8,9 @@
   "scripts": {
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev",
     "build": "node scripts/verify-canonical-target.mjs && node scripts/build-pdf-viewer.mjs && node scripts/build-questionnaire-schema.mjs && node scripts/build-contract-renderer.mjs && WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
+    "build:anti-krizis": "ANTIKRIZIS_EXTERNAL_DEPLOY=1 npm run build",
+    "deploy:anti-krizis": "npm run build:anti-krizis && wrangler deploy --config wrangler.anti-krizis.jsonc",
+    "db:migrate:anti-krizis": "wrangler d1 migrations apply DB --remote --config wrangler.anti-krizis.jsonc",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "npm run build && node --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
