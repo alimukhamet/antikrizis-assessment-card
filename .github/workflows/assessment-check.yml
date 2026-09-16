@@ -1,0 +1,27 @@
+name: Assessment checks
+on:
+  pull_request:
+    branches: [main, deploy/anti-krizis]
+  push:
+    branches: [main, deploy/anti-krizis]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ANTIKRIZIS_EXTERNAL_DEPLOY: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - run: npm ci --no-audit --no-fund
+      - name: Build and run the complete Node test suite
+        run: npm test
+      - name: Type check
+        run: npx --no-install tsc --noEmit
