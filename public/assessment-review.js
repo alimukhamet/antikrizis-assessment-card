@@ -250,7 +250,7 @@ async function afAnalyze(preferences={}){
   if($af('afClient').value&&[...af.results.values()].some(r=>!r.blocked&&!r.error)){af.restoringEvidence=Boolean(preferences.restoreOnly);try{afApply();}finally{af.restoringEvidence=false;}}else afStatus('Распознавание завершено. Нераспознанные ответы заполните вручную.');
   if(fail)afStatus('Не удалось обработать файлов: '+fail+'. Остальные результаты сохранены. Проверьте результаты по документам.',true);
   $af('afFiles').open=true;renderDocuments();afRefresh();
- }finally{afLocked.forEach(([e,disabled])=>e.disabled=disabled);$af('documentStep').classList.remove('af-busy');af.busy=false;af.progress=null;$af('afAnalyze').disabled=false;$af('afChoose').disabled=false;afRefresh();document.dispatchEvent(new CustomEvent('assessment-analysis-complete',{detail:{showPackageSummary:true}}));}
+ }finally{afLocked.forEach(([e,disabled])=>e.disabled=disabled);$af('documentStep').classList.remove('af-busy');af.busy=false;af.progress=null;$af('afAnalyze').disabled=false;$af('afChoose').disabled=false;afRefresh();document.dispatchEvent(new CustomEvent('assessment-analysis-complete',{detail:{showPackageSummary:!preferences.restoreOnly}}));}
 }
 $af('afAnalyze').onclick=afAnalyze;
 document.addEventListener('input',e=>{if(!af.applying&&af.sources.has(e.target.id)){const src=af.sources.get(e.target.id);src.pending=true;src.edited=true;src.stale=false;afBadge(e.target,src);}queueMicrotask(afRefresh);});

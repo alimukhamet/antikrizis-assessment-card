@@ -105,6 +105,6 @@ window.ServerDrafts=(()=>{
   const row=control.closest('.repeat-item'),group=row?.closest('.repeat');
   return [{key:controlKey(control),...(group?{group:group.id,row:[...group.querySelector(':scope > .repeat-rows').children].indexOf(row)}:{}),documentId:source.server.documentId,extractionId:source.server.extractionId,factKey:source.serverFactKey,reviewId:source.pending||source.stale?null:source.reviewId||null}];
  });}
- return{mount,capture,reviewBindings,save,restore,inspect,loadState:()=>loadState,pendingFiles:()=>[...missingFiles],recovery:()=>recoverySnapshot,isDirty,hasTransientFiles,changed,isBusy:()=>loading||Boolean(saveTask),canSwitch:()=>baselineLoaded&&!loading};
+ return{mount,capture,reviewBindings,save,restore,inspect,loadState:()=>loadState,pendingFiles:()=>missingFiles.filter(name=>!selectedFiles.some(item=>item.file.name===name)&&!(window.CredentialUpload?.collected?.()&&/\.(p12|pfx|key)$/i.test(name))),recovery:()=>recoverySnapshot,isDirty,hasTransientFiles,changed,isBusy:()=>loading||Boolean(saveTask),canSwitch:()=>baselineLoaded&&!loading};
 })();
 ServerDrafts.mount();

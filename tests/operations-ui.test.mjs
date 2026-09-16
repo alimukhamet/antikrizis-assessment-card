@@ -52,7 +52,8 @@ const storedDraft=(answers=[],groups=[],documents=[{documentId:'gkb',type:'ГК�
 const evidence=context=>({...context,documentId:'gkb',extractionId:'parsed-gkb',eligibleForAutofill:Boolean(context.client.iin),findings:context.client.iin?[]:['DEAL_IDENTITY_UNVERIFIED'],document:{totalPages:1,pages:[{text:'SYNTHETIC',needsOcr:false}],extraction:{identity:{iin:'000000000010',name:'OLD DOCUMENT NAME'},kind:'gkb_full',facts:[{key:'identity.name',value:'OLD DOCUMENT NAME',page:1,source:'Synthetic name'},{key:'identity.iin',value:'000000000010',page:1,source:'Synthetic ID'}],credits:[{contractNumber:'SYNTHETIC-1',page:1,facts:[{key:'creditor',value:'SYNTHETIC BANK',page:1,source:'Synthetic bank'}]}],findings:[]}}});
 test('reopening restores matching evidence but never repopulates cleared answers or removed loans',async t=>{
  const draft=storedDraft([{key:'fio',value:'',checked:false},{key:'iin',value:'000000000010',checked:false}],[{id:'creditors',rows:[],rowKeys:[]}]);
- const s=await setup(t,{draft,analyze:async(p,o,c)=>({ok:true,json:async()=>evidence(c)})});await s.load();await tick();
+ const s=await setup(t,{draft,analyze:async(p,o,c)=>({ok:true,json:async()=>evidence(c)})});let jump;s.d.addEventListener('assessment-analysis-complete',e=>{jump=e.detail.showPackageSummary;});await s.load();await tick();
+ assert.equal(jump,false,'Reopening must not scroll past the client identity and loading warnings');
  assert.equal(s.d.getElementById('fio').value,'');assert.equal(s.d.querySelectorAll('#creditors > .repeat-rows > *').length,0);
  assert.equal(s.run('af.sources.has("iin")'),true,'Matching saved answer retains its evidence badge');
  assert.equal(s.d.body.dataset.uxClientState,'ready');assert.equal(s.w.ServerDrafts.isDirty(),false);
@@ -63,6 +64,7 @@ test('saved card shows loading progress and keeps answers locked until cached re
  const s=await setup(t,{draft,analyze:async(p,o,c)=>{await wait;return{ok:true,json:async()=>evidence(c)};}});await s.load();
  assert.equal(s.d.body.dataset.uxDraftPhase,'documents');assert.equal(s.d.getElementById('uxLoadStatus').hidden,false);assert.match(s.d.getElementById('uxLoadStatus').textContent,/Читаем/);assert.equal(s.d.getElementById('questionnaireStep').inert,true);
  release();await tick();await tick();assert.equal(s.d.body.dataset.uxClientState,'ready');assert.equal(s.d.getElementById('uxLoadStatus').hidden,true);assert.match(s.d.getElementById('uxPendingFiles').textContent,/not-uploaded.pdf/);
+ s.run('selectedFiles.push({id:99,file:{name:"not-uploaded.pdf"},storedDocumentId:"saved-replacement"})');assert.equal(s.w.ServerDrafts.pendingFiles().includes('not-uploaded.pdf'),false,'Reselected files must not keep an obsolete reminder');
 });
 test('stalled draft read times out visibly and retry safely loads without saving blank data',async t=>{
  let attempts=0;const s=await setup(t,{fastTimeout:true,draftResponse:()=>++attempts===1?new Promise(()=>{}):Promise.resolve({ok:true,json:async()=>({draft:null})})});await s.load();await tick();await tick();
