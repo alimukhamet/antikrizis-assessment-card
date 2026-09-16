@@ -5,6 +5,12 @@
   "compatibility_date": "2026-09-16",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "assessment.anti-krizis.kz",
+      "custom_domain": true
+    }
+  ],
   "assets": {
     "directory": "dist/client",
     "binding": "ASSETS",
