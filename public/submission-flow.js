@@ -4,6 +4,7 @@ window.SubmissionFlow={mount(anchor,status){
  function clearFile(){if(fileUrl)URL.revokeObjectURL(fileUrl);fileUrl=null;fileLink.hidden=true;fileLink.removeAttribute('href');}
  const recovery=document.createElement('details'),summary=document.createElement('summary'),savedText=document.createElement('pre'),resume=document.createElement('button'),cancel=document.createElement('button');
  summary.textContent='Сохранённая версия анкеты';savedText.style.whiteSpace='pre-wrap';resume.type=cancel.type='button';resume.className=cancel.className='btn btn-ghost';cancel.textContent='Отменить подготовку';recovery.append(summary,savedText,resume,cancel);recovery.hidden=true;save.after(recovery);
+ const currentRenderer=window.ContractRenderer;
  let checked=null,attempt=null,latest=null,busy=false,busyLabel='Скачать договор',generation=0,destination=null,destinationSnapshot=null;
  const progress=()=>document.dispatchEvent(new CustomEvent('assessment-submission-progress',{detail:{busy,label:busy?busyLabel:'Скачать договор',message:status.textContent}}));
  const report=text=>{status.textContent=text;progress();};
@@ -29,13 +30,26 @@ window.SubmissionFlow={mount(anchor,status){
   }catch{/* A failed status fetch never authorizes a new write. */}
  }
  async function download(dealId,requestId){
+  const savedSignature=signature();
+  const guardDownload=()=>{if(currentDeal()!==dealId||signature()!==savedSignature)throw Error('Клиент или ответы изменились во время подготовки договора. Проверьте текущую версию и скачайте договор заново.');};
   const {contract}=await post(dealId,{action:'contract',requestId});const version=contract?.rendererVersion;
+  guardDownload();
+  // Preload with the retryable bounded loader even for immutable older renderers.
+  if(currentRenderer?.ready)await currentRenderer.ready();
+  guardDownload();
   if(!/^[a-f0-9]{64}$/.test(version||''))throw Error('Не удалось определить сохранённую версию договора.');
   if(!window.ContractRenderers?.[version])await new Promise((resolve,reject)=>{const currentRenderer=window.ContractRenderer,script=document.createElement('script');let timer;const fail=()=>{clearTimeout(timer);script.remove();reject(Error('Не удалось загрузить сохранённую версию договора. Повторите скачивание из сохранённой версии.'));};script.src=`/contract-renderers/${version}.js`;script.onload=()=>{clearTimeout(timer);window.ContractRenderer=currentRenderer;resolve();};script.onerror=fail;timer=setTimeout(fail,20000);document.head.append(script);});
   const renderer=window.ContractRenderers?.[version];if(!renderer)throw Error('Сохранённая версия договора не найдена.');
-  const blob=await renderer.render(contract.data,version);if(currentDeal()!==dealId)throw Error('Открыта другая сделка. Скачайте договор из сохранённой версии нужной сделки.');
+  let renderTimer;
+  const renderTimeout=new Promise((_,reject)=>{renderTimer=setTimeout(()=>reject(Error('Подготовка файла договора заняла слишком много времени. Повторите скачивание из сохранённой версии.')),60000);});
+  let blob;
+  try{blob=await Promise.race([renderer.render(contract.data,version),renderTimeout]);}finally{clearTimeout(renderTimer);}
+  guardDownload();
+  if(!(blob instanceof Blob)||!blob.size)throw Error('Модуль договора вернул пустой файл. Повторите скачивание из сохранённой версии.');
   clearFile();fileUrl=URL.createObjectURL(blob);fileLink.href=fileUrl;fileLink.download=(HostedAssessment.getContext().client.title+` — договор — сделка ${dealId}.docx`).replace(/[\\/:*?"<>|]/g,'_');fileLink.hidden=false;
-  const savedSignature=signature();fileLink.onclick=event=>{if(currentDeal()!==dealId||signature()!==savedSignature){event.preventDefault();clearFile();report('Клиент или ответы изменились. Скачайте договор заново для текущей версии.');}};fileLink.click();
+  fileLink.onclick=event=>{if(currentDeal()!==dealId||signature()!==savedSignature){event.preventDefault();clearFile();report('Клиент или ответы изменились. Скачайте договор заново для текущей версии.');}};fileLink.click();
+  // A visible, persistent link gives Safari/in-app browsers a fresh user gesture.
+  fileLink.focus({preventScroll:true});fileLink.scrollIntoView?.({block:'nearest'});
  }
  async function advance(dealId,row,guard){
   const requestId=row.requestId;if(currentDeal()!==dealId)throw Error('Открыта другая сделка.');
@@ -43,9 +57,11 @@ window.SubmissionFlow={mount(anchor,status){
    if(guard&&!guard()){await post(dealId,{action:'cancel',requestId});throw Error('Ответы изменились. Проверьте анкету заново.');}
    phase('Сохраняю…','Сохраняю карточку в Bitrix…');row=await post(dealId,{action:'commit',requestId});
   }else if(['writing','uncertain'].includes(row.state)){phase('Проверяю…','Проверяю результат сохранения…');row=await post(dealId,{action:'reconcile',requestId});}
+  if(guard&&!guard())throw Error('Клиент или ответы изменились во время сохранения. Уже отправленные данные не удалены. Проверьте текущую версию.');
   if(!row.assessmentSaved)throw Error('Сохранение карточки ещё не подтверждено. Повторите проверку через сохранённую версию; повторной отправки не будет.');
   if(!row.historySaved){phase('Сохраняю…','Сохраняю анкету в историю сделки…');row=await post(dealId,{action:'history',requestId});}
   if(!row.historySaved)throw Error('Карточка сохранена. История ещё не подтверждена; продолжите из сохранённой версии.');
+  if(guard&&!guard())throw Error('Клиент или ответы изменились во время сохранения. Скачайте нужную версию из сохранённых договоров.');
   phase('Готовлю договор…','Готовлю сохранённый договор…');await download(dealId,requestId);report('Договор готов. Если скачивание не началось, нажмите «Скачать готовый файл договора» ниже. Карточка, документы и история сохранены в сделке.');
  }
  async function operate(action){if(busy)return;busy=true;busyLabel='Проверяю…';destination=null;destinationSnapshot=null;clearFile();save.disabled=resume.disabled=cancel.disabled=true;save.textContent=busyLabel;report('Проверяю данные для договора…');try{await action();}catch(error){report(error.message);}finally{busy=false;busyLabel='Скачать договор';resume.disabled=cancel.disabled=false;save.disabled=false;save.textContent=busyLabel;progress();void refresh();}}
@@ -69,8 +85,13 @@ window.SubmissionFlow={mount(anchor,status){
    }
   }
   if(currentDeal()!==checked.dealId||signature()!==checked.signature)throw Error('Ответы изменились. Проверьте анкету ещё раз.');
-  phase('Проверяю…','Проверяю получателя договора…');await confirmDestination();
   const selected=checked;
+  const selectionUnchanged=()=>currentDeal()===selected.dealId&&signature()===selected.signature;
+  // Verify the browser can build a DOCX before starting external writes.
+  if(currentRenderer?.ready){phase('Загружаю модуль…','Загружаю модуль формирования договора…');await currentRenderer.ready();}
+  if(!checked||!selectionUnchanged())throw Error('Ответы изменились. Проверьте анкету ещё раз.');
+  phase('Проверяю…','Проверяю получателя договора…');await confirmDestination();
+  if(!checked||!selectionUnchanged())throw Error('Ответы изменились. Проверьте анкету ещё раз.');
   phase('Сохраняю…','Сохраняю черновик…');if(window.ServerDrafts.save&&!await window.ServerDrafts.save({automatic:true}))throw Error('Сначала сохраните черновик.');
   guardDestination();if(window.AssessmentDocumentUpload)await window.AssessmentDocumentUpload.submit({onProgress:report});
   if(currentDeal()!==selected.dealId||signature()!==selected.signature)throw Error('Ответы изменились во время сохранения документов. Проверьте анкету ещё раз.');
@@ -79,7 +100,7 @@ window.SubmissionFlow={mount(anchor,status){
   const row=await post(selected.dealId,{action:'prepare',requestId:attempt.requestId,identityRevision:selected.identityRevision,payload:selected.payload,bindings:selected.bindings});
   await advance(selected.dealId,row,()=>currentDeal()===selected.dealId&&signature()===selected.signature);
  });
- resume.onclick=()=>operate(async()=>{if(!latest)throw Error('Сохранение не найдено.');await confirmDestination();await advance(latest.dealId,latest);});
+ resume.onclick=()=>operate(async()=>{const selected=latest,snapshot=signature();if(!selected)throw Error('Сохранение не найдено.');await confirmDestination();await advance(selected.dealId,selected,()=>currentDeal()===selected.dealId&&signature()===snapshot);});
  cancel.onclick=()=>operate(async()=>{if(!latest)return;const row=await post(latest.dealId,{action:'cancel',requestId:latest.requestId});if(row.state!=='cancelled')throw Error('Запись уже отправлялась. Нужно проверить результат сохранения.');attempt=null;status.textContent='Подготовка отменена. История сохранена; можно проверить новую версию.';});
  document.addEventListener('assessment-case-opened',()=>{clearFile();refresh();});window.addEventListener('pagehide',clearFile);
  return {invalidate(){checked=null;clearFile();save.disabled=busy;},checked(result,context){checked=result.readyToSubmit?{...context,identityRevision:result.identityRevision}:null;save.disabled=busy;refresh();}};

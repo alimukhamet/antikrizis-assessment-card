@@ -20,6 +20,13 @@ export async function validateHandoffDocuments(repository:EvidenceRepository,rec
  const credentials=await repository.credentialStatus(record);if(!credentials?.verified||!credentials.passwordStored)throw new RepositoryError('HANDOFF_CREDENTIALS_REQUIRED');
  return{reviewIds:power.manuallyReviewed.map(r=>r.reviewId),credentialRequestId:credentials.requestId};
 }
+type VerifiedReceipt={files:Array<{id:string;sha256:string}>};
+function verifiedReceipt(json:string,code:string):VerifiedReceipt{
+ let value:unknown;try{value=JSON.parse(json);}catch{throw new RepositoryError(code);}
+ if(!value||typeof value!=='object'||!('verified' in value)||value.verified!==true||!('files' in value)||!Array.isArray(value.files)||!value.files.length)throw new RepositoryError(code);
+ for(const file of value.files){if(!file||typeof file!=='object'||typeof file.id!=='string'||!file.id||typeof file.sha256!=='string'||!/^[a-f0-9]{64}$/.test(file.sha256))throw new RepositoryError(code);}
+ return value as VerifiedReceipt;
+}
 type Dependencies={repository:EvidenceRepository;handoffs:HandoffRepository;manifests:UploadManifestRepository;upload:ReturnType<typeof createDocumentUploadAdapter>;readFile:(ref:CrmFileRef)=>Promise<Uint8Array>;stages:ReturnType<typeof createHandoffAdapter>};
 /** A timeout never authorizes a second stage update. All recovery after claim is read-only. */
 export async function runHandoff(deps:Dependencies,record:CaseRow,actor:Actor,row:HandoffRow,day:string){
@@ -54,13 +61,13 @@ export async function runHandoff(deps:Dependencies,record:CaseRow,actor:Actor,ro
    catch{throw new RepositoryError('HANDOFF_UPLOAD_UNCERTAIN');}
   }
   if(uploadRow?.state!=='verified'||!uploadRow.receipt_json)throw new RepositoryError('HANDOFF_UPLOAD_UNCERTAIN');
-  const receipt=JSON.parse(uploadRow.receipt_json),ref=receipt.files.find((f:any)=>f.sha256===doc.original_sha256);if(!ref)throw new RepositoryError('HANDOFF_UPLOAD_UNCERTAIN');
+  const receipt=verifiedReceipt(uploadRow.receipt_json,'HANDOFF_UPLOAD_UNCERTAIN'),ref=receipt.files.find(f=>f.sha256===doc.original_sha256);if(!ref)throw new RepositoryError('HANDOFF_UPLOAD_UNCERTAIN');
   receipts.push({id:ref.id,sha256:doc.original_sha256,byteSize:doc.byte_size});
  }
  // Verify all three items are still present, including keys saved in an earlier session.
  const keyRow=await manifests.get(record.id,payload.credentialRequestId);
  if(keyRow?.state!=='verified'||!keyRow.receipt_json)throw new RepositoryError('HANDOFF_CREDENTIALS_REQUIRED');
- const keyManifest=JSON.parse(keyRow.manifest_json) as UploadManifest,keyReceipt=JSON.parse(keyRow.receipt_json);
+ const keyManifest=JSON.parse(keyRow.manifest_json) as UploadManifest,keyReceipt=verifiedReceipt(keyRow.receipt_json,'HANDOFF_CREDENTIALS_REQUIRED');
  if(keyManifest.scope!=='credentials'||!keyManifest.credentialOwnerConfirmed||keyRow.identity_revision!==record.identity_revision)throw new RepositoryError('HANDOFF_CREDENTIALS_REQUIRED');
  for(const ref of keyReceipt.files){const file=keyManifest.files.find(f=>f.sha256===ref.sha256);if(!file)throw new RepositoryError('HANDOFF_CREDENTIALS_REQUIRED');receipts.push({id:ref.id,sha256:file.sha256,byteSize:file.byteSize});}
  const baseline=await upload.read(record.external_id);if(baseline.iin!==record.client_iin)throw new RepositoryError('CASE_IDENTITY_CHANGED');

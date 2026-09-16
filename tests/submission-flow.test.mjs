@@ -3,7 +3,7 @@ function setup({uncertain=false,editDuringPrepare=false}={}){
  const dom=new JSDOM('<button id="anchor">Check</button><p id="status"></p>',{url:'https://assessment.example',runScripts:'outside-only'}),w=dom.window;let payload={answers:['INITIAL']},row=null,rendered=null,downloads=0;const calls=[];
  w.HostedAssessment={ready:()=>true,getContext:()=>({client:{external:{dealId:'11665'}}})};w.ServerDrafts={capture:()=>payload,reviewBindings:()=>[]};w.URL.createObjectURL=()=> 'blob:test';w.URL.revokeObjectURL=()=>{};w.HTMLAnchorElement.prototype.click=()=>{downloads++;};
  w.SubmissionDestination={confirm:async()=>({dealId:'11665',iin:'SYNTHETIC',identityRevision:1})};
- w.ContractRenderers={['a'.repeat(64)]:{render:async(data,version)=>{rendered={data,version};return{};}}};
+ w.ContractRenderers={['a'.repeat(64)]:{render:async(data,version)=>{rendered={data,version};return new w.Blob(['SYNTHETIC CONTRACT'],{type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});}}};
  w.fetch=async(url,options)=>{if(!options?.method)return{ok:true,json:async()=>({submission:row})};const b=JSON.parse(options.body);calls.push(b);if(b.action==='prepare'){row={requestId:b.requestId,state:'prepared',assessmentSaved:false,historySaved:false,contractNumber:'TEST',reviewText:'SAVED SNAPSHOT'};if(editDuringPrepare)payload={answers:['EDITED']};}if(b.action==='commit')row={...row,state:uncertain?'uncertain':'verified',assessmentSaved:!uncertain};if(b.action==='reconcile')row={...row,state:'verified',assessmentSaved:true};if(b.action==='history')row={...row,historySaved:true};if(b.action==='cancel')row={...row,state:'cancelled'};return{ok:true,json:async()=>b.action==='contract'?{contract:{rendererVersion:'a'.repeat(64),data:{client_name:'SAVED PERSON'}}}:row};};
  w.eval(fs.readFileSync(new URL('../public/submission-flow.js',import.meta.url),'utf8'));const flow=w.SubmissionFlow.mount(w.document.getElementById('anchor'),w.document.getElementById('status'));
  const check=ready=>flow.checked({readyToSubmit:ready,identityRevision:1},{dealId:'11665',payload,bindings:[],signature:JSON.stringify({payload,bindings:[]})});
@@ -82,4 +82,33 @@ test('real upload and submission flows recover a delayed document receipt and th
   uploads.push(JSON.parse(options.body));return{ok:true,json:async()=>uploads.length===1?{state:'uncertain'}:{state:'verified',documentsUploaded:true}};
  };
  await s.save.onclick();assert.equal(uploads.length,2);assert.equal(uploads[1].action,'reconcile');assert.equal(uploads[0].requestId,uploads[1].requestId);assert.deepEqual(s.calls.map(c=>c.action),['prepare','commit','history','contract']);assert.equal(s.downloads(),1);s.w.close();
+});
+
+test('an answer edited during asynchronous rendering prevents a stale download',async()=>{
+ const s=setup();s.check(true);let finish;
+ s.w.ContractRenderers['a'.repeat(64)].render=()=>new Promise(resolve=>{finish=resolve;});
+ const work=s.save.onclick();while(!finish)await new Promise(setImmediate);
+ s.w.ServerDrafts.capture=()=>({answers:['EDITED DURING RENDER']});
+ finish(new s.w.Blob(['SYNTHETIC']));await work;
+ assert.equal(s.downloads(),0);assert.match(s.w.document.getElementById('status').textContent,/изменились/);assert.equal(s.save.disabled,false);s.w.close();
+});
+test('an answer edited while the saved contract is fetched prevents rendering',async()=>{
+ const s=setup();s.check(true);const fetch=s.w.fetch;
+ s.w.fetch=async(url,options)=>{const result=await fetch(url,options);if(options?.method&&JSON.parse(options.body).action==='contract')s.w.ServerDrafts.capture=()=>({answers:['CHANGED']});return result;};
+ await s.save.onclick();assert.equal(s.downloads(),0);assert.equal(s.rendered(),null);s.w.close();
+});
+test('an answer edited during history persistence prevents an outdated final file',async()=>{
+ const s=setup();s.check(true);const fetch=s.w.fetch;
+ s.w.fetch=async(url,options)=>{const result=await fetch(url,options);if(options?.method&&JSON.parse(options.body).action==='history')s.w.ServerDrafts.capture=()=>({answers:['CHANGED']});return result;};
+ await s.save.onclick();assert.equal(s.downloads(),0);assert.equal(s.calls.some(call=>call.action==='contract'),false);s.w.close();
+});
+test('an empty renderer result never becomes a successful downloadable contract',async()=>{
+ const s=setup();s.check(true);s.w.ContractRenderers['a'.repeat(64)].render=async()=>new s.w.Blob([]);
+ await s.save.onclick();assert.equal(s.downloads(),0);assert.match(s.w.document.getElementById('status').textContent,/пустой файл/);assert.equal(s.save.disabled,false);s.w.close();
+});
+test('a stalled renderer releases the button and ignores late completion',async()=>{
+ const s=setup();s.check(true);const timer=s.w.setTimeout.bind(s.w);s.w.setTimeout=(fn,ms)=>timer(fn,ms===60000?5:ms);
+ let finish;s.w.ContractRenderers['a'.repeat(64)].render=()=>new Promise(resolve=>{finish=resolve;});
+ await s.save.onclick();assert.equal(s.save.disabled,false);assert.equal(s.downloads(),0);assert.match(s.w.document.getElementById('status').textContent,/слишком много времени/);
+ finish(new s.w.Blob(['LATE']));await new Promise(setImmediate);assert.equal(s.downloads(),0);s.w.close();
 });

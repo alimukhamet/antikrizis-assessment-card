@@ -4,7 +4,6 @@ import {
   canonicalJsonStringify,
   selectAssessmentSubmissionFromExport,
   type AssessmentExportBundle,
-  type AssessmentIntakeEnvelope,
 } from './assessment-intake-export';
 import {
   AssessmentIntakeAuthError,
@@ -13,7 +12,7 @@ import {
   verifyAssessmentIntakeRequest,
   type AssessmentIntakeReplayStore,
 } from './assessment-intake-auth';
-import type { CaseRow, DocumentRow, EvidenceRepository } from '../documents/repository';
+import type { CaseRow, EvidenceRepository } from '../documents/repository';
 
 const MAX_SOURCE_REVISION = 2_147_483_647;
 const MAX_DOCUMENT_BYTES = 35 * 1024 * 1024;
