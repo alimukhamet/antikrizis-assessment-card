@@ -18,7 +18,7 @@ window.CredentialUpload=(()=>{
   else if(chosen.length){if(status.textContent==='ЭЦП и пароль уже есть в Bitrix.')status.textContent='';selectionStatus.textContent='ЭЦП выбрана'+(chosen.length>1?' · файлов: '+chosen.length:'');showEditor(true);}
   else {selectionStatus.textContent=available.length?'ЭЦП есть в сделке':'Добавьте ЭЦП клиента';showEditor(available.length>0);}
   if(!saved&&available.length&&!chosen.length){password.hidden=true;const passwordLabel=host.querySelector('label.lbl');if(passwordLabel)passwordLabel.hidden=true;}
-  for(const hint of host.querySelectorAll(':scope > .hint:not([role])')){hint.textContent='ЭЦП отправится при скачивании договора. После закрытия страницы ключ и пароль нужно выбрать снова.';hint.hidden=saved||!chosen.length;}
+  for(const hint of host.querySelectorAll(':scope > .hint:not([role])')){hint.textContent='ЭЦП сохранится при передаче юристам. До сохранения не закрывайте страницу: ключ и пароль потребуется выбрать заново.';hint.hidden=saved||!chosen.length;}
  }
  const currentDeal=()=>HostedAssessment.ready()?HostedAssessment.getContext().client.external.dealId:null;
  const keys=()=>selectedFiles.filter(item=>item.type==='ЭЦП файл');

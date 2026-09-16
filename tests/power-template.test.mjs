@@ -39,11 +39,11 @@ test('analysis response and package check agree on accepted cached template whil
  const {analysisResponse}=load('lib/documents/analysis-service.ts',imports);
  const {checkDocumentPackage}=load('lib/documents/package-check.ts',{...imports,'./analysis-service':{analysisVersion:'test'}});
  const payload={answers:[],groups:[],documents:[{documentId:'doc',type:'Доверенность',person:'Клиент'}],pendingFiles:[],docContext:{social:'0',salary:'none'}};
- const response=await analysisResponse({iin:record.client_iin},record,repository,stored,true),pack=await checkDocumentPackage(repository,record,payload,'2026-09-15');
+ const response=await analysisResponse({iin:record.client_iin},record,repository,stored,true),pack=await checkDocumentPackage(repository,record,payload,'2026-09-15','handoff');
  assert.equal(response.eligibleForAutofill,true);assert.equal(response.powerValidation.accepted,true);assert.equal(response.findings.includes('POWER_AUTHORITY_REVIEW_REQUIRED'),false);assert.equal(response.reviewContext.expiresAt,'2029-09-15');assert.ok(pack.structurallyChecked.includes('Доверенность'));assert.equal(pack.issues.some(issue=>issue.documentId==='doc'),false);assert.equal(pack.authenticity,'not_verified');
  result.extraction.identity.iin='other';
  assert.equal((await analysisResponse({iin:record.client_iin},record,repository,stored,true)).eligibleForAutofill,false);
- const wrong=await checkDocumentPackage(repository,record,payload,'2026-09-15');assert.equal(wrong.structurallyChecked.includes('Доверенность'),false);assert.ok(wrong.issues.some(issue=>issue.code==='DOCUMENT_CLIENT_UNVERIFIED'));
+ const wrong=await checkDocumentPackage(repository,record,payload,'2026-09-15','handoff');assert.equal(wrong.structurallyChecked.includes('Доверенность'),false);assert.ok(wrong.issues.some(issue=>issue.code==='DOCUMENT_CLIENT_UNVERIFIED'));
 });
 
 

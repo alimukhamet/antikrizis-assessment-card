@@ -274,7 +274,7 @@
   .personal-shortcuts a:focus-visible{outline:3px solid var(--green-mid);outline-offset:3px}
   @media(max-width:360px){.personal-shortcuts{grid-template-columns:1fr}}
 </style>
-</head>
+<link rel="stylesheet" href="/operations.css"></head>
 <body data-view="home">
 <div id="toast" class="toast"></div>
 <div id="filePreviewModal" class="file-preview hidden" role="dialog" aria-modal="true" aria-labelledby="filePreviewName">
@@ -323,7 +323,7 @@
     <div class="home-hero">
       <div class="eyebrow">Работа со сделкой</div>
       <h1>Что нужно сделать?</h1>
-      <p>Документы и договор — в инструменте 04 «Оценка клиента».</p>
+      <p>Подготовьте договор. После подписания передайте дело юристам.</p>
       <section class="competition" aria-labelledby="competition-title">
 <div class="competition-head"><div><h2 id="competition-title">Результаты продаж</h2><p>Сделки, переданные юристам</p></div><div class="period-switch" aria-label="Период отчёта"><button data-sales-period="today" aria-pressed="false">Сегодня</button><button data-sales-period="current_week" aria-pressed="false">Неделя</button><button data-sales-period="current_month" aria-pressed="true">Месяц</button><button data-sales-period="custom" aria-pressed="false">Даты</button></div></div>
 <div class="payment-switch" aria-label="Вид оплаты"><button data-sales-payment="all" aria-pressed="true">Все</button><button data-sales-payment="423" aria-pressed="false">50/50</button><button data-sales-payment="261" aria-pressed="false">После определения</button><button data-sales-payment="263" aria-pressed="false">До определения</button></div>
@@ -341,29 +341,23 @@
         <a href="/my-earnings" target="_top"><span>Мой заработок</span><span aria-hidden="true">→</span></a>
       </nav>
       <div class="task-grid">
-        <button class="task-card" type="button" data-open-view="contract" disabled>
+        <a class="task-card" href="/assessment-review" target="_top" data-main-action="contract">
           <span class="task-number">01</span>
-          <h2>Создать договор и карточку</h2>
-          <p>Перейдите к инструменту 04 «Оценка клиента».</p>
-          <span class="task-link">Недоступно</span>
-        </button>
-        <button class="task-card" type="button" data-open-view="documents" disabled>
+          <h2>Сформировать договор</h2>
+          <p>Документы клиента → проверка ответов → договор. Вся карточка и черновик сохраняются.</p>
+          <span class="task-link"><span>Открыть клиента</span><span>→</span></span>
+        </a>
+        <a class="task-card" href="/lawyer-handoff" target="_top" data-main-action="handoff">
           <span class="task-number">02</span>
-          <h2>Загрузить документы</h2>
-          <p>Перейдите к инструменту 04 «Оценка клиента».</p>
-          <span class="task-link">Недоступно</span>
-        </button>
-        <a class="task-card" href="https://gkb-credit-analyzer-kz.mukhamet-ali-ma.chatgpt.site" target="_blank" rel="noopener">
+          <h2>Передать юристам</h2>
+          <p>ЭЦП, доверенность и подписанный договор из TrustMe с QR. Всё остальное — из карточки клиента.</p>
+          <span class="task-link"><span>Подготовить передачу</span><span>→</span></span>
+        </a>
+        <a class="task-card" href="https://gkb-credit-analyzer-kz.mukhamet-ali-ma.chatgpt.site" target="_blank" rel="noopener" data-main-action="gkb">
           <span class="task-number">03</span>
           <h2>Проверить кредитный отчёт</h2>
-          <p>Открыть анализатор отчётов ГКБ и ПКБ Казахстана в отдельном рабочем окне.</p>
-          <span class="task-link"><span>Открыть анализатор</span><span>→</span></span>
-        </a>
-        <a class="task-card" href="/assessment-review" target="_top" data-fourth-tool>
-          <span class="task-number">04</span>
-          <h2>Оценка клиента</h2>
-          <p>Документы, ответы и договор. Черновик сохраняется автоматически.</p>
-          <span class="task-link"><span>Открыть оценку</span><span>→</span></span>
+          <p>Анализатор отчётов ГКБ и ПКБ Казахстана.</p>
+          <span class="task-link"><span>Открыть анализатор</span><span>↗</span></span>
         </a>
       </div>
       <a class="payment-shortcut" href="https://antikrizis-payment-control.mukhamet-ali-ma.chatgpt.site/" target="_blank" rel="noopener"><span>Контроль оплат</span><span aria-hidden="true">↗</span></a>

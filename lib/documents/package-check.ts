@@ -6,23 +6,24 @@ import {currentDocumentReview,MANUAL_DOCUMENT_TYPES} from './document-review';
 import {checkPowerTemplate} from './power-validation';
 import {matchShortReport,shortReportMismatchReasons,type CreditMatch} from './credit-report-match';
 import {creditorKey,loanRowKey} from './loan-identity';
-export const REQUIRED_DOCUMENTS=['ГКБ — краткий отчёт','ГКБ — полный отчёт','Справка ЕНПФ','Ф6 об отсутствии имущества','Удостоверение личности','Доверенность','Выписка Kaspi Gold','ЭЦП файл'];
+// Contract preparation and lawyer handoff have independent document requirements.
+export const REQUIRED_DOCUMENTS=['ГКБ — краткий отчёт','ГКБ — полный отчёт','Справка ЕНПФ','Ф6 об отсутствии имущества','Удостоверение личности','Выписка Kaspi Gold'];
 const kinds:Record<string,string>={'ГКБ — краткий отчёт':'gkb_short','ГКБ — полный отчёт':'gkb_full','Справка ЕНПФ':'enpf','Ф6 об отсутствии имущества':'property','Удостоверение личности':'identity','Доверенность':'power_of_attorney','Выписка Kaspi Gold':'kaspi','Справка по выплатам пенсии и пособий':'benefits','Выписка зарплатного банка':'salary'};
 export type PackageIssue={code:string;documentId?:string;type?:string;message:string};
 /** No OCR/AI is started here; absent/current-version cache requires explicit processing. */
-export async function checkDocumentPackage(repository:EvidenceRepository,record:CaseRow,payload:DraftPayload,day:string){
- const issues:PackageIssue[]=[],required=[...REQUIRED_DOCUMENTS];
+export async function checkDocumentPackage(repository:EvidenceRepository,record:CaseRow,payload:DraftPayload,day:string,scope:'contract'|'handoff'='contract'){
+ const issues:PackageIssue[]=[],required=scope==='handoff'?['Доверенность']:[...REQUIRED_DOCUMENTS];
  const benefitCount=payload.answers?.find(a=>a.key==='clientBenefitsCount')?.value||'';
- if(payload.docContext.social==='1'||Number(benefitCount)>0||payload.groups?.some(g=>g.id==='clientbenefits'&&g.rows.length>0))required.push('Справка по выплатам пенсии и пособий');
- if(payload.docContext.salary==='1')required.push('Выписка зарплатного банка');
- if(!payload.docContext.social||!payload.docContext.salary)issues.push({code:'DOCUMENT_CONTEXT_REQUIRED',message:'Укажите, получает ли клиент пенсию или пособия и в какой банк поступает зарплата.'});
- if(payload.pendingFiles.length)issues.push({code:'DOCUMENT_UPLOAD_PENDING',message:'Есть выбранные файлы, ещё не сохранённые для проверки.'});
+ if(scope==='contract'&&(payload.docContext.social==='1'||Number(benefitCount)>0||payload.groups?.some(g=>g.id==='clientbenefits'&&g.rows.length>0)))required.push('Справка по выплатам пенсии и пособий');
+ if(scope==='contract'&&payload.docContext.salary==='1')required.push('Выписка зарплатного банка');
+ if(scope==='contract'&&(!payload.docContext.social||!payload.docContext.salary))issues.push({code:'DOCUMENT_CONTEXT_REQUIRED',message:'Укажите, получает ли клиент пенсию или пособия и в какой банк поступает зарплата.'});
+ if(scope==='contract'&&payload.pendingFiles.filter(name=>! /\.(p12|pfx|key|jks)$/i.test(name)).length)issues.push({code:'DOCUMENT_UPLOAD_PENDING',message:'Есть выбранные файлы, ещё не сохранённые для проверки.'});
  const manuallyReviewed:Array<{documentId:string;reviewId:string;type:string;actorId:string;reviewedAt:string}>=[];
  const pendingShort:Array<{documentId:string;type:string;analysis:Analysis;message:string}>=[],fullReports:Array<{documentId:string;analysis:Analysis}>=[];
  const matchedShortReports:Array<{documentId:string;fullDocumentId:string;matches:CreditMatch[]}>=[];
  const seen=new Set<string>(),available=new Set<string>();
  const credits=new Map<string,Array<{documentId:string;creditor:string;issuedAt:string|null;values:Record<string,string>;pages:Record<string,number>}>>();
- for(const selected of payload.documents){
+ for(const selected of payload.documents.filter(document=>scope==='handoff'?document.type==='Доверенность':!['Доверенность','Подписанный договор'].includes(document.type))){
   const issue=(code:string,message:string)=>issues.push({code,message,documentId:selected.documentId,type:selected.type});
   if(seen.has(selected.documentId)){issue('DUPLICATE_DOCUMENT_SELECTION','Один файл выбран несколько раз.');continue;}seen.add(selected.documentId);
   const document=await repository.document(record.id,selected.documentId);
@@ -99,6 +100,6 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
  for(const type of missing)issues.push({code:'REQUIRED_DOCUMENT_MISSING',type,message:`Не выбран обязательный документ: ${type}.`});
  // Credentials remain in the existing separate upload flow, never in extraction/drafts.
  const credentials=await repository.credentialStatus?.(record);
- if(!credentials?.verified)issues.push({code:'EDS_SEPARATE_UPLOAD_REQUIRED',type:'ЭЦП файл',message:'Добавьте ключ ЭЦП и пароль. Сохраним их в сделку при скачивании договора.'});
+ // The handoff service separately verifies the saved key and signed contract.
  return {required,missing,matchedShortReports,manuallyReviewed,credentials:credentials??null,structurallyChecked:[...available],issues,conflicts,packageReady:issues.length===0,authenticity:'not_verified'};
 }

@@ -3,7 +3,7 @@ export function loginDestination(value: unknown): string {
   if (typeof value !== 'string' || value.length > 2048 || !value.startsWith('/') || value.startsWith('//')) return '/';
   try {
     const url = new URL(value, 'https://assessment.invalid');
-    if (url.origin !== 'https://assessment.invalid' || !['/', '/assessment-review', '/assessment-feedback'].includes(url.pathname)) return '/';
+    if (url.origin !== 'https://assessment.invalid' || !['/', '/assessment-review', '/assessment-feedback','/lawyer-handoff'].includes(url.pathname)) return '/';
     const id = url.searchParams.get('dealId');
     return url.pathname + (id && /^[1-9]\d*$/.test(id) ? '?dealId=' + id : '');
   } catch { return '/'; }

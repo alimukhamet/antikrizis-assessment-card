@@ -216,6 +216,8 @@ async function afAnalyze(preferences={}){
  afAnalysisProgress(0,files.length);
  try{
   for(const item of files){
+   // Signed contracts remain evidence, but must never autofill an intake questionnaire.
+   if(item.type==='Подписанный договор')continue;
    afStatus('Читаем '+(++done)+' из '+files.length+': '+(afExcluded(item)?'ключ ЭЦП — пропущен':item.file.name));afAnalysisProgress(done-1,files.length);
    if(afExcluded(item)){item.type='ЭЦП файл';if(!item.person)item.person='Клиент';af.results.set(item.id,{excluded:true,type:'ЭЦП файл',notes:['Не передавался на распознавание.'],pages:0});continue;}
    try{

@@ -5,13 +5,17 @@ import test from "node:test";
 import vm from 'node:vm';
 import { JSDOM } from 'jsdom';
 
-async function fetchBuilt(path = "/", headers = {}) {
+// Cloudflare exposes the binding through both env and process.env. The imported
+// built Worker runs in Node here, so supply the same synthetic secret to its RSC pages.
+process.env.SITE_SESSION_TOKEN=TEST_SECRET;
+
+async function fetchBuilt(path = "/", headers = {}, method = 'GET') {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
-    new Request(`http://localhost${path}`, { headers: {cookie:await testCookie(),...headers} }),
+    new Request(`http://localhost${path}`, { method, headers: {cookie:await testCookie(),...headers} }),
     { SITE_SESSION_TOKEN:TEST_SECRET, ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
     { waitUntil() {}, passThroughOnException() {} },
   );
@@ -20,6 +24,16 @@ async function fetchBuilt(path = "/", headers = {}) {
 async function render() {
   return fetchBuilt("/", { accept: "text/html" });
 }
+
+test('handoff page preserves the selected client through login and uses the protected shared form',async()=>{
+ const response=await fetchBuilt('/lawyer-handoff?dealId=900001');assert.equal(response.status,200);
+ const dom=new JSDOM(await response.text());assert.equal(dom.window.document.querySelector('iframe').getAttribute('src'),'/questionnaire.html?dealId=900001&mode=handoff');dom.window.close();
+ const denied=await fetchBuilt('/lawyer-handoff?dealId=900001',{cookie:''});assert.equal(denied.status,303);assert.match(denied.headers.get('location'),/returnTo=%2Flawyer-handoff%3FdealId%3D900001/);
+ for(const path of ['/api/assessment/900001/handoff','/api/assessment/900001/handoff-check']){
+  const anon=await fetchBuilt(path,{cookie:''},'POST');assert.equal(anon.status,401);
+  const foreign=await fetchBuilt(path,{origin:'https://foreign.invalid'},'POST');assert.equal(foreign.status,403);
+ }
+});
 
 test("login is a working native POST form and displays a session error without client JavaScript", async () => {
   const response = await fetchBuilt('/login?returnTo=%2Fassessment-review%3FdealId%3D11665&error=cookies&worker=ramazan');
@@ -70,22 +84,19 @@ test("captures every fact needed to build the later document checklist", async (
   assert.match(card, /marital:\s*\{bx:"UF_CRM_AI_MARITAL"\}/);
 });
 
-test("both launcher URLs disable the first two tools even without JavaScript and keep tools three and four available", async () => {
+test("both launcher URLs offer three deliberate destinations without selecting a client", async () => {
   for (const path of ['/assessment-card', '/assessment-card.html']) {
     const response=await fetchBuilt(path);
     assert.equal(response.status,200);
     assert.match(response.headers.get('cache-control'),/no-store/);
     const dom=new JSDOM(await response.text());
     const cards=[...dom.window.document.querySelectorAll('.task-grid > .task-card')];
-    assert.equal(cards.length,4);
-    for (const card of cards.slice(0,2)) {
-      assert.equal(card.tagName,'BUTTON');
-      assert.equal(card.disabled,true);
-      assert.match(card.textContent,/Недоступно/);
-    }
+    assert.equal(cards.length,3);
+    assert.equal(cards[0].getAttribute('href'),'/assessment-review');
+    assert.equal(cards[1].getAttribute('href'),'/lawyer-handoff');
+    for(const card of cards.slice(0,2)){assert.equal(card.tagName,'A');assert.equal(card.getAttribute('target'),'_top');assert.equal(card.href.includes('dealId'),false);}
+
     assert.equal(cards[2].getAttribute('href'),'https://gkb-credit-analyzer-kz.mukhamet-ali-ma.chatgpt.site');
-    assert.equal(cards[3].getAttribute('href'),'/assessment-review');
-    assert.equal(cards[3].getAttribute('target'),'_top');
     dom.window.close();
   }
 });

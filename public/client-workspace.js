@@ -4,7 +4,7 @@ window.ClientWorkspace=(()=>{
  const el=(tag,text,cls)=>{const node=document.createElement(tag);if(text)node.textContent=text;if(cls)node.className=cls;return node;};
  const button=(text,fn)=>{const node=el('button',text,'btn btn-ghost');node.type='button';node.onclick=fn;return node;};
  let directory=null,switching=false;
- const url=id=>'/assessment-review?dealId='+encodeURIComponent(id);
+ const url=id=>(new URLSearchParams(location.search).get('mode')==='handoff'?'/lawyer-handoff':'/assessment-review')+'?dealId='+encodeURIComponent(id);
  async function json(path,options){const response=await fetch(path,options),body=await response.json();if(!response.ok){const error=Error(HostedAssessment.error(body.error));error.code=body.error;throw error;}return body;}
  function close(){if(directory){directory.close();directory.remove();directory=null;}}
  async function switchTo(id){
@@ -36,6 +36,7 @@ window.ClientWorkspace=(()=>{
   const exit=button('Закрыть',close),search=el('input');search.type='search';search.placeholder='Имя клиента или номер сделки';search.setAttribute('aria-label','Найти клиента');
   const status=el('p','Загружаем черновики…','hint'),list=el('div',null,'client-directory-list');status.setAttribute('role','status');search.maxLength=80;
   const archiveLabel=el('label',null,'client-archive-toggle'),archive=el('input');archive.type='checkbox';archiveLabel.append(archive,document.createTextNode(' Показать клиентов с договором'));archive.onchange=render;dialog.append(heading,exit,search,archiveLabel,status,list);dialog.addEventListener('close',()=>{dialog.remove();if(directory===dialog)directory=null;},{once:true});document.body.append(dialog);dialog.showModal();
+  archive.checked=new URLSearchParams(location.search).get('mode')==='handoff';
   let data={drafts:[],recent:[]},timer,request=0;
   function render(){
     list.replaceChildren();const query=search.value.trim().toLocaleLowerCase('ru-RU'),seen=new Set(),hiddenContracts=new Set();let total=0;

@@ -1,0 +1,64 @@
+/* Additive UX only. The canonical form, fields and evidence controls retain their own styles. */
+.ux-preview-strip{padding:9px 18px;background:#fff5dd;border-bottom:1px solid #e6d6af;color:#665024;font-size:12px;line-height:1.5;text-align:center}
+.ux-preview-strip button{border:0;background:transparent;color:inherit;text-decoration:underline;cursor:pointer;font:inherit;margin-left:12px}
+.ux-context{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 18px}
+.ux-context a{color:var(--green);text-decoration:none;font-size:13px}
+.ux-mode-nav{display:flex;gap:5px;border:1px solid var(--border);background:#fff;padding:4px;border-radius:11px}
+.ux-mode-nav a{padding:8px 12px;border-radius:7px}
+.ux-mode-nav a[aria-current=page]{background:var(--green);color:white}
+.ux-page-title{font-size:23px;letter-spacing:-.03em;margin:5px 0 20px;color:var(--green-dark)}
+.ux-preview-only-note{margin:10px 0 0;color:var(--text-mid);font-size:12px;line-height:1.6}
+.ux-handoff-note{border:1px solid var(--border);border-radius:12px;background:var(--green-pale);padding:15px 18px;margin-bottom:18px;font-size:14px}
+.ux-handoff-note strong{display:block;margin-bottom:4px}
+.ux-handoff-grid{display:grid;gap:14px}
+.ux-handoff-card{border:1px solid var(--border);background:#fff;border-radius:18px;padding:22px}
+.ux-handoff-card>header{display:flex;align-items:flex-start;gap:12px;justify-content:space-between;margin-bottom:15px}
+.ux-handoff-card h2{font-size:17px;margin:0;color:var(--green-dark)}
+.ux-handoff-card header p{margin:4px 0 0;font-size:13px;color:var(--text-mid)}
+.ux-handoff-state{background:#f3f5f2;color:var(--text-mid);font-size:12px;border-radius:7px;padding:5px 9px;white-space:nowrap}
+.ux-handoff-state[data-ready=true]{background:var(--green-light);color:var(--green-dark)}
+.ux-handoff-card .wf-credential{margin:0;padding:0;border:0;background:none;display:block}
+.ux-handoff-card .wf-credential>h3{display:none}
+.ux-handoff-card .wf-credential .required-document{margin-bottom:16px}
+.ux-handoff-card .required-document{background:none;border:0;padding:0}
+.ux-handoff-card .required-document>div>strong{display:none}
+.ux-handoff-card .required-document>div{min-width:0}
+.ux-handoff-card .field{max-width:520px}
+.ux-file-row{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.ux-file-name{font-size:13px;color:var(--text-mid);overflow-wrap:anywhere;min-width:0;max-width:100%}
+.ux-file-label{position:relative;overflow:hidden;cursor:pointer}
+.ux-file-label input{position:absolute;width:100%;height:100%;opacity:0;inset:0;cursor:pointer}
+.ux-confirm{display:flex;gap:10px;align-items:flex-start;font-size:13px;margin:16px 0 0;line-height:1.5}
+.ux-confirm input{margin-top:3px;flex-shrink:0;width:16px;height:16px}
+.ux-handoff-footer{margin-top:18px;padding:18px 20px;display:flex;justify-content:space-between;align-items:center;gap:20px;background:#fff;border:1px solid var(--border);border-radius:14px}
+.ux-handoff-footer p{margin:3px 0;color:var(--text-mid);font-size:12px}
+.ux-handoff-footer button{flex-shrink:0}
+.ux-signing-next{margin:18px 0;border-top:1px solid var(--border);padding-top:18px}
+.ux-signing-next h3{font-size:15px;margin:0 0 8px}
+.ux-signing-next p{font-size:13px;color:var(--text-mid);line-height:1.6;margin:0 0 12px}
+.ux-dialog{border:1px solid var(--border);border-radius:18px;padding:28px;max-width:480px;width:calc(100% - 32px);color:var(--text);box-shadow:var(--shadow)}
+.ux-dialog::backdrop{background:rgba(24,36,28,.35)}
+.ux-dialog h2{font-size:20px;margin-top:0}.ux-dialog p{font-size:14px;line-height:1.7}.ux-dialog .btn{margin-right:8px}
+body[data-ux-mode=contract] .ux-handoff-area{display:none}
+body[data-ux-mode=handoff] .wf-steps,body[data-ux-mode=handoff] #documentStep,body[data-ux-mode=handoff] #documentReviewStep,body[data-ux-mode=handoff] #questionnaireStep,body[data-ux-mode=handoff] .wf-bottom-nav{display:none!important}
+body[data-ux-mode=handoff] .wf-draft-note{display:none}
+body[data-ux-mode=contract] .wf-credential,body[data-ux-mode=contract] #require-power{display:none}
+body[data-view=home] .task-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+body[data-view=home] .task-card{min-height:230px}
+body[data-view=home] .task-card[data-main-action=contract]{background:var(--green-pale);border-color:#abc5b3}
+.ux-preview-disabled{opacity:.7}
+.ux-client-entry{padding:32px;max-width:640px;background:#fff;border:1px solid var(--border);border-radius:16px;margin:0 0 24px}
+.ux-client-entry h2{font-size:24px;line-height:1.3;margin:0 0 10px;color:var(--green-dark)}
+.ux-client-entry p{font-size:16px;line-height:1.6;color:var(--text-mid);margin:0 0 22px}
+.ux-client-label{display:block;font-size:14px;line-height:1.5;margin-bottom:4px;color:var(--text-mid)}
+.wf-header{position:sticky;top:0;z-index:25;box-shadow:0 4px 12px #14251c0d}
+.wf-client-copy strong{font-size:20px}.wf-client-copy>span{font-size:14px}
+.wf-client #openClients{font-size:14px}
+.wf-steps{position:static}
+body:not([data-ux-client-state=ready]) [data-ux-client-content]{display:none!important}
+body[data-ux-client-state=empty] .wf-header{display:none}
+.ux-client-entry[hidden]{display:none}
+.ux-preview-strip button:disabled{display:none}
+.submission-destination>strong{display:block;font-size:21px;overflow-wrap:anywhere}
+.submission-destination>p,.submission-destination>label{font-size:16px;line-height:1.5}
+@media(max-width:620px){.ux-context{align-items:flex-start}.ux-mode-nav{width:100%;display:grid;grid-template-columns:1fr 1fr;text-align:center}.ux-mode-nav a{font-size:12px;padding:8px}.ux-handoff-card{padding:17px}.ux-handoff-card>header{flex-wrap:wrap}.ux-handoff-footer{align-items:stretch;flex-direction:column}.ux-handoff-footer button{width:100%}body[data-view=home] .task-grid{grid-template-columns:1fr}.ux-preview-strip{font-size:11px}.ux-page-title{font-size:21px}}

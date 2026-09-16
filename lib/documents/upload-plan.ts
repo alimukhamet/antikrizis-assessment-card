@@ -8,7 +8,7 @@ export async function documentUploadPlan(repository:EvidenceRepository,record:Ca
  const name=payload.answers.find(a=>a.key==='fio')?.value.trim().split(/\s+/).filter(Boolean)||[];
  const suffix=sanitize(name.length>1?`${name[0]} ${name[1][0]}.`:name[0]||`ID ${record.external_id}`,'client');
  const files:Array<{documentId:string;name:string;sha256:string;byteSize:number}>=[],seen=new Set<string>();
- for(const selected of payload.documents){
+ for(const selected of payload.documents.filter(d=>!['Доверенность','Подписанный договор'].includes(d.type))){
   if(!prefixes[selected.type]||selected.person!=='Клиент'||seen.has(selected.documentId))throw new RepositoryError('INVALID_UPLOAD_SELECTION',400);seen.add(selected.documentId);
   const doc=await repository.document(record.id,selected.documentId);if(!doc)throw new RepositoryError('DOCUMENT_NOT_IN_CASE');
   const group=payload.documents.filter(d=>d.type===selected.type),index=group.findIndex(d=>d.documentId===selected.documentId);

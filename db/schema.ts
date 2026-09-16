@@ -53,3 +53,10 @@ export const toolFeedback=sqliteTable('assessment_tool_feedback',{
  message:text('message').notNull(),clientVersion:text('client_version').notNull(),serverVersion:text('server_version').notNull(),
  payloadJson:text('payload_json').notNull(),createdAt:text('created_at').notNull(),
 },t=>[uniqueIndex('assessment_feedback_request').on(t.actorId,t.requestId),index('assessment_feedback_actor_time').on(t.actorId,t.createdAt)]);
+export const lawyerHandoffs=sqliteTable('assessment_handoffs',{
+ id:text('id').primaryKey(),caseId:text('case_id').notNull().references(()=>assessmentCases.id),
+ requestId:text('request_id').notNull(),identityRevision:integer('identity_revision').notNull(),
+ actorId:text('actor_id').notNull(),authentication:text('authentication').notNull(),
+ payloadJson:text('payload_json').notNull(),payloadHash:text('payload_hash').notNull(),
+ state:text('state').notNull(),outcomeCode:text('outcome_code'),createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull(),
+},t=>[uniqueIndex('assessment_handoff_request').on(t.caseId,t.requestId),uniqueIndex('assessment_handoff_once').on(t.caseId).where(sql`${t.state} <> 'cancelled'`)]);

@@ -45,7 +45,7 @@ window.AssessmentWorkflow=(()=>{
  picker.open=false;picker.hidden=true;
  const draftNote=make('p','Черновик в инструменте. В Bitrix — при скачивании договора.','wf-draft-note');top.append(draftNote);
 
- const nav=make('nav',null,'wf-steps');nav.setAttribute('aria-label','Этапы оценки');top.after(nav);
+ const nav=make('nav',null,'wf-steps');nav.setAttribute('aria-label','Подготовка договора');top.after(nav);
  const stages=[['documents','Документы','Добавьте файлы клиента'],['answers','Ответы','Проверьте и дополните'],['contract','Договор','Проверьте и сохраните']];
  const tabs=new Map();
  stages.forEach(([name,title,caption],index)=>{
@@ -194,6 +194,7 @@ window.AssessmentWorkflow=(()=>{
  }
  function prepareUpload(){
   if(!HostedAssessment.ready())return false;
+  if(new URLSearchParams(location.search).get('mode')==='handoff')return Boolean(window.ServerDrafts?.canSwitch());
   const id=collection().context[0];if(!id)return true;
   show('documents',{focus:false});$(id).focus();$(id).scrollIntoView({block:'center'});return false;
  }

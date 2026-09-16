@@ -28,7 +28,7 @@ window.SubmissionFlow={mount(anchor,status){
   if(!window.ContractRenderers?.[version])await new Promise((resolve,reject)=>{const currentRenderer=window.ContractRenderer,script=document.createElement('script');script.src=`/contract-renderers/${version}.js`;script.onload=()=>{window.ContractRenderer=currentRenderer;resolve();};script.onerror=()=>reject(Error('Не удалось загрузить сохранённую версию договора.'));document.head.append(script);});
   const renderer=window.ContractRenderers?.[version];if(!renderer)throw Error('Сохранённая версия договора не найдена.');
   const blob=await renderer.render(contract.data,version);if(currentDeal()!==dealId)throw Error('Открыта другая сделка. Скачайте договор из сохранённой версии нужной сделки.');
-  const link=document.createElement('a'),url=URL.createObjectURL(blob);link.href=url;link.download=`Договор — сделка ${dealId}.docx`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  const link=document.createElement('a'),url=URL.createObjectURL(blob);link.href=url;link.download=(HostedAssessment.getContext().client.title+` — договор — сделка ${dealId}.docx`).replace(/[\\/:*?"<>|]/g,'_');link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
  }
  async function advance(dealId,row,guard){
   const requestId=row.requestId;if(currentDeal()!==dealId)throw Error('Открыта другая сделка.');
@@ -64,7 +64,7 @@ window.SubmissionFlow={mount(anchor,status){
   const row=await post(selected.dealId,{action:'prepare',requestId:attempt.requestId,identityRevision:selected.identityRevision,payload:selected.payload,bindings:selected.bindings});
   await advance(selected.dealId,row,()=>currentDeal()===selected.dealId&&signature()===selected.signature);
  });
- resume.onclick=()=>operate(async()=>{if(!latest)throw Error('Сохранение не найдено.');if(latest.state!=='verified'||!latest.historySaved)await confirmDestination();await advance(latest.dealId,latest);});
+ resume.onclick=()=>operate(async()=>{if(!latest)throw Error('Сохранение не найдено.');await confirmDestination();await advance(latest.dealId,latest);});
  cancel.onclick=()=>operate(async()=>{if(!latest)return;const row=await post(latest.dealId,{action:'cancel',requestId:latest.requestId});if(row.state!=='cancelled')throw Error('Запись уже отправлялась. Нужно проверить результат сохранения.');attempt=null;status.textContent='Подготовка отменена. История сохранена; можно проверить новую версию.';});
  document.addEventListener('assessment-case-opened',refresh);
  return {invalidate(){checked=null;save.disabled=busy;},checked(result,context){checked=result.readyToSubmit?{...context,identityRevision:result.identityRevision}:null;save.disabled=busy;refresh();}};
