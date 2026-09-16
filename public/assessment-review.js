@@ -74,6 +74,8 @@ function afBadge(e,src){
  }else if(src.pending&&src.server?.draftOnly){box.append(afEl("span","Из ГКБ · подтвердите клиента для сохранения ИИН"));}else if(src.pending&&src.edited){const yes=afEl('button','Сохранить исправление');yes.type='button';yes.onclick=async()=>{yes.disabled=true;try{await HostedAssessment.review(e,src);delete e.dataset.sourceReplaced;e.setCustomValidity('');field.querySelectorAll('[data-replacement-notice]').forEach(node=>node.remove());src.pending=false;src.stale=false;afBadge(e,src);afRefresh();}catch(error){afStatus(error.message,true);yes.disabled=false;}};box.append(yes);}
  field.append(box);
 }
+// Used by the separately loaded server-answer-check.js classic script.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function afConfirmPending(){
  const pending=afPending();if(!pending.length)return true;
  if(af.conflicts.length)throw Error('Сначала разберите расхождения с документами.');
@@ -183,6 +185,8 @@ function afClientChoices(){
  $af('afApply').textContent='Подтвердить клиента и заполнить';
  $af('afIdentity').hidden=!ids.size;$af('afIdentity').style.display=ids.size?'flex':'none';return select.value;
 }
+// Used by server-answer-check.js and client-context-ui.js.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function afEnsureIdentity(){
  if(HostedAssessment.getContext()?.client.iin)return true;
  if(af.busy||!window.ServerDrafts?.canSwitch()){afStatus('Дождитесь загрузки документов клиента. ИИН будет прочитан из ГКБ.',true);return false;}

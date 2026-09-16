@@ -78,3 +78,14 @@ test('signed PDF ownership and saved credentials are required independently of c
  repo.cached=async()=>({result:{read:{totalPages:1},extraction:{identity:{iin:null}}}});
  await assert.rejects(service.validateHandoffDocuments(repo,record,'power','signed','2026-09-16'),/HANDOFF_CREDENTIALS_REQUIRED/);
 });
+test('malformed CRM bodies and stage rows fail closed without any stage write',async()=>{
+ for(const bad of [null,[],42,{ID:'900001'}]){
+  let writes=0;const send=async(url)=>{if(url.includes('crm.deal.update'))writes++;return{ok:true,json:async()=>({result:bad})};};
+  const adapter=crm.createHandoffAdapter('https://synthetic.invalid/rest/',send);
+  await assert.rejects(adapter.move(record.external_id,record.client_iin,destination,'2026-09-16T08:00:00Z'),e=>e.notStarted===true);assert.equal(writes,0);
+ }
+ const s=transport(),original=s.send;
+ s.send=async(url,options)=>url.includes('crm.status.list')?{ok:true,json:async()=>({result:[null,{STATUS_ID:'C13:WON',NAME:'Сделка завершена'}]})}:original(url,options);
+ const a=crm.createHandoffAdapter('https://synthetic.invalid/rest/',s.send);
+ await assert.rejects(a.discover(record.external_id,record.client_iin),/HANDOFF_STAGE_UNVERIFIED/);assert.equal(s.writes.length,0);
+});

@@ -19,13 +19,19 @@ export default function PersonalSales({ mode }: { mode: 'results' | 'earnings' }
   const earnings = activeMode === 'earnings';
   useEffect(() => {
     const controller = new AbortController();
+    const timer=setTimeout(()=>{controller.abort();setError('Сервер не ответил вовремя. Повторите загрузку.');setBusy(false);},30000);
     fetch('/api/personal-sales' + (person ? '?person=' + encodeURIComponent(person) : ''), { signal: controller.signal, cache: 'no-store' }).then(async response => {
-      if (response.status === 401) { window.location.assign('/login?returnTo=' + encodeURIComponent(window.location.pathname)); return; }
+      if(controller.signal.aborted)return;
+      if (response.status === 401) {
+        // Drop the previous employee's in-memory report before reauthentication.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+        window.location.assign('/login?returnTo=' + encodeURIComponent(window.location.pathname)); return;
+      }
       const data = await response.json() as Report & { error?: string };
       if (!response.ok) throw Error(data.error || 'Не удалось загрузить результаты.');
       if (!controller.signal.aborted) { setReport(data); setError(''); setBusy(false); }
-    }).catch(e => { if (!controller.signal.aborted) { setError(e.message); setBusy(false); } });
-    return () => controller.abort();
+    }).catch(e => { if (!controller.signal.aborted) { setError(e.message); setBusy(false); } }).finally(()=>clearTimeout(timer));
+    return () => {clearTimeout(timer);controller.abort();};
   }, [retry, person]);
   const periods = [...(report?.periods || [])].sort((a, b) => b.end.localeCompare(a.end));
   const current = periods.find(p => p.ongoing);

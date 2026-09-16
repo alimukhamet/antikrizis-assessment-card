@@ -34,11 +34,11 @@ window.ServerDrafts=(()=>{
    $('loadDraft').classList.remove('hidden');
    if(!baselineLoaded&&JSON.stringify(capture())===initialSnapshot){await restore({draft:r.draft,automatic:true});return;}
    if(!baselineLoaded){const text='Есть сохранённый черновик. Откройте его перед продолжением — ваши новые ответы можно скачать.';loadStatus('error',text);showDraftStatus(text);}else loadStatus('ready');
-  }catch(e){loadStatus('error',e.message);showDraftStatus(e.message);}
+  }catch(e){if(sequence!==epoch||b!==base())return;loadStatus('error',e.message);showDraftStatus(e.message);}
  }
  async function save(options={}){
   clearTimeout(timer);
-  if(saveTask){await saveTask;if(!isDirty())return true;return save(options);}
+  if(saveTask){if(!await saveTask)return false;if(!isDirty())return true;return save(options);}
   if(loading||af.busy||!HostedAssessment.ready()){showDraftStatus('Дождитесь загрузки клиента и документов.');return false;}
   if(!baselineLoaded){showDraftStatus('Откройте сохранённый черновик перед продолжением.');return false;}
   if(options.automatic&&!isDirty())return true;

@@ -332,7 +332,6 @@ window.AssessmentWorkflow=(()=>{
   else{collectionNotice.focus({preventScroll:true});collectionNotice.scrollIntoView({block:'start',behavior:'smooth'});}
  }
  document.addEventListener('assessment-submission-blocked',event=>{if(event.detail?.reason==='documents')openDocumentIssues(event.detail.result);});
- let refreshQueued=false;
  for(const name of ['input','change'])document.addEventListener(name,event=>{if(!event.target.closest?.('#questionnaireStep,#documentStep')&&event.target.id!=='afDate')return;if(!event.target.closest?.('[data-document-review]'))lastCheck=null;if(!af.applying)afQueueRefresh();});
  document.addEventListener('assessment-draft-restored',()=>{lastCheck=null;refresh();try{const saved=sessionStorage.getItem('assessment-step:'+HostedAssessment.getContext().client.external.dealId);if(saved)show(saved,{focus:false});}catch{/* Keep the document step when storage is unavailable. */}});
  document.addEventListener('assessment-analysis-complete',event=>{lastCheck=null;fileResults.open=true;refresh();if(event.detail?.showPackageSummary&&active==='documents'&&!collectionNotice.hidden){collectionNotice.focus({preventScroll:true});collectionNotice.scrollIntoView({block:'start',behavior:'smooth'});}});

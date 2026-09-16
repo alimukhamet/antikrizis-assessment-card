@@ -19,15 +19,15 @@ function resolveModule(parent, specifier) {
 function load(relative) {
   const filename = path.resolve(root, relative);
   if (cache.has(filename)) return cache.get(filename).exports;
-  const module = { exports: {} };
-  cache.set(filename, module);
+  const loadedModule = { exports: {} };
+  cache.set(filename, loadedModule);
   const source = fs.readFileSync(filename, 'utf8');
   const output = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   vm.runInNewContext(output, {
-    module,
-    exports: module.exports,
+    module: loadedModule,
+    exports: loadedModule.exports,
     require: specifier => load(resolveModule(filename, specifier)),
     crypto: webcrypto,
     TextEncoder,
@@ -56,10 +56,9 @@ function load(relative) {
     atob,
     btoa,
   }, { filename });
-  return module.exports;
+  return loadedModule.exports;
 }
 
-const converter = load('lib/crm/assessment-intake-export.ts');
 const sync = load('lib/crm/assessment-intake-sync.ts');
 const secret = 'assessment-intake-source-secret-for-tests-32-bytes';
 const dealId = '11665';

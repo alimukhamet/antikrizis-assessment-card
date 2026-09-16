@@ -4,11 +4,41 @@ window.HostedAssessment=(()=>{
  const errors={IDENTITY_CONFLICT:'ИИН документа не совпадает с уже сохранённым клиентом. Ничего не заменено; проверьте выбранную сделку и документ.',IDENTITY_SAVE_UNCERTAIN:'Не удалось подтвердить сохранение ИИН. Ответы и файлы не удалены. Повторите подтверждение: уже сохранённый ИИН не будет записан повторно.',IDENTITY_CONFIRMATION_REQUIRED:'Подтвердите, что документ принадлежит клиенту выбранной сделки.',BITRIX_TEMPORARILY_UNAVAILABLE:'Bitrix временно не отвечает. Повторите открытие карточки. Сохранённые ответы и файлы не удалены.',ENPF_PERIOD_NOT_ACCEPTABLE:'ЕНПФ охватывает меньше года. Добавьте справку за 12 месяцев до даты выдачи.',ENPF_PERIOD_UNVERIFIED:'Не удалось прочитать период ЕНПФ. Сверьте его по оригиналу.',SHORT_CONTRACT_ID_TRUNCATED:'В кратком ГКБ сокращён номер договора. Сверьте его с полным отчётом.',SHORT_CREDIT_LIST_UNVERIFIED:'Список долгов краткого ГКБ требует сверки с полным отчётом.',TOO_MANY_PAGES:'В PDF больше 300 страниц — такой файл пока нельзя обработать автоматически.',EXTRACTED_TEXT_LIMIT:'В этом PDF слишком много текста для текущего лимита обработки.',EMPTY_FILE:'Файл пустой. Загрузите исходный документ заново.',CRM_FILE_TOO_LARGE:'Файл в сделке больше 35 МБ.',CRM_FILE_DOWNLOAD_FAILED:'Не удалось скачать файл из сделки. Повторите попытку.',CRM_FILE_LINK_UNAVAILABLE:'Bitrix не предоставил доступ к файлу.',CRM_FILE_REDIRECT_UNTRUSTED:'Не удалось подтвердить адрес хранения файла. Выберите скачанный PDF вручную.',EVIDENCE_REQUEST_FAILED:'Не удалось получить документы сделки. Повторите попытку.',POWER_AUTHORITY_REVIEW_REQUIRED:'Сверьте доверенность по оригиналу.',POWER_DATES_UNVERIFIED:'Не удалось прочитать дату выдачи или срок. Укажите даты по оригиналу.',POWER_DATE_NOT_ACCEPTABLE:'Срок доверенности истёк или указана будущая дата выдачи. Проверьте даты.',POWER_SCOPE_REVIEW_REQUIRED:'Текст полномочий отличается от рабочего шаблона. Подтвердите по оригиналу.',REPRESENTATIVE_IDENTITY_UNVERIFIED:'Личность поверенного не установлена.',REPRESENTATIVE_NOT_APPROVED:'Поверенный не совпадает с утверждёнными реквизитами Айжан или Aplus Corporation.',STATEMENT_RECONCILIATION_REQUIRED:'Операции и остатки выписки не сошлись. Проверьте полноту файла.',STATEMENT_PERIOD_UNVERIFIED:'Период выписки не установлен.',STATEMENT_PERIOD_NOT_ACCEPTABLE:'Нужна выписка за последние 12 месяцев, включая год до даты выписки.',CACHE_REPROCESS_REQUIRED:'Версия обработки изменилась. Нажмите «Распознать и заполнить» для повторного анализа.',SIGN_IN_REQUIRED:'Войдите на сайт заново.',DEAL_READ_FAILED:'Не удалось открыть сделку.',EVIDENCE_STORAGE_NOT_CONFIGURED:'Хранилище оценки ещё не настроено.',WRONG_CLIENT:'Документ другого клиента.',GKB_TOO_OLD:'ГКБ старше 30 дней. Нужен новый отчёт.',FUTURE_DOCUMENT_DATE:'Дата документа находится в будущем.',PAGE_COMPLETENESS_UNVERIFIED:'Полнота страниц не подтверждена.',DOCUMENT_IDENTITY_UNVERIFIED:'ИИН владельца документа не подтверждён.',DEAL_IDENTITY_UNVERIFIED:'Подтвердите клиента в ГКБ — ИИН будет заполнен из документа.',EXTRACTION_VERSION_CHANGED:'Версия распознавания изменилась. Повторите распознавание документа.',CASE_IDENTITY_CHANGED:'Личность в сделке изменилась. Откройте оценку заново.',CLIENT_IDENTITY_UNVERIFIED:'Личность документа не совпадает с текущей сделкой.',DOCUMENT_REQUIRES_VALIDATION:'Документ ещё не прошёл необходимые проверки.',FACT_NOT_IN_EXTRACTION:'Ответ не найден в сохранённом результате распознавания.',IDEMPOTENCY_KEY_REUSED:'Этот запрос уже использован для другого ответа. Проверьте сохранённый результат.',CONFIRMATION_VALUE_MISMATCH:'Значение изменено. Сохраните его как исправление.',NOT_A_SUPPORTED_PDF:'Этот формат пока не поддерживается. Используйте PDF.',PDF_UNREADABLE_OR_ENCRYPTED:'PDF не читается или защищён паролем.',FILE_TOO_LARGE:'Файл больше 35 МБ.',GKB_DATE_NOT_ACCEPTABLE:'ГКБ не соответствует правилу 30 дней.',CREDENTIAL_NOT_ANALYSED:'Ключ ЭЦП не отправляется на распознавание.'};
  const error=code=>errors[code]||'Не удалось завершить действие. Ответ не отмечен как сохранённый.';
  const el=id=>document.getElementById(id);
- // Bound the entire response, including its body. A stalled connection must not lock the card forever.
+ function sessionRecovery(){
+  if(document.getElementById('assessmentSessionNotice'))return;
+  const notice=document.createElement('div');notice.id='assessmentSessionNotice';notice.setAttribute('role','alert');
+  notice.style.cssText='position:sticky;top:0;z-index:10000;background:#fff4d6;color:#302400;padding:12px;border:1px solid #d6af40';
+  notice.append(document.createTextNode('Сессия закончилась. Не закрывайте анкету: ответы остаются в этой вкладке. '));
+  const login=document.createElement('a');login.href='/login';login.target='_blank';login.rel='noopener';login.textContent='Войти заново в другой вкладке';notice.append(login);
+  notice.append(document.createTextNode('. После входа под тем же сотрудником вернитесь и повторите действие.'));
+  document.body.prepend(notice);
+ }
+ // Bound both headers and body; never replay a write or discard answers after an HTTP error.
  async function requestJson(url,options={},settings={}){
-  const controller=new AbortController();let timer;const cancel=()=>controller.abort();if(options.signal?.aborted)cancel();else options.signal?.addEventListener('abort',cancel,{once:true});
-  try{return await Promise.race([(async()=>{const response=await fetch(url,{...options,signal:controller.signal}),body=await response.json();if(!response.ok)throw Object.assign(Error((settings.message||error)(body.error)),{code:body.error});return body;})(),new Promise((_,reject)=>{timer=setTimeout(()=>{reject(Object.assign(Error('Сервер не ответил вовремя. Повторите действие. Сохранённые данные не удалены.'),{code:'REQUEST_TIMEOUT'}));controller.abort();},settings.timeoutMs||30000);})]);}
-  finally{clearTimeout(timer);options.signal?.removeEventListener('abort',cancel);}
+  const controller=new AbortController();let timer;
+  const cancel=()=>controller.abort();
+  if(options.signal?.aborted)cancel();else options.signal?.addEventListener('abort',cancel,{once:true});
+  const failure=code=>{
+   if(code==='SIGN_IN_REQUIRED')sessionRecovery();
+   const messages={SERVER_UNAVAILABLE:'Сервис временно недоступен. Ответы не удалены. Повторите действие.',INVALID_SERVER_RESPONSE:'Не удалось прочитать ответ сервера. Ответы не удалены. Повторите действие.'};
+   return Object.assign(Error(messages[code]||(settings.message||error)(code)),{code});
+  };
+  try{
+   return await Promise.race([(async()=>{
+    const response=await fetch(url,{...options,signal:controller.signal});
+    if(response.status===401||response.redirected)throw failure('SIGN_IN_REQUIRED');
+    let body;
+    try{body=await response.json();}catch{throw failure(response.status>=500?'SERVER_UNAVAILABLE':'INVALID_SERVER_RESPONSE');}
+    if(!body||typeof body!=='object'||Array.isArray(body))throw failure('INVALID_SERVER_RESPONSE');
+    if(!response.ok)throw failure(typeof body.error==='string'?body.error:response.status>=500?'SERVER_UNAVAILABLE':'INVALID_SERVER_RESPONSE');
+    document.getElementById('assessmentSessionNotice')?.remove();
+    return body;
+   })(),new Promise((_,reject)=>{
+    timer=setTimeout(()=>{
+     reject(Object.assign(Error('Сервер не ответил вовремя. Повторите действие. Сохранённые данные не удалены.'),{code:'REQUEST_TIMEOUT'}));controller.abort();
+    },settings.timeoutMs||30000);
+   })]);
+  }finally{clearTimeout(timer);options.signal?.removeEventListener('abort',cancel);}
  }
  const json=requestJson;
  async function load(){

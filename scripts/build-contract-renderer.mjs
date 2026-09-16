@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 const html=await fs.readFile('templates/assessment-card.html','utf8');
 const template=/const TEMPLATE_B64 = '[^']+';/.exec(html)?.[0];if(!template)throw Error('CANONICAL_TEMPLATE_MISSING');
-const libs=await fs.readFile('lib/browser/contract-libraries.js','utf8');
+const libs=(await fs.readFile('lib/browser/contract-libraries.js','utf8')).replace(/^\/\/ eslint-disable-next-line[^\n]*\n/gm,'');
 const zip=html.slice(html.indexOf('const DOCX_MIME='),html.indexOf('function formatDateLong('));
 const words=html.slice(html.indexOf('function pluralRu('),html.indexOf('const segVal ='));
 const company=/const COMPANY = \{[\s\S]*?\n\};/.exec(html)?.[0];if(!company)throw Error('CANONICAL_COMPANY_MISSING');

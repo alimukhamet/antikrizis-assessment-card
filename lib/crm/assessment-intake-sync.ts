@@ -225,17 +225,6 @@ async function responseJson(response: Response): Promise<Record<string, unknown>
   } catch { throw new AssessmentIntakeSyncError('crm_response_invalid'); }
 }
 
-function pendingFromSelection(selection: AssessmentSubmissionSelection): AssessmentIntakeSyncResult {
-  if (selection.status === 'not_found') return { status: 'not_found', reason: selection.reason };
-  if (selection.status === 'pending') return {
-    status: 'pending',
-    reason: selection.reason,
-    sourceSubmissionId: selection.sourceSubmissionId,
-    sourceRevision: undefined,
-  };
-  return { status: 'failed', reason: 'unexpected_selection_state' };
-}
-
 function sourceMetadata(intake: AssessmentIntakeEnvelope, sourcePayloadHash: string, artifact: AssessmentIntakeEnvelope['evidence'][number]) {
   return {
     source: 'assessment-card',

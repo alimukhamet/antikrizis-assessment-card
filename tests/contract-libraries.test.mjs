@@ -32,7 +32,7 @@ test('concurrent requests share one dependency load',async t=>{
  assert.equal(s.scripts.length,2);await s.ensureLibs();assert.equal(s.scripts.length,2);assert.equal(s.timers.size,0);
 });
 test('all stalled mirrors return a visible failure instead of hanging forever',async t=>{
- const s=setup(()=>{});t.after(()=>s.close());assert.equal(await outcome(s.ensureLibs()),'failed');assert.equal(s.scripts.length,3);assert.ok(s.scripts.every(script=>script.removed));
+ const s=setup(()=>{});t.after(()=>s.close());assert.equal(await outcome(s.ensureLibs()),'failed');assert.equal(s.scripts.length,4);assert.ok(s.scripts.every(script=>script.removed));
 });
 test('libraries are exact pinned production builds, not eval-based development bundles',()=>{
  const s=setup(succeed);for(const urls of Object.values(s.LIB_URLS))for(const url of urls){assert.match(url,/\.min\.js$/);assert.match(url,/3\.1\.7|3\.50\.0/);}s.close();
