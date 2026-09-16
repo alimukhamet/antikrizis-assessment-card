@@ -22,15 +22,8 @@ export async function GET(request:Request,context:{params:Promise<{dealId:string
    const manifest=JSON.parse(prior.manifest_json) as UploadManifest;
    if(manifest.scope==='credentials'||!['writing','uncertain','verified'].includes(prior.state)||!record.client_iin||prior.identity_revision!==record.identity_revision)throw new RepositoryError('UPLOAD_NOT_STARTED');
    const started=Date.now(),trace:Array<Record<string,string|number>>=[],webhook=process.env.BITRIX_WEBHOOK??'';
-   const rangeProbe=new URL(request.url).searchParams.get('range')==='1';
-   const send:typeof fetch=async(input,init)=>{
-    if(!rangeProbe||init?.method!=='GET')return fetch(input,init);
-    const headers=new Headers(init.headers);headers.set('range','bytes=0-8191');
-    const response=await fetch(input,{...init,headers});trace.push({phase:'range-probe',status:response.status,range:response.headers.get('content-range')||''});
-    return response.status===206?new Response(response.body,{status:200,headers:response.headers}):response;
-   };
-   const reader=createCrmDocumentReader(webhook,dealId,record.client_iin,send,{onProgress:event=>{if(trace.length<100)trace.push(event);}}),adapter=createDocumentUploadAdapter(webhook,reader);
-   try{const receipt=await adapter.reconcile(dealId,record.client_iin,manifest.baseline,manifest.files,manifest.reused);return Response.json({verified:!rangeProbe,filesVerified:rangeProbe?0:receipt.files.length,elapsedMs:Date.now()-started,trace},{headers:{'cache-control':'no-store'}});}
+   const reader=createCrmDocumentReader(webhook,dealId,record.client_iin,fetch,{onProgress:event=>{if(trace.length<100)trace.push(event);}}),adapter=createDocumentUploadAdapter(webhook,reader);
+   try{const receipt=await adapter.reconcile(dealId,record.client_iin,manifest.baseline,manifest.files,manifest.reused);return Response.json({verified:true,filesVerified:receipt.files.length,elapsedMs:Date.now()-started,trace},{headers:{'cache-control':'no-store'}});}
    catch(error){return Response.json({verified:false,error:error instanceof DocumentUploadError?error.code:'UPLOAD_OUTCOME_UNCERTAIN',elapsedMs:Date.now()-started,trace},{headers:{'cache-control':'no-store'}});}
   }
   return Response.json({unsent:await new UploadManifestRepository(runtime.DB).unsentForActor(record,actor,'documents')},{headers:{'cache-control':'no-store'}});

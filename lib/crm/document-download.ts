@@ -1,12 +1,13 @@
 import {DocumentUploadError,readCrmItem,readFileField,createDocumentUploadAdapter,type CrmFileRef} from './document-upload';
 import {bitrixHeaders} from './http-headers';
 const MAX_BYTES=35*1024*1024;
+const RANGE_BYTES=8192;
 /** Refresh signed links from the selected CRM item; never accept a caller-supplied link. */
 export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin:string,send:typeof fetch=fetch,options:{pdfOnly?:boolean;credentialsOnly?:boolean;onFilename?:(name:string)=>void;onProgress?:(event:Record<string,number|string>)=>void}={}){
  let portal:URL;try{portal=new URL(webhook);}catch{throw new DocumentUploadError('INVALID_DOWNLOAD_CONFIGURATION');}
  if(portal.protocol!=='https:'||portal.username||portal.password||! /^[1-9]\d*$/.test(dealId)||! /^\d{12}$/.test(expectedIin))throw new DocumentUploadError('INVALID_DOWNLOAD_CONFIGURATION');
  async function bytes(response:Response){
-  if(response.status!==200||!response.body)throw new DocumentUploadError('CRM_FILE_DOWNLOAD_FAILED');
+  if(![200,206].includes(response.status)||!response.body){void response.body?.cancel().catch(()=>{});throw new DocumentUploadError('CRM_FILE_DOWNLOAD_FAILED');}
   const disposition=response.headers.get('content-disposition')||'';
   const encoded=/filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1],plain=/filename="([^"]+)"|filename=([^;]+)/i.exec(disposition);
   let filename=encoded||plain?.[1]||plain?.[2]||'';try{filename=decodeURIComponent(filename);}catch{/* Some legacy names contain a literal percent. */}
@@ -48,7 +49,7 @@ export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin
    if(url.origin!==portal.origin||url.username||url.password||url.hash||! /\/crm\.controller\.item\.getFile(?:\.json)?\/?$/i.test(url.pathname))throw new DocumentUploadError('CRM_FILE_LINK_UNTRUSTED');
    for(let redirects=0;redirects<=3;redirects++){
     const started=Date.now();options.onProgress?.({phase:'request-start',redirects});
-    const download=await send(url.toString(),{method:'GET',headers:bitrixHeaders(webhook,'file'),redirect:'manual',credentials:'omit',cache:'no-store',signal:AbortSignal.timeout(30000)});
+    const download=await send(url.toString(),{method:'GET',headers:{...bitrixHeaders(webhook,'file'),range:`bytes=0-${RANGE_BYTES-1}`},redirect:'manual',credentials:'omit',cache:'no-store',signal:AbortSignal.timeout(30000)});
     options.onProgress?.({phase:'response-headers',status:download.status,elapsedMs:Date.now()-started,contentLength:Number(download.headers.get('content-length')||0),contentType:(download.headers.get('content-type')||'').split(';')[0].slice(0,60),encoding:(download.headers.get('content-encoding')||'').slice(0,20)});
     if([301,302,303,307,308].includes(download.status)){
      const location=download.headers.get('location');await download.body?.cancel();
@@ -58,7 +59,32 @@ export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin
      if(next.origin!==portal.origin||next.username||next.password||next.hash)throw new DocumentUploadError('CRM_FILE_REDIRECT_UNTRUSTED');
      url=next;continue;
     }
-    return await bytes(download);
+    if(download.status!==206)return await bytes(download);
+    const limit=options.credentialsOnly?2*1024*1024:MAX_BYTES;
+    function range(response:Response,start:number,end:number,total?:number){
+     const match=/^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers.get('content-range')||'');
+     const actual=match?.slice(1).map(Number);
+     if(response.status!==206||!actual||actual.some(n=>!Number.isSafeInteger(n))||actual[0]!==start||actual[2]<=0||actual[1]!==Math.min(end,actual[2]-1)||(total!==undefined&&actual[2]!==total)||response.headers.get('content-encoding')){void response.body?.cancel().catch(()=>{});throw new DocumentUploadError('CRM_FILE_RANGE_MISMATCH');}
+     if(actual[2]>limit){void response.body?.cancel().catch(()=>{});throw new DocumentUploadError('CRM_FILE_TOO_LARGE');}
+     return actual[2];
+    }
+    const total=range(download,0,RANGE_BYTES-1),first=await bytes(download);
+    if(first.length!==Math.min(RANGE_BYTES,total))throw new DocumentUploadError('CRM_FILE_LENGTH_MISMATCH');
+    const result=new Uint8Array(total);result.set(first);let cursor=first.length;
+    const stopped=new AbortController(),validator=download.headers.get('etag')||download.headers.get('last-modified');
+    async function part(start:number){
+     const end=Math.min(start+RANGE_BYTES,total)-1,headers:Record<string,string>={...bitrixHeaders(webhook,'file'),range:`bytes=${start}-${end}`};
+     if(validator)headers['if-range']=validator;
+     const response=await send(url.toString(),{method:'GET',headers,redirect:'manual',credentials:'omit',cache:'no-store',signal:AbortSignal.any([stopped.signal,AbortSignal.timeout(8000)])});
+     range(response,start,end,total);
+     const data=await bytes(response);if(data.length!==end-start+1)throw new DocumentUploadError('CRM_FILE_LENGTH_MISMATCH');result.set(data,start);
+    }
+    // Three bounded read-only transfers per file; the complete assembled bytes
+    // still have to pass the upload manifest's length and SHA-256 checks.
+    try{await Promise.all(Array.from({length:Math.min(3,Math.ceil((total-cursor)/RANGE_BYTES))},async()=>{while(cursor<total){if(stopped.signal.aborted)throw new DocumentUploadError('CRM_FILE_DOWNLOAD_FAILED');const start=cursor;cursor+=RANGE_BYTES;await part(start);}}));}
+    catch(error){stopped.abort();throw error;}
+    options.onProgress?.({phase:'file-complete',bytes:total,parts:Math.ceil(total/RANGE_BYTES)});
+    return result;
    }
    throw new DocumentUploadError('CRM_FILE_DOWNLOAD_FAILED');
   }catch(error){

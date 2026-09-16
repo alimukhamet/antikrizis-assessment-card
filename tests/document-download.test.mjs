@@ -1,5 +1,5 @@
 import{test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import vm from'node:vm';import ts from'typescript';import{createHash}from'node:crypto';
-import {httpHeaders} from './bitrix-headers-helper.mjs'; function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>n==='./http-headers'?httpHeaders:imports[n],URL,Map,Set,Uint8Array,AbortSignal,btoa,TextEncoder,ReadableStream,TransformStream,Response,fetch:()=>{throw Error('Unexpected network request')}});return exports;}
+import {httpHeaders} from './bitrix-headers-helper.mjs'; function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>n==='./http-headers'?httpHeaders:imports[n],URL,Map,Set,Uint8Array,AbortSignal,AbortController,btoa,TextEncoder,ReadableStream,TransformStream,Response,fetch:()=>{throw Error('Unexpected network request')}});return exports;}
 const upload=load('lib/crm/document-upload.ts',{'../documents/repository':{sha256:async b=>createHash('sha256').update(b).digest('hex')}}),{createCrmDocumentReader,createVerifiedDocumentUploadAdapter}=load('lib/crm/document-download.ts',{'./document-upload':upload});
 const portal='https://crm.example',webhook=portal+'/rest/1/test/',iin='000000000010';
 test('Bitrix headers identify the integration and never disclose the webhook in Referer',()=>{
@@ -36,6 +36,27 @@ test('complete Content-Length bytes finish even if the upstream never closes the
 test('truncated and overlong uncompressed bodies fail, while compressed wire length is not decoded length',async()=>{
  for(const length of ['2','4']){const read=createCrmDocumentReader(webhook,'11665',iin,async(url,o)=>o.method==='POST'?metadata():new Response(new Uint8Array([1,2,3]),{headers:{'content-length':length}}));await assert.rejects(read({id:'22'}),/CRM_FILE_LENGTH_MISMATCH/);}
  const read=createCrmDocumentReader(webhook,'11665',iin,async(url,o)=>o.method==='POST'?metadata():new Response(new Uint8Array([1,2,3]),{headers:{'content-length':'2','content-encoding':'gzip'}}));assert.equal((await read({id:'22'})).length,3);
+});
+test('ranged transfer assembles every byte with at most three concurrent reads and unchanged signed URLs',async()=>{
+ const source=Uint8Array.from({length:267731},(_,i)=>i%251);let active=0,maximum=0,parts=0;
+ const read=createCrmDocumentReader(webhook,'11665',iin,async(url,o)=>{
+  if(o.method==='POST')return metadata();assert.equal(url,portal+'/rest/crm.controller.item.getFile.json?token=synthetic');
+  const m=/^bytes=(\d+)-(\d+)$/.exec(o.headers.range);assert.ok(m);const start=Number(m[1]),end=Math.min(Number(m[2]),source.length-1);assert.ok(end-start<8192);
+  if(start)assert.equal(o.headers['if-range'],'"synthetic-etag"');parts++;active++;maximum=Math.max(maximum,active);await new Promise(resolve=>setTimeout(resolve,1));active--;
+  return new Response(source.slice(start,end+1),{status:206,headers:{'content-range':`bytes ${start}-${end}/${source.length}`,'content-length':String(end-start+1),etag:'"synthetic-etag"'}});
+ });
+ const result=await read({id:'22'});assert.deepEqual(result,source);assert.equal(createHash('sha256').update(result).digest('hex'),createHash('sha256').update(source).digest('hex'));assert.equal(parts,Math.ceil(source.length/8192));assert.equal(maximum,3);
+});
+test('ranged transfers reject shifted ranges, changed files, oversized totals and short bodies',async()=>{
+ for(const variant of ['shift','changed','oversize','short']){
+  let reads=0;const read=createCrmDocumentReader(webhook,'11665',iin,async(url,o)=>{
+   if(o.method==='POST')return metadata();reads++;const start=Number(/^bytes=(\d+)/.exec(o.headers.range)[1]),end=start?16383:8191;
+   if(variant==='changed'&&start)return new Response(new Uint8Array(16384),{status:200});
+   const total=variant==='oversize'?36*1024*1024:16384,from=variant==='shift'?start+1:start;
+   return new Response(new Uint8Array(variant==='short'?8191:8192),{status:206,headers:{'content-range':`bytes ${from}-${end}/${total}`,'content-length':'8192'}});
+  });
+  await assert.rejects(read({id:'22'}),e=>['CRM_FILE_RANGE_MISMATCH','CRM_FILE_LENGTH_MISMATCH','CRM_FILE_TOO_LARGE'].includes(e.code));if(variant!=='changed')assert.equal(reads,1);
+ }
 });
 
 
