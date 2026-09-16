@@ -1,5 +1,7 @@
 window.ServerDrafts=(()=>{
  let revision=0,request=null,loading=false,epoch=0,baselineLoaded=false,baselineSnapshot=null,casePath=null,recoverySnapshot=null,saveTask=null,timer=null,missingFiles=[];
+ let loadState={phase:'idle',error:null};
+ function loadStatus(phase,error=null){loadState={phase,error};document.dispatchEvent(new Event('assessment-draft-load-state'));}
  const $=id=>document.getElementById(id);
  function controlKey(e){if(e.closest('.af-source'))return null;if(e.closest('.exact-count'))return 'exact:'+e.closest('.exact-count').previousElementSibling.id;if(e.type==='checkbox'){if(e.dataset.holding)return `holding:${e.dataset.owner}:${e.dataset.holding}`;if(e.dataset.unknown)return `unknown:${e.dataset.unknown}`;if(e.dataset.legacyUnknown)return `unknown:${e.dataset.legacyUnknown}`;if(e.name)return `choice:${e.name}:${e.value}`;}return e.id.replace(/_r\d+$/,'');}
  function controls(root){return [...root.querySelectorAll('input,select,textarea')].filter(e=>!e.closest('.af-source')&&!['file','password'].includes(e.type));}
@@ -14,7 +16,7 @@ window.ServerDrafts=(()=>{
  }
  const base=()=>'/api/assessment/'+HostedAssessment.getContext().client.external.dealId;
  const message=code=>({DRAFT_CHANGED:'Черновик изменён другим сотрудником. Загрузите последнюю версию перед сохранением.',CASE_IDENTITY_CHANGED:'ИИН сделки изменился. Откройте сделку заново.',WRONG_CLIENT:'ИИН анкеты не совпадает со сделкой.',IDEMPOTENCY_KEY_REUSED:'Запрос уже использован для другой версии. Перезагрузите черновик.',SIGN_IN_REQUIRED:'Войдите на сайт заново.'}[code]||'Не удалось сохранить или загрузить черновик. Ваши ответы остаются на экране.');
- async function api(path,options){const response=await fetch(path,options),body=await response.json();if(!response.ok)throw Object.assign(Error(message(body.error)),{code:body.error});return body;}
+ const api=(path,options)=>HostedAssessment.requestJson(path,options,{message});
  function isDirty(){return baselineSnapshot!==null&&JSON.stringify(capture())!==baselineSnapshot;}
  function hasTransientFiles(){return selectedFiles.some(item=>afExcluded(item)?!window.CredentialUpload?.verified():!item.storedDocumentId&&!af.results.get(item.id)?.server)||Boolean($('previewEdsPassword').value);}
  function changed(){
@@ -25,14 +27,14 @@ window.ServerDrafts=(()=>{
   if(!HostedAssessment.ready()||loading)return;
   const sequence=++epoch,b=base(),initialSnapshot=JSON.stringify(capture());
   if(casePath!==b){casePath=b;baselineLoaded=false;revision=0;baselineSnapshot=initialSnapshot;}
-  showDraftStatus('Открываем черновик клиента…');
+  loadStatus('loading');showDraftStatus('Открываем черновик клиента…');
   try{
    const r=await api(b+'/draft');if(sequence!==epoch||b!==base())return;
-   if(!r.draft){if(!baselineLoaded){revision=0;baselineLoaded=true;}showDraftStatus('Ответы будут сохраняться автоматически.');changed();return;}
+   if(!r.draft){if(!baselineLoaded){revision=0;baselineLoaded=true;}loadStatus('ready');showDraftStatus('Ответы будут сохраняться автоматически.');changed();return;}
    $('loadDraft').classList.remove('hidden');
    if(!baselineLoaded&&JSON.stringify(capture())===initialSnapshot){await restore({draft:r.draft,automatic:true});return;}
-   if(!baselineLoaded)showDraftStatus('Есть сохранённый черновик. Откройте его перед продолжением — ваши новые ответы можно скачать.');
-  }catch(e){showDraftStatus(e.message);}
+   if(!baselineLoaded){const text='Есть сохранённый черновик. Откройте его перед продолжением — ваши новые ответы можно скачать.';loadStatus('error',text);showDraftStatus(text);}else loadStatus('ready');
+  }catch(e){loadStatus('error',e.message);showDraftStatus(e.message);}
  }
  async function save(options={}){
   clearTimeout(timer);
@@ -84,9 +86,10 @@ window.ServerDrafts=(()=>{
   revision=draft.revision;request=null;baselineLoaded=true;$('loadDraft').classList.add('hidden');renderDocuments();afRenderResults();afRenderConflicts();afClientChoices();children();spouse();kaspi();visibilityRules();afRefresh();document.dispatchEvent(new Event('assessment-draft-restored'));
   baselineSnapshot=JSON.stringify(capture());
   if(recovered&&HostedAssessment.getContext().client.iin)$('iin').value=HostedAssessment.getContext().client.iin;
-  if(selectedFiles.length)await afAnalyze({cacheOnly:true});
+  loadStatus('documents');
+  if(selectedFiles.length)await afAnalyze({cacheOnly:true,restoreOnly:true});
   showDraftStatus('Черновик загружен · версия '+revision+' · в облаке: '+selectedFiles.length+'.'+(recovered?' Документы восстановлены после обновления ИИН.':'')+(failed.length?' Не удалось получить: '+failed.length+'.':'')+(p.pendingFiles.length?' Выбрать заново: '+p.pendingFiles.length+'.':''));
- }catch(e){showDraftStatus(e.message);}finally{loading=false;$('loadDraft').disabled=false;changed();}}
+ }catch(e){loadStatus('error',e.message);showDraftStatus(e.message);}finally{loading=false;$('loadDraft').disabled=false;if(loadState.phase!=='error')loadStatus('ready');changed();}}
  function mount(){
   $('saveDraft').onclick=()=>save();$('loadDraft').onclick=()=>restore();$('saveDraft').disabled=false;
   document.addEventListener('assessment-case-opened',inspect);
@@ -102,6 +105,6 @@ window.ServerDrafts=(()=>{
   const row=control.closest('.repeat-item'),group=row?.closest('.repeat');
   return [{key:controlKey(control),...(group?{group:group.id,row:[...group.querySelector(':scope > .repeat-rows').children].indexOf(row)}:{}),documentId:source.server.documentId,extractionId:source.server.extractionId,factKey:source.serverFactKey,reviewId:source.pending||source.stale?null:source.reviewId||null}];
  });}
- return{mount,capture,reviewBindings,save,restore,inspect,recovery:()=>recoverySnapshot,isDirty,hasTransientFiles,changed,isBusy:()=>loading||Boolean(saveTask),canSwitch:()=>baselineLoaded&&!loading};
+ return{mount,capture,reviewBindings,save,restore,inspect,loadState:()=>loadState,pendingFiles:()=>[...missingFiles],recovery:()=>recoverySnapshot,isDirty,hasTransientFiles,changed,isBusy:()=>loading||Boolean(saveTask),canSwitch:()=>baselineLoaded&&!loading};
 })();
 ServerDrafts.mount();

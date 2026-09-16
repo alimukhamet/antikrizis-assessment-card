@@ -56,6 +56,14 @@ body[data-view=home] .task-card[data-main-action=contract]{background:var(--gree
 .wf-client #openClients{font-size:14px}
 .wf-steps{position:static}
 body:not([data-ux-client-state=ready]) [data-ux-client-content]{display:none!important}
+body[data-ux-client-state=loading][data-ux-draft-phase=documents] [data-ux-client-content]{display:revert!important;opacity:.65}
+body[data-ux-mode=handoff][data-ux-client-state=loading] #documentStep,body[data-ux-mode=handoff][data-ux-client-state=loading] #documentReviewStep,body[data-ux-mode=handoff][data-ux-client-state=loading] #questionnaireStep,body[data-ux-mode=handoff][data-ux-client-state=loading] .wf-steps,body[data-ux-mode=handoff][data-ux-client-state=loading] .wf-bottom-nav{display:none!important}
+.ux-load-status,.ux-identity-warning,.ux-pending-files{border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin:16px 0;background:#fff;line-height:1.5;overflow-wrap:anywhere}
+.ux-identity-warning{background:#fff8e9;border-color:#d9bf8b}.ux-load-status p,.ux-identity-warning p,.ux-pending-files p{margin:0 0 12px;font-size:14px}
+.ux-load-status .btn{margin:0 8px 0 0}.ux-pending-files summary{cursor:pointer;font-size:14px}.ux-pending-files li{font-size:13px}
+.ux-load-status[hidden],.ux-identity-warning[hidden],.ux-pending-files[hidden]{display:none}
+@media(max-width:620px){.wf-header{position:static}.wf-client-copy strong{font-size:17px;overflow-wrap:anywhere}}
+@media print{.wf-header{position:static}.ux-context,.wf-bottom-nav,.ux-load-status button{display:none!important}}
 body[data-ux-client-state=empty] .wf-header{display:none}
 .ux-client-entry[hidden]{display:none}
 .ux-preview-strip button:disabled{display:none}

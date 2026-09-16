@@ -189,7 +189,7 @@ window.AssessmentWorkflow=(()=>{
   const missing=rows.filter(row=>row.state!=='present').map(row=>row.type);
   const context=['needsSocialDoc','needsSalaryDoc'].filter(id=>!$(id).value);
   const unassigned=selectedFiles.filter(item=>item.person==='Клиент'&&(!item.type||item.type==='Другой документ')&&!afExcluded(item)).length;
-  const attention=selectedFiles.flatMap(item=>{const issue=afDocumentAttention(item);return issue&&!rows.some(row=>row.state!=='present'&&row.fileId===item.id)?[{fileId:item.id,label:item.type&&item.type!=='Другой документ'?item.type:item.file.name,...issue}]:[];});
+  const attention=selectedFiles.filter(item=>!['Доверенность','Подписанный договор'].includes(item.type)||rows.some(row=>row.type===item.type)).flatMap(item=>{const issue=afDocumentAttention(item);return issue&&!rows.some(row=>row.state!=='present'&&row.fileId===item.id)?[{fileId:item.id,label:item.type&&item.type!=='Другой документ'?item.type:item.file.name,...issue}]:[];});
   return {rows,missing,context,unassigned,attention,provided:rows.length-missing.length,ready:Boolean(deal&&!af.busy&&!missing.length&&!context.length)};
  }
  function prepareUpload(){

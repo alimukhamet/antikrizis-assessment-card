@@ -14,9 +14,23 @@ window.ClientContextUI=(()=>{
  const entry=make('section',null,'ux-client-entry');entry.id='uxClientEntry';const note=make('p','Найдите клиента по имени или номеру сделки. Документы и договор откроются только после выбора.');
  const choose=make('button','Выбрать клиента','btn btn-main');choose.type='button';choose.onclick=()=>ClientWorkspace.open();entry.append(make('h2','С кем работаем?'),note,choose);document.querySelector('.wf-header').before(entry);
  document.querySelector('.wf-client-copy').prepend(make('small','Сейчас работаем с','ux-client-label'));
+ const status=make('section',null,'ux-load-status');status.id='uxLoadStatus';status.setAttribute('role','status');
+ const statusText=make('p'),retry=make('button','Повторить загрузку','btn btn-ghost');retry.type='button';retry.onclick=()=>$('loadDraft').classList.contains('hidden')?ServerDrafts.inspect():ServerDrafts.restore();
+ const leave=make('a','Выбрать другого клиента','btn btn-ghost');leave.href=mode==='handoff'?'/lawyer-handoff':'/assessment-review';leave.target='_top';
+ status.append(statusText,retry,leave);document.querySelector('.wf-header').after(status);
+ const identity=make('section',null,'ux-identity-warning');identity.id='uxIdentityWarning';identity.setAttribute('role','status');
+ identity.append(make('strong','В Bitrix не указан ИИН клиента'),make('p','Сохранённая анкета и файлы доступны, но подтвердить владельца и сформировать договор пока нельзя. Укажите проверенный ИИН в этой сделке Bitrix, затем обновите карточку. Не используйте данные другого клиента.'));
+ const refreshIdentity=make('button','Обновить карточку','btn btn-ghost');refreshIdentity.type='button';refreshIdentity.onclick=()=>location.reload();identity.append(refreshIdentity);status.after(identity);
+ const pending=make('details',null,'ux-pending-files'),pendingTitle=make('summary'),pendingList=make('ul');pending.id='uxPendingFiles';pending.append(pendingTitle,make('p','Эти файлы были выбраны раньше, но не сохранены на сервере. Они не восстановятся после обновления страницы. При необходимости добавьте их снова; сохранённые документы ниже остаются на месте.'),pendingList);identity.after(pending);
  let lastState=null;
  function sync(){
-  const c=context(),loaded=ready(),state=loaded?'ready':c?'loading':'empty';document.body.dataset.uxClientState=state;entry.hidden=Boolean(c);
+  const c=context(),loaded=ready(),load=ServerDrafts.loadState?.()||{},state=loaded?'ready':c?'loading':'empty';document.body.dataset.uxClientState=state;document.body.dataset.uxDraftPhase=load.phase||'idle';entry.hidden=Boolean(c);
+  status.hidden=!c||loaded;retry.hidden=load.phase!=='error';
+  const progress=load.phase==='documents'?$('afStatus').textContent:load.error||'Открываем сохранённую карточку клиента…';
+  if(statusText.textContent!==progress)statusText.textContent=progress;
+  identity.hidden=!c||Boolean(c.client.iin);
+  const names=ServerDrafts.pendingFiles?.()||[];pending.hidden=!loaded||!names.length;
+  const signature=JSON.stringify(names);if(pending.dataset.files!==signature){pending.dataset.files=signature;pendingTitle.textContent='Не сохранены ранее · '+names.length;pendingList.replaceChildren(...names.map(name=>make('li',/\.(p12|pfx|key)$/i.test(name)?'Ключ ЭЦП — добавляется в разделе «Передать юристам»':name)));}
   if(!c&&new URLSearchParams(location.search).has('dealId'))note.textContent=$('afStatus').textContent+' Выберите клиента, чтобы продолжить.';
   document.title=(c?c.client.title+' · № '+c.client.external.dealId+' — ':'')+(mode==='handoff'?'Передать юристам':'Сформировать договор');
   document.querySelectorAll('[data-client-path]').forEach(a=>{a.href=a.dataset.clientPath+(c?'?dealId='+encodeURIComponent(c.client.external.dealId):'');});
@@ -41,7 +55,7 @@ window.ClientContextUI=(()=>{
    const download=make('a');download.href=url.href;download.download=(current.client.title+' — сделка '+current.client.external.dealId+'.pdf').replace(/[\\/:*?"<>|]/g,'_');download.click();
   }catch(error){$('afQuote').textContent=error.message;}finally{downloading=false;}
  },true);
- for(const event of ['assessment-case-opened','assessment-draft-restored','assessment-analysis-complete','assessment-draft-saved'])document.addEventListener(event,()=>queueMicrotask(sync));
+ for(const event of ['assessment-case-opened','assessment-draft-restored','assessment-analysis-complete','assessment-draft-saved','assessment-draft-load-state'])document.addEventListener(event,()=>queueMicrotask(sync));
  new MutationObserver(sync).observe($('draftStatus'),{childList:true,subtree:true,characterData:true});new MutationObserver(sync).observe($('afStatus'),{childList:true,subtree:true,characterData:true});sync();
  return{mode,context,ready,label,confirm,sync,make};
 })();

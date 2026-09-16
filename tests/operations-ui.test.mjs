@@ -5,24 +5,26 @@ import vm from 'node:vm';
 import {JSDOM} from 'jsdom';
 const html=fs.readFileSync('public/questionnaire.html','utf8');
 const tick=()=>new Promise(r=>setTimeout(r,20));
-async function setup(t,{mode='contract',draft=null,stageError=null,delayedDraft=false,handoff=null,powerReady=true}={}){
+async function setup(t,{mode='contract',draft=null,stageError=null,delayedDraft=false,handoff=null,powerReady=true,clientIin='000000000010',analyze=null,draftResponse=null,fastTimeout=false}={}){
  const dom=new JSDOM(html,{url:'https://synthetic.invalid/questionnaire.html'+(mode==='handoff'?'?mode=handoff':''),runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window,d=w.document,run=code=>vm.runInContext(code,dom.getInternalVMContext()),calls=[],errors=[];
  w.HTMLElement.prototype.scrollIntoView=function(){};
  w.HTMLElement.prototype.getClientRects=function(){return this.isConnected&&!this.closest('.hidden,[hidden]')?[{}]:[];};
  w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};w.HTMLDialogElement.prototype.close=function(){this.open=false;};
  w.addEventListener('error',event=>errors.push(event.error));
  let releaseDraft;const draftWait=new Promise(r=>{releaseDraft=r;});
- const context={caseId:'case',identityRevision:1,assessmentDay:'2026-09-16',client:{title:'SYNTHETIC CLIENT',iin:'000000000010',external:{system:'bitrix',dealId:'900001'}}};
+ const context={caseId:'case',identityRevision:1,assessmentDay:'2026-09-16',client:{title:'SYNTHETIC CLIENT',iin:clientIin,external:{system:'bitrix',dealId:'900001'}}};
+ if(fastTimeout){const timeout=w.setTimeout.bind(w);w.setTimeout=(fn,ms,...args)=>timeout(fn,ms===30000||ms===15000?35:ms,...args);}
  const destination={categoryId:'13',fromStageId:'C13:FINAL_INVOICE',fromStageName:'Договор',stageId:'C13:WON',stageName:'Сделка завершена'};
  w.fetch=async(path,options={})=>{
   calls.push({path,method:options.method||'GET',body:options.body});let result;
   if(path==='/api/assessment/900001')result=context;
   else if(path==='/api/assessment/clients')result={drafts:[],recent:[]};
-  else if(path.endsWith('/draft')){if(options.method==='POST')result={revision:2,latestRevision:2};else{if(delayedDraft)await draftWait;result={draft};}}
+  else if(path.endsWith('/draft')){if(options.method==='POST')result={revision:2,latestRevision:2};else{if(draftResponse)return draftResponse();if(delayedDraft)await draftWait;result={draft};}}
   else if(path.endsWith('/submission'))result={submission:null};
   else if(path.endsWith('/uploads'))result={unsent:null};
   else if(path.endsWith('/credentials'))result={credentials:{verified:false},identityRevision:1};
   else if(path.endsWith('/handoff'))result={handoff,destination,stageError};
+  else if(analyze&&path.endsWith('/analyze'))return analyze(path,options,context);
   else if(path.endsWith('/documents/power/analyze'))result={...context,documentId:'power',extractionId:'parsed-power',eligibleForAutofill:true,document:{totalPages:2,pages:[{text:'Synthetic page',needsOcr:false},{text:'Synthetic page two',needsOcr:false}],extraction:{identity:{iin:context.client.iin},kind:'power_of_attorney',facts:[],credits:[],findings:[]}},reviewContext:{pages:2,iin:context.client.iin}};
   else if(path.endsWith('/handoff-check'))result={identityRevision:1,documents:{packageReady:powerReady,issues:powerReady?[]:[{code:'POWER_SCOPE_REVIEW_REQUIRED',documentId:'power',message:'Сверьте полномочия.'}],manuallyReviewed:[],structurallyChecked:powerReady?['Доверенность']:[]}};
   else if(path.endsWith('/check'))result={identityRevision:1,answersComplete:false,issues:[],documents:{issues:[],manuallyReviewed:[]},evidence:{issues:[]}};
@@ -45,6 +47,32 @@ test('production portal starts with no client, no random deal, and no writes',as
  await s.load();assert.equal(s.d.body.dataset.uxClientState,'ready');assert.match(s.d.querySelector('.wf-client-copy').textContent,/SYNTHETIC CLIENT/);assert.match(s.d.querySelector('.wf-client-copy').textContent,/900001/);
  assert.equal(s.d.querySelector('[data-client-path="/lawyer-handoff"]').getAttribute('href'),'/lawyer-handoff?dealId=900001');
  assert.equal(s.calls.some(c=>c.method==='POST'),false);
+});
+const storedDraft=(answers=[],groups=[],documents=[{documentId:'gkb',type:'ГКБ — полный отчёт',person:'Клиент',originalName:'synthetic-gkb.pdf'}])=>({revision:3,identityRevision:1,payload:{schemaVersion:1,answers,groups,docContext:{social:'0',salary:'0',salaryBank:'none'},pendingFiles:[],documents}});
+const evidence=context=>({...context,documentId:'gkb',extractionId:'parsed-gkb',eligibleForAutofill:Boolean(context.client.iin),findings:context.client.iin?[]:['DEAL_IDENTITY_UNVERIFIED'],document:{totalPages:1,pages:[{text:'SYNTHETIC',needsOcr:false}],extraction:{identity:{iin:'000000000010',name:'OLD DOCUMENT NAME'},kind:'gkb_full',facts:[{key:'identity.name',value:'OLD DOCUMENT NAME',page:1,source:'Synthetic name'},{key:'identity.iin',value:'000000000010',page:1,source:'Synthetic ID'}],credits:[{contractNumber:'SYNTHETIC-1',page:1,facts:[{key:'creditor',value:'SYNTHETIC BANK',page:1,source:'Synthetic bank'}]}],findings:[]}}});
+test('reopening restores matching evidence but never repopulates cleared answers or removed loans',async t=>{
+ const draft=storedDraft([{key:'fio',value:'',checked:false},{key:'iin',value:'000000000010',checked:false}],[{id:'creditors',rows:[],rowKeys:[]}]);
+ const s=await setup(t,{draft,analyze:async(p,o,c)=>({ok:true,json:async()=>evidence(c)})});await s.load();await tick();
+ assert.equal(s.d.getElementById('fio').value,'');assert.equal(s.d.querySelectorAll('#creditors > .repeat-rows > *').length,0);
+ assert.equal(s.run('af.sources.has("iin")'),true,'Matching saved answer retains its evidence badge');
+ assert.equal(s.d.body.dataset.uxClientState,'ready');assert.equal(s.w.ServerDrafts.isDirty(),false);
+ assert.equal(s.calls.some(c=>c.method==='POST'&&c.path.endsWith('/draft')),false);
+});
+test('saved card shows loading progress and keeps answers locked until cached reads finish',async t=>{
+ let release;const wait=new Promise(r=>{release=r;});const draft=storedDraft();draft.payload.pendingFiles=['not-uploaded.pdf','test.key'];
+ const s=await setup(t,{draft,analyze:async(p,o,c)=>{await wait;return{ok:true,json:async()=>evidence(c)};}});await s.load();
+ assert.equal(s.d.body.dataset.uxDraftPhase,'documents');assert.equal(s.d.getElementById('uxLoadStatus').hidden,false);assert.match(s.d.getElementById('uxLoadStatus').textContent,/Читаем/);assert.equal(s.d.getElementById('questionnaireStep').inert,true);
+ release();await tick();await tick();assert.equal(s.d.body.dataset.uxClientState,'ready');assert.equal(s.d.getElementById('uxLoadStatus').hidden,true);assert.match(s.d.getElementById('uxPendingFiles').textContent,/not-uploaded.pdf/);
+});
+test('stalled draft read times out visibly and retry safely loads without saving blank data',async t=>{
+ let attempts=0;const s=await setup(t,{fastTimeout:true,draftResponse:()=>++attempts===1?new Promise(()=>{}):Promise.resolve({ok:true,json:async()=>({draft:null})})});await s.load();await tick();await tick();
+ assert.equal(s.w.ServerDrafts.loadState().phase,'error');assert.equal(s.d.getElementById('questionnaireStep').inert,true);assert.match(s.d.getElementById('uxLoadStatus').textContent,/Сервер не ответил/);
+ await s.d.querySelector('#uxLoadStatus button').onclick();await tick();assert.equal(s.d.body.dataset.uxClientState,'ready');assert.equal(s.calls.some(c=>c.method==='POST'),false);
+});
+test('opening an outdated cache does not silently reprocess and missing IIN has a clear deal-level warning',async t=>{
+ const stale=await setup(t,{draft:storedDraft(),analyze:async()=>({ok:false,json:async()=>({error:'CACHE_REPROCESS_REQUIRED'})})});await stale.load();await tick();
+ assert.equal(stale.calls.filter(c=>c.path.endsWith('/analyze')).length,1);assert.equal(JSON.parse(stale.calls.find(c=>c.path.endsWith('/analyze')).body).cacheOnly,true);assert.equal(stale.d.body.dataset.uxClientState,'ready');assert.match(stale.run('af.results.get(1).error'),/Версия обработки изменилась/);
+ const missing=await setup(t,{draft:storedDraft(),clientIin:null,analyze:async(p,o,c)=>({ok:true,json:async()=>evidence(c)})});await missing.load();await tick();assert.equal(missing.d.getElementById('uxIdentityWarning').hidden,false);assert.match(missing.d.getElementById('uxIdentityWarning').textContent,/В Bitrix не указан ИИН/);assert.equal(missing.run('af.results.get(1).blocked'),true);
 });
 test('handoff has three file cards and enables its pickers only once the correct draft loads',async t=>{
  const s=await setup(t,{mode:'handoff',delayedDraft:true});await s.load();

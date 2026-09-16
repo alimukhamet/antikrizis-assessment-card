@@ -31,9 +31,7 @@
   const payload=ServerDrafts.capture(),bindings=ServerDrafts.reviewBindings(),snapshot=JSON.stringify({payload,bindings});
   upload.invalidate();submission.invalidate();button.disabled=true;documentButton.disabled=true;preview.hidden=true;contract.hidden=true;contractValues=null;status.textContent=mode==='documents'?'Проверяю документы…':'Проверяю ответы…';
   try{
-   const response=await fetch(`/api/assessment/${encodeURIComponent(dealId)}/check`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({payload,bindings})});
-   const result=await response.json();
-   if(!response.ok)throw Error(mode==='documents'?'Не удалось проверить документы. Нажмите «Проверить и продолжить» ещё раз.':'Не удалось проверить ответы. Сохраните черновик и повторите проверку.');
+   const result=await HostedAssessment.requestJson(`/api/assessment/${encodeURIComponent(dealId)}/check`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({payload,bindings})},{message:()=>mode==='documents'?'Не удалось проверить документы. Нажмите «Проверить и продолжить» ещё раз.':'Не удалось проверить ответы. Сохраните черновик и повторите проверку.'});
    if(!HostedAssessment.ready()||HostedAssessment.getContext().client.external.dealId!==dealId||JSON.stringify({payload:ServerDrafts.capture(),bindings:ServerDrafts.reviewBindings()})!==snapshot){status.textContent='Ответы или сделка изменились. Запустите проверку ещё раз.';return;}
    documents.replaceChildren();
    if(result.documents?.issues.length){const notes=document.createElement('details'),heading=document.createElement('summary'),list=document.createElement('ul');heading.textContent='Замечания · '+result.documents.issues.length;for(const message of new Set(result.documents.issues.map(i=>i.message))){const item=document.createElement('li');item.textContent=message;list.append(item);}notes.append(heading,list);documents.append(notes);}

@@ -5,7 +5,7 @@ window.ClientWorkspace=(()=>{
  const button=(text,fn)=>{const node=el('button',text,'btn btn-ghost');node.type='button';node.onclick=fn;return node;};
  let directory=null,switching=false;
  const url=id=>(new URLSearchParams(location.search).get('mode')==='handoff'?'/lawyer-handoff':'/assessment-review')+'?dealId='+encodeURIComponent(id);
- async function json(path,options){const response=await fetch(path,options),body=await response.json();if(!response.ok){const error=Error(HostedAssessment.error(body.error));error.code=body.error;throw error;}return body;}
+ const json=(path,options)=>HostedAssessment.requestJson(path,options);
  function close(){if(directory){directory.close();directory.remove();directory=null;}}
  async function switchTo(id){
   const current=HostedAssessment.getContext()?.client.external.dealId;
