@@ -1,4 +1,4 @@
-import {RepositoryError} from '../documents/repository';
+import {bitrixHeaders} from './http-headers'; import {RepositoryError} from '../documents/repository';
 import {validIin} from '../documents/extract-native';
 import {readClientContext} from './bitrix';
 
@@ -6,7 +6,7 @@ import {readClientContext} from './bitrix';
 export function createDocumentIdentityAdapter(webhook:string,send:typeof fetch=fetch){
  async function call(method:string,body:unknown){
   if(!webhook)throw new RepositoryError('BITRIX_NOT_CONFIGURED',503);
-  const response=await send(webhook.replace(/\/?$/,'/')+method+'.json',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(8000),cache:'no-store'});
+  const response=await send(webhook.replace(/\/?$/,'/')+method+'.json',{method:'POST',headers:bitrixHeaders(webhook),body:JSON.stringify(body),signal:AbortSignal.timeout(8000),cache:'no-store'});
   const data=await response.json() as {result?:unknown;error?:string};
   if(!response.ok||data.error||data.result===undefined)throw new RepositoryError('BITRIX_TEMPORARILY_UNAVAILABLE',503);
   return data.result;

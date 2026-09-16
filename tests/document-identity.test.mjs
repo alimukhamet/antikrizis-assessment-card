@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import {webcrypto} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
-function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>{if(n in imports)return imports[n];throw Error(n);},crypto:webcrypto,Uint8Array,TextEncoder,Date,JSON,Map,Set,fetch,AbortSignal});return exports;}
+import {httpHeaders} from './bitrix-headers-helper.mjs'; function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>{if(n==='./http-headers')return httpHeaders;if(n in imports)return imports[n];throw Error(n);},crypto:webcrypto,Uint8Array,TextEncoder,Date,JSON,Map,Set,fetch,AbortSignal});return exports;}
 const repoModule=load('lib/documents/repository.ts');
 const rules=load('lib/documents/extract-native.ts',{'./power-of-attorney':load('lib/documents/power-of-attorney.ts'),'./kz-labels.json':JSON.parse(fs.readFileSync('lib/documents/kz-labels.json'))});
 const crm=load('lib/crm/bitrix.ts',{'../documents/extract-native':rules});

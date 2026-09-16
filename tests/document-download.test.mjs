@@ -1,7 +1,24 @@
 import{test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import vm from'node:vm';import ts from'typescript';import{createHash}from'node:crypto';
-function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>imports[n],URL,Map,Set,Uint8Array,AbortSignal,btoa,TextEncoder,ReadableStream,fetch:()=>{throw Error('Unexpected network request')}});return exports;}
+import {httpHeaders} from './bitrix-headers-helper.mjs'; function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>n==='./http-headers'?httpHeaders:imports[n],URL,Map,Set,Uint8Array,AbortSignal,btoa,TextEncoder,ReadableStream,fetch:()=>{throw Error('Unexpected network request')}});return exports;}
 const upload=load('lib/crm/document-upload.ts',{'../documents/repository':{sha256:async b=>createHash('sha256').update(b).digest('hex')}}),{createCrmDocumentReader,createVerifiedDocumentUploadAdapter}=load('lib/crm/document-download.ts',{'./document-upload':upload});
 const portal='https://crm.example',webhook=portal+'/rest/1/test/',iin='000000000010';
+test('Bitrix headers identify the integration and never disclose the webhook in Referer',()=>{
+ const json=httpHeaders.bitrixHeaders(webhook),file=httpHeaders.bitrixHeaders(webhook,'file');
+ assert.equal(json.accept,'application/json');assert.equal(json['content-type'],'application/json');assert.ok(json['user-agent']);
+ assert.equal(file.accept,'*/*');assert.equal(file.referer,portal+'/');assert.match(file['accept-language'],/ru/);assert.ok(file['user-agent']);assert.equal(JSON.stringify(file).includes('/rest/1/test'),false);
+});
+test('seven-file reconciliation reads the exact deal once, verifies every hash, and never writes',async()=>{
+ let reads=0,downloads=0;
+ const files=Array.from({length:7},(_,i)=>({id:String(i+22),urlMachine:portal+'/rest/crm.controller.item.getFile.json?token=synthetic-'+i}));
+ const expected=files.map((f,i)=>({name:'synthetic-'+i+'.pdf',byteSize:1,sha256:createHash('sha256').update(new Uint8Array([i])).digest('hex')}));
+ const adapter=createVerifiedDocumentUploadAdapter(webhook,'11665',iin,async(url,o)=>{
+  if(o.method==='POST'){assert.match(url,/crm.item.get.json$/);assert.equal(o.headers.accept,'application/json');assert.ok(o.headers['user-agent']);reads++;return metadata({ufCrmAnkPrimaryDocs:files});}
+  assert.equal(o.headers.referer,portal+'/');assert.equal(o.headers.accept,'*/*');assert.ok(o.headers['accept-language']);assert.ok(o.headers['user-agent']);downloads++;
+  return new Response(new Uint8Array([Number(new URL(url).searchParams.get('token').split('-').at(-1))]));
+ });
+ const receipt=await adapter.reconcile('11665',iin,[],expected);
+ assert.equal(receipt.verified,true);assert.equal(receipt.files.length,7);assert.equal(reads,1);assert.equal(downloads,7);
+});
 function metadata(patch={}){return Response.json({result:{item:{id:11665,ufCrmAiIin:iin,ufCrmAnkPrimaryDocs:[{id:22,urlMachine:portal+'/rest/crm.controller.item.getFile.json?token=synthetic'}],...patch}}});}
 test('download refreshes machine link from exact deal and emits only bytes',async()=>{const calls=[];const read=createCrmDocumentReader(webhook,'11665',iin,async(url,options)=>{calls.push({url,options});return options.method==='POST'?metadata():new Response(new Uint8Array([1,2,3]));});assert.deepEqual(await read({id:'22'}),new Uint8Array([1,2,3]));assert.deepEqual(await read({id:'22'}),new Uint8Array([1,2,3]));assert.equal(calls.filter(c=>c.options.method==='POST').length,2);assert.equal(JSON.parse(calls[0].options.body).id,'11665');assert.equal(calls[1].options.credentials,'omit');assert.equal(calls[1].options.redirect,'manual');});
 test('wrong client, foreign file and untrusted link stop before download',async()=>{for(const patch of [{ufCrmAiIin:'other'},{ufCrmAnkPrimaryDocs:[]},{ufCrmAnkPrimaryDocs:[{id:22,urlMachine:'https://other.example/file'}]}]){let downloads=0;const read=createCrmDocumentReader(webhook,'11665',iin,async(url,o)=>{if(o.method==='POST')return metadata(patch);downloads++;return new Response('x');});await assert.rejects(read({id:'22'}));assert.equal(downloads,0);}});

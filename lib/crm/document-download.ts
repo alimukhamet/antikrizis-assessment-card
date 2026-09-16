@@ -1,4 +1,5 @@
 import {DocumentUploadError,readCrmItem,readFileField,createDocumentUploadAdapter,type CrmFileRef} from './document-upload';
+import {bitrixHeaders} from './http-headers';
 const MAX_BYTES=35*1024*1024;
 /** Refresh signed links from the selected CRM item; never accept a caller-supplied link. */
 export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin:string,send:typeof fetch=fetch,options:{pdfOnly?:boolean;credentialsOnly?:boolean;onFilename?:(name:string)=>void}={}){
@@ -21,11 +22,12 @@ export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin
   if(!total)throw new DocumentUploadError('CRM_FILE_EMPTY');
   const result=new Uint8Array(total);let offset=0;for(const chunk of chunks){result.set(chunk,offset);offset+=chunk.length;}return result;
  }
- return async (reference:CrmFileRef)=>{
+ return async (reference:CrmFileRef,snapshot?:Record<string,unknown>)=>{
   if(!/^[1-9]\d*$/.test(reference.id))throw new DocumentUploadError('INVALID_FILE_ID');
   try{
-   // A fresh item read scopes the file to this deal and avoids retaining expiring tokens.
-   const item=await readCrmItem(webhook,dealId,send);
+   // Verification may reuse its own just-read item for this bounded operation.
+   // There is no global cache or shared in-flight request between Workers.
+   const item=snapshot??await readCrmItem(webhook,dealId,send);
    if(String(item.id??item.ID)!==dealId)throw new DocumentUploadError('DEAL_NOT_FOUND');
    if((item.ufCrmAiIin??item.UF_CRM_AI_IIN)!==expectedIin)throw new DocumentUploadError('CASE_IDENTITY_CHANGED');
    const field=readFileField(item);if(!field.refs.some(r=>r.id===reference.id))throw new DocumentUploadError('FILE_NOT_IN_DEAL');
@@ -35,7 +37,7 @@ export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin
    let url=new URL(file.urlMachine,portal.origin);
    if(url.origin!==portal.origin||url.username||url.password||url.hash||! /\/crm\.controller\.item\.getFile(?:\.json)?\/?$/i.test(url.pathname))throw new DocumentUploadError('CRM_FILE_LINK_UNTRUSTED');
    for(let redirects=0;redirects<=3;redirects++){
-    const download=await send(url.toString(),{method:'GET',redirect:'manual',credentials:'omit',cache:'no-store',signal:AbortSignal.timeout(30000)});
+    const download=await send(url.toString(),{method:'GET',headers:bitrixHeaders(webhook,'file'),redirect:'manual',credentials:'omit',cache:'no-store',signal:AbortSignal.timeout(30000)});
     if([301,302,303,307,308].includes(download.status)){
      const location=download.headers.get('location');await download.body?.cancel();
      if(!location||redirects===3)throw new DocumentUploadError('CRM_FILE_REDIRECT_FAILED');
@@ -47,7 +49,12 @@ export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin
     return await bytes(download);
    }
    throw new DocumentUploadError('CRM_FILE_DOWNLOAD_FAILED');
-  }catch(error){if(error instanceof DocumentUploadError)throw error;throw new DocumentUploadError('CRM_FILE_DOWNLOAD_FAILED');}
+  }catch(error){
+   const code=error instanceof DocumentUploadError?error.code:error instanceof Error&&['TimeoutError','AbortError'].includes(error.name)?'CRM_FILE_DOWNLOAD_TIMEOUT':'CRM_FILE_DOWNLOAD_FAILED';
+   // No URLs, signed tokens, names, file bytes or client identifiers in logs.
+   console.warn('assessment-file-readback',JSON.stringify({code}));
+   if(error instanceof DocumentUploadError)throw error;throw new DocumentUploadError(code);
+  }
  };
 }
 export function createVerifiedDocumentUploadAdapter(webhook:string,dealId:string,expectedIin:string,send:typeof fetch=fetch){

@@ -1,9 +1,9 @@
-export class AssessmentHistoryError extends Error{constructor(public code:string){super(code);}}
+import {bitrixHeaders} from './http-headers'; export class AssessmentHistoryError extends Error{constructor(public code:string){super(code);}}
 /** Uses only deal comments; never updates stages, invoices, files or assessment fields. */
 export function createAssessmentHistoryAdapter(webhook:string,send:typeof fetch=fetch){
  async function call(method:string,body:unknown){
   if(!webhook)throw new AssessmentHistoryError('BITRIX_NOT_CONFIGURED');
-  const response=await send(webhook.replace(/\/?$/,'/')+method+'.json',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(20000)});
+  const response=await send(webhook.replace(/\/?$/,'/')+method+'.json',{method:'POST',headers:bitrixHeaders(webhook),body:JSON.stringify(body),redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(20000)});
   if(!response.ok||!response.body)throw new AssessmentHistoryError('HISTORY_REQUEST_FAILED');
   const reader=response.body.getReader(),decoder=new TextDecoder();let text='',size=0;
   for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>2*1024*1024){await reader.cancel();throw new AssessmentHistoryError('HISTORY_RESPONSE_TOO_LARGE');}text+=decoder.decode(value,{stream:true});}

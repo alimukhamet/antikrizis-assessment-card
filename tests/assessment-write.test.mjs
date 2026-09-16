@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
-const exports={};
-vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../lib/crm/assessment-write.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,Date,Set,AbortSignal});
+import {httpHeaders} from './bitrix-headers-helper.mjs'; const exports={};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../lib/crm/assessment-write.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>n==='./http-headers'?httpHeaders:undefined,Date,Set,AbortSignal});
 const {ASSESSMENT_FIELDS:F,createAssessmentAdapter}=exports;
 const values={fio:'SYNTHETIC CLIENT',iin:'000000000001',dognum:'TEST',marital:'Холост / не замужем',procedure:'test-procedure',debt:'123456.78',comment:'TEST ONLY',contractDate:'2026-09-10',months:'5',payDay:'7',grafType:'423',grafText:'TEST SCHEDULE',card:'TEST CARD',summa:'500000',currency:'KZT'};
 function fixture(options={}) {

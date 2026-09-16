@@ -1,4 +1,4 @@
-import { validIin } from '../documents/extract-native';
+import { validIin } from '../documents/extract-native'; import {bitrixHeaders} from './http-headers';
 export type ClientContext = { internalClientId: string | null; external: { system: 'bitrix'; dealId: string }; title: string; iin: string | null; retrievedAt: string };
 /** All Bitrix field IDs are confined to this adapter. */
 export async function readClientContext(dealId: string, webhook: string, send: typeof fetch = fetch): Promise<ClientContext> {
@@ -16,7 +16,7 @@ async function fetchClientContext(dealId:string,webhook:string,send:typeof fetch
   for(let attempt=0;attempt<2;attempt++){
     try{
       const response=await send(webhook.replace(/\/?$/, '/')+'crm.deal.get.json',{
-        method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:Number(dealId)}),signal:AbortSignal.timeout(8000),cache:'no-store',
+        method:'POST',headers:bitrixHeaders(webhook),body:JSON.stringify({id:Number(dealId)}),signal:AbortSignal.timeout(8000),cache:'no-store',
       });
       if(!response.ok){if(response.status!==429&&response.status<500)throw new Error('DEAL_NOT_FOUND');throw new Error('BITRIX_TEMPORARILY_UNAVAILABLE');}
       body=await response.json() as Body;break;

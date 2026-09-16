@@ -1,11 +1,11 @@
-import {readFileField,DocumentUploadError} from './document-upload';
+import {bitrixHeaders} from './http-headers'; import {readFileField,DocumentUploadError} from './document-upload';
 export type RecentClient={dealId:string;title:string;updatedAt:string;fileCount:number;hasContract:boolean};
 const contractFields=['UF_CRM_AI_DOGNUM','UF_CRM_1778499926844'];
 /** Contract details prove that a contract was prepared, not that it was signed. */
 export function hasPreparedContract(item:Record<string,unknown>){return contractFields.every(key=>typeof item[key]==='string'&&Boolean(String(item[key]).trim()));}
 async function call(webhook:string,method:'crm.deal.list'|'crm.item.get',body:unknown,send:typeof fetch){
  if(!webhook)throw new DocumentUploadError('BITRIX_NOT_CONFIGURED');
- const response=await send(webhook.replace(/\/?$/,'/')+method+'.json',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(20000)});
+ const response=await send(webhook.replace(/\/?$/,'/')+method+'.json',{method:'POST',headers:bitrixHeaders(webhook),body:JSON.stringify(body),redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(20000)});
  if(!response.ok)throw new DocumentUploadError('DEAL_READ_FAILED');
  const data=await response.json() as {result?:unknown;error?:string};
  if(data.error||!data.result)throw new DocumentUploadError('DEAL_READ_FAILED');return data.result;

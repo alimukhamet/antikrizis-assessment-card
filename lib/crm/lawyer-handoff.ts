@@ -1,4 +1,4 @@
-import {RepositoryError} from '../documents/repository';
+import {bitrixHeaders} from './http-headers'; import {RepositoryError} from '../documents/repository';
 export type HandoffDestination={categoryId:string;fromStageId:string;stageId:string;stageName:string;fromStageName:string};
 export class HandoffMoveError extends RepositoryError{constructor(code:string,public notStarted=false){super(code);}}
 const normalize=(value:unknown)=>String(value??'').toLocaleLowerCase('ru').replace(/ё/g,'е').replace(/\s+/g,' ').trim();
@@ -6,7 +6,7 @@ const normalize=(value:unknown)=>String(value??'').toLocaleLowerCase('ru').repla
 export function createHandoffAdapter(webhook:string,send:typeof fetch=fetch){
  async function call(method:string,body:unknown):Promise<any>{
   if(!webhook)throw new RepositoryError('BITRIX_NOT_CONFIGURED',503);
-  const response=await send(webhook.replace(/\/?$/,'/')+method+'.json',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(20000)});
+  const response=await send(webhook.replace(/\/?$/,'/')+method+'.json',{method:'POST',headers:bitrixHeaders(webhook),body:JSON.stringify(body),redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(20000)});
   if(!response.ok)throw new RepositoryError('HANDOFF_CRM_UNAVAILABLE',503);
   const data=await response.json() as {error?:string;result?:unknown};if(data.error||data.result===undefined)throw new RepositoryError('HANDOFF_CRM_UNAVAILABLE',503);return data.result;
  }

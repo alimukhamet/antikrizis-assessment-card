@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import {webcrypto} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
-function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:name=>imports[name],crypto:webcrypto,TextEncoder,Uint8Array,Date,Set,Map,AbortSignal,JSON});return exports;}
+import {httpHeaders} from './bitrix-headers-helper.mjs'; function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:name=>name==='./http-headers'?httpHeaders:imports[name],crypto:webcrypto,TextEncoder,Uint8Array,Date,Set,Map,AbortSignal,JSON});return exports;}
 const evidence=load('lib/documents/repository.ts');
 const crm=load('lib/crm/lawyer-handoff.ts',{'../documents/repository':evidence});
 const {HandoffRepository}=load('lib/questionnaire/handoff-repository.ts',{'../documents/repository':evidence});

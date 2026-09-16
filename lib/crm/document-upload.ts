@@ -1,4 +1,5 @@
 import {sha256} from '../documents/repository';
+import {bitrixHeaders} from './http-headers';
 export type CrmFileRef={id:string};
 export type ReusedUpload={id:string;sha256:string;byteSize:number};
 export type PreparedUpload={name:string;bytes:Uint8Array};
@@ -8,7 +9,7 @@ export async function readCrmItem(webhook:string,dealId:string,send:typeof fetch
  if(!webhook)throw new DocumentUploadError('BITRIX_NOT_CONFIGURED');
  for(let attempt=0;attempt<2;attempt++){
   try{
-   const response=await send(webhook.replace(/\/?$/,'/')+'crm.item.get.json',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({entityTypeId:2,id:dealId}),cache:'no-store',redirect:'manual',signal:AbortSignal.timeout(8000)});
+   const response=await send(webhook.replace(/\/?$/,'/')+'crm.item.get.json',{method:'POST',headers:bitrixHeaders(webhook),body:JSON.stringify({entityTypeId:2,id:dealId}),cache:'no-store',redirect:'manual',signal:AbortSignal.timeout(8000)});
    if(!response.ok){await response.body?.cancel();throw new DocumentUploadError(response.status===429||response.status>=500?'BITRIX_READ_TEMPORARILY_UNAVAILABLE':'BITRIX_UPLOAD_REQUEST_FAILED');}
    const json=await response.json() as {result?:{item?:Record<string,unknown>};error?:string};
    if(json.error||!json.result?.item)throw new DocumentUploadError(['QUERY_LIMIT_EXCEEDED','OPERATION_TIME_LIMIT'].includes(json.error||'')?'BITRIX_READ_TEMPORARILY_UNAVAILABLE':'BITRIX_UPLOAD_REQUEST_FAILED');
@@ -51,10 +52,10 @@ export function uploadBody(dealId:string,field:string,retained:CrmFileRef[],file
  const iterator=chunks();
  return new ReadableStream<Uint8Array>({pull(controller){const next=iterator.next();if(next.done)controller.close();else controller.enqueue(encoder.encode(next.value));},cancel(){iterator.return();}},{highWaterMark:1});
 }
-export function createDocumentUploadAdapter(webhook:string,readFile:(reference:CrmFileRef)=>Promise<Uint8Array>,send:typeof fetch=fetch){
+export function createDocumentUploadAdapter(webhook:string,readFile:(reference:CrmFileRef,snapshot?:Record<string,unknown>)=>Promise<Uint8Array>,send:typeof fetch=fetch){
  async function call(method:string,body:unknown,stream=false){
   if(!webhook)throw new DocumentUploadError('BITRIX_NOT_CONFIGURED');
-  const options:RequestInit&{duplex?:'half'}={method:'POST',headers:{'content-type':'application/json'},body:stream?body as ReadableStream<Uint8Array>:JSON.stringify(body),cache:'no-store',redirect:'manual',signal:AbortSignal.timeout(30000)};
+  const options:RequestInit&{duplex?:'half'}={method:'POST',headers:bitrixHeaders(webhook),body:stream?body as ReadableStream<Uint8Array>:JSON.stringify(body),cache:'no-store',redirect:'manual',signal:AbortSignal.timeout(30000)};
   if(stream)options.duplex='half';
   const response=await send(webhook.replace(/\/?$/,'/')+method+'.json',options);
   if(!response.ok)throw new DocumentUploadError('BITRIX_UPLOAD_REQUEST_FAILED');
@@ -65,7 +66,7 @@ export function createDocumentUploadAdapter(webhook:string,readFile:(reference:C
   if(!/^[1-9]\d*$/.test(dealId))throw new DocumentUploadError('INVALID_DEAL_ID');
   const item=await readCrmItem(webhook,dealId,send);
   if(String(item.id??item.ID)!==dealId)throw new DocumentUploadError('DEAL_NOT_FOUND');
-  return {...readFileField(item),iin:item.ufCrmAiIin??item.UF_CRM_AI_IIN};
+  return {...readFileField(item),iin:item.ufCrmAiIin??item.UF_CRM_AI_IIN,item};
  }
  async function append(dealId:string,expectedIin:string,baseline:CrmFileRef[],files:PreparedUpload[],reused:ReusedUpload[]=[]){
   const {hashes,before,newFiles}=await (async()=>{
@@ -78,7 +79,7 @@ export function createDocumentUploadAdapter(webhook:string,readFile:(reference:C
   const oldIds=new Set(baseline.map(r=>r.id));
   if(oldIds.size!==baseline.length||before.refs.length!==baseline.length||before.refs.some(r=>!oldIds.has(r.id)))throw new DocumentUploadError('DOCUMENTS_CHANGED_IN_CRM');
   validateReuse(baseline,files.map((file,index)=>({sha256:hashes[index],byteSize:file.bytes.length})),reused);
-  for(const ref of reused){const bytes=await readFile(ref);if(bytes.length!==ref.byteSize||await sha256(bytes)!==ref.sha256)throw new DocumentUploadError('REUSED_UPLOAD_CONTENT_CHANGED');}
+  for(const ref of reused){const bytes=await readFile(ref,before.item);if(bytes.length!==ref.byteSize||await sha256(bytes)!==ref.sha256)throw new DocumentUploadError('REUSED_UPLOAD_CONTENT_CHANGED');}
   const reusedHashes=new Set(reused.map(file=>file.sha256)),newFiles=files.filter((_,index)=>!reusedHashes.has(hashes[index]));
    return {hashes,before,newFiles};
   })().catch(error=>{throw new DocumentUploadError(error instanceof DocumentUploadError?error.code:'UPLOAD_PREFLIGHT_FAILED',true);});
@@ -102,7 +103,7 @@ export function createDocumentUploadAdapter(webhook:string,readFile:(reference:C
   if(added.length!==files.length-reused.length)throw new DocumentUploadError('UPLOAD_REFERENCE_COUNT_MISMATCH');
   const verified:Array<{id:string;sha256:string;name:string}>=[],remaining=new Map(files.map(f=>[f.sha256,f]));
   for(const ref of [...reused,...added]){
-   let bytes:Uint8Array;try{bytes=await readFile(ref);}catch{throw new DocumentUploadError('UPLOAD_CONTENT_READBACK_UNCERTAIN');}
+   let bytes:Uint8Array;try{bytes=await readFile(ref,after.item);}catch{throw new DocumentUploadError('UPLOAD_CONTENT_READBACK_UNCERTAIN');}
    const hash=await sha256(bytes),file=remaining.get(hash);
    if(!file||bytes.length!==file.byteSize)throw new DocumentUploadError('UPLOAD_CONTENT_MISMATCH');
    remaining.delete(hash);verified.push({id:ref.id,sha256:hash,name:file.name});

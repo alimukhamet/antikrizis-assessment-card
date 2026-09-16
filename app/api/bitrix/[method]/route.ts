@@ -1,4 +1,4 @@
-import { requireStaffRequest } from '../../staff-access';
+import {bitrixHeaders} from '../../../../lib/crm/http-headers'; import { requireStaffRequest } from '../../staff-access';
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
@@ -52,7 +52,7 @@ export async function POST(
   try {
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: bitrixHeaders(configuredWebhook),
       body,
       cache: "no-store",
     });

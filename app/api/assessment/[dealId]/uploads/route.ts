@@ -13,6 +13,18 @@ export async function GET(request:Request,context:{params:Promise<{dealId:string
  try{
   const {dealId}=await context.params,{record,actor}=await evidenceContext(request,dealId);
   const {env}=await import('cloudflare:workers');const runtime=env as typeof env&{DB?:D1Database};if(!runtime.DB)throw new RepositoryError('EVIDENCE_STORAGE_NOT_CONFIGURED',503);
+  const verifyId=new URL(request.url).searchParams.get('verify');
+  if(verifyId){
+   // Diagnostic readback of an already-attempted upload. It neither uploads nor
+   // approves documents, impersonates the worker, or modifies any durable state.
+   const prior=await new UploadManifestRepository(runtime.DB).get(record.id,verifyId);
+   if(!prior||(actor.worker!=='ali'&&prior.actor_id!==actor.id))throw new RepositoryError('UPLOAD_NOT_OWNED',404);
+   const manifest=JSON.parse(prior.manifest_json) as UploadManifest;
+   if(manifest.scope==='credentials'||!['writing','uncertain','verified'].includes(prior.state)||!record.client_iin||prior.identity_revision!==record.identity_revision)throw new RepositoryError('UPLOAD_NOT_STARTED');
+   const started=Date.now(),adapter=createVerifiedDocumentUploadAdapter(process.env.BITRIX_WEBHOOK??'',dealId,record.client_iin);
+   try{const receipt=await adapter.reconcile(dealId,record.client_iin,manifest.baseline,manifest.files,manifest.reused);return Response.json({verified:true,filesVerified:receipt.files.length,elapsedMs:Date.now()-started},{headers:{'cache-control':'no-store'}});}
+   catch(error){return Response.json({verified:false,error:error instanceof DocumentUploadError?error.code:'UPLOAD_OUTCOME_UNCERTAIN',elapsedMs:Date.now()-started},{headers:{'cache-control':'no-store'}});}
+  }
   return Response.json({unsent:await new UploadManifestRepository(runtime.DB).unsentForActor(record,actor,'documents')},{headers:{'cache-control':'no-store'}});
  }catch(error){return evidenceError(error);}
 }

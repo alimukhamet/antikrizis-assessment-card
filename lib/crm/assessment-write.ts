@@ -1,4 +1,4 @@
-/** Server-only Bitrix adapter. Call only with a validated, persisted submission. */
+import {bitrixHeaders} from './http-headers'; /** Server-only Bitrix adapter. Call only with a validated, persisted submission. */
 export const ASSESSMENT_FIELDS = {
   fio: 'UF_CRM_1773669702495', iin: 'UF_CRM_AI_IIN', dognum: 'UF_CRM_AI_DOGNUM',
   marital: 'UF_CRM_AI_MARITAL', procedure: 'UF_CRM_1773655613972', debt: 'UF_CRM_AI_DEBT',
@@ -44,7 +44,7 @@ export function createAssessmentAdapter(webhook: string, send: typeof fetch = fe
   async function call(method: string, body: unknown) {
     if (!webhook) throw new AssessmentWriteError('BITRIX_NOT_CONFIGURED');
     const response = await send(webhook.replace(/\/?$/, '/') + method + '.json', {
-      method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body),
+      method: 'POST', headers: bitrixHeaders(webhook), body: JSON.stringify(body),
       signal: AbortSignal.timeout(20000), cache: 'no-store',
     });
     if (!response.ok) throw new AssessmentWriteError('BITRIX_REQUEST_FAILED');
