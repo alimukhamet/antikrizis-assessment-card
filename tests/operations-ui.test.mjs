@@ -5,6 +5,12 @@ import vm from 'node:vm';
 import {JSDOM} from 'jsdom';
 const html=fs.readFileSync('public/questionnaire.html','utf8');
 const tick=()=>new Promise(r=>setTimeout(r,20));
+async function respondConfirmation(s,pending,accept=true){
+ await tick();const dialog=s.d.getElementById('afConfirmation');assert.ok(dialog?.open,'An in-page confirmation must be visible');
+ const button=dialog.querySelector('.btn-main');assert.equal(button.disabled,true,'Confirmation requires an explicit unchecked agreement');
+ if(accept){const checkbox=dialog.querySelector('input[type="checkbox"]');checkbox.checked=true;checkbox.dispatchEvent(new s.w.Event('change'));assert.equal(button.disabled,false);button.click();}else dialog.querySelector('.btn-ghost').click();
+ return pending;
+}
 async function setup(t,{identity=null,mode='contract',draft=null,stageError=null,delayedDraft=false,handoff=null,powerReady=true,clientIin='000000000010',analyze=null,draftResponse=null,fastTimeout=false}={}){
  const dom=new JSDOM(html,{url:'https://synthetic.invalid/questionnaire.html'+(mode==='handoff'?'?mode=handoff':''),runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window,d=w.document,run=code=>vm.runInContext(code,dom.getInternalVMContext()),calls=[],errors=[];
  w.HTMLElement.prototype.scrollIntoView=function(){};
@@ -110,33 +116,74 @@ test('stalled draft read times out visibly and retry safely loads without saving
 test('opening an outdated cache does not silently reprocess and missing IIN has a clear deal-level warning',async t=>{
  const stale=await setup(t,{draft:storedDraft(),analyze:async()=>({ok:false,json:async()=>({error:'CACHE_REPROCESS_REQUIRED'})})});await stale.load();await tick();
  assert.equal(stale.calls.filter(c=>c.path.endsWith('/analyze')).length,1);assert.equal(JSON.parse(stale.calls.find(c=>c.path.endsWith('/analyze')).body).cacheOnly,true);assert.equal(stale.d.body.dataset.uxClientState,'ready');assert.match(stale.run('af.results.get(1).error'),/Версия обработки изменилась/);
- const missing=await setup(t,{draft:storedDraft(),clientIin:null,analyze:async(p,o,c)=>({ok:true,json:async()=>evidence(c)})});await missing.load();await tick();assert.equal(missing.d.getElementById('uxIdentityWarning').hidden,false);assert.match(missing.d.getElementById('uxIdentityWarning').textContent,/Возьмём ИИН из документа/);assert.equal(missing.run('af.results.get(1).blocked'),true);
+ const missing=await setup(t,{draft:storedDraft(),clientIin:null,analyze:async(p,o,c)=>({ok:true,json:async()=>evidence(c)})});await missing.load();await tick();assert.equal(missing.d.getElementById('uxIdentityWarning').hidden,false);assert.match(missing.d.getElementById('uxIdentityWarning').textContent,/ИИН заполняется из ГКБ/);assert.equal(missing.run('af.results.get(1).blocked'),true);
 });
 test('document IIN is confirmed once, enables verified flow and preserves manual edits',async t=>{
  const s=await setup(t,{clientIin:null,identity:async(body,c)=>({...c,client:{...c.client,iin:'000000000010'},analysis:{...p,client:{...c.client,iin:'000000000010'},eligibleForAutofill:true,eligibleForDraftAutofill:false,findings:[]}})});await s.load();const p={...evidence(s.context),eligibleForDraftAutofill:true};
  p.document.extraction.credits[0].facts.push({key:'contractIdentifier',value:'SYNTHETIC-1',page:1,source:'Synthetic contract'});
  s.run('selectedFiles.push({id:1,file:{name:"synthetic.pdf"},storedDocumentId:"gkb",type:"ГКБ — полный отчёт",person:"Клиент"})');
  s.run('af.results.set(1,HostedAssessment.adapt('+JSON.stringify(p)+'));afClientChoices()');
- let confirmations=0;s.w.confirm=()=>{confirmations++;return false;};await s.run('afApply()');assert.equal(s.d.getElementById('iin').value,'');assert.equal(confirmations,1);
- s.w.confirm=()=>{confirmations++;return true;};await s.run('afApply()');assert.equal(confirmations,2);assert.equal(s.d.getElementById('iin').value,'000000000010');assert.equal(s.d.getElementById('fio').value,'OLD DOCUMENT NAME');assert.equal(s.d.querySelector('[data-for="iin"]').textContent.includes('Верно'),false);assert.equal(s.d.getElementById('uxIdentityWarning').hidden,true);
- const rows=()=>s.d.querySelectorAll('#creditors > .repeat-rows > *').length;assert.equal(rows(),1);s.run('af.rowKeys.clear();afApply()');assert.equal(rows(),1,'Legacy/manual row with the same lender and contract is reused');assert.equal(confirmations,2);
+ s.w.confirm=()=>{throw Error('Native confirmation must not be used');};await respondConfirmation(s,s.run('afApply()'),false);assert.equal(s.d.getElementById('iin').value,'');assert.equal(s.calls.filter(c=>c.path.endsWith('/identity')).length,0);
+ await respondConfirmation(s,s.run('afApply()'));assert.equal(s.d.getElementById('iin').value,'000000000010');assert.equal(s.d.getElementById('fio').value,'OLD DOCUMENT NAME');assert.equal(s.d.querySelector('[data-for="iin"]').textContent.includes('Верно'),false);assert.equal(s.d.getElementById('uxIdentityWarning').hidden,true);
+ const rows=()=>s.d.querySelectorAll('#creditors > .repeat-rows > *').length;assert.equal(rows(),1);await s.run('af.rowKeys.clear();afApply()');assert.equal(rows(),1,'Legacy/manual row with the same lender and contract is reused');assert.equal(s.d.getElementById('afConfirmation'),null);
  s.d.getElementById('fio').value='MANUAL NAME';s.run('afApply()');assert.equal(s.d.getElementById('fio').value,'MANUAL NAME');const take=[...s.d.querySelectorAll('#afConflicts button')].find(b=>b.textContent==='Взять из документа');assert.ok(take);let savesScheduled=0;const changed=s.w.ServerDrafts.changed;s.w.ServerDrafts.changed=()=>{savesScheduled++;changed();};take.click();assert.equal(s.d.getElementById('fio').value,'OLD DOCUMENT NAME');assert.equal(savesScheduled,1,'Taking a report value must schedule autosave');
  assert.equal(s.calls.some(c=>c.path.endsWith('/reviews')),false);assert.equal(s.w.HostedAssessment.getContext().client.iin,'000000000010');assert.equal(s.calls.filter(c=>c.path.endsWith('/identity')).length,1);
+});
+test('normal document check resolves the GKB identity without restoring deleted answers or confirming facts',async t=>{
+ const draft=storedDraft([{key:'fio',value:'',checked:false},{key:'iin',value:'',checked:false}],[{id:'creditors',rows:[],rowKeys:[]}]);
+ const s=await setup(t,{clientIin:null,draft,analyze:async(p,o,c)=>({ok:true,json:async()=>({...evidence(c),eligibleForDraftAutofill:true})}),identity:async(body,c)=>{const fresh={...c,client:{...c.client,iin:'000000000010'}};return{...fresh,analysis:evidence(fresh)};}});await s.load();await tick();
+ s.w.confirm=()=>{throw Error('Native confirmation must not be used');};
+ const warning=s.d.getElementById('uxIdentityWarning');assert.match(warning.textContent,/ИИН найден в ГКБ/);assert.match(warning.textContent,/000000000010/);assert.doesNotMatch(warning.textContent,/Взять ИИН/);
+ const before=s.w.ServerDrafts.capture();const pending=s.w.AssessmentCheck.documents();await tick();assert.equal(s.calls.filter(c=>c.path.endsWith('/identity')).length,0,'Reading a GKB alone must never bind it to an unconfirmed deal');
+ const result=await respondConfirmation(s,pending);assert.ok(result);assert.equal(s.calls.filter(c=>c.path.endsWith('/identity')).length,1);assert.equal(s.calls.filter(c=>c.path.endsWith('/check')).length,1,'Continue to the original action in the same click');
+ assert.equal(s.d.getElementById('iin').value,'000000000010');assert.equal(s.d.getElementById('fio').value,'');assert.equal(s.d.querySelectorAll('#creditors > .repeat-rows > *').length,0);
+ const after=s.w.ServerDrafts.capture();assert.equal(JSON.stringify(after.groups),JSON.stringify(before.groups));assert.equal(JSON.stringify(after.documents),JSON.stringify(before.documents));assert.equal(s.calls.some(c=>c.path.includes('/reviews')),false);
+});
+test('IIN action is disabled during document loading, and cancelling the in-page confirmation performs no write',async t=>{
+ let release;const wait=new Promise(r=>release=r);const s=await setup(t,{clientIin:null,draft:storedDraft(),analyze:async(p,o,c)=>{await wait;return{ok:true,json:async()=>({...evidence(c),eligibleForDraftAutofill:true})};}});await s.load();
+ assert.equal(s.d.querySelector('#uxIdentityWarning button').disabled,true);release();await tick();await tick();assert.equal(s.d.querySelector('#uxIdentityWarning button').disabled,false);
+ await respondConfirmation(s,s.w.AssessmentCheck.documents(),false);assert.equal(s.calls.some(c=>c.path.endsWith('/identity')||c.path.endsWith('/check')),false);assert.match(s.d.getElementById('documentCheckStatus').textContent,/отменено/);
+});
+test('identity retries only a known pre-write CRM failure, not uncertain writes or client timeouts',async t=>{
+ for(const code of ['BITRIX_TEMPORARILY_UNAVAILABLE','IDENTITY_SAVE_UNCERTAIN','REQUEST_TIMEOUT']){
+  const s=await setup(t,{clientIin:null,identity:async(body,c)=>{const fresh={...c,client:{...c.client,iin:'000000000010'}};return{...fresh,analysis:evidence(fresh)};}});await s.load();const p={...evidence(s.context),eligibleForDraftAutofill:true};
+  s.run('selectedFiles.push({id:1,file:{name:"synthetic.pdf"},storedDocumentId:"gkb",type:"ГКБ — полный отчёт",person:"Клиент"});af.results.set(1,HostedAssessment.adapt('+JSON.stringify(p)+'));afClientChoices()');
+  let attempts=0;const fetch=s.w.fetch;s.w.fetch=async(path,options)=>{if(path.endsWith('/identity')&&++attempts===1)return{ok:false,json:async()=>({error:code})};return fetch(path,options);};
+  const result=await respondConfirmation(s,s.run('afEnsureIdentity()'));assert.equal(attempts,code==='BITRIX_TEMPORARILY_UNAVAILABLE'?2:1);assert.equal(result,code==='BITRIX_TEMPORARILY_UNAVAILABLE');
+  if(code!=='BITRIX_TEMPORARILY_UNAVAILABLE'){assert.equal(s.d.getElementById('iin').value,'');assert.equal(s.d.querySelector('#uxIdentityWarning button').disabled,false);}
+ }
+});
+test('changing a document or answer while confirming identity stops the write',async t=>{
+ const s=await setup(t,{clientIin:null});await s.load();const p={...evidence(s.context),eligibleForDraftAutofill:true};s.run('selectedFiles.push({id:1,file:{name:"synthetic.pdf"},storedDocumentId:"gkb",type:"ГКБ — полный отчёт",person:"Клиент"});af.results.set(1,HostedAssessment.adapt('+JSON.stringify(p)+'));afClientChoices()');
+ const pending=s.run('afEnsureIdentity()');s.d.getElementById('fio').value='Changed during confirmation';await respondConfirmation(s,pending);assert.equal(s.calls.some(c=>c.path.endsWith('/identity')),false);assert.match(s.d.getElementById('afStatus').textContent,/изменились/);
+});
+test('identity upgrade keeps corrected values and reasons pending, and preserves an explicit choice among multiple IINs',async t=>{
+ const s=await setup(t,{clientIin:null,identity:async(body,c)=>{const fresh={...c,client:{...c.client,iin:'000000000010'}};return{...fresh,analysis:evidence(fresh)};}});await s.load();const p={...evidence(s.context),eligibleForDraftAutofill:true};
+ s.run('selectedFiles.push({id:1,file:{name:"synthetic.pdf"},storedDocumentId:"gkb",type:"ГКБ — полный отчёт",person:"Клиент"});af.results.set(1,HostedAssessment.adapt('+JSON.stringify(p)+'));afClientChoices()');
+ s.d.getElementById('fio').value='Manual correction';s.run('af.sources.set("fio",{...af.results.get(1).fields.find(f=>f.key==="fio"),fileId:1,pending:true,edited:true,correctionReason:"Original spelling verified"})');
+ await respondConfirmation(s,s.run('afEnsureIdentity()'));assert.equal(s.d.getElementById('fio').value,'Manual correction');assert.equal(s.run('af.sources.get("fio").server.draftOnly'),undefined);assert.equal(s.run('af.sources.get("fio").pending'),true);assert.equal(s.run('af.sources.get("fio").correctionReason'),'Original spelling verified');assert.equal(s.calls.some(c=>c.path.includes('/reviews')),false);
+ s.d.getElementById('iin').value='';s.run('selectedFiles.push({id:2,file:{name:"other.pdf"}});af.results.set(2,{identity:{iin:"000000000011",fio:"Other person"}});afClientChoices()');s.d.getElementById('afClient').value='000000000011';s.run('afClientChoices()');assert.equal(s.d.getElementById('afClient').value,'000000000011');
+});
+test('download invokes identity confirmation and then the separate fact review, with a visible cancellation result',async t=>{
+ const s=await setup(t,{clientIin:null,identity:async(body,c)=>{const fresh={...c,client:{...c.client,iin:'000000000010'}};return{...fresh,analysis:evidence(fresh)};}});await s.load();const p={...evidence(s.context),eligibleForDraftAutofill:true};
+ s.run('selectedFiles.push({id:1,file:{name:"synthetic.pdf"},storedDocumentId:"gkb",type:"ГКБ — полный отчёт",person:"Клиент"});af.results.set(1,HostedAssessment.adapt('+JSON.stringify(p)+'));afClientChoices()');
+ const pending=s.d.getElementById('saveAssessment').onclick();await respondConfirmation(s,Promise.resolve());
+ await respondConfirmation(s,pending,false);assert.equal(s.calls.filter(c=>c.path.endsWith('/identity')).length,1);assert.equal(s.calls.some(c=>c.path.includes('/reviews')||c.path.endsWith('/check')||c.path.endsWith('/submission')&&c.method==='POST'),false);assert.match(s.d.getElementById('checkStatus').textContent,/Подтверждение отменено/);assert.equal(s.d.getElementById('saveAssessment').disabled,false);
 });
 test('actual supplied reports fill and restore four distinct active loans in the production form', {skip:!process.env.ASSESSMENT_REPORT_AUDIT_DIR},async t=>{
  const path=process.env.ASSESSMENT_REPORT_AUDIT_DIR,parsed=[55,54].map(n=>JSON.parse(fs.readFileSync(path+'/document ('+n+').json','utf8')));
  const reportResponse=(i,c)=>({...c,documentId:'report-'+i,extractionId:'parsed-'+i,eligibleForAutofill:true,eligibleForDraftAutofill:false,findings:[],document:{...parsed[i].read,extraction:parsed[i].result}});
- const owner=parsed[0].result.identity.iin;const s=await setup(t,{clientIin:null,identity:async(b,c)=>{const fresh={...c,client:{...c.client,iin:owner}};return{...fresh,analysis:reportResponse(0,fresh)};},analyze:async(p,o,c)=>({ok:true,json:async()=>reportResponse(Number(p.match(/report-(\d+)/)[1]),{...c,client:{...c.client,iin:owner}})})});await s.load();let confirmations=0;s.w.confirm=()=>{confirmations++;return true;};
+ const owner=parsed[0].result.identity.iin;const s=await setup(t,{clientIin:null,identity:async(b,c)=>{const fresh={...c,client:{...c.client,iin:owner}};return{...fresh,analysis:reportResponse(0,fresh)};},analyze:async(p,o,c)=>({ok:true,json:async()=>reportResponse(Number(p.match(/report-(\d+)/)[1]),{...c,client:{...c.client,iin:owner}})})});await s.load();s.w.confirm=()=>{throw Error('Native confirmation must not be used');};
  for(const [i,p] of parsed.entries()){
   const payload={...s.context,documentId:'report-'+i,extractionId:'parsed-'+i,eligibleForAutofill:false,eligibleForDraftAutofill:true,findings:['DEAL_IDENTITY_UNVERIFIED'],document:{...p.read,extraction:p.result}};
   s.run('selectedFiles.push({id:'+(i+1)+',file:{name:"report-'+i+'.pdf"},storedDocumentId:"report-'+i+'",person:"Клиент",type:"'+(i?'ГКБ — краткий отчёт':'ГКБ — полный отчёт')+'"});af.results.set('+(i+1)+',HostedAssessment.adapt('+JSON.stringify(payload)+'))');
  }
- await s.run('afClientChoices();afApply()');assert.equal(confirmations,1);
+ await respondConfirmation(s,s.run('afClientChoices();afApply()'));assert.equal(s.calls.filter(c=>c.path.endsWith('/identity')).length,1);
  const readRows=()=>s.run('JSON.stringify([...document.querySelectorAll("#creditors > .repeat-rows > *")].map(row=>Object.fromEntries([...row.querySelectorAll("input,select")].map(e=>[e.id.replace(/_r\\d+$/, ""),e.value]))))');
  const rows=JSON.parse(readRows());assert.equal(rows.length,4);assert.equal(new Set(rows.map(r=>r.loanContractId)).size,4);assert.equal(rows.reduce((sum,r)=>sum+Math.round(Number(r.n8040)*100),0),1355636817);assert.equal(rows.filter(r=>r.loanStatus.startsWith('В просрочке')).every(r=>!r.n8041),true);assert.equal(s.d.getElementById('iin').value,parsed[0].result.identity.iin);assert.equal(s.d.getElementById('fio').value,parsed[0].result.identity.name);assert.equal(s.run('af.conflicts.length'),0);
  s.run('afApply()');assert.equal(JSON.parse(readRows()).length,4);
  const payload=s.w.ServerDrafts.capture(),reloaded=await setup(t,{clientIin:owner,draft:{revision:4,identityRevision:1,payload:{...payload,documents:payload.documents.map((d,i)=>({...d,originalName:"report-"+i+".pdf"}))}},analyze:async(p,o,c)=>{const i=Number(p.match(/report-(\d+)/)[1]),r=parsed[i];return{ok:true,json:async()=>({...c,documentId:'report-'+i,extractionId:'parsed-'+i,eligibleForAutofill:true,eligibleForDraftAutofill:false,findings:[],document:{...r.read,extraction:r.result}})};}});
- reloaded.w.confirm=()=>{throw Error('Reload must not ask to fill or modify a saved draft');};await reloaded.load();await tick();await tick();
+ reloaded.w.afConfirmDialog=()=>{throw Error('Reload must not ask to fill or modify a saved draft');};await reloaded.load();await tick();await tick();
  assert.equal(JSON.stringify(reloaded.w.ServerDrafts.capture().groups),JSON.stringify(payload.groups));assert.equal(reloaded.w.ServerDrafts.capture().documents.length,2);
 });
 test('handoff has three file cards and enables its pickers only once the correct draft loads',async t=>{

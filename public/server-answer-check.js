@@ -28,9 +28,13 @@
   const status=mode==='documents'?documentStatus:document.getElementById('checkStatus');
   if(!HostedAssessment.ready()){status.textContent='Сначала откройте сделку.';return;}
   const dealId=HostedAssessment.getContext().client.external.dealId;
-  const initialPayload=JSON.stringify(ServerDrafts.capture());
   upload.invalidate();submission.invalidate();button.disabled=true;documentButton.disabled=true;preview.hidden=true;contract.hidden=true;contractValues=null;status.textContent=mode==='documents'?'Проверяю документы…':'Проверяю ответы…';
   try{
+   // Both normal actions resolve the document identity first; employees do not
+   // need to discover a separate IIN button before checking or downloading.
+   if(typeof afEnsureIdentity==='function'&&!await afEnsureIdentity()){status.textContent=document.getElementById('afStatus').textContent;return;}
+   if(!HostedAssessment.ready()||HostedAssessment.getContext().client.external.dealId!==dealId)throw Error('Клиент изменился. Откройте нужную сделку заново.');
+   const initialPayload=JSON.stringify(ServerDrafts.capture());
    // A single explicit review replaces dozens of separate field confirmations.
    if(mode==='answers'&&!await afConfirmPending()){status.textContent='Подтверждение отменено. Ответы не отправлены на итоговую проверку.';return;}
    if(!HostedAssessment.ready()||HostedAssessment.getContext().client.external.dealId!==dealId||JSON.stringify(ServerDrafts.capture())!==initialPayload){status.textContent='Ответы или сделка изменились. Запустите проверку ещё раз.';return;}

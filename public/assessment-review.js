@@ -13,6 +13,20 @@ const dialog=afEl('dialog');dialog.id='afSourceDialog';dialog.innerHTML='<div cl
 $af('afSourceClose').onclick=()=>dialog.close();dialog.addEventListener('close',()=>{if(af.sourceUrl)URL.revokeObjectURL(af.sourceUrl);af.sourceUrl=null;$af('afPreview').pdfDispose?.();$af('afPreview').replaceChildren();});
 $af('afChoose').onclick=()=>$af('previewDocuments').click();
 function afStatus(text,error=false){$af('afStatus').textContent=text;$af('afStatus').classList.toggle('error',error);}
+// In-page confirmation works inside the portal iframe and never depends on a
+// browser-native confirm prompt being displayed or accepted by its host.
+function afConfirmDialog({title,message,action='Подтвердить',agreement}){
+ if(document.getElementById('afConfirmation'))return Promise.resolve(false);
+ return new Promise(resolve=>{
+  const modal=afEl('dialog',undefined,'submission-destination');modal.id='afConfirmation';modal.setAttribute('aria-labelledby','afConfirmationTitle');
+  const heading=afEl('h2',title);heading.id='afConfirmationTitle';const text=afEl('p',message);text.style.whiteSpace='pre-line';
+  const label=afEl('label'),agree=afEl('input');agree.type='checkbox';agree.id='afConfirmationAgree';label.append(agree,document.createTextNode(agreement));
+  const actions=afEl('div',undefined,'af-actions'),cancel=afEl('button','Назад','btn btn-ghost'),accept=afEl('button',action,'btn btn-main');cancel.type=accept.type='button';accept.disabled=true;
+  let done=false;const finish=value=>{if(done)return;done=true;document.removeEventListener('assessment-case-opened',changed);modal.close();modal.remove();resolve(value);};const changed=()=>finish(false);
+  agree.onchange=()=>accept.disabled=!agree.checked;cancel.onclick=()=>finish(false);accept.onclick=()=>{if(agree.checked)finish(true);};modal.addEventListener('cancel',event=>{event.preventDefault();finish(false);});modal.addEventListener('close',()=>finish(false));document.addEventListener('assessment-case-opened',changed);
+  actions.append(cancel,accept);modal.append(heading,text,label,actions);document.body.append(modal);modal.showModal();cancel.focus();
+ });
+}
 async function afSource(src){
  const item=selectedFiles.find(x=>x.id===src.fileId),r=af.results.get(src.fileId),preview=$af('afPreview');
  preview.pdfDispose?.();preview.replaceChildren();
@@ -68,7 +82,9 @@ async function afConfirmPending(){
  const correction=entries.find(([input,src])=>input.value!==String(src.value)&&!src.correctionReason?.trim());
  if(correction){afFocus(correction[0]);throw Error('Укажите причину исправления ответа из документа.');}
  const client=HostedAssessment.getContext().client;
- if(!window.confirm('Подтверждаете заполненные ответы из документов: '+entries.length+'?\n\n'+client.title+' · сделка № '+client.external.dealId+'\n\nНажимая ОК, вы подтверждаете, что сверили эти ответы. Источники и причины исправлений сохранятся.'))return false;
+ const before=HostedAssessment.getContext(),values=entries.map(([input])=>input.value);
+ if(!await afConfirmDialog({title:'Проверьте ответы из документов',message:client.title+' · сделка № '+client.external.dealId+'\nОтветов из документов: '+entries.length+'\nИсточники и причины исправлений сохранятся.',agreement:'Я сверил эти ответы с документами',action:'Подтвердить ответы и продолжить'}))return false;
+ if(HostedAssessment.getContext()!==before||entries.some(([input,src],i)=>!input.isConnected||af.sources.get(input.id)!==src||input.value!==values[i]||src.stale))throw Error('Ответы или клиент изменились. Проверьте текущие значения.');
  try{await HostedAssessment.reviewMany(entries);return true;}finally{afRefresh();}
 }
 function afDispatchChange(e){const previous=af.applying;af.applying=true;try{e.dispatchEvent(new Event('change',{bubbles:true}));}finally{af.applying=previous;}}
@@ -160,35 +176,50 @@ function afRenderConflicts(){
 }
 function afClientChoices(){
  const ids=new Map();for(const [id,r]of af.results){if(!selectedFiles.some(x=>x.id===id)||!r.identity?.iin||r.duplicate)continue;const old=ids.get(r.identity.iin);ids.set(r.identity.iin,r.identity.fio||old||'Клиент');}
- const select=$af('afClient');select.replaceChildren(new Option('Выберите клиента',''));for(const [iin,name]of ids)select.add(new Option(name+' · ИИН '+iin,iin));
- const existing=$af('iin').value.trim();if(ids.has(existing))select.value=existing;else if(ids.size===1)select.value=[...ids.keys()][0];else select.value='';
+ const select=$af('afClient'),chosen=select.value;select.replaceChildren(new Option('Выберите клиента',''));for(const [iin,name]of ids)select.add(new Option(name+' · ИИН '+iin,iin));
+ const existing=$af('iin').value.trim();if(ids.has(existing))select.value=existing;else if(ids.has(chosen))select.value=chosen;else if(ids.size===1)select.value=[...ids.keys()][0];else select.value='';
  const draftMode=!HostedAssessment.getContext()?.client.iin&&[...af.results.values()].some(r=>r.draftOnly);
  $af('afApply').style.display=draftMode?'inline-block':'none';select.disabled=!draftMode;
  $af('afApply').textContent='Подтвердить клиента и заполнить';
  $af('afIdentity').hidden=!ids.size;$af('afIdentity').style.display=ids.size?'flex':'none';return select.value;
 }
-async function afApply(){
+async function afEnsureIdentity(){
+ if(HostedAssessment.getContext()?.client.iin)return true;
+ if(af.busy||!window.ServerDrafts?.canSwitch()){afStatus('Дождитесь загрузки документов клиента. ИИН будет прочитан из ГКБ.',true);return false;}
+ afClientChoices();await afApply({identityOnly:true});
+ return Boolean(HostedAssessment.getContext()?.client.iin);
+}
+async function afApply(preferences={}){
  if(af.identityBusy)return;
- const client=$af('afClient').value;if(!client){afStatus('В документах несколько людей или ИИН не распознан. Выберите клиента; при отсутствии ИИН заполните вручную.',true);return;}
+ const client=$af('afClient').value;if(!client){afStatus('В документах несколько людей или ИИН не распознан. Выберите клиента в результатах документов или загрузите читаемый ГКБ.',true);return;}
  if(af.client&&af.client!==client){afStatus('В этой анкете уже использованы документы другого клиента. Скачайте или сохраните текущую анкету; начните новую отдельно.',true);return;}
  const existing=$af('iin').value.trim();if(existing&&existing!==client){afStatus('ИИН в анкете не совпадает с выбранным клиентом. Изменения не внесены.',true);return;}
  const docs=[...af.results].filter(([id,r])=>selectedFiles.some(x=>x.id===id)&&(!r.blocked||r.draftOnly)&&!r.duplicate&&!r.error&&!r.excluded&&r.identity?.iin===client);
  if(!docs.length){afStatus('Нет подходящих документов для выбранного клиента. Проверьте результаты чтения.',true);return;}
- const best=docs.find(([,r])=>r.kind==='gkbFull')||docs.find(([,r])=>r.identity?.fio);const name=best?.[1].identity.fio||$af('fio').value;
+ const best=docs.find(([,r])=>r.kind==='gkbFull')||docs.find(([,r])=>r.kind==='gkbShort')||docs.find(([,r])=>r.identity?.fio);const name=best?.[1].identity.fio||$af('fio').value;
  if(docs.some(([,r])=>r.draftOnly)&&!af.restoringEvidence){
   const ctx=HostedAssessment.getContext();
-  if(!confirm('Взять ИИН из этого документа?\n\nСделка № '+ctx.client.external.dealId+': '+ctx.client.title+'\nКлиент в отчёте: '+name+'\nИИН: '+client+'\n\nПодтвердите, что это клиент выбранной сделки. ИИН из ГКБ будет сохранён в карточке и в пустом поле ИИН этой сделки Bitrix. Другой ИИН не заменяется.')){afStatus('Ничего не изменено. Подтвердите клиента над результатами документов.');return;}
   const wasBusy=af.busy;af.busy=true;af.identityBusy=true;$af('afApply').disabled=true;
   try{
+   afStatus('ИИН найден в ГКБ. Подтвердите клиента в открытом окне.');
+   const snapshot=JSON.stringify(window.ServerDrafts?.capture());
+   if(!await afConfirmDialog({title:'Это документ выбранного клиента?',message:'Сделка № '+ctx.client.external.dealId+': '+ctx.client.title+'\nКлиент в ГКБ: '+name+'\nИИН: '+client+'\n\nИИН заполнится из ГКБ в карточке и пустом поле этой сделки Bitrix. Другой ИИН не заменяется.',agreement:'Это ГКБ клиента выбранной сделки',action:'Подтвердить клиента и продолжить'})){afStatus('Подтверждение клиента отменено. ИИН не изменён. Нажмите «Проверить и продолжить», когда будете готовы.');return;}
+   if(HostedAssessment.getContext()!==ctx||JSON.stringify(window.ServerDrafts?.capture())!==snapshot||$af('afClient').value!==client||docs.some(([id,r])=>af.results.get(id)!==r||!selectedFiles.some(item=>item.id===id)))throw Error('Клиент или документы изменились. Проверьте выбранного клиента заново.');
    afStatus('Сохраняем ИИН из документа и проверяем запись…');
    const source=best||docs[0],payload=await HostedAssessment.confirmIdentity(source[1]);
    af.results.set(source[0],HostedAssessment.adapt(payload));
-   for(const [fieldId,s]of af.sources)if(s.server?.draftOnly){s.stale=true;s.pending=true;if($af(fieldId))afBadge($af(fieldId),s);}
    // Re-evaluate eligibility on the server; confirming identity is not a review
    // of loan values, document completeness or authenticity.
    const remaining=selectedFiles.filter(item=>item.id!==source[0]&&af.results.get(item.id)?.server);
    let next=0;await Promise.all(Array.from({length:Math.min(3,remaining.length)},async()=>{while(next<remaining.length){const item=remaining[next++];try{af.results.set(item.id,HostedAssessment.adapt(await HostedAssessment.analyzeFile(item,{cacheOnly:true})));}catch(e){af.results.set(item.id,{error:e.message,notes:['Повторите распознавание этого файла.']});}}}));
-   af.identityBusy=false;afClientChoices();await afApply();
+   // Identity confirmation upgrades only the same extraction's source binding.
+   // It never confirms facts, restores deleted rows, or drops correction reasons.
+   for(const [fieldId,s]of af.sources){const r=af.results.get(s.fileId);if(s.server?.draftOnly&&r&&!r.blocked&&!r.error&&r.server?.documentId===s.server.documentId&&r.server?.extractionId===s.server.extractionId){s.server={...r.server};if($af(fieldId))afBadge($af(fieldId),s);}}
+   af.identityBusy=false;afClientChoices();
+   if(preferences.identityOnly){
+    const result=af.results.get(source[0]),fact=result.fields.find(f=>f.key==='iin');if(fact)afPut($af('iin'),fact.value,{...fact,fileId:source[0],date:result.date});
+    afStatus('ИИН заполнен из ГКБ. Продолжаем проверку.');
+   }else await afApply();
   }catch(e){afStatus(e.message,true);}
   finally{af.identityBusy=false;af.busy=wasBusy;$af('afApply').disabled=false;afClientChoices();afRefresh();window.ClientContextUI?.sync();window.ServerDrafts?.changed();}
   return;

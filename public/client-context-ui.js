@@ -20,8 +20,8 @@ window.ClientContextUI=(()=>{
  const leave=make('a','Выбрать другого клиента','btn btn-ghost');leave.href=mode==='handoff'?'/lawyer-handoff':'/assessment-review';leave.target='_top';
  status.append(statusText,retry,leave);document.querySelector('.wf-header').after(status);
  const identity=make('section',null,'ux-identity-warning');identity.id='uxIdentityWarning';identity.setAttribute('role','status');
- identity.append(make('strong','Возьмём ИИН из документа клиента'),make('p','Загрузите ГКБ и подтвердите, что это клиент выбранной сделки. ИИН заполним и сохраним автоматически. Вручную вносить его в Bitrix не нужно. Сохранённые ответы и файлы останутся на месте.'));
- const refreshIdentity=make('button','Взять ИИН из ГКБ','btn btn-main');refreshIdentity.type='button';refreshIdentity.onclick=async()=>{if(af.busy||!ready())return;refreshIdentity.disabled=true;try{afClientChoices();if([...af.results.values()].some(r=>r.draftOnly))await afApply();else await afAnalyze();}finally{refreshIdentity.disabled=false;}};identity.append(refreshIdentity);status.after(identity);
+ const identityTitle=make('strong'),identityNote=make('p');identity.append(identityTitle,identityNote);
+ const refreshIdentity=make('button','Подтвердить клиента','btn btn-main');refreshIdentity.type='button';refreshIdentity.onclick=async()=>{if(af.busy||!ready()){afStatus('Дождитесь загрузки документов клиента.',true);return;}refreshIdentity.disabled=true;try{await afEnsureIdentity();}finally{sync();}};identity.append(refreshIdentity);status.after(identity);
  const pending=make('details',null,'ux-pending-files'),pendingTitle=make('summary'),pendingList=make('ul');pending.id='uxPendingFiles';pending.append(pendingTitle,make('p','Эти файлы были выбраны раньше, но не сохранены на сервере. Они не восстановятся после обновления страницы. При необходимости добавьте их снова; сохранённые документы ниже остаются на месте.'),pendingList);identity.after(pending);
  let lastState=null;
  function sync(){
@@ -30,6 +30,10 @@ window.ClientContextUI=(()=>{
   const progress=load.phase==='documents'?$('afStatus').textContent:load.error||'Открываем сохранённую карточку клиента…';
   if(statusText.textContent!==progress)statusText.textContent=progress;
   identity.hidden=!c||Boolean(c.client.iin);
+  const identities=new Map();for(const [id,r]of af.results)if(selectedFiles.some(item=>item.id===id)&&r.draftOnly&&!r.error&&!r.duplicate&&['gkbFull','gkbShort'].includes(r.kind)&&r.identity?.iin)identities.set(r.identity.iin,r.identity.fio);
+  const found=identities.size===1?[...identities][0]:null,heading=found?'ИИН найден в ГКБ':'ИИН заполняется из ГКБ',identityMessage=found?found[1]+' · ИИН '+found[0]+'. Подтвердите клиента сейчас или при нажатии «Проверить и продолжить». Повторно загружать ГКБ не нужно.':identities.size>1?'В ГКБ разные ИИН. Выберите нужного клиента в результатах документов.':'Загрузите ГКБ клиента. ИИН будет прочитан автоматически — вводить его в Bitrix вручную не нужно.';
+  if(identityTitle.textContent!==heading)identityTitle.textContent=heading;if(identityNote.textContent!==identityMessage)identityNote.textContent=identityMessage;
+  refreshIdentity.hidden=!identities.size;refreshIdentity.disabled=!loaded||af.busy||af.identityBusy;refreshIdentity.textContent=af.identityBusy?'Подтверждаем клиента…':!loaded||af.busy?'Читаем документы…':'Подтвердить клиента';
   const names=ServerDrafts.pendingFiles?.()||[];pending.hidden=!loaded||!names.length;
   const signature=JSON.stringify(names);if(pending.dataset.files!==signature){pending.dataset.files=signature;pendingTitle.textContent='Не сохранены ранее · '+names.length;pendingList.replaceChildren(...names.map(name=>make('li',/\.(p12|pfx|key)$/i.test(name)?'Ключ ЭЦП — добавляется в разделе «Передать юристам»':name)));}
   if(!c&&new URLSearchParams(location.search).has('dealId'))note.textContent=$('afStatus').textContent+' Выберите клиента, чтобы продолжить.';

@@ -30,7 +30,17 @@ window.HostedAssessment=(()=>{
  async function confirmIdentity(result){
   const before=context,source=result.server;
   if(!source||source.dealId!==before?.client.external.dealId)throw Error('Выберите документы текущего клиента.');
-  const response=await json(base()+'/identity',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({documentId:source.documentId,extractionId:source.extractionId,identityRevision:before.identityRevision,confirmed:true})},{timeoutMs:60000});
+  const path=base()+'/identity',options={method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({documentId:source.documentId,extractionId:source.extractionId,identityRevision:before.identityRevision,confirmed:true})};let response;
+  for(let attempt=0;attempt<2;attempt++){
+   if(context!==before)throw Error('Клиент изменился. Откройте карточку заново.');
+   try{response=await json(path,options,{timeoutMs:60000});break;}
+   catch(error){
+    // Only a known pre-write CRM read failure is retried. A timeout or uncertain
+    // save must keep its explicit recovery state and must not resend a write.
+    if(attempt||error.code!=='BITRIX_TEMPORARILY_UNAVAILABLE')throw error;
+    afStatus('Bitrix не ответил. Повторяем проверку связи один раз; документы загружать заново не нужно…');
+   }
+  }
   if(context!==before||response.client?.external?.dealId!==source.dealId||response.identityRevision!==before.identityRevision||response.client.iin!==result.identity.iin)throw Error('Клиент изменился. Откройте карточку заново.');
   context={...before,client:response.client,identitySource:response.identitySource};
   el('hostDealName').textContent=context.client.title+' · сделка #'+source.dealId+' · ИИН '+context.client.iin+' · из документа';
