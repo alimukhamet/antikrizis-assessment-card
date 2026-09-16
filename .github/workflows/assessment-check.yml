@@ -4,6 +4,7 @@ on:
     branches: [main, deploy/anti-krizis]
   push:
     branches: [main, deploy/anti-krizis]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -19,8 +20,8 @@ jobs:
           node-version: '22'
           package-manager-cache: false
       - run: npm ci --no-audit --no-fund
-      - name: Lint
-        run: npm run lint
+      - name: Lint with zero warnings
+        run: npm run lint -- --max-warnings=0
       - name: Type check
         if: always()
         run: npx --no-install tsc --noEmit
@@ -38,7 +39,66 @@ jobs:
           node-version: '22'
           package-manager-cache: false
       - run: npm ci --no-audit --no-fund
-      - name: Build and run the complete Node test suite
-        run: npm test
+      - name: Build the application
+        run: npm run build
+      - name: Validate Cloudflare package without deploying
+        run: npx --no-install wrangler deploy --dry-run --config wrangler.anti-krizis.jsonc --outdir /tmp/assessment-worker-dry-run
+      - name: Run the complete Node test suite
+        run: |
+          if node --test tests/*.test.mjs > /tmp/assessment-tests.log 2>&1; then
+            tail -12 /tmp/assessment-tests.log
+          else
+            grep -A30 '^not ok' /tmp/assessment-tests.log || true
+            tail -12 /tmp/assessment-tests.log
+            exit 1
+          fi
       - name: Type check
         run: npx --no-install tsc --noEmit
+      - name: Preserve test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: assessment-test-log
+          path: /tmp/assessment-tests.log
+          if-no-files-found: ignore
+          retention-days: 7
+  publication:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/deploy/anti-krizis')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Compare public release assets without signing in or modifying production
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, pathlib, urllib.request
+          origin='https://assessment.anti-krizis.kz'
+          paths=['contract-renderer.js','submission-flow.js','hosted-assessment.js','server-drafts.js','vendor/contracts/pizzip-3.1.7.min.js','vendor/contracts/docxtemplater-3.50.0.min.js']
+          report={'commit':os.environ['GITHUB_SHA'],'origin':origin,'scope':'public_assets_only','assets':[]}
+          for path in paths:
+              row={'path':path,'expected':hashlib.sha256(pathlib.Path('public',path).read_bytes()).hexdigest(),'matches':False}
+              try:
+                  request=urllib.request.Request(origin+'/'+path+'?release_check='+os.environ['GITHUB_SHA'],headers={'Cache-Control':'no-cache'})
+                  with urllib.request.urlopen(request,timeout=12) as response:
+                      body=response.read(5*1024*1024+1)
+                      if len(body)>5*1024*1024: raise ValueError('Oversized asset')
+                      row.update(status=response.status,actual=hashlib.sha256(body).hexdigest())
+                      row['matches']=row['status']==200 and row['expected']==row['actual']
+              except Exception as error:
+                  row['error']=type(error).__name__
+              report['assets'].append(row)
+          report['matchesReleaseAssets']=all(row['matches'] for row in report['assets'])
+          text=json.dumps(report,indent=2)
+          pathlib.Path('publication-check.json').write_text(text)
+          print(text)
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as summary:
+              summary.write('## Read-only publication check\n\n'+('All checked public assets match this commit. This is not an authenticated end-to-end test.' if report['matchesReleaseAssets'] else 'Live assets do not yet all match this commit. This check did not deploy anything.')+'\n')
+          if not report['matchesReleaseAssets']: print('::warning::Live public assets do not match the release source; publication is not confirmed.')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: publication-check
+          path: publication-check.json
+          retention-days: 7
