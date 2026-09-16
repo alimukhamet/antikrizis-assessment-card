@@ -142,7 +142,7 @@ function afRenderConflicts(){
   box.append(afEl('div',afLabel(e)+' · в анкете: '+display(e.value)+(c.src.priorReview?' · в сохранённой проверке: ':' · в документе: ')+display(c.value)));
   const jump=afEl('button','К вопросу');jump.type='button';jump.className='btn btn-ghost';jump.dataset.conflictTarget=e.id;jump.onclick=()=>afFocus(e);
  const b=afEl('button','Источник');b.type='button';b.className='btn btn-ghost';b.onclick=()=>afSource(c.src);
-  const take=afEl('button','Взять из документа');take.type='button';take.className='btn btn-main';take.onclick=()=>{e.value='';af.sources.delete(e.id);afPut(e,c.value,c.src);af.conflicts=af.conflicts.filter(x=>x.id!==c.id);afRenderConflicts();afRefresh();};
+  const take=afEl('button','Взять из документа');take.type='button';take.className='btn btn-main';take.onclick=()=>{e.value='';af.sources.delete(e.id);afPut(e,c.value,c.src);af.conflicts=af.conflicts.filter(x=>x.id!==c.id);afRenderConflicts();afRefresh();window.ServerDrafts?.changed();};
   const keep=afEl('button','Оставить мой ответ');keep.type='button';keep.className='btn btn-ghost';keep.onclick=()=>{const source={...c.src,value:String(c.src.originalValue??c.value),pending:true,edited:true};af.sources.set(e.id,source);afBadge(e,source);af.conflicts=af.conflicts.filter(x=>x!==c);afRenderConflicts();afRefresh();};
   box.append(jump,b,take,keep);root.append(box);
  }
