@@ -189,6 +189,9 @@ body[data-assessment-workflow] .wf-final-actions{padding:18px;border:1px solid #
 .wf-final-actions>details{padding:14px 0;font-size:14px;line-height:1.6}
 .wf-bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:20;display:flex;align-items:center;gap:12px;padding:11px 24px;padding-bottom:calc(11px + env(safe-area-inset-bottom));background:#ffffffed;backdrop-filter:blur(10px);border-top:1px solid #dbe3dc}
 .wf-bottom-caption{flex:1;font-size:12px;text-align:center;color:#596f60}
+.wf-bottom-nav:has(.wf-download-status:not([hidden])){flex-wrap:wrap}
+body[data-assessment-workflow=contract]:has(.wf-download-status:not([hidden])){padding-bottom:calc(110px + 25vh + env(safe-area-inset-bottom))}
+.wf-download-status{flex-basis:100%;margin:0;font-size:13px;line-height:1.4;color:#304f3b;max-height:25vh;overflow:auto}
 .wf-bottom-nav .btn-main{min-width:160px;max-width:520px;white-space:normal}
 #crmImportStatus{font-size:13px;margin:8px 0 0}
 #crmImportStatus:empty{display:none}

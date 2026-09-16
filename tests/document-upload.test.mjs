@@ -48,9 +48,26 @@ test('all-existing selection is verified without a write, and changed existing b
 test('preflight failure proves no send; post-write readback failure never grants resend permission',async()=>{
  let updates=0;
  const adapter=createDocumentUploadAdapter('https://synthetic.invalid/',async()=>{throw Error('unavailable')},async(url)=>{if(url.includes('update'))updates++;throw Error('read unavailable');});
- await assert.rejects(adapter.append('11665','000000000010',baseline,files),e=>e.notStarted===true&&e.code==='UPLOAD_PREFLIGHT_FAILED');
+ await assert.rejects(adapter.append('11665','000000000010',baseline,files),e=>e.notStarted===true&&e.code==='BITRIX_READ_TEMPORARILY_UNAVAILABLE');
  assert.equal(updates,0);
  const f=fixture({unreadable:true});
  await assert.rejects(f.adapter.append('11665','000000000010',baseline,files),e=>e.notStarted===false&&e.code==='UPLOAD_CONTENT_READBACK_UNCERTAIN');
  assert.equal(f.writes.length,1);
+});
+
+test('transient metadata failure retries a fresh read, while writes are never retried',async()=>{
+ let reads=0,writes=0;const signals=[];
+ const send=async(url,init)=>{
+  if(url.endsWith('crm.item.update.json')){writes++;throw Error('write response lost');}
+  reads++;signals.push(init.signal);if(reads===2)throw Error('stalled read');
+  return Response.json({result:{item:{id:11665,ufCrmAiIin:'000000000010',ufCrmAnkPrimaryDocs:reads===1?baseline:[...baseline,{id:'22'}]}}});
+ };
+ const adapter=createDocumentUploadAdapter('https://synthetic.invalid/',async()=>files[0].bytes,send);
+ assert.equal((await adapter.append('11665','000000000010',baseline,files)).verified,true);
+ assert.equal(reads,3);assert.equal(writes,1);assert.notEqual(signals[1],signals[2]);
+});
+test('read retries are bounded and permissions or malformed responses fail closed',async()=>{
+ for(const [response,expected]of [[()=>new Response('unavailable',{status:503}),2],[()=>new Response('denied',{status:403}),1],[()=>Response.json({result:{}}),1]]){
+  let calls=0;await assert.rejects(exports.readCrmItem('https://synthetic.invalid/','11665',async()=>{calls++;return response();}));assert.equal(calls,expected);
+ }
 });

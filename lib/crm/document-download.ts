@@ -1,4 +1,4 @@
-import {DocumentUploadError,readFileField,createDocumentUploadAdapter,type CrmFileRef} from './document-upload';
+import {DocumentUploadError,readCrmItem,readFileField,createDocumentUploadAdapter,type CrmFileRef} from './document-upload';
 const MAX_BYTES=35*1024*1024;
 /** Refresh signed links from the selected CRM item; never accept a caller-supplied link. */
 export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin:string,send:typeof fetch=fetch,options:{pdfOnly?:boolean;credentialsOnly?:boolean;onFilename?:(name:string)=>void}={}){
@@ -25,10 +25,8 @@ export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin
   if(!/^[1-9]\d*$/.test(reference.id))throw new DocumentUploadError('INVALID_FILE_ID');
   try{
    // A fresh item read scopes the file to this deal and avoids retaining expiring tokens.
-   const response=await send(webhook.replace(/\/?$/,'/')+'crm.item.get.json',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({entityTypeId:2,id:dealId}),redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(20000)});
-   if(response.status!==200)throw new DocumentUploadError('CRM_FILE_LOOKUP_FAILED');
-   const body=await response.json() as {result?:{item?:Record<string,unknown>};error?:string},item=body.result?.item;
-   if(body.error||!item||String(item.id??item.ID)!==dealId)throw new DocumentUploadError('DEAL_NOT_FOUND');
+   const item=await readCrmItem(webhook,dealId,send);
+   if(String(item.id??item.ID)!==dealId)throw new DocumentUploadError('DEAL_NOT_FOUND');
    if((item.ufCrmAiIin??item.UF_CRM_AI_IIN)!==expectedIin)throw new DocumentUploadError('CASE_IDENTITY_CHANGED');
    const field=readFileField(item);if(!field.refs.some(r=>r.id===reference.id))throw new DocumentUploadError('FILE_NOT_IN_DEAL');
    const raw=item[field.key],values=Array.isArray(raw)?raw:[raw];

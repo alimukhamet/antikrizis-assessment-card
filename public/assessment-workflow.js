@@ -128,6 +128,14 @@ window.AssessmentWorkflow=(()=>{
   }else if(active==='answers')show('contract');else $('saveAssessment').click();
  },true);
  const stepCaption=make('span','Документы','wf-bottom-caption');floating.append(previous,stepCaption,nextStep);document.body.append(floating);
+ const downloadNotice=make('p',null,'wf-download-status');downloadNotice.id='workflowDownloadStatus';downloadNotice.setAttribute('role','status');downloadNotice.hidden=true;floating.prepend(downloadNotice);let downloadState={busy:false,message:''};
+ function downloadProgress(){
+  downloadNotice.hidden=active!=='contract'||!downloadState.message;downloadNotice.textContent=downloadState.message;
+  nextStep.disabled=active==='contract'&&downloadState.busy;nextStep.setAttribute('aria-busy',String(nextStep.disabled));
+  if(active==='contract')nextStep.textContent=downloadState.busy?'Готовлю договор…':'Скачать договор';
+ }
+ document.addEventListener('assessment-submission-progress',event=>{downloadState=event.detail;downloadProgress();});
+ document.addEventListener('assessment-case-opened',()=>{downloadState={busy:false,message:''};downloadProgress();});
  // Participants are scoped to each obligation. Keep the old shared answer for reference only.
  function compactLoans(){
   for(const row of $('creditors').querySelector(':scope > .repeat-rows').children){
@@ -162,7 +170,7 @@ window.AssessmentWorkflow=(()=>{
   for(const [key,{button}]of tabs){if(key===name)button.setAttribute('aria-current','step');else button.removeAttribute('aria-current');}
   if(name==='answers')openNextSection();
   if(focus){const target=blocked?collectionNotice:name==='documents'?documentStep:name==='answers'?answerIntro:contractIntro;target.tabIndex=-1;target.focus({preventScroll:true});target.scrollIntoView({block:'start',behavior:window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
-  collectionStatus();return !blocked;
+  collectionStatus();downloadProgress();return !blocked;
  }
  function openNextSection(){
   if(answerSections.some(({fold})=>fold.open))return;

@@ -1,9 +1,8 @@
 window.SubmissionDestination={async confirm(options={}){
  const context=HostedAssessment.getContext(),dealId=context?.client.external.dealId;
  if(!dealId)throw Error('Сначала выберите клиента.');
- const response=await fetch(`/api/assessment/${encodeURIComponent(dealId)}`,{cache:'no-store'});
- if(!response.ok)throw Error('Не удалось проверить клиента сделки. Повторите попытку.');
- const fresh=await response.json();
+ const read=async()=>{const url=`/api/assessment/${encodeURIComponent(dealId)}`,message=()=> 'Не удалось проверить клиента сделки. Ничего не отправлено. Повторите попытку.';if(HostedAssessment.requestJson)return HostedAssessment.requestJson(url,{cache:'no-store'},{timeoutMs:25000,message});const response=await fetch(url,{cache:'no-store'});if(!response.ok)throw Error(message());return response.json();};
+ const fresh=await read();
  const matches=value=>HostedAssessment.getContext()===context&&value.client?.external?.dealId===dealId&&value.client.iin===context.client.iin&&value.client.title===context.client.title&&value.identityRevision===context.identityRevision;
  if(!matches(fresh))throw Error('Клиент сделки изменился. Откройте сделку заново.');
  const destination={dealId,iin:fresh.client.iin,identityRevision:fresh.identityRevision};
@@ -21,8 +20,6 @@ window.SubmissionDestination={async confirm(options={}){
   actions.append(cancel,send);dialog.append(title,name,identity,note,label,actions);document.body.append(dialog);dialog.showModal();cancel.focus();
  });
  if(!selected)return null;
- const verification=await fetch(`/api/assessment/${encodeURIComponent(dealId)}`,{cache:'no-store'});
- if(!verification.ok)throw Error('Не удалось повторно проверить клиента. Ничего не отправлено и не скачано.');
- if(!matches(await verification.json()))throw Error('Клиент сделки изменился. Откройте сделку заново.');
+ if(!matches(await read()))throw Error('Клиент сделки изменился. Откройте сделку заново.');
  return selected;
 }};

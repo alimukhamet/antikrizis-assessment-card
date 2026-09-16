@@ -11,24 +11,27 @@ window.DocumentUpload={mount(anchor,status){
   }catch{/* Keep any already confirmed unsent operation available. */}
  }
  document.addEventListener('assessment-case-opened',()=>{cancellable=null;cancel.hidden=true;refreshCancellation();});if(currentDeal())refreshCancellation();
- async function submit(){
+ async function submit({onProgress=()=>{}}={}){
   if(busy)throw Error('Дождитесь сохранения документов.');if(!selection)throw Error('Проверьте документы перед скачиванием договора.');const chosen=selection;if(currentDeal()!==chosen.dealId||signature()!==chosen.signature){throw Error('Проверьте текущий список документов заново.');}
   if(attempt?.signature!==chosen.signature||attempt?.dealId!==chosen.dealId)attempt={requestId:crypto.randomUUID(),signature:chosen.signature,dealId:chosen.dealId,batchIndex:0};
   busy=true;button.disabled=true;cancel.hidden=true;cancellable=null;
+  const report=text=>{status.textContent=text;onProgress(text);};let recovering=false;
   try{
    for(;;){
     if(currentDeal()!==chosen.dealId||signature()!==chosen.signature)throw Error('Сделка или список изменились. Текущая загрузка остановлена; уже подтверждённые файлы сохранены.');
-    status.textContent=`Загружаю документы: часть ${attempt.batchIndex+1}…`;
-    const response=await fetch(`/api/assessment/${encodeURIComponent(chosen.dealId)}/uploads`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:attempt.requestId,batchIndex:attempt.batchIndex,identityRevision:chosen.identityRevision,payload:chosen.payload})});
-    const result=await response.json();if(!response.ok)throw Error(({UPLOAD_OWNED_BY_ANOTHER_WORKER:'Этот список уже загружает другой сотрудник. Обратитесь к нему для проверки результата.',UPLOAD_LEGACY_RECOVERY_REQUIRED:'Для прежней загрузки нужна сверка сохранённых файлов. Новая отправка остановлена.',DOCUMENT_PACKAGE_NOT_READY:'Сначала завершите проверку документов.',UPLOAD_REVIEW_CHANGED:'Подтверждения документов изменились. Проверьте список заново.',UPLOAD_PENDING_OR_IDENTITY_CHANGED:'Есть незавершённая загрузка или изменился клиент.',CASE_IDENTITY_CHANGED:'Клиент сделки изменился.',IDEMPOTENCY_KEY_REUSED:'Для этой загрузки уже зафиксирован другой список.'})[result.error]||'Загрузка не подтверждена. Повторите действие с тем же списком.');
+    report(recovering?'Bitrix задержал подтверждение. Проверяю сохранённые файлы без повторной загрузки…':`Сохраняю документы в Bitrix: часть ${attempt.batchIndex+1}…`);
+    const url=`/api/assessment/${encodeURIComponent(chosen.dealId)}/uploads`,options={method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...(recovering?{action:'reconcile'}:{}),requestId:attempt.requestId,batchIndex:attempt.batchIndex,identityRevision:chosen.identityRevision,payload:chosen.payload})};
+    const message=code=>({UPLOAD_OWNED_BY_ANOTHER_WORKER:'Этот список уже загружает другой сотрудник. Обратитесь к нему для проверки результата.',UPLOAD_LEGACY_RECOVERY_REQUIRED:'Для прежней загрузки нужна сверка сохранённых файлов. Новая отправка остановлена.',DOCUMENT_PACKAGE_NOT_READY:'Сначала завершите проверку документов.',UPLOAD_REVIEW_CHANGED:'Подтверждения документов изменились. Проверьте список заново.',UPLOAD_PENDING_OR_IDENTITY_CHANGED:'Есть незавершённая загрузка или изменился клиент.',UPLOAD_NOT_STARTED:'Отправка документов не началась. Нажмите «Скачать договор» ещё раз.',CASE_IDENTITY_CHANGED:'Клиент сделки изменился.',IDEMPOTENCY_KEY_REUSED:'Для этой загрузки уже зафиксирован другой список.'})[code]||'Bitrix не подтвердил документы. Нажмите «Скачать договор» ещё раз: сохранённые файлы будут проверены без повторной отправки.';
+    const result=await (HostedAssessment.requestJson?HostedAssessment.requestJson(url,options,{timeoutMs:180000,message}):(async()=>{const response=await fetch(url,options),data=await response.json();if(!response.ok)throw Error(message(data.error));return data;})());
     if(typeof result.requestId==='string')attempt.requestId=result.requestId;
    if(result.state==='prepared'){cancellable={...attempt};cancel.hidden=false;}
    if(result.state==='prepared')throw Error('Файлы ещё не отправлены. Устраните причину ошибки и повторите загрузку.');
-    if(result.state!=='verified')throw Error('Результат загрузки ещё не подтверждён. Нажмите ещё раз, чтобы проверить сохранённые файлы без повторной отправки.');
-    if(result.documentsUploaded){status.textContent='Документы сохранены в сделке.';return true;}
-    if(!Number.isInteger(result.nextBatch)||result.nextBatch!==attempt.batchIndex+1)throw Error('Не удалось определить следующую часть загрузки.');attempt.batchIndex=result.nextBatch;
+    if(['writing','uncertain'].includes(result.state)&&!recovering){recovering=true;continue;}
+    if(result.state!=='verified')throw Error('Bitrix пока не подтвердил сохранение документов. Договор ещё не сформирован. Нажмите «Скачать договор» повторно — проверим результат без дублирования файлов.');
+    if(result.documentsUploaded){report('Документы сохранены в сделке.');return true;}
+    if(!Number.isInteger(result.nextBatch)||result.nextBatch!==attempt.batchIndex+1)throw Error('Не удалось определить следующую часть загрузки.');attempt.batchIndex=result.nextBatch;recovering=false;
    }
-  }catch(error){status.textContent=error.message;throw error;}finally{busy=false;button.disabled=!selection;await refreshCancellation();}
+  }catch(error){report(error.message);throw error;}finally{busy=false;button.disabled=!selection;void refreshCancellation();}
  };
  cancel.onclick=async()=>{
   if(busy||!cancellable||currentDeal()!==cancellable.dealId)return;

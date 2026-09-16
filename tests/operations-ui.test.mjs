@@ -76,6 +76,16 @@ test('transfer year survives digit-by-digit typing, UI refreshes, new rows and d
  input.value='';input.dispatchEvent(new s.w.Event('change',{bubbles:true}));assert.equal(year.value,'','An explicit reset still clears the editor');
 });
 const evidence=context=>({...context,documentId:'gkb',extractionId:'parsed-gkb',eligibleForAutofill:Boolean(context.client.iin),findings:context.client.iin?[]:['DEAL_IDENTITY_UNVERIFIED'],document:{totalPages:1,pages:[{text:'SYNTHETIC',needsOcr:false}],extraction:{identity:{iin:'000000000010',name:'OLD DOCUMENT NAME'},kind:'gkb_full',facts:[{key:'identity.name',value:'OLD DOCUMENT NAME',page:1,source:'Synthetic name'},{key:'identity.iin',value:'000000000010',page:1,source:'Synthetic ID'}],credits:[{contractNumber:'SYNTHETIC-1',page:1,facts:[{key:'creditor',value:'SYNTHETIC BANK',page:1,source:'Synthetic bank'}]}],findings:[]}}});
+test('floating download action shows live progress, blocks repeated clicks and exposes failures',async t=>{
+ const s=await setup(t);await s.load();s.d.getElementById('needsSocialDoc').value='0';s.d.getElementById('needsSalaryDoc').value='none';
+ s.run('requiredDocumentLabels().forEach((type,i)=>selectedFiles.push({id:i+1,type,person:"Клиент",storedDocumentId:"synthetic-"+i,file:{name:"synthetic-"+i+".pdf"}}))');
+ assert.equal(s.w.AssessmentWorkflow.show('contract'),true);
+ let finish;s.w.AssessmentCheck.run=()=>new Promise(resolve=>finish=resolve);
+ const button=s.d.querySelector('.wf-bottom-nav > .btn-main');button.click();await tick();
+ assert.equal(button.disabled,true);assert.match(button.textContent,/Готовлю/);assert.equal(s.d.getElementById('workflowDownloadStatus').hidden,false);
+ finish();await tick();assert.equal(button.disabled,false);assert.match(s.d.getElementById('workflowDownloadStatus').textContent,/Проверка не завершена/);
+ s.w.AssessmentWorkflow.show('answers');assert.equal(s.d.getElementById('workflowDownloadStatus').hidden,true);assert.equal(button.disabled,false);
+});
 test('reopening restores matching evidence but never repopulates cleared answers or removed loans',async t=>{
  const draft=storedDraft([{key:'fio',value:'',checked:false},{key:'iin',value:'000000000010',checked:false}],[{id:'creditors',rows:[],rowKeys:[]}]);
  const s=await setup(t,{draft,analyze:async(p,o,c)=>({ok:true,json:async()=>evidence(c)})});let jump;s.d.addEventListener('assessment-analysis-complete',e=>{jump=e.detail.showPackageSummary;});await s.load();await tick();

@@ -3,6 +3,23 @@ export type CrmFileRef={id:string};
 export type ReusedUpload={id:string;sha256:string;byteSize:number};
 export type PreparedUpload={name:string;bytes:Uint8Array};
 export class DocumentUploadError extends Error{constructor(public code:string,public notStarted=false){super(code);}}
+/** Retry only read-only metadata requests. Never share in-flight I/O between Workers. */
+export async function readCrmItem(webhook:string,dealId:string,send:typeof fetch=fetch){
+ if(!webhook)throw new DocumentUploadError('BITRIX_NOT_CONFIGURED');
+ for(let attempt=0;attempt<2;attempt++){
+  try{
+   const response=await send(webhook.replace(/\/?$/,'/')+'crm.item.get.json',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({entityTypeId:2,id:dealId}),cache:'no-store',redirect:'manual',signal:AbortSignal.timeout(8000)});
+   if(!response.ok){await response.body?.cancel();throw new DocumentUploadError(response.status===429||response.status>=500?'BITRIX_READ_TEMPORARILY_UNAVAILABLE':'BITRIX_UPLOAD_REQUEST_FAILED');}
+   const json=await response.json() as {result?:{item?:Record<string,unknown>};error?:string};
+   if(json.error||!json.result?.item)throw new DocumentUploadError(['QUERY_LIMIT_EXCEEDED','OPERATION_TIME_LIMIT'].includes(json.error||'')?'BITRIX_READ_TEMPORARILY_UNAVAILABLE':'BITRIX_UPLOAD_REQUEST_FAILED');
+   return json.result.item;
+  }catch(error){
+   if(error instanceof DocumentUploadError&&error.code!=='BITRIX_READ_TEMPORARILY_UNAVAILABLE')throw error;
+   if(attempt===1)throw new DocumentUploadError('BITRIX_READ_TEMPORARILY_UNAVAILABLE');
+  }
+ }
+ throw new DocumentUploadError('BITRIX_READ_TEMPORARILY_UNAVAILABLE');
+}
 const normalized=(key:string)=>key.replace(/[^a-z0-9]/gi,'').toLowerCase();
 /** Unknown existing values must stop an update, never disappear during normalization. */
 export function readFileField(item:Record<string,unknown>){
@@ -46,7 +63,7 @@ export function createDocumentUploadAdapter(webhook:string,readFile:(reference:C
  }
  async function read(dealId:string){
   if(!/^[1-9]\d*$/.test(dealId))throw new DocumentUploadError('INVALID_DEAL_ID');
-  const item=await call('crm.item.get',{entityTypeId:2,id:dealId});
+  const item=await readCrmItem(webhook,dealId,send);
   if(String(item.id??item.ID)!==dealId)throw new DocumentUploadError('DEAL_NOT_FOUND');
   return {...readFileField(item),iin:item.ufCrmAiIin??item.UF_CRM_AI_IIN};
  }

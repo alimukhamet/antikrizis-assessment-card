@@ -10,7 +10,7 @@ function setup({uncertain=false,editDuringPrepare=false}={}){
  return{w,flow,check,calls,save:[...w.document.querySelectorAll('button')].find(b=>b.textContent==='Скачать договор'),resume:()=>[...w.document.querySelectorAll('button')].find(b=>b.textContent.startsWith('Продолжить сохранение')),rendered:()=>rendered,downloads:()=>downloads};
 }
 test('one action saves fields, history and downloads the immutable contract snapshot',async()=>{const s=setup();s.check(false);assert.equal(s.save.disabled,false);s.check(true);await s.save.onclick();assert.deepEqual(s.calls.map(c=>c.action),['prepare','commit','history','contract']);assert.equal(new Set(s.calls.map(c=>c.requestId)).size,1);assert.equal(s.rendered().data.client_name,'SAVED PERSON');assert.equal(s.downloads(),1);});
-test('interrupted save resumes with readback, without another commit',async()=>{const s=setup({uncertain:true});s.check(true);await s.save.onclick();assert.deepEqual(s.calls.map(c=>c.action),['prepare','commit']);assert.equal(s.downloads(),0);await s.resume().onclick();assert.deepEqual(s.calls.map(c=>c.action),['prepare','commit','reconcile','history','contract']);assert.equal(s.downloads(),1);});
+test('interrupted save resumes with readback, without another commit',async()=>{const s=setup({uncertain:true});s.check(true);await s.save.onclick();assert.deepEqual(s.calls.map(c=>c.action),['prepare','commit']);assert.equal(s.downloads(),0);await new Promise(setImmediate);await s.resume().onclick();assert.deepEqual(s.calls.map(c=>c.action),['prepare','commit','reconcile','history','contract']);assert.equal(s.downloads(),1);});
 test('editing answers during preparation cancels before any CRM write',async()=>{const s=setup({editDuringPrepare:true});s.check(true);await s.save.onclick();assert.deepEqual(s.calls.map(c=>c.action),['prepare','cancel']);assert.equal(s.downloads(),0);});
 test('download starts validation and saves draft documents before preparing the contract',async()=>{
  const s=setup(),steps=[];s.w.AssessmentCheck={run:async()=>{steps.push('check');s.check(true);},result:()=>({readyToSubmit:true})};s.w.ServerDrafts.save=async()=>{steps.push('draft');return true;};s.w.AssessmentDocumentUpload={submit:async()=>steps.push('documents')};const fetch=s.w.fetch;s.w.fetch=async(url,options)=>{if(options?.method)steps.push(JSON.parse(options.body).action);return fetch(url,options);};
@@ -43,4 +43,38 @@ test('every outbound submission action includes the confirmed destination',async
 });
 test('a changed answer during destination review prevents all outbound writes',async()=>{
  const s=setup();s.check(true);s.w.SubmissionDestination.confirm=async()=>{s.w.ServerDrafts.capture=()=>({answers:['DIFFERENT']});return{dealId:'11665',iin:'SYNTHETIC',identityRevision:1};};await s.save.onclick();assert.equal(s.calls.length,0);
+});
+
+test('download exposes immediate busy/progress and retains a direct file link without repeating writes',async()=>{
+ const s=setup(),events=[];s.check(true);s.w.document.addEventListener('assessment-submission-progress',e=>events.push({...e.detail}));
+ let finish;s.w.AssessmentDocumentUpload={submit:({onProgress})=>{onProgress('SAVING DOCUMENTS');return new Promise(resolve=>finish=resolve);}};
+ const pending=s.save.onclick();await new Promise(setImmediate);assert.equal(s.save.disabled,true);assert.equal(events.at(-1).busy,true);assert.equal(events.at(-1).message,'SAVING DOCUMENTS');
+ await s.save.onclick();assert.equal(s.calls.length,0);finish(true);await pending;
+ assert.equal(events.at(-1).busy,false);assert.equal(s.downloads(),1);
+ const link=s.w.document.getElementById('downloadContractFile');assert.equal(link.hidden,false);assert.match(link.download,/11665\.docx$/);assert.equal(link.isConnected,true);
+ link.click();assert.equal(s.downloads(),2);assert.equal(s.calls.filter(c=>c.action==='commit').length,1);
+ s.flow.invalidate();assert.equal(link.hidden,true);assert.equal(link.hasAttribute('href'),false);s.w.close();
+});
+test('download and its controls do not wait for optional recovery status after completion',async()=>{
+ const s=setup();s.check(true);const fetch=s.w.fetch;s.w.fetch=(url,options)=>options?.method?fetch(url,options):new Promise(()=>{});
+ await s.save.onclick();assert.equal(s.save.disabled,false);assert.equal(s.downloads(),1);s.w.close();
+});
+test('a failed check gives a visible reason instead of a silent download no-op',async()=>{
+ const s=setup();s.w.AssessmentCheck={run:async()=>{},result:()=>null};await s.save.onclick();assert.match(s.w.document.getElementById('status').textContent,/Проверка не завершена/);assert.equal(s.downloads(),0);s.w.close();
+});
+test('direct file link refuses a stale client or answer snapshot',async()=>{
+ for(const change of [s=>s.w.HostedAssessment.getContext=()=>({client:{external:{dealId:'other'}}}),s=>s.w.ServerDrafts.capture=()=>({answers:['CHANGED']})]){
+  const s=setup();s.check(true);await s.save.onclick();change(s);const link=s.w.document.getElementById('downloadContractFile'),event=new s.w.MouseEvent('click',{cancelable:true});link.dispatchEvent(event);assert.equal(event.defaultPrevented,true);assert.equal(link.hidden,true);s.w.close();
+ }
+});
+test('real upload and submission flows recover a delayed document receipt and then download once',async()=>{
+ const s=setup(),fetch=s.w.fetch,uploads=[];s.w.eval(fs.readFileSync(new URL('../public/document-upload.js',import.meta.url),'utf8'));
+ const upload=s.w.DocumentUpload.mount(s.w.document.getElementById('anchor'),s.w.document.createElement('p'));
+ s.w.AssessmentDocumentUpload=upload;const payload=s.w.ServerDrafts.capture();upload.checked({identityRevision:1,documents:{issues:[]}},{dealId:'11665',payload});s.check(true);
+ s.w.fetch=async(url,options)=>{
+  if(!url.endsWith('/uploads'))return fetch(url,options);
+  if(!options)return new Promise(()=>{});
+  uploads.push(JSON.parse(options.body));return{ok:true,json:async()=>uploads.length===1?{state:'uncertain'}:{state:'verified',documentsUploaded:true}};
+ };
+ await s.save.onclick();assert.equal(uploads.length,2);assert.equal(uploads[1].action,'reconcile');assert.equal(uploads[0].requestId,uploads[1].requestId);assert.deepEqual(s.calls.map(c=>c.action),['prepare','commit','history','contract']);assert.equal(s.downloads(),1);s.w.close();
 });

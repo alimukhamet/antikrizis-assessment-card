@@ -43,6 +43,8 @@ export async function POST(request:Request,context:{params:Promise<{dealId:strin
   for(let index=0;index<batchIndex;index++){const previous=await manifests.get(record.id,await uploadBatchId(requestId,index));if(!previous||previous.state!=='verified'||previous.actor_id!==actor.id||previous.identity_revision!==record.identity_revision||JSON.parse(previous.manifest_json).planHash!==plan.planHash)throw new RepositoryError('UPLOAD_PREVIOUS_BATCH_REQUIRED');}
   let row:UploadRow|null=prior;
   if(prior){const manifest=JSON.parse(prior.manifest_json) as UploadManifest;if(prior.actor_id!==actor.id||prior.identity_revision!==record.identity_revision||manifest.planHash!==plan.planHash||JSON.stringify(manifest.files)!==JSON.stringify(batch))throw new RepositoryError('IDEMPOTENCY_KEY_REUSED');}
+  // Recovery must never turn into a fresh upload, even if another request changed state.
+  if(body.action==='reconcile'&&(!prior||!['writing','uncertain','verified'].includes(prior.state)))throw new RepositoryError('UPLOAD_NOT_STARTED');
   if(!prior||prior.state==='prepared'){
    const checked=await checkDocumentPackage(repository,record,payload,operatingDay());
    // Credentials are a separate upload action and never enter this PDF upload pipeline.
@@ -62,6 +64,7 @@ export async function POST(request:Request,context:{params:Promise<{dealId:strin
    catch(error){row=await manifests.finish(record.id,batchId,null,error instanceof DocumentUploadError?error.code:'UPLOAD_OUTCOME_UNCERTAIN');}
   }
   if(!row)throw new RepositoryError('UPLOAD_MANIFEST_NOT_FOUND',404);
+  if(row.state!=='verified')console.warn('assessment-document-upload',JSON.stringify({state:row.state,outcomeCode:row.outcome_code,batchIndex}));
   return Response.json({requestId,batchId,batchIndex,batchCount:plan.batches.length,state:row.state,outcomeCode:row.outcome_code,receipt:row.receipt_json?JSON.parse(row.receipt_json):null,nextBatch:row.state==='verified'?batchIndex+1:batchIndex,documentsUploaded:row.state==='verified'&&batchIndex===plan.batches.length-1,credentialsUploaded:false},{headers:{'cache-control':'no-store'}});
  }catch(error){return evidenceError(error instanceof DocumentUploadError?new RepositoryError(error.code):error);}
 }
