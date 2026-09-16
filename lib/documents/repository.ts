@@ -7,18 +7,34 @@ export class RepositoryError extends Error {constructor(public code:string, publ
 export type CaseRow={id:string;external_system:string;external_id:string;client_iin:string|null;identity_revision:number;title:string;created_at:string;updated_at:string};
 export type DocumentRow={id:string;case_id:string;original_sha256:string;original_key:string;original_name:string;byte_size:number;uploaded_by:string;created_at:string};
 export type ExtractionRow={id:string;document_id:string;version:string;result_key:string;result_sha256:string;created_at:string};
+export type IdentityBindingRow={id:string;case_id:string;identity_revision:number;iin:string;document_id:string;extraction_id:string;actor_id:string;authentication:string;created_at:string};
 export type ReviewRow={id:string;request_id:string;case_id:string;document_id:string;extraction_id:string;identity_revision:number;fact_key:string;value_json:string;disposition:string;reason:string;actor_id:string;authentication:string;payload_hash:string;created_at:string};
 export async function sha256(data:Uint8Array|string){const input=typeof data==='string'?new TextEncoder().encode(data):new Uint8Array(data);return [...new Uint8Array(await crypto.subtle.digest('SHA-256',input))].map(n=>n.toString(16).padStart(2,'0')).join('');}
 export class EvidenceRepository {
  constructor(private db:D1Database,private files:R2Bucket){}
  async syncCase(client:ClientContext):Promise<CaseRow>{
-  const now=new Date().toISOString();
-  await this.db.prepare('INSERT INTO assessment_cases (id,external_system,external_id,client_iin,identity_revision,title,created_at,updated_at) VALUES (?,?,?,?,1,?,?,?) ON CONFLICT(external_system,external_id) DO UPDATE SET identity_revision=CASE WHEN assessment_cases.client_iin IS excluded.client_iin THEN assessment_cases.identity_revision ELSE assessment_cases.identity_revision+1 END,client_iin=excluded.client_iin,title=excluded.title,updated_at=excluded.updated_at').bind(crypto.randomUUID(),client.external.system,client.external.dealId,client.iin,client.title,now,now).run();
+  const now=client.retrievedAt||new Date().toISOString();
+  await this.db.prepare('INSERT INTO assessment_cases (id,external_system,external_id,client_iin,identity_revision,title,created_at,updated_at) VALUES (?,?,?,?,1,?,?,?) ON CONFLICT(external_system,external_id) DO UPDATE SET identity_revision=CASE WHEN assessment_cases.client_iin IS excluded.client_iin OR (assessment_cases.client_iin IS NULL AND EXISTS (SELECT 1 FROM assessment_identity_bindings b WHERE b.case_id=assessment_cases.id AND b.identity_revision=assessment_cases.identity_revision AND b.iin=excluded.client_iin)) THEN assessment_cases.identity_revision ELSE assessment_cases.identity_revision+1 END,client_iin=excluded.client_iin,title=excluded.title,updated_at=excluded.updated_at WHERE excluded.updated_at>=assessment_cases.updated_at').bind(crypto.randomUUID(),client.external.system,client.external.dealId,client.iin,client.title,now,now).run();
   const row=await this.db.prepare('SELECT * FROM assessment_cases WHERE external_system=? AND external_id=?').bind(client.external.system,client.external.dealId).first<CaseRow>();
-  if(!row)throw new RepositoryError('CASE_PERSISTENCE_FAILED',503);return row;
+  if(!row)throw new RepositoryError('CASE_PERSISTENCE_FAILED',503);
+  if(row.client_iin!==client.iin)throw new RepositoryError('CASE_IDENTITY_CHANGED');
+  return row;
  }
  async findCaseByExternal(externalSystem:string,externalId:string){
   return this.db.prepare('SELECT * FROM assessment_cases WHERE external_system=? AND external_id=?').bind(externalSystem,externalId).first<CaseRow>();
+ }
+ async identityBinding(record:CaseRow){return this.db.prepare('SELECT * FROM assessment_identity_bindings WHERE case_id=? AND identity_revision=?').bind(record.id,record.identity_revision).first<IdentityBindingRow>();}
+ async claimDocumentIdentity(record:CaseRow,document:DocumentRow,extraction:ExtractionRow,iin:string,actor:Actor){
+  if(document.case_id!==record.id||extraction.document_id!==document.id)throw new RepositoryError('DOCUMENT_NOT_IN_CASE');
+  // Establishing a previously blank identity preserves this same person's saved
+  // draft. Any different saved IIN or competing confirmation blocks the claim.
+  await this.db.prepare(`INSERT INTO assessment_identity_bindings (id,case_id,identity_revision,iin,document_id,extraction_id,actor_id,authentication,created_at)
+   SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM assessment_cases WHERE id=? AND identity_revision=? AND (client_iin IS NULL OR client_iin=?))
+   AND NOT EXISTS (SELECT 1 FROM assessment_draft_versions d, json_each(d.payload_json,'$.answers') a WHERE d.case_id=? AND d.revision=(SELECT MAX(revision) FROM assessment_draft_versions WHERE case_id=?) AND json_extract(a.value,'$.key')='iin' AND trim(COALESCE(json_extract(a.value,'$.value'),'')) NOT IN ('',?))
+   ON CONFLICT(case_id,identity_revision) DO NOTHING`).bind(crypto.randomUUID(),record.id,record.identity_revision,iin,document.id,extraction.id,actor.id,actor.authentication,new Date().toISOString(),record.id,record.identity_revision,iin,record.id,record.id,iin).run();
+  const saved=await this.identityBinding(record);
+  if(!saved||saved.iin!==iin)throw new RepositoryError('IDENTITY_CONFLICT');
+  return saved;
  }
  async document(caseId:string,documentId:string){return this.db.prepare('SELECT * FROM assessment_documents WHERE id=? AND case_id=?').bind(documentId,caseId).first<DocumentRow>();}
  async credentialStatus(record:CaseRow){
@@ -94,12 +110,13 @@ export class EvidenceRepository {
    this.db.prepare('SELECT * FROM assessment_draft_versions WHERE case_id=? ORDER BY revision').bind(caseId),
    this.db.prepare('SELECT rowid AS sequence,* FROM assessment_submissions WHERE case_id=? ORDER BY rowid').bind(caseId),
    this.db.prepare('SELECT rowid AS sequence,* FROM assessment_upload_manifests WHERE case_id=? ORDER BY rowid').bind(caseId),
+   this.db.prepare('SELECT * FROM assessment_identity_bindings WHERE case_id=? ORDER BY identity_revision').bind(caseId),
   ]);
   if(results.some(result=>!result.success))throw new RepositoryError('EXPORT_SNAPSHOT_FAILED',503);
   const record=results[0].results[0] as CaseRow|undefined;if(!record)throw new RepositoryError('CASE_NOT_FOUND',404);
   return {schemaVersion:2,exportedAt:new Date().toISOString(),case:record,
    documents:results[1].results as DocumentRow[],extractions:results[2].results as ExtractionRow[],
    reviews:results[3].results as (ReviewRow&{sequence:number})[],drafts:results[4].results as DraftRow[],
-   submissions:results[5].results as (SubmissionRow&{sequence:number})[],uploads:results[6].results as (UploadRow&{sequence:number})[]};
+   submissions:results[5].results as (SubmissionRow&{sequence:number})[],uploads:results[6].results as (UploadRow&{sequence:number})[],identityBindings:results[7].results as IdentityBindingRow[]};
  }
 }

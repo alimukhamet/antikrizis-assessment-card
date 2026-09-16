@@ -20,8 +20,8 @@ window.ClientContextUI=(()=>{
  const leave=make('a','Выбрать другого клиента','btn btn-ghost');leave.href=mode==='handoff'?'/lawyer-handoff':'/assessment-review';leave.target='_top';
  status.append(statusText,retry,leave);document.querySelector('.wf-header').after(status);
  const identity=make('section',null,'ux-identity-warning');identity.id='uxIdentityWarning';identity.setAttribute('role','status');
- identity.append(make('strong','В Bitrix не указан ИИН клиента'),make('p','ГКБ можно прочитать и перенести в черновик после подтверждения клиента. Для проверки ответов и выпуска договора укажите проверенный ИИН в этой сделке Bitrix, затем обновите карточку. Сохранённые ответы и файлы остаются на месте.'));
- const refreshIdentity=make('button','Обновить карточку','btn btn-ghost');refreshIdentity.type='button';refreshIdentity.onclick=()=>location.reload();identity.append(refreshIdentity);status.after(identity);
+ identity.append(make('strong','Возьмём ИИН из документа клиента'),make('p','Загрузите ГКБ и подтвердите, что это клиент выбранной сделки. ИИН заполним и сохраним автоматически. Вручную вносить его в Bitrix не нужно. Сохранённые ответы и файлы останутся на месте.'));
+ const refreshIdentity=make('button','Взять ИИН из ГКБ','btn btn-main');refreshIdentity.type='button';refreshIdentity.onclick=async()=>{if(af.busy||!ready())return;refreshIdentity.disabled=true;try{afClientChoices();if([...af.results.values()].some(r=>r.draftOnly))await afApply();else await afAnalyze();}finally{refreshIdentity.disabled=false;}};identity.append(refreshIdentity);status.after(identity);
  const pending=make('details',null,'ux-pending-files'),pendingTitle=make('summary'),pendingList=make('ul');pending.id='uxPendingFiles';pending.append(pendingTitle,make('p','Эти файлы были выбраны раньше, но не сохранены на сервере. Они не восстановятся после обновления страницы. При необходимости добавьте их снова; сохранённые документы ниже остаются на месте.'),pendingList);identity.after(pending);
  let lastState=null;
  function sync(){
@@ -56,7 +56,7 @@ window.ClientContextUI=(()=>{
    const download=make('a');download.href=url.href;download.download=(current.client.title+' — сделка '+current.client.external.dealId+'.pdf').replace(/[\\/:*?"<>|]/g,'_');download.click();
   }catch(error){$('afQuote').textContent=error.message;}finally{downloading=false;}
  },true);
- for(const event of ['assessment-case-opened','assessment-draft-restored','assessment-analysis-complete','assessment-draft-saved','assessment-draft-load-state'])document.addEventListener(event,()=>queueMicrotask(sync));
+ for(const event of ['assessment-identity-confirmed','assessment-case-opened','assessment-draft-restored','assessment-analysis-complete','assessment-draft-saved','assessment-draft-load-state'])document.addEventListener(event,()=>queueMicrotask(sync));
  new MutationObserver(sync).observe($('draftStatus'),{childList:true,subtree:true,characterData:true});new MutationObserver(sync).observe($('afStatus'),{childList:true,subtree:true,characterData:true});sync();
  return{mode,context,ready,label,confirm,sync,make};
 })();

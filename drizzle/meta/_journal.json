@@ -71,6 +71,13 @@
       "when": 1789547448629,
       "tag": "0009_burly_onslaught",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1789556121232,
+      "tag": "0010_dark_wong",
+      "breakpoints": true
     }
   ]
 }

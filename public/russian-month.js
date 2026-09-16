@@ -8,8 +8,8 @@
   const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Almaty',year:'numeric',month:'2-digit'}).formatToParts(new Date());
   return parts.find(p=>p.type==='year').value+'-'+parts.find(p=>p.type==='month').value;
  }
- function mount(input){
-  if(editors.has(input)){editors.get(input)();return;}
+ function mount(input,force=false){
+  if(editors.has(input)){editors.get(input)(force);return;}
   const host=document.createElement('assessment-month');
   host.setAttribute('role','group');host.setAttribute('aria-label',input.closest('.field')?.querySelector('label.lbl')?.textContent.replace(/\*/g,'').trim()||'Месяц и год');
   // Shadow controls do not become extra questionnaire answers or draft fields.
@@ -19,7 +19,7 @@
   months.forEach((name,index)=>month.add(new Option(name,String(index+1).padStart(2,'0'))));
   input.after(host);input.tabIndex=-1;input.setAttribute('aria-hidden','true');
   Object.assign(input.style,{position:'absolute',width:'1px',height:'1px',padding:'0',border:'0',clipPath:'inset(50%)'});
-  let editing=false;
+  let editing=false,lastValue=input.value;
   const validate=()=>{
    if(!/^n8038Start(?:_r\d+)?$/.test(input.id))return;
    input.max=currentMonth();
@@ -27,17 +27,23 @@
    input.setCustomValidity(message);year.setCustomValidity(message);host.toggleAttribute('data-invalid',Boolean(message));
    const error=shadow.getElementById('error');error.hidden=!message;error.textContent=message;
   };
-  const sync=()=>{if(!editing){const value=/^(\d{4})-(\d{2})$/.exec(input.value);year.value=value?.[1]||'';month.value=value?.[2]||'';month.disabled=year.disabled=input.disabled;}validate();};
+  const sync=(force=false)=>{if(!editing){
+   // A one-, two- or three-digit year has no ISO value yet. UI mutations
+   // triggered by autosave/validation must not erase that in-progress edit.
+   if(force===true||input.value!==lastValue){const value=/^(\d{4})-(\d{2})$/.exec(input.value);year.value=value?.[1]||'';month.value=value?.[2]||'';lastValue=input.value;}
+   month.disabled=year.disabled=input.disabled;
+  }validate();};
   const edit=event=>{
    event.stopPropagation();editing=true;
    input.value=month.value&&/^\d{4}$/.test(year.value)&&Number(year.value)>0?year.value+'-'+month.value:'';
+   lastValue=input.value;
    validate();input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));editing=false;
   };
   month.addEventListener('change',edit);year.addEventListener('input',edit);
   // The canonical input remains focusable for required-field and source shortcuts.
-  input.addEventListener('focus',()=>month.focus());input.addEventListener('input',sync);input.addEventListener('change',sync);editors.set(input,sync);sync();
+  input.addEventListener('focus',()=>month.focus());input.addEventListener('input',()=>sync(true));input.addEventListener('change',()=>sync(true));editors.set(input,sync);sync(true);
  }
- const scan=()=>root.querySelectorAll('input[type="month"]').forEach(mount);
- scan();new MutationObserver(scan).observe(root,{childList:true,subtree:true});
- for(const event of ['assessment-case-opened','assessment-draft-restored'])document.addEventListener(event,scan);
+ const scan=(force=false)=>root.querySelectorAll('input[type="month"]').forEach(input=>mount(input,force));
+ scan();new MutationObserver(()=>scan()).observe(root,{childList:true,subtree:true});
+ for(const event of ['assessment-case-opened','assessment-draft-restored'])document.addEventListener(event,()=>scan(true));
 })();

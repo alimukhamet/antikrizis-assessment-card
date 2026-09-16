@@ -6,7 +6,7 @@ const afEl=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefi
 const afName=s=>(s||'').toUpperCase().replace(/Ё/g,'Е').replace(/[^А-ЯӘІҢҒҮҰҚӨҺA-Z0-9]/g,'');
 function afExcluded(item){return /\.(p12|pfx|jks|key)$/i.test(item.file.name)||/эцп|private.?key/i.test(item.file.name)||item.type==='ЭЦП файл';}
 const afPanel=afEl('section',undefined,'af-workspace');afPanel.id='afWorkspace';
-afPanel.innerHTML=`<h2>Заполнить из документов</h2><div class="af-actions"><label>ID сделки <input id="hostDealId" inputmode="numeric" data-optional></label><button id="hostLoadDeal" type="button" class="btn btn-main">Открыть сделку</button><a href="/" target="_top">К задачам</a></div><p id="hostDealName" class="af-note">Сначала выберите сделку. Личность клиента будет прочитана из Bitrix.</p><p class="af-disclaimer">Выберите скачанные документы клиента. Мы заполним распознанные ответы; вам останется проверить их и ответить на остальные вопросы.</p><div class="af-actions"><button class="btn btn-ghost" id="afChoose" type="button">Выбрать документы</button><button class="btn btn-main" id="afAnalyze" type="button">Распознать и заполнить</button><label class="af-small">Дата оценки <input type="date" id="afDate" data-optional></label></div><p class="af-status" id="afStatus" role="status">Цифровые PDF · до 35 МБ на файл · цифровые PDF обрабатываются на сервере</p><progress class="af-progress" id="afProgress" value="0" max="1" hidden></progress><div class="af-identity" id="afIdentity" hidden><div><label for="afClient">Для кого заполняем анкету?</label><select id="afClient" data-optional></select></div><button class="btn btn-main" id="afApply" type="button">Заполнить для этого клиента</button></div><div class="af-metrics" aria-live="polite"><span><b id="afFilled">0</b> из документов</span><span><b id="afReview">0</b> проверить</span><span><b id="afMissing">—</b> ответить</span></div><div class="af-actions"><button class="btn btn-ghost" id="afNext" type="button">Следующий пустой ответ ↓</button><button class="btn btn-ghost" id="afNextReview" type="button">Проверить заполненное ↓</button><button class="btn btn-ghost" id="afExport" type="button">Скачать заполненную анкету</button></div><details id="afQuestions"><summary>Что ещё заполнить</summary><div class="af-review-list" id="afTodo"></div></details><details id="afFiles"><summary>Результаты по документам</summary><div id="afFileResults"></div></details><div id="afConflicts"></div>`;
+afPanel.innerHTML=`<h2>Заполнить из документов</h2><div class="af-actions"><label>ID сделки <input id="hostDealId" inputmode="numeric" data-optional></label><button id="hostLoadDeal" type="button" class="btn btn-main">Открыть сделку</button><a href="/" target="_top">К задачам</a></div><p id="hostDealName" class="af-note">Сначала выберите сделку. ИИН клиента будет прочитан из его документа.</p><p class="af-disclaimer">Выберите скачанные документы клиента. Мы заполним распознанные ответы; вам останется проверить их и ответить на остальные вопросы.</p><div class="af-actions"><button class="btn btn-ghost" id="afChoose" type="button">Выбрать документы</button><button class="btn btn-main" id="afAnalyze" type="button">Распознать и заполнить</button><label class="af-small">Дата оценки <input type="date" id="afDate" data-optional></label></div><p class="af-status" id="afStatus" role="status">Цифровые PDF · до 35 МБ на файл · цифровые PDF обрабатываются на сервере</p><progress class="af-progress" id="afProgress" value="0" max="1" hidden></progress><div class="af-identity" id="afIdentity" hidden><div><label for="afClient">Для кого заполняем анкету?</label><select id="afClient" data-optional></select></div><button class="btn btn-main" id="afApply" type="button">Заполнить для этого клиента</button></div><div class="af-metrics" aria-live="polite"><span><b id="afFilled">0</b> из документов</span><span><b id="afReview">0</b> проверить</span><span><b id="afMissing">—</b> ответить</span></div><div class="af-actions"><button class="btn btn-ghost" id="afNext" type="button">Следующий пустой ответ ↓</button><button class="btn btn-ghost" id="afNextReview" type="button">Проверить заполненное ↓</button><button class="btn btn-ghost" id="afExport" type="button">Скачать заполненную анкету</button></div><details id="afQuestions"><summary>Что ещё заполнить</summary><div class="af-review-list" id="afTodo"></div></details><details id="afFiles"><summary>Результаты по документам</summary><div id="afFileResults"></div></details><div id="afConflicts"></div>`;
 $af('documentStep').before(afPanel);
 $af('afDate').value=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
 const dialog=afEl('dialog');dialog.id='afSourceDialog';dialog.innerHTML='<div class="af-actions"><strong id="afSourceTitle"></strong><button id="afSourceClose" type="button" class="btn btn-ghost">Закрыть</button></div><p id="afQuote"></p><div id="afPreview"></div><details><summary>Распознанный текст страницы</summary><pre id="afSourceText"></pre></details>';document.body.append(dialog);
@@ -57,7 +57,7 @@ function afBadge(e,src){
  if(src.stale&&!selectedFiles.some(item=>item.id===src.fileId)){
   label.textContent='Источник заменён. Сверьте ответ с новым документом.';
   const clear=afEl('button','Очистить ответ');clear.type='button';clear.onclick=()=>{if(e.type==='checkbox')e.checked=false;else e.value='';af.sources.delete(e.id);delete e.dataset.sourceReplaced;e.setCustomValidity('');box.remove();e.dispatchEvent(new Event('change',{bubbles:true}));afRefresh();};box.append(clear);
- }else if(src.pending&&src.server?.draftOnly){box.append(afEl("span","Черновик из ГКБ · ИИН ещё не подтверждён в Bitrix"));}else if(src.pending){const yes=afEl('button',src.edited?'Сохранить исправление':'Верно');yes.type='button';yes.onclick=async()=>{yes.disabled=true;try{await HostedAssessment.review(e,src);delete e.dataset.sourceReplaced;e.setCustomValidity('');field.querySelectorAll('[data-replacement-notice]').forEach(node=>node.remove());src.pending=false;src.stale=false;afBadge(e,src);afRefresh();}catch(error){afStatus(error.message,true);yes.disabled=false;}};box.append(yes);}
+ }else if(src.pending&&src.server?.draftOnly){box.append(afEl("span","Из ГКБ · подтвердите клиента для сохранения ИИН"));}else if(src.pending){const yes=afEl('button',src.edited?'Сохранить исправление':'Верно');yes.type='button';yes.onclick=async()=>{yes.disabled=true;try{await HostedAssessment.review(e,src);delete e.dataset.sourceReplaced;e.setCustomValidity('');field.querySelectorAll('[data-replacement-notice]').forEach(node=>node.remove());src.pending=false;src.stale=false;afBadge(e,src);afRefresh();}catch(error){afStatus(error.message,true);yes.disabled=false;}};box.append(yes);}
  field.append(box);
 }
 function afDispatchChange(e){const previous=af.applying;af.applying=true;try{e.dispatchEvent(new Event('change',{bubbles:true}));}finally{af.applying=previous;}}
@@ -156,7 +156,8 @@ function afClientChoices(){
  $af('afApply').textContent='Подтвердить клиента и заполнить';
  $af('afIdentity').hidden=!ids.size;$af('afIdentity').style.display=ids.size?'flex':'none';return select.value;
 }
-function afApply(){
+async function afApply(){
+ if(af.identityBusy)return;
  const client=$af('afClient').value;if(!client){afStatus('В документах несколько людей или ИИН не распознан. Выберите клиента; при отсутствии ИИН заполните вручную.',true);return;}
  if(af.client&&af.client!==client){afStatus('В этой анкете уже использованы документы другого клиента. Скачайте или сохраните текущую анкету; начните новую отдельно.',true);return;}
  const existing=$af('iin').value.trim();if(existing&&existing!==client){afStatus('ИИН в анкете не совпадает с выбранным клиентом. Изменения не внесены.',true);return;}
@@ -164,11 +165,22 @@ function afApply(){
  if(!docs.length){afStatus('Нет подходящих документов для выбранного клиента. Проверьте результаты чтения.',true);return;}
  const best=docs.find(([,r])=>r.kind==='gkbFull')||docs.find(([,r])=>r.identity?.fio);const name=best?.[1].identity.fio||$af('fio').value;
  if(docs.some(([,r])=>r.draftOnly)&&!af.restoringEvidence){
-  const ctx=HostedAssessment.getContext(),identityKey=ctx.client.external.dealId+'|'+ctx.identityRevision+'|'+client;
-  if(af.draftIdentity!==identityKey){
-   if(!confirm('Заполнить черновик этой сделки?\n\nСделка № '+ctx.client.external.dealId+': '+ctx.client.title+'\nКлиент в отчёте: '+name+'\nИИН: '+client+'\n\nПодтвердите, что отчёт принадлежит клиенту этой сделки. ИИН в Bitrix не будет изменён.')){afStatus('Ничего не заполнено. Подтвердите клиента над результатами документов.');return;}
-   af.draftIdentity=identityKey;
-  }
+  const ctx=HostedAssessment.getContext();
+  if(!confirm('Взять ИИН из этого документа?\n\nСделка № '+ctx.client.external.dealId+': '+ctx.client.title+'\nКлиент в отчёте: '+name+'\nИИН: '+client+'\n\nПодтвердите, что это клиент выбранной сделки. ИИН из ГКБ будет сохранён в карточке и в пустом поле ИИН этой сделки Bitrix. Другой ИИН не заменяется.')){afStatus('Ничего не изменено. Подтвердите клиента над результатами документов.');return;}
+  const wasBusy=af.busy;af.busy=true;af.identityBusy=true;$af('afApply').disabled=true;
+  try{
+   afStatus('Сохраняем ИИН из документа и проверяем запись…');
+   const source=best||docs[0],payload=await HostedAssessment.confirmIdentity(source[1]);
+   af.results.set(source[0],HostedAssessment.adapt(payload));
+   for(const [fieldId,s]of af.sources)if(s.server?.draftOnly){s.stale=true;s.pending=true;if($af(fieldId))afBadge($af(fieldId),s);}
+   // Re-evaluate eligibility on the server; confirming identity is not a review
+   // of loan values, document completeness or authenticity.
+   const remaining=selectedFiles.filter(item=>item.id!==source[0]&&af.results.get(item.id)?.server);
+   let next=0;await Promise.all(Array.from({length:Math.min(3,remaining.length)},async()=>{while(next<remaining.length){const item=remaining[next++];try{af.results.set(item.id,HostedAssessment.adapt(await HostedAssessment.analyzeFile(item,{cacheOnly:true})));}catch(e){af.results.set(item.id,{error:e.message,notes:['Повторите распознавание этого файла.']});}}}));
+   af.identityBusy=false;afClientChoices();await afApply();
+  }catch(e){afStatus(e.message,true);}
+  finally{af.identityBusy=false;af.busy=wasBusy;$af('afApply').disabled=false;afClientChoices();afRefresh();window.ClientContextUI?.sync();window.ServerDrafts?.changed();}
+  return;
  }
  af.client=client;
  for(const [id,r]of docs){const item=selectedFiles.find(x=>x.id===id);if(item&&!item.person)item.person='Клиент';
@@ -268,7 +280,7 @@ async function afAnalyze(preferences={}){
    afRenderResults();afAnalysisProgress(done,files.length);
   }
   $af('afProgress').value=files.length;afClientChoices();
-  if($af('afClient').value&&[...af.results.values()].some(r=>(!r.blocked||r.draftOnly)&&!r.error)){af.restoringEvidence=Boolean(preferences.restoreOnly);try{afApply();}finally{af.restoringEvidence=false;}}else afStatus('Распознавание завершено. Нераспознанные ответы заполните вручную.');
+  if($af('afClient').value&&[...af.results.values()].some(r=>(!r.blocked||r.draftOnly)&&!r.error)){af.restoringEvidence=Boolean(preferences.restoreOnly);try{await afApply();}finally{af.restoringEvidence=false;}}else afStatus('Распознавание завершено. Нераспознанные ответы заполните вручную.');
   if(fail)afStatus('Не удалось обработать файлов: '+fail+'. Остальные результаты сохранены. Проверьте результаты по документам.',true);
   $af('afFiles').open=true;renderDocuments();afRefresh();
  }finally{afLocked.forEach(([e,disabled])=>e.disabled=disabled);$af('documentStep').classList.remove('af-busy');af.busy=false;af.progress=null;$af('afAnalyze').disabled=false;$af('afChoose').disabled=false;afRefresh();document.dispatchEvent(new CustomEvent('assessment-analysis-complete',{detail:{showPackageSummary:!preferences.restoreOnly}}));}

@@ -14,6 +14,14 @@ export const assessmentExtractions = sqliteTable('assessment_extractions', {
   id:text('id').primaryKey(), documentId:text('document_id').notNull().references(()=>assessmentDocuments.id),
   version:text('version').notNull(), resultKey:text('result_key').notNull(), resultSha256:text('result_sha256').notNull(), createdAt:text('created_at').notNull(),
 },t=>[uniqueIndex('assessment_extraction_version').on(t.documentId,t.version)]);
+// One immutable, employee-confirmed document identity per case revision.
+export const assessmentIdentityBindings=sqliteTable('assessment_identity_bindings',{
+ id:text('id').primaryKey(),caseId:text('case_id').notNull().references(()=>assessmentCases.id),
+ identityRevision:integer('identity_revision').notNull(),iin:text('iin').notNull(),
+ documentId:text('document_id').notNull().references(()=>assessmentDocuments.id),
+ extractionId:text('extraction_id').notNull().references(()=>assessmentExtractions.id),
+ actorId:text('actor_id').notNull(),authentication:text('authentication').notNull(),createdAt:text('created_at').notNull(),
+},t=>[uniqueIndex('assessment_identity_binding_revision').on(t.caseId,t.identityRevision)]);
 export const assessmentReviews = sqliteTable('assessment_reviews', {
   id:text('id').primaryKey(), requestId:text('request_id').notNull(), caseId:text('case_id').notNull().references(()=>assessmentCases.id),
   documentId:text('document_id').notNull().references(()=>assessmentDocuments.id), extractionId:text('extraction_id').notNull().references(()=>assessmentExtractions.id),

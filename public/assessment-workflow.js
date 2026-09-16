@@ -313,6 +313,7 @@ window.AssessmentWorkflow=(()=>{
   clientName.textContent=context.client.title;clientMeta.textContent='Сделка № '+context.client.external.dealId+(context.client.iin?' · ИИН '+context.client.iin:' · ИИН не указан');clientMeta.title=context.client.iin?'ИИН '+context.client.iin:'ИИН не указан';
   picker.querySelector('summary').textContent='Другая сделка';picker.open=false;refresh();
  }
+ document.addEventListener('assessment-identity-confirmed',()=>{lastCheck=null;updateCase();});
  document.addEventListener('assessment-case-opened',()=>{lastCheck=null;for(const {fold}of answerSections)fold.open=false;updateCase();show('documents',{focus:false,remember:false});});
  document.addEventListener('assessment-checked',event=>{lastCheck=event.detail;refresh();});
  let refreshQueued=false;

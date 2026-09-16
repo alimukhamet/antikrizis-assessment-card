@@ -13,6 +13,8 @@ export async function readClientContext(dealId: string, webhook: string, send: t
   try{return await task;}finally{if(pendingContexts.get(key)===task)pendingContexts.delete(key);}
 }
 async function fetchClientContext(dealId:string,webhook:string,send:typeof fetch):Promise<ClientContext>{
+  // Order reads by when they began, not by when a slow response arrived.
+  const retrievedAt=new Date().toISOString();
   type Body={ result?: { ID?: string; TITLE?: string; UF_CRM_AI_IIN?: unknown }; error?: string };
   let body:Body|undefined;
   for(let attempt=0;attempt<2;attempt++){
@@ -27,5 +29,5 @@ async function fetchClientContext(dealId:string,webhook:string,send:typeof fetch
   if(!body)throw new Error('BITRIX_TEMPORARILY_UNAVAILABLE');
   if (body.error || String(body.result?.ID) !== dealId) throw new Error('DEAL_NOT_FOUND');
   const raw = body.result?.UF_CRM_AI_IIN, iin = typeof raw==='string' ? raw.trim() : null;
-  return { internalClientId:null, external:{system:'bitrix',dealId}, title:String(body.result?.TITLE||''), iin:validIin(iin) ? iin : null, retrievedAt:new Date().toISOString() };
+  return { internalClientId:null, external:{system:'bitrix',dealId}, title:String(body.result?.TITLE||''), iin:validIin(iin) ? iin : null, retrievedAt };
 }
