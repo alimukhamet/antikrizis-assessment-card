@@ -57,7 +57,7 @@ function afBadge(e,src){
  if(src.stale&&!selectedFiles.some(item=>item.id===src.fileId)){
   label.textContent='Источник заменён. Сверьте ответ с новым документом.';
   const clear=afEl('button','Очистить ответ');clear.type='button';clear.onclick=()=>{if(e.type==='checkbox')e.checked=false;else e.value='';af.sources.delete(e.id);delete e.dataset.sourceReplaced;e.setCustomValidity('');box.remove();e.dispatchEvent(new Event('change',{bubbles:true}));afRefresh();};box.append(clear);
- }else if(src.pending){const yes=afEl('button',src.edited?'Сохранить исправление':'Верно');yes.type='button';yes.onclick=async()=>{yes.disabled=true;try{await HostedAssessment.review(e,src);delete e.dataset.sourceReplaced;e.setCustomValidity('');field.querySelectorAll('[data-replacement-notice]').forEach(node=>node.remove());src.pending=false;src.stale=false;afBadge(e,src);afRefresh();}catch(error){afStatus(error.message,true);yes.disabled=false;}};box.append(yes);}
+ }else if(src.pending&&src.server?.draftOnly){box.append(afEl("span","Черновик из ГКБ · ИИН ещё не подтверждён в Bitrix"));}else if(src.pending){const yes=afEl('button',src.edited?'Сохранить исправление':'Верно');yes.type='button';yes.onclick=async()=>{yes.disabled=true;try{await HostedAssessment.review(e,src);delete e.dataset.sourceReplaced;e.setCustomValidity('');field.querySelectorAll('[data-replacement-notice]').forEach(node=>node.remove());src.pending=false;src.stale=false;afBadge(e,src);afRefresh();}catch(error){afStatus(error.message,true);yes.disabled=false;}};box.append(yes);}
  field.append(box);
 }
 function afDispatchChange(e){const previous=af.applying;af.applying=true;try{e.dispatchEvent(new Event('change',{bubbles:true}));}finally{af.applying=previous;}}
@@ -90,6 +90,15 @@ function afRow(group,key,loan=null){
  const g=$af(group);if(!g)return null;
  const canonical=afLoanRowKey(group+'|'+key),aliases=new Set([canonical,...(loan?.aliases||[]).map(alias=>afLoanRowKey(group+'|'+af.client+'|'+alias))]);
  const candidateIds=new Set([...af.rowKeys].filter(([k,id])=>aliases.has(afLoanRowKey(k))&&$af(id)).map(([,id])=>id));
+ if(!candidateIds.size&&loan&&!af.restoringEvidence){
+  // Older/manual rows may not have a source key. Reuse only one exact lender +
+  // contract match; never match by lender alone or overwrite a different loan.
+  const matches=[...g.querySelector(':scope > .repeat-rows').children].filter(row=>{
+   const controls=[...row.querySelectorAll('input,select')],get=key=>controls.find(e=>e.id.replace(/_r\d+$/,'')===key)?.value;
+   return get('n8038')&&get('loanContractId')&&aliases.has(afLoanRowKey(group+'|'+af.client+'|'+get('n8038')+'|'+get('loanContractId')));
+  });
+  if(matches.length===1){if(!matches[0].id)matches[0].id='af-row-'+(++nextRow);candidateIds.add(matches[0].id);}
+ }
  const candidates=[...g.querySelector(':scope > .repeat-rows').children].filter(row=>candidateIds.has(row.id));
  if(af.restoringEvidence)return candidates.length===1?candidates[0]:null;
  if(candidates.length){
@@ -132,24 +141,36 @@ function afRenderConflicts(){
   const display=value=>money&&Number.isFinite(Number(value))?Number(value).toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₸':String(value);
   box.append(afEl('div',afLabel(e)+' · в анкете: '+display(e.value)+(c.src.priorReview?' · в сохранённой проверке: ':' · в документе: ')+display(c.value)));
   const jump=afEl('button','К вопросу');jump.type='button';jump.className='btn btn-ghost';jump.dataset.conflictTarget=e.id;jump.onclick=()=>afFocus(e);
-  const b=afEl('button','Источник');b.type='button';b.className='btn btn-ghost';b.onclick=()=>afSource(c.src);
+ const b=afEl('button','Источник');b.type='button';b.className='btn btn-ghost';b.onclick=()=>afSource(c.src);
+  const take=afEl('button','Взять из документа');take.type='button';take.className='btn btn-main';take.onclick=()=>{e.value='';af.sources.delete(e.id);afPut(e,c.value,c.src);af.conflicts=af.conflicts.filter(x=>x.id!==c.id);afRenderConflicts();afRefresh();};
   const keep=afEl('button','Оставить мой ответ');keep.type='button';keep.className='btn btn-ghost';keep.onclick=()=>{const source={...c.src,value:String(c.src.originalValue??c.value),pending:true,edited:true};af.sources.set(e.id,source);afBadge(e,source);af.conflicts=af.conflicts.filter(x=>x!==c);afRenderConflicts();afRefresh();};
-  box.append(jump,b,keep);root.append(box);
+  box.append(jump,b,take,keep);root.append(box);
  }
 }
 function afClientChoices(){
  const ids=new Map();for(const [id,r]of af.results){if(!selectedFiles.some(x=>x.id===id)||!r.identity?.iin||r.duplicate)continue;const old=ids.get(r.identity.iin);ids.set(r.identity.iin,r.identity.fio||old||'Клиент');}
  const select=$af('afClient');select.replaceChildren(new Option('Выберите клиента',''));for(const [iin,name]of ids)select.add(new Option(name+' · ИИН '+iin,iin));
  const existing=$af('iin').value.trim();if(ids.has(existing))select.value=existing;else if(ids.size===1)select.value=[...ids.keys()][0];else select.value='';
+ const draftMode=!HostedAssessment.getContext()?.client.iin&&[...af.results.values()].some(r=>r.draftOnly);
+ $af('afApply').style.display=draftMode?'inline-block':'none';select.disabled=!draftMode;
+ $af('afApply').textContent='Подтвердить клиента и заполнить';
  $af('afIdentity').hidden=!ids.size;$af('afIdentity').style.display=ids.size?'flex':'none';return select.value;
 }
 function afApply(){
  const client=$af('afClient').value;if(!client){afStatus('В документах несколько людей или ИИН не распознан. Выберите клиента; при отсутствии ИИН заполните вручную.',true);return;}
  if(af.client&&af.client!==client){afStatus('В этой анкете уже использованы документы другого клиента. Скачайте или сохраните текущую анкету; начните новую отдельно.',true);return;}
  const existing=$af('iin').value.trim();if(existing&&existing!==client){afStatus('ИИН в анкете не совпадает с выбранным клиентом. Изменения не внесены.',true);return;}
- af.client=client;
- const docs=[...af.results].filter(([id,r])=>selectedFiles.some(x=>x.id===id)&&!r.blocked&&!r.duplicate&&!r.error&&!r.excluded&&r.identity?.iin===client);
+ const docs=[...af.results].filter(([id,r])=>selectedFiles.some(x=>x.id===id)&&(!r.blocked||r.draftOnly)&&!r.duplicate&&!r.error&&!r.excluded&&r.identity?.iin===client);
+ if(!docs.length){afStatus('Нет подходящих документов для выбранного клиента. Проверьте результаты чтения.',true);return;}
  const best=docs.find(([,r])=>r.kind==='gkbFull')||docs.find(([,r])=>r.identity?.fio);const name=best?.[1].identity.fio||$af('fio').value;
+ if(docs.some(([,r])=>r.draftOnly)&&!af.restoringEvidence){
+  const ctx=HostedAssessment.getContext(),identityKey=ctx.client.external.dealId+'|'+ctx.identityRevision+'|'+client;
+  if(af.draftIdentity!==identityKey){
+   if(!confirm('Заполнить черновик этой сделки?\n\nСделка № '+ctx.client.external.dealId+': '+ctx.client.title+'\nКлиент в отчёте: '+name+'\nИИН: '+client+'\n\nПодтвердите, что отчёт принадлежит клиенту этой сделки. ИИН в Bitrix не будет изменён.')){afStatus('Ничего не заполнено. Подтвердите клиента над результатами документов.');return;}
+   af.draftIdentity=identityKey;
+  }
+ }
+ af.client=client;
  for(const [id,r]of docs){const item=selectedFiles.find(x=>x.id===id);if(item&&!item.person)item.person='Клиент';
   for(const f of r.fields){if(f.key==='fio'&&best&&id!==best[0])continue;afPut($af(f.key),f.value,{...f,fileId:id,date:r.date});}
   for(const loan of r.loans){const row=afRow('creditors',client+'|'+loan.key,loan);afRowFields(row,loan.fields,{...loan,fileId:id});afLoanParticipantsNotice(row,loan,id);}
@@ -198,7 +219,7 @@ function afRenderResults(){
   const displayType=item.type&&item.type!=='Другой документ'?shortType[item.type]||item.type:r.type&&r.kind!=='other'?shortType[r.type]||r.type:item.file.name;
   const box=afEl('details',undefined,'af-file'),summary=afEl('summary'),name=afEl('strong',afExcluded(item)?'Ключ ЭЦП':displayType);summary.title=item.file.name;box.dataset.fileId=String(item.id);
   const wrongOwner=Boolean(r.identity?.iin&&HostedAssessment.getContext()?.client.iin&&r.identity.iin!==HostedAssessment.getContext().client.iin&&item.person==='Клиент');
-  const state=r.sourceOnly?'Сохранён':r.error?'Не прочитан':wrongOwner?'Другой клиент':r.documentReview?.type===item.type?'Проверено сотрудником':r.blocked?'Сверить вручную':r.excluded?'Отдельно':r.duplicate?'Повтор':'Прочитан';
+  const state=r.sourceOnly?'Сохранён':r.error?'Не прочитан':wrongOwner?'Другой клиент':r.documentReview?.type===item.type?'Проверено сотрудником':r.draftOnly?'Прочитан · для черновика':r.blocked?'Сверить вручную':r.excluded?'Отдельно':r.duplicate?'Повтор':'Прочитан';
   summary.append(name,afEl('span',state,'af-file-state'+(r.error||wrongOwner?' needs-review':'')));box.append(summary);
   box.append(afEl('p',afExcluded(item)?'Ключ ЭЦП':item.file.name,'af-original-name'));box.append(afEl('p',(r.pages||0)+' стр.'+(item.person?' · '+item.person:''),'hint'));
   const attention=afDocumentAttention(item);if(attention)box.append(afEl('p',attention.message,'af-document-attention'+(attention.kind==='error'?' error':'')));
@@ -247,14 +268,17 @@ async function afAnalyze(preferences={}){
    afRenderResults();afAnalysisProgress(done,files.length);
   }
   $af('afProgress').value=files.length;afClientChoices();
-  if($af('afClient').value&&[...af.results.values()].some(r=>!r.blocked&&!r.error)){af.restoringEvidence=Boolean(preferences.restoreOnly);try{afApply();}finally{af.restoringEvidence=false;}}else afStatus('Распознавание завершено. Нераспознанные ответы заполните вручную.');
+  if($af('afClient').value&&[...af.results.values()].some(r=>(!r.blocked||r.draftOnly)&&!r.error)){af.restoringEvidence=Boolean(preferences.restoreOnly);try{afApply();}finally{af.restoringEvidence=false;}}else afStatus('Распознавание завершено. Нераспознанные ответы заполните вручную.');
   if(fail)afStatus('Не удалось обработать файлов: '+fail+'. Остальные результаты сохранены. Проверьте результаты по документам.',true);
   $af('afFiles').open=true;renderDocuments();afRefresh();
  }finally{afLocked.forEach(([e,disabled])=>e.disabled=disabled);$af('documentStep').classList.remove('af-busy');af.busy=false;af.progress=null;$af('afAnalyze').disabled=false;$af('afChoose').disabled=false;afRefresh();document.dispatchEvent(new CustomEvent('assessment-analysis-complete',{detail:{showPackageSummary:!preferences.restoreOnly}}));}
 }
 $af('afAnalyze').onclick=afAnalyze;
-document.addEventListener('input',e=>{if(!af.applying&&af.sources.has(e.target.id)){const src=af.sources.get(e.target.id);src.pending=true;src.edited=true;src.stale=false;afBadge(e.target,src);}queueMicrotask(afRefresh);});
-document.addEventListener('change',e=>{if(!af.applying&&af.sources.has(e.target.id)){const src=af.sources.get(e.target.id);src.pending=true;src.edited=true;src.stale=false;afBadge(e.target,src);}queueMicrotask(afRefresh);});
+document.addEventListener('assessment-analysis-complete',afClientChoices);
+let afRefreshQueued=false;
+function afQueueRefresh(){if(afRefreshQueued)return;afRefreshQueued=true;queueMicrotask(()=>{afRefreshQueued=false;afRefresh();});}
+document.addEventListener('input',e=>{if(af.applying)return;if(af.sources.has(e.target.id)){const src=af.sources.get(e.target.id);src.pending=true;src.edited=true;src.stale=false;afBadge(e.target,src);}afQueueRefresh();});
+document.addEventListener('change',e=>{if(af.applying)return;if(af.sources.has(e.target.id)){const src=af.sources.get(e.target.id);src.pending=true;src.edited=true;src.stale=false;afBadge(e.target,src);}afQueueRefresh();});
 document.addEventListener('click',e=>{if(e.target.closest('.add-row,.remove-row'))queueMicrotask(afRefresh);});
 function afDownload(name,content,type){const url=URL.createObjectURL(new Blob([content],{type}));const a=afEl('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $af('afExport').onclick=()=>{

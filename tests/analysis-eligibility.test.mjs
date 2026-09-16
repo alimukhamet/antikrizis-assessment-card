@@ -35,6 +35,11 @@ test('cached extraction is rechecked against the current deal identity',async()=
  const {result,reviewReads}=await analyze([],'2026-09-10','different-client');
  assert.equal(result.eligibleForAutofill,false);assert.equal(reviewReads,0);assert.ok(result.findings.includes('WRONG_CLIENT'));
 });
+test('missing CRM IIN permits only complete readable draft proposals, never reviews or wrong-client bypass',async()=>{
+ const run=async({iin=null,findings=[],complete=true,date='2026-09-10',owner='991231300003'}={})=>analysisResponse({iin},{id:'case',identity_revision:1},{currentReviews:async()=>{throw Error('Draft proposals must not replay reviews');}},{document:{id:'doc'},extraction:{id:'parsed'},result:{read:{totalPages:1},extraction:{identity:{iin:owner},kind:'gkb_short',issuedAt:date,findings,creditList:{complete}}}},true);
+ const r=await run();assert.equal(r.eligibleForDraftAutofill,true);assert.equal(r.eligibleForAutofill,false);assert.equal(r.reviews.length,0);
+ for(const input of [{iin:'different'}, {complete:false},{owner:null},{date:'2020-01-01'},...policy.DOCUMENT_VALIDATION_BLOCKERS.map(code=>({findings:[code]}))])assert.equal((await run(input)).eligibleForDraftAutofill,false,JSON.stringify(input));
+});
 
 test('valid employee inspection stays visible on reopen but never approves OCR facts or a different identity',async()=>{
  const repo=load('lib/documents/repository.ts'),manual=load('lib/documents/document-review.ts',{'./repository':repo,'./analysis-version':{analysisVersion:'test:test'},'./policy':policy});

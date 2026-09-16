@@ -315,7 +315,8 @@ window.AssessmentWorkflow=(()=>{
  }
  document.addEventListener('assessment-case-opened',()=>{lastCheck=null;for(const {fold}of answerSections)fold.open=false;updateCase();show('documents',{focus:false,remember:false});});
  document.addEventListener('assessment-checked',event=>{lastCheck=event.detail;refresh();});
- for(const name of ['input','change'])document.addEventListener(name,event=>{if(!event.target.closest?.('[data-document-review]'))lastCheck=null;queueMicrotask(refresh);});
+ let refreshQueued=false;
+ for(const name of ['input','change'])document.addEventListener(name,event=>{if(!event.target.closest?.('[data-document-review]'))lastCheck=null;if(af.applying||refreshQueued)return;refreshQueued=true;queueMicrotask(()=>{refreshQueued=false;refresh();});});
  document.addEventListener('assessment-draft-restored',()=>{lastCheck=null;refresh();try{const saved=sessionStorage.getItem('assessment-step:'+HostedAssessment.getContext().client.external.dealId);if(saved)show(saved,{focus:false});}catch{/* Keep the document step when storage is unavailable. */}});
  document.addEventListener('assessment-analysis-complete',event=>{lastCheck=null;fileResults.open=true;refresh();if(event.detail?.showPackageSummary&&active==='documents'&&!collectionNotice.hidden){collectionNotice.focus({preventScroll:true});collectionNotice.scrollIntoView({block:'start',behavior:'smooth'});}});
  document.addEventListener('assessment-credentials-changed',()=>queueMicrotask(refresh));

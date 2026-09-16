@@ -1,7 +1,7 @@
 import labels from './kz-labels.json';
 import type { PageText } from './read-pdf';
 import {extractPowerParties,type PowerParties} from './power-of-attorney';
-export const EXTRACTION_VERSION = 'rules-native-16';
+export const EXTRACTION_VERSION = 'rules-native-17';
 export type Fact = { key: string; value: string; page: number; source: string };
 export type Credit = { contractNumber: string; contractCode?: string; page: number; facts: Fact[]; components: Record<string, string | null>; comparisonDebt?:Fact; relatedPartiesNotice?: {page:number;source:string} };
 export type BankStatement={from:string|null;to:string|null;credits:string;topUps:string;topUpsVerified:boolean;debits:string;transactions:number;reconciled:boolean;rowsReadable:boolean;sourcePage:number;reconciliation?:string;gambling?:{total:string;matches:Array<{date:string;amount:string;description:string;page:number}>}};
@@ -41,7 +41,8 @@ function questionnaireCreditType(financing:string|null,purpose:string|null,objec
 }
 export function extractNative(pages: PageText[]): NativeExtraction {
   const raw = pages.map(p => p.text).join('\n'), head = raw.slice(0,14000).toLowerCase().replace(/ё/g,'е');
-  const credit = /персональный кредитный отчет|жеке кредиттік есеп/.test(head);
+  const modernShort=/дербес\s+кредиттік есеп/.test(head)&&/қысқаша нысан/.test(head);
+  const credit = modernShort || /персональный кредитный отчет|жеке кредиттік есеп/.test(head);
   const kind = credit ? /краткая форма|қысқаша/.test(head) ? 'gkb_short' : 'gkb_full'
     : /kaspi/.test(head) && /выписка/.test(head) ? 'kaspi'
     : /выписка по счету/.test(head) && /тип счета:[^\n]*зарплата/.test(head) && /народный банк казахстана|halykbank\.kz/.test(head) ? 'salary'
@@ -56,7 +57,7 @@ export function extractNative(pages: PageText[]): NativeExtraction {
   const text = transformed.map(p => p.text).join('\n');
   if (credit) {
     const russian = [...raw.matchAll(/Страница\s+(\d+)\s+из\s+(\d+)/g)].map(m=>[Number(m[1]),Number(m[2])]);
-    const kazakh = [...raw.matchAll(/(\d+)\s+беттің\s+(\d+)\s+беті/g)].map(m=>[Number(m[1]),Number(m[2])]);
+    const kazakh = [...raw.matchAll(/(\d+)\s+беттің\s+(\d+)\s+бет(?:і)?(?=\s|$)/gu)].map(m=>[Number(m[1]),Number(m[2])]);
     // Both Kazakh footer layouts exist. Accept only an entire, ordered 1..N sequence.
     // An e-government signing certificate may follow the last numbered report page.
     const complete=(marks:number[][])=>marks.length>0&&marks.every(([number,total],i)=>total===marks.length&&number===i+1);
@@ -69,6 +70,13 @@ export function extractNative(pages: PageText[]): NativeExtraction {
     const parts = ['Фамилия','Имя','Отчество'].map(label => value(new RegExp(label+':[ \\t]*([^\\n]+)'),front));
     if (parts[0] && parts[1]) output.identity.name = parts.filter(p => p && p !== 'Нет данных').join(' ');
     output.issuedAt = day(value(/Дата выдачи:\s*(\d{2}\.\d{2}\.\d{4})/,front));
+    if(modernShort){
+      const header=pages[0]?.layoutText||pages[0]?.text||'';
+      const owner=value(/ЖСН:\s*(\d{12})\b/u,header);
+      if(validIin(owner))output.identity.iin=owner;
+      output.identity.name=value(/ТАӘ:[ \t]*([^\n]+)/u,header);
+      output.issuedAt=day(value(/БЕРІЛГЕН КҮНІ МЕН УАҚЫТЫ:[ \t]*(\d{2}\.\d{2}\.\d{4})/u,header));
+    }
   } else if (['kaspi','property','benefits','identity','salary'].includes(kind)) {
     const front = raw.slice(0,8000), iin = value(/(?:ИИН|ЖСН)\s*\/?\s*(?:ИИН)?\s*:?\s*(\d{12})\b/,front);
     if (validIin(iin)) output.identity.iin = iin;
@@ -140,9 +148,9 @@ export function extractNative(pages: PageText[]): NativeExtraction {
       if(!defaulted)add('monthlyPayment',scheduledPayment??nextPayment,'Ежемесячный платёж по графику',scheduledPayment!==null?(/Ежемесячная сумма взноса|Сумма ежемесячного платежа/.exec(block)?.[0]||''):'Сумма предстоящего платежа');
       add('overdueDays',overdue,'Количество дней просрочки');
       const ambiguous = overdue === null || arrears===null || Number(arrears)>0 || [penalty,interest,fine].some(v => v!==null && Number(v)>0);
-      if(defaulted&&nextPayment!==null)add('debtOutstanding',nextPayment,'Полная сумма к погашению по просроченному обязательству','Сумма предстоящего платежа');
-      else if (remaining !== null && !ambiguous) add('debtOutstanding',remaining,'Остаток / предстоящие платежи при отсутствии показанной просрочки; требуется проверка',amount('Остаточная (использованная) сумма',block)!==null?'Остаточная (использованная) сумма':'Сумма предстоящих платежей');
-      else output.findings.push('TOTAL_DEBT_REQUIRES_RECONCILIATION');
+      // The singular "next payment" is an instalment even on an overdue loan.
+      // It is never evidence of the full accelerated balance.
+      if (remaining !== null && !ambiguous) add('debtOutstanding',remaining,'Остаток / предстоящие платежи при отсутствии показанной просрочки; требуется проверка',amount('Остаточная (использованная) сумма',block)!==null?'Остаточная (использованная) сумма':'Сумма предстоящих платежей');
       const financing=value(/Вид финансирования:\s*([^\n]+)/,block),purpose=value(/Цель кредита:\s*([^\n]+)/,block),object=value(/Объект кредитования:\s*([\s\S]*?)(?=\n[^\n]*:|$)/,block)?.replace(/\s+/g,' ')||null;
       const type=questionnaireCreditType(financing,purpose,object);
       add('creditType',type,'Вид финансирования: '+(financing||'—')+'; цель кредита: '+(purpose||'—')+'; объект кредитования: '+(object||'—'),'Вид финансирования:');
@@ -164,14 +172,16 @@ export function extractNative(pages: PageText[]): NativeExtraction {
         add('relatedParties','Нет','Связанные субъекты: во всех пяти графах указано «Нет данных» / «Деректер жоқ».','Связанные субъекты');
        }
       }
-      // A comparison-only calculation from three explicitly reported components.
+      // Calculate debt only from three explicitly reported, non-overlapping components.
       // Never treat "Нет данных" as zero or add both aggregate and itemized fees.
       let comparisonDebt:Fact|undefined;
       if(remaining!==null&&arrears!==null&&penalty!==null&&!(aggregatePenalty!==null&&unpaidFine!==null)&&!/(?:^|\n)\s*(?:Пеня|Штраф)\s*\/?\s*валюта/.test(block)){
        const cents=(s:string)=>BigInt(s.split('.')[0])*BigInt(100)+BigInt((s.split('.')[1]||'').padEnd(2,'0'));
        const sum=cents(remaining)+cents(arrears)+cents(penalty),number=`${sum/BigInt(100)}.${String(sum%BigInt(100)).padStart(2,'0')}`;
        comparisonDebt={key:'debtComponentsTotal',value:number,page,source:`Расчёт по полному ГКБ: остаток / предстоящие платежи ${remaining} + просроченные взносы ${arrears} + ${aggregatePenalty!==null?'неустойка':'непогашенный штраф'} ${penalty} = ${number} ₸.`};
+       if(!facts.some(f=>f.key==='debtOutstanding'))facts.push({...comparisonDebt,key:'debtOutstanding'});
       }
+      if(!facts.some(f=>f.key==='debtOutstanding'))output.findings.push('TOTAL_DEBT_REQUIRES_RECONCILIATION');
       output.credits.push({contractNumber,...(contractCode?{contractCode}:{}),page,facts,components:{remaining,arrears,penalty,interest,fine},...(comparisonDebt?{comparisonDebt}:{}),...(relatedPartiesNotice?{relatedPartiesNotice}:{})});
     }
     // A borrower can also be the pledgor of the same loan. The role total can
@@ -185,7 +195,8 @@ export function extractNative(pages: PageText[]): NativeExtraction {
     output.creditList={complete,declared:declared===null?null:Number(declared)};
     if (!complete) output.findings.push('CONTRACT_LIST_INCOMPLETE_OR_OTHER_ROLES');
   }
-  if(kind==='gkb_short'){
+  if(kind==='gkb_short'&&modernShort)parseModernShort(pages,output);
+  if(kind==='gkb_short'&&!modernShort){
     const declared=value(/(?:Действующие обязательства|Действующий міндеттемелер|Қолданыстағы міндеттемелер)\s*:\s*(\d+)/,text);
     const summary=text.split(/(?:Общая сумма задолженности\/валюта|Жалпы қарыз\/валюта)\s*:/)[1]?.slice(0,700);
     const total=summary?value(/([0-9][0-9 .,]*)\s+KZT/,summary):null;
@@ -218,6 +229,40 @@ export function extractNative(pages: PageText[]): NativeExtraction {
   }
   if (!['gkb_full','gkb_short','kaspi'].includes(kind)) output.findings.push('DETAILED_EXTRACTION_PENDING');
   output.findings=[...new Set(output.findings)]; return output;
+}
+/** 2026 Kazakh short report: explicit current-contract table, three debt columns. */
+function parseModernShort(pages:PageText[],output:NativeExtraction){
+ const raw=pages.map(p=>p.text).join('\n');
+ const declaredValues=[...raw.matchAll(/Барлығы\s*-\s*(\d+)/gu)].map(m=>Number(m[1]));
+ const declared=declaredValues.length&&new Set(declaredValues).size===1?declaredValues[0]:null;
+ const money='(?:\\d{1,3}(?:[ \\u00a0]\\d{3})+|\\d+)(?:[.,]\\d{1,2})?';
+ const cents=(v:string)=>{const n=v.replace(/\s/g,'').replace(',','.');return BigInt(n.split('.')[0])*BigInt(100)+BigInt((n.split('.')[1]||'').padEnd(2,'0'));};
+ const format=(n:bigint)=>`${n/BigInt(100)}.${String(n%BigInt(100)).padStart(2,'0')}`;
+ const totals=[BigInt(0),BigInt(0),BigInt(0)],seen=new Set<string>(),numbers:number[]=[];
+ const rowPattern=new RegExp('^\\s*(\\d+)\\s*\\n([\\s\\S]+?)(?:[ \\t]{2,}|\\n)(\\S+)\\s{2,}KZT\\s{2,}([^\\n]+?)\\s{2,}(\\d{2}\\.\\d{2}\\.\\d{4})\\s{2,}('+money+')\\s{2,}([\\s\\S]+?)\\s{2,}('+money+')\\s{2,}('+money+')\\s{2,}('+money+')\\s{2,}(\\d+)\\s{2,}(Жоқ|Иә|Иə)(?=\\s|$)','u');
+ for(const page of pages){
+  for(const block of page.text.split(/\n(?=\d+\s*\n)/u)){
+   const row=rowPattern.exec(block);if(!row)continue;
+   numbers.push(Number(row[1]));
+   const creditor=row[2].replace(/\s+/g,' ').trim(),contractNumber=row[3];
+   if(creditor.length>240||!day(row[5])){output.findings.push('SHORT_CREDIT_LIST_UNVERIFIED');continue;}
+   const key=creditor+'|'+contractNumber;
+   if(seen.has(key)){output.findings.push('SHORT_DUPLICATE_CREDIT','SHORT_CREDIT_LIST_UNVERIFIED');continue;}seen.add(key);
+   if(/[.…]{2}|…/.test(contractNumber))output.findings.push('SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED');
+   const components=row.slice(8,11).map(cents);components.forEach((n,i)=>totals[i]+=n);
+   if(row[4].trim()!=='Қарыз алушы'){output.findings.push('OTHER_BORROWER_ROLE_REQUIRES_REVIEW','SHORT_CREDIT_LIST_UNVERIFIED');continue;}
+   const source=`Строка ${row[1]}: ${creditor}, ${contractNumber}. Остаток ${format(components[0])} + просрочка ${format(components[1])} + штраф/пеня ${format(components[2])} KZT.`,overdue=Number(row[11]);
+   const fact=(key:string,value:string,quote=source):Fact=>({key,value,page:page.page,source:quote});
+   const facts=[fact('creditor',creditor),fact('contractIdentifier',contractNumber),fact('debtOutstanding',format(components.reduce((a,b)=>a+b,BigInt(0)))),fact('overdueDays',row[11]),fact('loanStatus',overdue>0?'В просрочке — требуют полную сумму':'Платится по графику')];
+   if(overdue===0)facts.push(fact('monthlyPayment',format(cents(row[6])),`Ай сайынғы жарна: ${row[6]} KZT; ${creditor}, ${contractNumber}.`));
+   output.credits.push({contractNumber,page:page.page,facts,components:{remaining:format(components[0]),arrears:format(components[1]),penalty:format(components[2])}});
+  }
+ }
+ const total=new RegExp('Барлығы\\s*\\(KZT\\):\\s{2,}('+money+')\\s{2,}('+money+')\\s{2,}('+money+')(?=\\s|$)','u').exec(raw);
+ if(declared===null||!total)output.findings.push('SHORT_SUMMARY_MISSING','SHORT_CREDIT_LIST_UNVERIFIED');
+ if(declared!==output.credits.length||numbers.some((n,i)=>n!==i+1))output.findings.push('SHORT_CREDIT_COUNT_MISMATCH','SHORT_CREDIT_LIST_UNVERIFIED');
+ if(total&&total.slice(1).some((n,i)=>cents(n)!==totals[i]))output.findings.push('SHORT_TOTAL_MISMATCH','SHORT_CREDIT_LIST_UNVERIFIED');
+ output.creditList={complete:!output.findings.includes('SHORT_CREDIT_LIST_UNVERIFIED'),declared};
 }
 export function parseKaspiStatement(pages:PageText[]):BankStatement{
  const text=pages.map(p=>p.text).join('\n');

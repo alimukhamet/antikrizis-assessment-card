@@ -1,9 +1,9 @@
 import { getDocumentProxy, getResolvedPDFJS } from 'unpdf';
 
-export const PDF_READER_VERSION = 'native-pdf-2';
+export const PDF_READER_VERSION = 'native-pdf-3';
 export const MAX_DOCUMENT_BYTES = 35 * 1024 * 1024;
 export const MAX_DOCUMENT_PAGES = 300;
-export type PageText = { page: number; text: string; nativeCharacters: number; needsOcr: boolean };
+export type PageText = { page: number; text: string; layoutText?: string; nativeCharacters: number; needsOcr: boolean };
 export class DocumentReadError extends Error { constructor(public code: string, public status = 422) { super(code); } }
 const prefix = new TextEncoder().encode('%PDF');
 function isPdf(data: Uint8Array) { return prefix.every((v, i) => data[i] === v); }
@@ -66,7 +66,18 @@ export async function readPdf(data: Uint8Array) {
         const {OPS}=await getResolvedPDFJS(),operators=await page.getOperatorList();
         needsOcr=!headerImagesOnly(operators,OPS,page.view[2]-page.view[0],page.view[3]-page.view[1]);
       }
-      pages.push({ page: n, text, nativeCharacters, needsOcr });
+      // Some bureau templates draw labels first and values last. Preserve the
+      // original stream for tables, plus spatial lines for label/value identity.
+      const lines: Array<{y:number;items:Array<{x:number;text:string}>}> = [];
+      for(const item of n===1?content.items:[]){
+        if(!('str' in item)||!item.str.trim()||!item.transform)continue;
+        const y=item.transform[5],x=item.transform[4];
+        let line=lines.find(line=>Math.abs(line.y-y)<=2.5);
+        if(!line){line={y,items:[]};lines.push(line);}
+        line.items.push({x,text:item.str});
+      }
+      const layoutText=lines.sort((a,b)=>b.y-a.y).map(line=>line.items.sort((a,b)=>a.x-b.x).map(item=>item.text).join('   ')).join('\n').normalize('NFKC');
+      pages.push({ page: n, text, layoutText, nativeCharacters, needsOcr });
       page.cleanup();
     }
     return { readerVersion: PDF_READER_VERSION, originalSha256, pdfSha256, pages, totalPages: pdf.numPages, signature: document.encapsulated ? 'present_not_verified' as const : 'not_checked' as const, readAllPhysicalPages: true };
