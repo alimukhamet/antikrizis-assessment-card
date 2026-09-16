@@ -22,6 +22,15 @@ jobs:
         run: |
           git apply --unidiff-zero --check .github/repairs/sales-fixes.patch
           git apply --unidiff-zero .github/repairs/sales-fixes.patch
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const path='public/hosted-assessment.js';
+          const before='Сервер вернул неожиданный ответ. Ответы не удалены. Повторите действие.';
+          const after='Не удалось прочитать ответ сервера. Ответы не удалены. Повторите действие.';
+          const source=fs.readFileSync(path,'utf8');
+          if(source.split(before).length!==2)throw Error('Unexpected error-message source');
+          fs.writeFileSync(path,source.replace(before,after));
+          NODE
           git diff --name-only > /tmp/repair-paths
           git diff --exit-code -- templates/assessment-card.html package.json package-lock.json
       - name: Install and copy pinned unmodified contract distributions
@@ -46,7 +55,22 @@ jobs:
       - name: Type check
         run: npx --no-install tsc --noEmit
       - name: Full application build and regression suite
-        run: npm test
+        run: |
+          if npm test > /tmp/assessment-tests.log 2>&1; then
+            tail -12 /tmp/assessment-tests.log
+          else
+            grep -A30 '^not ok' /tmp/assessment-tests.log || true
+            tail -12 /tmp/assessment-tests.log
+            exit 1
+          fi
+      - name: Preserve full verification output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sales-reliability-test-log
+          path: /tmp/assessment-tests.log
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Commit only the verified source and generated contract files
         run: |
           git diff --exit-code -- templates/assessment-card.html package.json package-lock.json
