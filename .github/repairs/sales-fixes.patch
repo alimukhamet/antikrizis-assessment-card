@@ -1,0 +1,263 @@
+diff --git a/app/PersonalSales.tsx b/app/PersonalSales.tsx
+index 30330ed..12c4629 100644
+--- a/app/PersonalSales.tsx
++++ b/app/PersonalSales.tsx
+@@ -21,0 +22 @@ export default function PersonalSales({ mode }: { mode: 'results' | 'earnings' }
++    const timer=setTimeout(()=>{controller.abort();setError('Сервер не ответил вовремя. Повторите загрузку.');setBusy(false);},30000);
+@@ -23 +24,6 @@ export default function PersonalSales({ mode }: { mode: 'results' | 'earnings' }
+-      if (response.status === 401) { window.location.assign('/login?returnTo=' + encodeURIComponent(window.location.pathname)); return; }
++      if(controller.signal.aborted)return;
++      if (response.status === 401) {
++        // Drop the previous employee's in-memory report before reauthentication.
++        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
++        window.location.assign('/login?returnTo=' + encodeURIComponent(window.location.pathname)); return;
++      }
+@@ -27,2 +33,2 @@ export default function PersonalSales({ mode }: { mode: 'results' | 'earnings' }
+-    }).catch(e => { if (!controller.signal.aborted) { setError(e.message); setBusy(false); } });
+-    return () => controller.abort();
++    }).catch(e => { if (!controller.signal.aborted) { setError(e.message); setBusy(false); } }).finally(()=>clearTimeout(timer));
++    return () => {clearTimeout(timer);controller.abort();};
+diff --git a/app/SessionBar.tsx b/app/SessionBar.tsx
+index fb56385..832480e 100644
+--- a/app/SessionBar.tsx
++++ b/app/SessionBar.tsx
+@@ -2,0 +3 @@ import {useState} from 'react';
++import Link from 'next/link';
+@@ -6 +7,2 @@ export function SessionBar({name,showToolsLink=false}:{name:string;showToolsLink
+-  setBusy(true);
++  if(busy)return;
++  setError('');setBusy(true);
+@@ -8 +10 @@ export function SessionBar({name,showToolsLink=false}:{name:string;showToolsLink
+-   const r=await fetch('/api/session',{method:'DELETE'});
++   const r=await fetch('/api/session',{method:'DELETE',signal:AbortSignal.timeout(15000),cache:'no-store'});
+@@ -9,0 +12,2 @@ export function SessionBar({name,showToolsLink=false}:{name:string;showToolsLink
++   // Full navigation drops all in-memory data belonging to the previous employee.
++   // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+@@ -14 +18 @@ export function SessionBar({name,showToolsLink=false}:{name:string;showToolsLink
+-  {showToolsLink?<a className="session-tools-link" href="/">← Инструменты</a>:null}
++  {showToolsLink?<Link className="session-tools-link" href="/">← Инструменты</Link>:null}
+diff --git a/eslint.config.mjs b/eslint.config.mjs
+index fe411c3..b49acee 100644
+--- a/eslint.config.mjs
++++ b/eslint.config.mjs
+@@ -13,0 +14 @@ const eslintConfig = defineConfig([
++    "public/vendor/contracts/**", // Unmodified pinned upstream distributions, verified by hash.
+diff --git a/lib/browser/contract-libraries.js b/lib/browser/contract-libraries.js
+index 6539efa..d77a78f 100644
+--- a/lib/browser/contract-libraries.js
++++ b/lib/browser/contract-libraries.js
+@@ -3,0 +4 @@ const LIB_URLS = {
++    '/vendor/contracts/pizzip-3.1.7.min.js',
+@@ -8,0 +10 @@ const LIB_URLS = {
++    '/vendor/contracts/docxtemplater-3.50.0.min.js',
+@@ -44,0 +47,2 @@ let libsReady = null;
++// Concatenated into the renderer by scripts/build-contract-renderer.mjs.
++// eslint-disable-next-line @typescript-eslint/no-unused-vars
+@@ -57,0 +62,2 @@ function ensureLibs() {
++// Consumed by the generated renderer.
++// eslint-disable-next-line @typescript-eslint/no-unused-vars
+diff --git a/lib/crm/assessment-intake-read.ts b/lib/crm/assessment-intake-read.ts
+index e3c11a2..dc13d3d 100644
+--- a/lib/crm/assessment-intake-read.ts
++++ b/lib/crm/assessment-intake-read.ts
+@@ -7 +6,0 @@ import {
+-  type AssessmentIntakeEnvelope,
+@@ -16 +15 @@ import {
+-import type { CaseRow, DocumentRow, EvidenceRepository } from '../documents/repository';
++import type { CaseRow, EvidenceRepository } from '../documents/repository';
+diff --git a/lib/crm/assessment-intake-sync.ts b/lib/crm/assessment-intake-sync.ts
+index 354de15..b840243 100644
+--- a/lib/crm/assessment-intake-sync.ts
++++ b/lib/crm/assessment-intake-sync.ts
+@@ -228,11 +227,0 @@ async function responseJson(response: Response): Promise<Record<string, unknown>
+-function pendingFromSelection(selection: AssessmentSubmissionSelection): AssessmentIntakeSyncResult {
+-  if (selection.status === 'not_found') return { status: 'not_found', reason: selection.reason };
+-  if (selection.status === 'pending') return {
+-    status: 'pending',
+-    reason: selection.reason,
+-    sourceSubmissionId: selection.sourceSubmissionId,
+-    sourceRevision: undefined,
+-  };
+-  return { status: 'failed', reason: 'unexpected_selection_state' };
+-}
+-
+diff --git a/lib/crm/lawyer-handoff.ts b/lib/crm/lawyer-handoff.ts
+index 5916722..a2e7dc4 100644
+--- a/lib/crm/lawyer-handoff.ts
++++ b/lib/crm/lawyer-handoff.ts
+@@ -4,0 +5 @@ const normalize=(value:unknown)=>String(value??'').toLocaleLowerCase('ru').repla
++const isRecord=(value:unknown):value is Record<string,unknown>=>Boolean(value)&&typeof value==='object'&&!Array.isArray(value);
+@@ -7 +8 @@ export function createHandoffAdapter(webhook:string,send:typeof fetch=fetch){
+- async function call(method:string,body:unknown):Promise<any>{
++ async function call(method:string,body:unknown):Promise<unknown>{
+@@ -11 +12 @@ export function createHandoffAdapter(webhook:string,send:typeof fetch=fetch){
+-  const data=await response.json() as {error?:string;result?:unknown};if(data.error||data.result===undefined)throw new RepositoryError('HANDOFF_CRM_UNAVAILABLE',503);return data.result;
++  const data:unknown=await response.json();if(!isRecord(data)||data.error||data.result===undefined)throw new RepositoryError('HANDOFF_CRM_UNAVAILABLE',503);return data.result;
+@@ -16 +17 @@ export function createHandoffAdapter(webhook:string,send:typeof fetch=fetch){
+-  if(String(deal.ID)!==dealId||deal.UF_CRM_AI_IIN!==iin)throw new RepositoryError('CASE_IDENTITY_CHANGED');return deal;
++  if(!isRecord(deal)||String(deal.ID)!==dealId||deal.UF_CRM_AI_IIN!==iin)throw new RepositoryError('CASE_IDENTITY_CHANGED');return deal;
+@@ -23 +24 @@ export function createHandoffAdapter(webhook:string,send:typeof fetch=fetch){
+-  if(!Array.isArray(stages))throw new RepositoryError('HANDOFF_STAGE_UNVERIFIED');
++  if(!Array.isArray(stages)||!stages.every(isRecord))throw new RepositoryError('HANDOFF_STAGE_UNVERIFIED');
+@@ -26 +27 @@ export function createHandoffAdapter(webhook:string,send:typeof fetch=fetch){
+-  const current=stages.find(s=>s.STATUS_ID===deal.STAGE_ID);if(!current)throw new RepositoryError('HANDOFF_STAGE_UNVERIFIED');
++  const current=stages.find(s=>s.STATUS_ID===deal.STAGE_ID);if(!current||typeof current.STATUS_ID!=='string'||typeof matches[0].STATUS_ID!=='string'||typeof current.NAME!=='string'||typeof matches[0].NAME!=='string')throw new RepositoryError('HANDOFF_STAGE_UNVERIFIED');
+@@ -35 +36 @@ export function createHandoffAdapter(webhook:string,send:typeof fetch=fetch){
+-  return Array.isArray(history?.items)&&history.items.some((row:any)=>String(row.OWNER_ID)===dealId&&String(row.CATEGORY_ID)===destination.categoryId&&row.STAGE_ID===destination.stageId&&Number.isFinite(Date.parse(row.CREATED_TIME))&&Date.parse(row.CREATED_TIME)>=Math.floor(Date.parse(since)/1000)*1000);
++  return isRecord(history)&&Array.isArray(history.items)&&history.items.some((row:unknown)=>isRecord(row)&&typeof row.CREATED_TIME==='string'&&String(row.OWNER_ID)===dealId&&String(row.CATEGORY_ID)===destination.categoryId&&row.STAGE_ID===destination.stageId&&Number.isFinite(Date.parse(row.CREATED_TIME))&&Date.parse(row.CREATED_TIME)>=Math.floor(Date.parse(since)/1000)*1000);
+diff --git a/lib/questionnaire/handoff-service.ts b/lib/questionnaire/handoff-service.ts
+index ab8ce25..cfc030d 100644
+--- a/lib/questionnaire/handoff-service.ts
++++ b/lib/questionnaire/handoff-service.ts
+@@ -22,0 +23,7 @@ export async function validateHandoffDocuments(repository:EvidenceRepository,rec
++type VerifiedReceipt={files:Array<{id:string;sha256:string}>};
++function verifiedReceipt(json:string,code:string):VerifiedReceipt{
++ let value:unknown;try{value=JSON.parse(json);}catch{throw new RepositoryError(code);}
++ if(!value||typeof value!=='object'||!('verified' in value)||value.verified!==true||!('files' in value)||!Array.isArray(value.files)||!value.files.length)throw new RepositoryError(code);
++ for(const file of value.files){if(!file||typeof file!=='object'||typeof file.id!=='string'||!file.id||typeof file.sha256!=='string'||!/^[a-f0-9]{64}$/.test(file.sha256))throw new RepositoryError(code);}
++ return value as VerifiedReceipt;
++}
+@@ -57 +64 @@ export async function runHandoff(deps:Dependencies,record:CaseRow,actor:Actor,ro
+-  const receipt=JSON.parse(uploadRow.receipt_json),ref=receipt.files.find((f:any)=>f.sha256===doc.original_sha256);if(!ref)throw new RepositoryError('HANDOFF_UPLOAD_UNCERTAIN');
++  const receipt=verifiedReceipt(uploadRow.receipt_json,'HANDOFF_UPLOAD_UNCERTAIN'),ref=receipt.files.find(f=>f.sha256===doc.original_sha256);if(!ref)throw new RepositoryError('HANDOFF_UPLOAD_UNCERTAIN');
+@@ -63 +70 @@ export async function runHandoff(deps:Dependencies,record:CaseRow,actor:Actor,ro
+- const keyManifest=JSON.parse(keyRow.manifest_json) as UploadManifest,keyReceipt=JSON.parse(keyRow.receipt_json);
++ const keyManifest=JSON.parse(keyRow.manifest_json) as UploadManifest,keyReceipt=verifiedReceipt(keyRow.receipt_json,'HANDOFF_CREDENTIALS_REQUIRED');
+diff --git a/public/assessment-review.js b/public/assessment-review.js
+index 16a7f2c..ba325d2 100644
+--- a/public/assessment-review.js
++++ b/public/assessment-review.js
+@@ -76,0 +77,2 @@ function afBadge(e,src){
++// Used by the separately loaded server-answer-check.js classic script.
++// eslint-disable-next-line @typescript-eslint/no-unused-vars
+@@ -185,0 +188,2 @@ function afClientChoices(){
++// Used by server-answer-check.js and client-context-ui.js.
++// eslint-disable-next-line @typescript-eslint/no-unused-vars
+diff --git a/public/assessment-workflow.js b/public/assessment-workflow.js
+index 1a0d45b..c3c321f 100644
+--- a/public/assessment-workflow.js
++++ b/public/assessment-workflow.js
+@@ -335 +334,0 @@ window.AssessmentWorkflow=(()=>{
+- let refreshQueued=false;
+diff --git a/public/hosted-assessment.js b/public/hosted-assessment.js
+index cfcb15b..9aa988e 100644
+--- a/public/hosted-assessment.js
++++ b/public/hosted-assessment.js
+@@ -7 +7,10 @@ window.HostedAssessment=(()=>{
+- // Bound the entire response, including its body. A stalled connection must not lock the card forever.
++ function sessionRecovery(){
++  if(document.getElementById('assessmentSessionNotice'))return;
++  const notice=document.createElement('div');notice.id='assessmentSessionNotice';notice.setAttribute('role','alert');
++  notice.style.cssText='position:sticky;top:0;z-index:10000;background:#fff4d6;color:#302400;padding:12px;border:1px solid #d6af40';
++  notice.append(document.createTextNode('Сессия закончилась. Не закрывайте анкету: ответы остаются в этой вкладке. '));
++  const login=document.createElement('a');login.href='/login';login.target='_blank';login.rel='noopener';login.textContent='Войти заново в другой вкладке';notice.append(login);
++  notice.append(document.createTextNode('. После входа под тем же сотрудником вернитесь и повторите действие.'));
++  document.body.prepend(notice);
++ }
++ // Bound both headers and body; never replay a write or discard answers after an HTTP error.
+@@ -9,3 +18,24 @@ window.HostedAssessment=(()=>{
+-  const controller=new AbortController();let timer;const cancel=()=>controller.abort();if(options.signal?.aborted)cancel();else options.signal?.addEventListener('abort',cancel,{once:true});
+-  try{return await Promise.race([(async()=>{const response=await fetch(url,{...options,signal:controller.signal}),body=await response.json();if(!response.ok)throw Object.assign(Error((settings.message||error)(body.error)),{code:body.error});return body;})(),new Promise((_,reject)=>{timer=setTimeout(()=>{reject(Object.assign(Error('Сервер не ответил вовремя. Повторите действие. Сохранённые данные не удалены.'),{code:'REQUEST_TIMEOUT'}));controller.abort();},settings.timeoutMs||30000);})]);}
+-  finally{clearTimeout(timer);options.signal?.removeEventListener('abort',cancel);}
++  const controller=new AbortController();let timer;
++  const cancel=()=>controller.abort();
++  if(options.signal?.aborted)cancel();else options.signal?.addEventListener('abort',cancel,{once:true});
++  const failure=code=>{
++   if(code==='SIGN_IN_REQUIRED')sessionRecovery();
++   const messages={SERVER_UNAVAILABLE:'Сервис временно недоступен. Ответы не удалены. Повторите действие.',INVALID_SERVER_RESPONSE:'Сервер вернул неожиданный ответ. Ответы не удалены. Повторите действие.'};
++   return Object.assign(Error(messages[code]||(settings.message||error)(code)),{code});
++  };
++  try{
++   return await Promise.race([(async()=>{
++    const response=await fetch(url,{...options,signal:controller.signal});
++    if(response.status===401||response.redirected)throw failure('SIGN_IN_REQUIRED');
++    let body;
++    try{body=await response.json();}catch{throw failure(response.status>=500?'SERVER_UNAVAILABLE':'INVALID_SERVER_RESPONSE');}
++    if(!body||typeof body!=='object'||Array.isArray(body))throw failure('INVALID_SERVER_RESPONSE');
++    if(!response.ok)throw failure(typeof body.error==='string'?body.error:response.status>=500?'SERVER_UNAVAILABLE':'INVALID_SERVER_RESPONSE');
++    document.getElementById('assessmentSessionNotice')?.remove();
++    return body;
++   })(),new Promise((_,reject)=>{
++    timer=setTimeout(()=>{
++     reject(Object.assign(Error('Сервер не ответил вовремя. Повторите действие. Сохранённые данные не удалены.'),{code:'REQUEST_TIMEOUT'}));controller.abort();
++    },settings.timeoutMs||30000);
++   })]);
++  }finally{clearTimeout(timer);options.signal?.removeEventListener('abort',cancel);}
+diff --git a/public/server-drafts.js b/public/server-drafts.js
+index 98f7650..5850cd1 100644
+--- a/public/server-drafts.js
++++ b/public/server-drafts.js
+@@ -37 +37 @@ window.ServerDrafts=(()=>{
+-  }catch(e){loadStatus('error',e.message);showDraftStatus(e.message);}
++  }catch(e){if(sequence!==epoch||b!==base())return;loadStatus('error',e.message);showDraftStatus(e.message);}
+@@ -41 +41 @@ window.ServerDrafts=(()=>{
+-  if(saveTask){await saveTask;if(!isDirty())return true;return save(options);}
++  if(saveTask){if(!await saveTask)return false;if(!isDirty())return true;return save(options);}
+diff --git a/scripts/build-contract-renderer.mjs b/scripts/build-contract-renderer.mjs
+index 2ddef4e..61ed2c4 100644
+--- a/scripts/build-contract-renderer.mjs
++++ b/scripts/build-contract-renderer.mjs
+@@ -5 +5 @@ const template=/const TEMPLATE_B64 = '[^']+';/.exec(html)?.[0];if(!template)thro
+-const libs=await fs.readFile('lib/browser/contract-libraries.js','utf8');
++const libs=(await fs.readFile('lib/browser/contract-libraries.js','utf8')).replace(/^\/\/ eslint-disable-next-line[^\n]*\n/gm,'');
+diff --git a/tests/assessment-intake-read.test.mjs b/tests/assessment-intake-read.test.mjs
+index 44d499a..5d41af1 100644
+--- a/tests/assessment-intake-read.test.mjs
++++ b/tests/assessment-intake-read.test.mjs
+@@ -22,2 +22,2 @@ function load(relative) {
+-  const module = { exports: {} };
+-  cache.set(filename, module);
++  const loadedModule = { exports: {} };
++  cache.set(filename, loadedModule);
+@@ -29,2 +29,2 @@ function load(relative) {
+-    module,
+-    exports: module.exports,
++    module: loadedModule,
++    exports: loadedModule.exports,
+@@ -57 +57 @@ function load(relative) {
+-  return module.exports;
++  return loadedModule.exports;
+@@ -61 +60,0 @@ const converter = load('lib/crm/assessment-intake-export.ts');
+-const auth = load('lib/crm/assessment-intake-auth.ts');
+diff --git a/tests/assessment-intake-sync.test.mjs b/tests/assessment-intake-sync.test.mjs
+index 115d528..4aafff4 100644
+--- a/tests/assessment-intake-sync.test.mjs
++++ b/tests/assessment-intake-sync.test.mjs
+@@ -22,2 +22,2 @@ function load(relative) {
+-  const module = { exports: {} };
+-  cache.set(filename, module);
++  const loadedModule = { exports: {} };
++  cache.set(filename, loadedModule);
+@@ -29,2 +29,2 @@ function load(relative) {
+-    module,
+-    exports: module.exports,
++    module: loadedModule,
++    exports: loadedModule.exports,
+@@ -59 +59 @@ function load(relative) {
+-  return module.exports;
++  return loadedModule.exports;
+@@ -62 +61,0 @@ function load(relative) {
+-const converter = load('lib/crm/assessment-intake-export.ts');
+diff --git a/tests/contract-libraries.test.mjs b/tests/contract-libraries.test.mjs
+index b63467a..02e0060 100644
+--- a/tests/contract-libraries.test.mjs
++++ b/tests/contract-libraries.test.mjs
+@@ -35 +35 @@ test('all stalled mirrors return a visible failure instead of hanging forever',a
+- const s=setup(()=>{});t.after(()=>s.close());assert.equal(await outcome(s.ensureLibs()),'failed');assert.equal(s.scripts.length,3);assert.ok(s.scripts.every(script=>script.removed));
++ const s=setup(()=>{});t.after(()=>s.close());assert.equal(await outcome(s.ensureLibs()),'failed');assert.equal(s.scripts.length,4);assert.ok(s.scripts.every(script=>script.removed));
+diff --git a/tests/lawyer-handoff.test.mjs b/tests/lawyer-handoff.test.mjs
+index c96fac8..7b37a63 100644
+--- a/tests/lawyer-handoff.test.mjs
++++ b/tests/lawyer-handoff.test.mjs
+@@ -80,0 +81,11 @@ test('signed PDF ownership and saved credentials are required independently of c
++test('malformed CRM bodies and stage rows fail closed without any stage write',async()=>{
++ for(const bad of [null,[],42,{ID:'900001'}]){
++  let writes=0;const send=async(url)=>{if(url.includes('crm.deal.update'))writes++;return{ok:true,json:async()=>({result:bad})};};
++  const adapter=crm.createHandoffAdapter('https://synthetic.invalid/rest/',send);
++  await assert.rejects(adapter.move(record.external_id,record.client_iin,destination,'2026-09-16T08:00:00Z'),e=>e.notStarted===true);assert.equal(writes,0);
++ }
++ const s=transport(),original=s.send;
++ s.send=async(url,options)=>url.includes('crm.status.list')?{ok:true,json:async()=>({result:[null,{STATUS_ID:'C13:WON',NAME:'Сделка завершена'}]})}:original(url,options);
++ const a=crm.createHandoffAdapter('https://synthetic.invalid/rest/',s.send);
++ await assert.rejects(a.discover(record.external_id,record.client_iin),/HANDOFF_STAGE_UNVERIFIED/);assert.equal(s.writes.length,0);
++});
