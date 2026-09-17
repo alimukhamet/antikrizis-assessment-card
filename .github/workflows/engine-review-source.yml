@@ -1,0 +1,34 @@
+name: Package engine review source
+on:
+  push:
+    branches: [diagnose/submission-10479]
+    paths: [.github/workflows/engine-review-source.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: c92954ced4502cb60183f8308495e520f4e0fb3c
+          persist-credentials: false
+          path: engine
+      - uses: actions/checkout@v7
+        with:
+          ref: 5dfeafc93d7d6f3487c5022d6640f61643cae3e0
+          persist-credentials: false
+          path: released
+      - name: Archive only tracked source files
+        run: |
+          mkdir review
+          git -C engine archive --format=tar.gz HEAD > review/engine-source.tar.gz
+          git -C released archive --format=tar.gz HEAD > review/released-source.tar.gz
+          printf 'engine=c92954ced4502cb60183f8308495e520f4e0fb3c\nreleased=5dfeafc93d7d6f3487c5022d6640f61643cae3e0\n' > review/commits.txt
+          cd review && sha256sum *.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pinned-engine-review-source
+          path: review/
+          retention-days: 1
