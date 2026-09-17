@@ -65,40 +65,75 @@ jobs:
   publication:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/deploy/anti-krizis')
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Compare public release assets without signing in or modifying production
+      - name: Compare live public release assets with this release
         run: |
-          python - <<'PY'
-          import hashlib, json, os, pathlib, urllib.request
+          set -euo pipefail
           origin='https://assessment.anti-krizis.kz'
-          paths=['contract-renderer.js','submission-flow.js','hosted-assessment.js','server-drafts.js','vendor/contracts/pizzip-3.1.7.min.js','vendor/contracts/docxtemplater-3.50.0.min.js']
-          report={'commit':os.environ['GITHUB_SHA'],'origin':origin,'scope':'public_assets_only','assets':[]}
-          for path in paths:
-              row={'path':path,'expected':hashlib.sha256(pathlib.Path('public',path).read_bytes()).hexdigest(),'matches':False}
-              try:
-                  request=urllib.request.Request(origin+'/'+path+'?release_check='+os.environ['GITHUB_SHA'],headers={'Cache-Control':'no-cache'})
-                  with urllib.request.urlopen(request,timeout=12) as response:
-                      body=response.read(5*1024*1024+1)
-                      if len(body)>5*1024*1024: raise ValueError('Oversized asset')
-                      row.update(status=response.status,actual=hashlib.sha256(body).hexdigest())
-                      row['matches']=row['status']==200 and row['expected']==row['actual']
-              except Exception as error:
-                  row['error']=type(error).__name__
-              report['assets'].append(row)
-          report['matchesReleaseAssets']=all(row['matches'] for row in report['assets'])
-          text=json.dumps(report,indent=2)
-          pathlib.Path('publication-check.json').write_text(text)
-          print(text)
+          paths=(
+            'contract-renderer.js'
+            'submission-flow.js'
+            'hosted-assessment.js'
+            'server-drafts.js'
+            'vendor/contracts/pizzip-3.1.7.min.js'
+            'vendor/contracts/docxtemplater-3.50.0.min.js'
+          )
+          mkdir -p /tmp/live-assets
+          : > /tmp/publication.tsv
+          matched=0
+          for attempt in 1 2 3 4 5 6 7 8; do
+            : > /tmp/publication.tsv
+            all_match=1
+            echo "Release verification attempt ${attempt}"
+            for path in "${paths[@]}"; do
+              expected="$(sha256sum "public/$path" | awk '{print $1}')"
+              target="/tmp/live-assets/${path//\//__}"
+              status="$(curl --location --silent --show-error --max-time 20 \
+                --user-agent 'Mozilla/5.0 (compatible; AntiKrizisReleaseCheck/1.0)' \
+                --header 'Cache-Control: no-cache' \
+                --output "$target" --write-out '%{http_code}' "$origin/$path" || true)"
+              if [ "$status" = '200' ] && [ -s "$target" ]; then
+                actual="$(sha256sum "$target" | awk '{print $1}')"
+              else
+                actual='unavailable'
+              fi
+              same=false
+              if [ "$status" = '200' ] && [ "$actual" = "$expected" ]; then
+                same=true
+              else
+                all_match=0
+              fi
+              printf '%s\t%s\t%s\t%s\t%s\n' "$path" "$status" "$expected" "$actual" "$same" >> /tmp/publication.tsv
+              echo "$path HTTP=$status match=$same"
+            done
+            if [ "$all_match" = '1' ]; then
+              matched=1
+              break
+            fi
+            if [ "$attempt" != '8' ]; then sleep 15; fi
+          done
+          python - <<'PY'
+          import json, os, pathlib
+          rows=[]
+          for line in pathlib.Path('/tmp/publication.tsv').read_text().splitlines():
+              path,status,expected,actual,matches=line.split('\t')
+              rows.append({'path':path,'status':int(status) if status.isdigit() else status,'expected':expected,'actual':actual,'matches':matches=='true'})
+          report={'commit':os.environ['GITHUB_SHA'],'origin':'https://assessment.anti-krizis.kz','scope':'public_assets_only','assets':rows,'matchesReleaseAssets':all(r['matches'] for r in rows)}
+          pathlib.Path('publication-check.json').write_text(json.dumps(report,indent=2))
+          print(json.dumps(report,indent=2))
           with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as summary:
-              summary.write('## Read-only publication check\n\n'+('All checked public assets match this commit. This is not an authenticated end-to-end test.' if report['matchesReleaseAssets'] else 'Live assets do not yet all match this commit. This check did not deploy anything.')+'\n')
-          if not report['matchesReleaseAssets']: print('::warning::Live public assets do not match the release source; publication is not confirmed.')
+              summary.write('## Read-only publication check\n\n')
+              summary.write('All checked public assets match this release. This is not an authenticated end-to-end test.\n' if report['matchesReleaseAssets'] else 'Live public assets do not yet all match this release. No deployment was performed by this check.\n')
           PY
+          test "$matched" = '1'
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: publication-check
           path: publication-check.json
+          if-no-files-found: ignore
           retention-days: 7
