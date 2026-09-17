@@ -28,6 +28,11 @@ jobs:
               path=pathlib.Path(row['path'])
               assert not path.is_absolute() and '..' not in path.parts
               assert row['path'].startswith(('public/','templates/','tests/')) or row['path']=='.github/workflows/deploy-assessment.yml'
+              if row['path']=='.github/workflows/deploy-assessment.yml':
+                  # This workflow edit was applied through the authorized connector,
+                  # not the runner token, which cannot update other workflows.
+                  assert hashlib.sha256(path.read_bytes()).hexdigest()==row['after']
+                  continue
               if row['before'] is None:
                   assert not path.exists(),str(path)
                   old=''
@@ -48,7 +53,7 @@ jobs:
               path.parent.mkdir(parents=True,exist_ok=True)
               path.write_bytes(data)
           pathlib.Path('/tmp/file-controls-paths').write_text('\n'.join(str(path) for path,_ in outputs)+'\n')
-          print('Verified and applied 16 exact reviewed file changes. Full PR CI is still required.')
+          print('Verified all 16 exact reviewed file changes. Full PR CI is still required.')
           PY
       - name: Commit reviewed source, removing both temporary helpers
         run: |
