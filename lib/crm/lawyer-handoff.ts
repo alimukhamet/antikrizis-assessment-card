@@ -1,8 +1,11 @@
 import {bitrixHeaders} from './http-headers'; import {RepositoryError} from '../documents/repository';
 export type HandoffDestination={categoryId:string;fromStageId:string;stageId:string;stageName:string;fromStageName:string};
 export class HandoffMoveError extends RepositoryError{constructor(code:string,public notStarted=false){super(code);}}
-const normalize=(value:unknown)=>String(value??'').toLocaleLowerCase('ru').replace(/ё/g,'е').replace(/\s+/g,' ').trim();
 const isRecord=(value:unknown):value is Record<string,unknown>=>Boolean(value)&&typeof value==='object'&&!Array.isArray(value);
+/** Names are editable labels, not the identity of a confirmed stage transition. */
+export function sameHandoffDestination(value:unknown,expected:HandoffDestination){
+ return isRecord(value)&&value.categoryId===expected.categoryId&&value.fromStageId===expected.fromStageId&&value.stageId===expected.stageId;
+}
 /** The existing sales robot owns the next pipeline. This adapter changes STAGE_ID only. */
 export function createHandoffAdapter(webhook:string,send:typeof fetch=fetch){
  async function call(method:string,body:unknown):Promise<unknown>{
@@ -22,9 +25,15 @@ export function createHandoffAdapter(webhook:string,send:typeof fetch=fetch){
   if(categoryId!=='13'||String(deal.STAGE_SEMANTIC_ID)==='F')throw new RepositoryError('HANDOFF_NOT_IN_SALES');
   const stages=await call('crm.status.list',{filter:{ENTITY_ID:'DEAL_STAGE_'+categoryId},order:{SORT:'ASC'}});
   if(!Array.isArray(stages)||!stages.every(isRecord))throw new RepositoryError('HANDOFF_STAGE_UNVERIFIED');
-  const matches=stages.filter(s=>s.STATUS_ID==='C13:WON'&&normalize(s.NAME)==='сделка завершена');
+  // The deployed portal calls C13:WON «Сделка успешна». Renaming that label
+  // must not disable handoff. Keep the exact category and stage ID pinned.
+  const matches=stages.filter(s=>s.STATUS_ID==='C13:WON');
   if(matches.length!==1)throw new RepositoryError('HANDOFF_STAGE_UNVERIFIED');
-  const current=stages.find(s=>s.STATUS_ID===deal.STAGE_ID);if(!current||typeof current.STATUS_ID!=='string'||typeof matches[0].STATUS_ID!=='string'||typeof current.NAME!=='string'||typeof matches[0].NAME!=='string')throw new RepositoryError('HANDOFF_STAGE_UNVERIFIED');
+  const target=matches[0];
+  if((target.ENTITY_ID!==undefined&&target.ENTITY_ID!=='DEAL_STAGE_13')||
+     (target.SEMANTICS!=null&&target.SEMANTICS!=='S')||
+     (isRecord(target.EXTRA)&&target.EXTRA.SEMANTICS!=null&&target.EXTRA.SEMANTICS!=='success'))throw new RepositoryError('HANDOFF_STAGE_UNVERIFIED');
+  const current=stages.find(s=>s.STATUS_ID===deal.STAGE_ID);if(!current||typeof current.STATUS_ID!=='string'||typeof matches[0].STATUS_ID!=='string'||typeof current.NAME!=='string'||typeof matches[0].NAME!=='string'||!matches[0].NAME.trim()||!current.NAME.trim())throw new RepositoryError('HANDOFF_STAGE_UNVERIFIED');
   if(current.STATUS_ID===matches[0].STATUS_ID)throw new RepositoryError('HANDOFF_ALREADY_COMPLETED');
   return{categoryId,fromStageId:current.STATUS_ID,fromStageName:String(current.NAME),stageId:matches[0].STATUS_ID,stageName:String(matches[0].NAME)};
  }
@@ -36,7 +45,7 @@ export function createHandoffAdapter(webhook:string,send:typeof fetch=fetch){
   return isRecord(history)&&Array.isArray(history.items)&&history.items.some((row:unknown)=>isRecord(row)&&typeof row.CREATED_TIME==='string'&&String(row.OWNER_ID)===dealId&&String(row.CATEGORY_ID)===destination.categoryId&&row.STAGE_ID===destination.stageId&&Number.isFinite(Date.parse(row.CREATED_TIME))&&Date.parse(row.CREATED_TIME)>=Math.floor(Date.parse(since)/1000)*1000);
  }
  async function move(dealId:string,iin:string,destination:HandoffDestination,since:string){
-  try{const fresh=await discover(dealId,iin);if(JSON.stringify(fresh)!==JSON.stringify(destination))throw new RepositoryError('HANDOFF_STAGE_CHANGED');}
+  try{const fresh=await discover(dealId,iin);if(!sameHandoffDestination(destination,fresh))throw new RepositoryError('HANDOFF_STAGE_CHANGED');}
   catch(error){throw new HandoffMoveError(error instanceof RepositoryError?error.code:'HANDOFF_STAGE_UNVERIFIED',true);}
   // No automatic retry of this write, including on timeout. Recovery is read-only.
   try{await call('crm.deal.update',{id:dealId,fields:{STAGE_ID:destination.stageId}});}catch{/* Reconcile below. */}
