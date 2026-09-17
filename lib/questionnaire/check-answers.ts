@@ -75,10 +75,15 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
  else issue('debtPurposes','CHOICE_REQUIRED','Укажите цели кредитов');
  if(value('gamblingTransfers')==='no'&&value('n8044')&&Number(value('n8044'))!==0)issue('n8044','GAMBLING_AMOUNT_CONFLICT','При ответе «Нет» сумма переводов должна быть 0');
  if(value('gamblingTransfers')==='yes'&&value('n8044')&&Number(value('n8044'))===0)issue('n8044','GAMBLING_AMOUNT_CONFLICT','Уточните сумму переводов или выберите «Нет»');
+ const rowRequiredLabels:Record<string,string>={
+  clientreal:'Добавьте данные выбранной недвижимости клиента',clientcars:'Добавьте выбранный автомобиль клиента',clientip:'Добавьте данные ИП клиента',clienttoo:'Добавьте данные доли в ТОО клиента',clientkh:'Добавьте данные КХ клиента',
+  partnerreal:'Добавьте данные выбранной недвижимости супруга(и)',partnercars:'Добавьте выбранный автомобиль супруга(и)',partnerip:'Добавьте данные ИП супруга(и)',partnertoo:'Добавьте данные доли в ТОО супруга(и)',partnerkh:'Добавьте данные КХ супруга(и)',
+  transfers:'Добавьте запись о переданном имуществе',creditors:'Добавьте хотя бы одного кредитора / обязательство',
+ };
  for(const g of schema.groups){if(!active(g.conditions))continue;const rows=groups.get(g.id)?.rows||[];
-  const counted=schema.scalar.find(f=>'groupTarget' in f&&f.groupTarget===g.id);
-  if(!counted&&!rows.length)issue(g.id,'ROW_REQUIRED','Добавьте запись',g.id);
-  if(counted&&g.id.endsWith('cars')&&!rows.length)issue(g.id,'ROW_REQUIRED','Добавьте выбранный автомобиль',g.id);
+  const counted=schema.scalar.find(f=>'groupTarget' in f&&f.groupTarget===g.id),rowLabel=rowRequiredLabels[g.id]||`Добавьте запись в раздел ${g.id}`;
+  if(!counted&&!rows.length)issue(g.id,'ROW_REQUIRED',rowLabel,g.id);
+  if(counted&&g.id.endsWith('cars')&&!rows.length)issue(g.id,'ROW_REQUIRED',rowLabel,g.id);
   rows.forEach((r,i)=>{const row=new Map(r.map(a=>[a.key,a]));for(const f of g.fields)field(f,row,g.id,i);
    if(g.id==='creditors'&&/^\d+$/.test(value('n8042',row))){const defaulted=Number(value('n8042',row))>0,status=value('loanStatus',row);if(status&&(defaulted!==(status==='В просрочке — требуют полную сумму')))issue('loanStatus','LOAN_STATUS_CONFLICT','Статус кредита не совпадает с количеством дней просрочки',g.id,i);}
   });
