@@ -22,6 +22,8 @@ export class SubmissionRepository {
  active(caseId:string){return this.db.prepare("SELECT * FROM assessment_submissions WHERE case_id=? AND state NOT IN ('verified','cancelled') ORDER BY created_at DESC,rowid DESC LIMIT 1").bind(caseId).first<SubmissionRow>();}
  async prepare(record:CaseRow,requestId:string,payload:SubmissionPayload,actor:Actor){
   if(!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(requestId))throw new RepositoryError('INVALID_REQUEST_ID',400);
+  const current=await this.db.prepare('SELECT identity_revision FROM assessment_cases WHERE id=?').bind(record.id).first<{identity_revision:number}>();
+  if(!current||current.identity_revision!==record.identity_revision)throw new RepositoryError('SUBMISSION_PENDING_OR_IDENTITY_CHANGED');
   const serialized=JSON.stringify(payload);
   if(new TextEncoder().encode(serialized).length>500000)throw new RepositoryError('SUBMISSION_TOO_LARGE',413);
   const hash=await sha256(JSON.stringify({payload,identityRevision:record.identity_revision,actorId:actor.id}));
