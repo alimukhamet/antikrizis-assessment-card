@@ -12,7 +12,7 @@ const policy=load('lib/documents/policy.ts'),repo=load('lib/documents/repository
 const reviews=load('lib/documents/document-review.ts',{'./repository':repo,'./analysis-version':{analysisVersion:'test'},'./policy':policy});
 const packages=load('lib/documents/package-check.ts',{'./analysis-service':{analysisVersion:'test'},'./document-review':reviews,'./policy':policy,'./loan-identity':load('lib/documents/loan-identity.ts')});
 
-test('three unrecognized document details can be reviewed explicitly, then uploaded and downloaded through the real browser flows',async t=>{
+test('three unrecognized document details can be reviewed explicitly, then downloaded before CRM upload through the real browser flows',async t=>{
  const dom=new JSDOM('<section id="documentStep"></section><div id="questionnaireStep"><button id="checkQuestions">Check</button><p id="checkStatus"></p></div>',{url:'https://synthetic.invalid',runScripts:'outside-only'}),w=dom.window,d=w.document;t.after(()=>w.close());
  const record={id:'case',client_iin:'synthetic-client',identity_revision:1},saved=new Map(),sources=new Map(),calls=[];
  const types=[...packages.REQUIRED_DOCUMENTS,'Выписка зарплатного банка'];
@@ -24,7 +24,7 @@ test('three unrecognized document details can be reviewed explicitly, then uploa
  saved.set('doc-3',{id:'review-3',fact_key:reviews.DOCUMENT_REVIEW_KEY,value_json:JSON.stringify(property)});
  const repository={document:async(_,id)=>({id,original_sha256:id}),cached:async(_,id)=>({extraction:{id:'parsed-'+id},result:sources.get(id)}),currentReviews:async(_,id)=>saved.has(id)?[saved.get(id)]:[]};
  let downloads=0,row=null;
- w.URL.createObjectURL=()=> 'blob:synthetic';w.URL.revokeObjectURL=()=>{};w.HTMLAnchorElement.prototype.click=()=>downloads++;
+ w.URL.createObjectURL=()=> 'blob:synthetic';w.URL.revokeObjectURL=()=>{};w.HTMLAnchorElement.prototype.click=()=>{assert.equal(calls.some(c=>c.path.endsWith('/uploads')),false,'File available before CRM upload');downloads++;};
  w.HostedAssessment={ready:()=>true,getContext:()=>({client:{title:'SYNTHETIC',iin:record.client_iin,external:{dealId:'900001'}}}),requestJson:async(path,options)=>{const response=await w.fetch(path,options);const value=await response.json();if(!response.ok)throw Error(value.error);return value;}};
  w.ServerDrafts={capture:()=>payload,reviewBindings:()=>[],save:async()=>true};w.afConfirmPending=async()=>true;
  w.SubmissionDestination={confirm:async()=>({dealId:'900001',iin:record.client_iin,identityRevision:1})};
@@ -40,10 +40,8 @@ test('three unrecognized document details can be reviewed explicitly, then uploa
   }else if(path.endsWith('/uploads')){if(body)assert.equal((await packages.checkDocumentPackage(repository,record,payload,'2026-09-16')).packageReady,true);value=body?{state:'verified',documentsUploaded:true}:{unsent:null};}
   else if(path.endsWith('/submission')){
    if(!body)value={submission:row};
-   else if(body.action==='prepare')value=row={requestId:body.requestId,state:'prepared'};
-   else if(body.action==='commit')value=row={...row,state:'verified',assessmentSaved:true};
-   else if(body.action==='history')value=row={...row,historySaved:true};
-   else if(body.action==='contract')value={contract:{rendererVersion:'a'.repeat(64),data:{}}};
+   else if(body.action==='generate'){assert.equal((await packages.checkDocumentPackage(repository,record,payload,'2026-09-16')).packageReady,true);value={contract:{rendererVersion:'a'.repeat(64),data:{}}};}
+   else if(body.action==='complete')value=row={requestId:body.requestId,state:'verified',assessmentSaved:true,historySaved:true};
    else throw Error('Unexpected action '+body.action);
   }else throw Error('Unexpected request '+path);
   return{ok:true,json:async()=>value};
@@ -61,6 +59,6 @@ test('three unrecognized document details can be reviewed explicitly, then uploa
  }
  assert.equal(w.AssessmentCheck.result().readyToSubmit,true);await download.onclick();
  assert.equal(downloads,1);assert.equal(calls.filter(c=>c.path.endsWith('/document-reviews')).length,3);
- assert.deepEqual(calls.filter(c=>c.path.endsWith('/submission')).map(c=>c.body.action),['prepare','commit','history','contract']);
+ assert.deepEqual(calls.filter(c=>c.path.endsWith('/submission')).map(c=>c.body.action),['generate','complete']);
  assert.equal(calls.filter(c=>c.path.endsWith('/uploads')).length,1);
 });

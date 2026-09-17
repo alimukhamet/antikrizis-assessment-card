@@ -1,3 +1,4 @@
+import {generateCurrentContract,completeContractSave} from '../../../../../lib/questionnaire/contract-action';
 import {requireStaffRequest} from '../../../staff-access';
 import {boundedJson,evidenceContext,evidenceError,operatingDay} from '../../../../../lib/documents/request-context';
 import {RepositoryError} from '../../../../../lib/documents/repository';
@@ -13,16 +14,25 @@ export async function POST(request:Request,context:{params:Promise<{dealId:strin
  const denied=await requireStaffRequest(request);if(denied)return denied;
  try{
   const body=await boundedJson(request,256000);
-  if(typeof body.requestId!=='string'||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.requestId)||!['prepare','commit','reconcile','cancel','history','contract'].includes(String(body.action)))throw new RepositoryError('INVALID_SUBMISSION_REQUEST',400);
+  if(typeof body.requestId!=='string'||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.requestId)||!['generate','complete','prepare','commit','reconcile','cancel','history','contract'].includes(String(body.action)))throw new RepositoryError('INVALID_SUBMISSION_REQUEST',400);
   const {dealId}=await context.params,{record,repository,actor}=await evidenceContext(request,dealId);
   const {env}=await import('cloudflare:workers');
   const runtime=env as typeof env & {DB?:D1Database};
   if(!runtime.DB)throw new RepositoryError('EVIDENCE_STORAGE_NOT_CONFIGURED',503);
-  if(['prepare','commit','history'].includes(String(body.action)))assertSubmissionDestination(record,body.destination);
+  if(['generate','complete','prepare','commit','history'].includes(String(body.action)))assertSubmissionDestination(record,body.destination);
+  if(body.action==='generate'){
+   if(!Number.isInteger(body.identityRevision))throw new RepositoryError('INVALID_SUBMISSION_REQUEST',400);
+   const contract=await generateCurrentContract(repository,record,body.identityRevision as number,body.payload,body.bindings,operatingDay());
+   return Response.json({contract,synchronization:'not_checked'},{headers:{'cache-control':'no-store'}});
+  }
   const submissions=new SubmissionRepository(runtime.DB),adapter=createAssessmentAdapter(process.env.BITRIX_WEBHOOK??'');
   if(body.action==='contract')return Response.json({contract:await savedContract(submissions,record,actor,body.requestId)},{headers:{'cache-control':'no-store'}});
   let row:SubmissionRow|null;
-  if(body.action==='prepare'){
+  if(body.action==='complete'){
+   if(Object.hasOwn(body,'payload')&&!Number.isInteger(body.identityRevision))throw new RepositoryError('INVALID_SUBMISSION_REQUEST',400);
+   const input={requestId:body.requestId,...(Object.hasOwn(body,'payload')?{payload:body.payload,bindings:body.bindings,identityRevision:body.identityRevision as number}:{})};
+   row=await completeContractSave(repository,submissions,adapter,createAssessmentHistoryAdapter(process.env.BITRIX_WEBHOOK??''),record,actor,input,operatingDay());
+  }else if(body.action==='prepare'){
    if(!Number.isInteger(body.identityRevision))throw new RepositoryError('INVALID_SUBMISSION_REQUEST',400);
    row=await prepareFinalSubmission(repository,submissions,adapter,record,actor,body.requestId,body.identityRevision as number,body.payload,body.bindings,operatingDay());
   }else if(body.action==='reconcile')row=await reconcileFinalSubmission(submissions,adapter,record,actor,body.requestId);

@@ -10,7 +10,7 @@ test('uncertain upload automatically checks the same batch once without allowing
 });
 test('persistent uncertainty stops visibly, and the optional cancellation lookup never delays success',async()=>{
  const s=setup();s.w.fetch=async(url,options)=>{if(!options)return new Promise(()=>{});s.calls.push(JSON.parse(options.body));return{ok:true,json:async()=>({state:'uncertain'})};};
- await assert.rejects(s.flow.submit(),/Договор ещё не сформирован/);assert.equal(s.calls.length,2);
+ await assert.rejects(s.flow.submit(),/не подтвердил сохранение документов/);assert.equal(s.calls.length,2);
  s.w.fetch=async(url,options)=>!options?new Promise(()=>{}):{ok:true,json:async()=>({state:'verified',documentsUploaded:true})};
  assert.equal(await s.flow.submit(),true);s.w.close();
 });

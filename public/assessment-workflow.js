@@ -112,7 +112,7 @@ window.AssessmentWorkflow=(()=>{
  contractCard.before(contractIntro);
  const finalActions=step(root.querySelector('.preview-check'),'contract');finalActions.classList.add('wf-final-actions');
  $('checkQuestions').textContent='Проверить';$('checkQuestions').className='btn btn-ghost';
- const finalHelp=make('p','Нажмите «Проверить»: ответы из документов подтверждаются один раз, без кнопки у каждого поля. Карточка и документы сохранятся в Bitrix. Договор скачается.','hint');$('checkQuestions').before(finalHelp);
+ const finalHelp=make('p','Нажмите «Скачать договор»: ответы и документы пройдут проверку, затем будет сформирован файл. Сохранение в Bitrix показывается отдельно и не блокирует готовый файл.','hint');$('checkQuestions').before(finalHelp);
  const reviewLink=action('Вернуться к документам',()=>show('documents'));reviewLink.hidden=true;reviewLink.id='workflowDocumentIssues';finalActions.append(reviewLink);
 
  const floating=make('nav',null,'wf-bottom-nav');floating.setAttribute('aria-label','Переход между этапами');

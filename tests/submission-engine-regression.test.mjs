@@ -77,23 +77,31 @@ function fixture(t) {
  const historyAdapter = history.createAssessmentHistoryAdapter('https://synthetic.invalid/',send);
  let time = Date.parse('2026-09-17T08:00:00Z');
  class Clock extends Date {constructor(...args) {super(...(args.length ? args : [time++]));}}
+ const finalChecker={FINAL_VALIDATION_VERSION:'test-version',finalCheck: async (r,c,d) => {
+   validations++;
+   return {payload:d,compiled:{values,lawyerCard:'LAWYER'},reviewIds:[],publicResult:{readyToSubmit:options.blockValidation!==true,preview:{contractData:{contract_number:'TEST',client_name:d.answers?.[0]?.value}},evidence:{approved:[]}}};
+ }};
  const service = load('lib/questionnaire/final-submission.ts', {
   '../documents/repository':evidence, './submission-service':{submitValidatedAssessment},
   './draft':{validateDraft: v=>structuredClone(v)},
   './review-bindings':{parseReviewBindings: v=>structuredClone(v||[])},
   '../../public/contract-words.mjs':{CONTRACT_RENDERER_VERSION:'a'.repeat(64)},
   './history-snapshot':load('lib/questionnaire/history-snapshot.ts'),
-  './final-check':{FINAL_VALIDATION_VERSION:'test-version',finalCheck: async (r,c,d) => {
-   validations++;
-   return {payload:d,compiled:{values,lawyerCard:'LAWYER'},reviewIds:[],publicResult:{readyToSubmit:true,preview:{contractData:{contract_number:'TEST'}},evidence:{approved:[]}}};
-  }},
+  './final-check':finalChecker,
  }, Clock);
  const prepare = (id=request1,input=draft,as=actor) => service.prepareFinalSubmission({},repo,adapter,record,as,id,1,input,[],'2026-09-17');
  const commit = (id=request1) => service.commitFinalSubmission({},repo,adapter,record,actor,id,'2026-09-17');
  const reconcile = (id=request1) => service.reconcileFinalSubmission(repo,adapter,record,actor,id);
  const saveHistory = (id=request1) => saveSubmissionHistory(repo,historyAdapter,record,actor,id);
+ const action=load('lib/questionnaire/contract-action.ts',{
+  '../documents/repository':evidence,'./final-check':finalChecker,
+  './final-submission':service,'./submission-history':{saveSubmissionHistory},
+  '../../public/contract-words.mjs':{CONTRACT_RENDERER_VERSION:'a'.repeat(64)},
+ });
+ const generate=(raw=draft,revision=1)=>action.generateCurrentContract({},record,revision,raw,[],'2026-09-17');
+ const complete=(input={requestId:request1,identityRevision:1,payload:draft,bindings:[]},as=actor)=>action.completeContractSave({},repo,adapter,historyAdapter,record,as,input,'2026-09-17');
  return {sqlite,repo,db,record,actor,draft,state,options,calls,prepare,commit,reconcile,saveHistory,
-  counts:()=>({cardWrites,historyWrites,validations}),service};
+  counts:()=>({cardWrites,historyWrites,validations}),service,generate,complete};
 }
 
 test('page reload reuses the same preparation despite a new request ID and clock tick',async t=>{
@@ -214,4 +222,47 @@ test('a prepared snapshot claimed by a competing tab cannot be superseded',async
  await assert.rejects(f.repo.prepare(f.record,request2,{...payload,values:{...payload.values,card:'DIFFERENT'}},f.actor),/SUBMISSION_PENDING/);
  assert.equal((await f.repo.get(f.record.id,request1)).state,'writing');
  assert.equal(await f.repo.get(f.record.id,request2),null);
+});
+
+
+test('server coordinator completes one durable operation and reuses it after reload',async t=>{
+ const f=fixture(t),first=await f.complete();
+ assert.equal(first.state,'verified');assert.equal(first.history_state,'verified');
+ const second=await f.complete({requestId:request2,identityRevision:1,payload:f.draft,bindings:[]});
+ assert.equal(second.request_id,first.request_id);assert.equal(f.counts().cardWrites,1);assert.equal(f.counts().historyWrites,1);
+});
+test('server coordinator reconciles an old uncertain save without another external update',async t=>{
+ const f=fixture(t);await f.prepare();f.options.readbackFails=true;await f.commit();
+ assert.equal((await f.repo.get(f.record.id,request1)).state,'uncertain');f.options.readbackFails=false;
+ const row=await f.complete({requestId:request2,identityRevision:1,payload:f.draft,bindings:[]});
+ assert.equal(row.request_id,request1);assert.equal(row.state,'verified');assert.equal(row.history_state,'verified');
+ assert.equal(f.counts().cardWrites,1);assert.equal(f.counts().historyWrites,1);
+});
+test('unconfirmed writes never repeat while a CURRENT validated contract remains downloadable',async t=>{
+ const f=fixture(t);f.options.rejectWrite=true;await f.complete();
+ const before=await f.repo.get(f.record.id,request1);assert.equal(before.state,'uncertain');
+ const count=f.calls.length,changed={...f.draft,answers:[{key:'fio',value:'CURRENT SYNTHETIC ANSWERS',checked:false}]};
+ const document=await f.generate(changed);assert.equal(document.data.client_name,'CURRENT SYNTHETIC ANSWERS');
+ assert.equal(f.calls.length,count,'Generating the file must not call CRM');
+ assert.equal((await f.repo.get(f.record.id,request1)).payload_json,before.payload_json,'Uncertain snapshot is untouched');
+ await f.complete();assert.equal(f.counts().cardWrites,1);
+ await assert.rejects(f.complete({requestId:request2,identityRevision:1,payload:changed,bindings:[]}),/SUBMISSION_PENDING/);
+ assert.equal(f.counts().cardWrites,1);
+});
+test('history recovery uses the same server action without repeating the card update',async t=>{
+ const f=fixture(t);f.options.historyReadFails=true;const first=await f.complete();
+ assert.equal(first.state,'verified');assert.equal(first.history_state,'pending');
+ assert.equal((await f.generate()).data.contract_number,'TEST');
+ f.options.historyReadFails=false;const second=await f.complete();
+ assert.equal(second.history_state,'verified');assert.equal(f.counts().cardWrites,1);assert.equal(f.counts().historyWrites,1);
+});
+test('generating a file cannot bypass validation or a changed client identity',async t=>{
+ const f=fixture(t);await assert.rejects(f.generate(f.draft,2),/CASE_IDENTITY_CHANGED/);
+ f.options.blockValidation=true;await assert.rejects(f.generate(),/ASSESSMENT_NOT_READY/);
+ assert.equal(f.calls.length,0);assert.equal(await f.repo.active(f.record.id),null);
+});
+test('server-only saved-version recovery still rejects another employee',async t=>{
+ const f=fixture(t);await f.prepare();
+ await assert.rejects(f.complete({requestId:request1},{...f.actor,id:'other-worker'}),/SUBMISSION_ACTOR_OR_IDENTITY_CHANGED/);
+ assert.equal(f.counts().cardWrites,0);
 });

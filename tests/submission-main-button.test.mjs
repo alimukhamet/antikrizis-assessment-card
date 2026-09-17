@@ -19,16 +19,17 @@ function fixture(t,{historyFails=false,conflict=false}={}){
  w.fetch=async(url,options)=>{
   if(!options?.body)return{ok:true,json:async()=>({submission:row})};
   const body=JSON.parse(options.body);actions.push(body.action);
-  if(body.action==='prepare')return{ok:true,json:async()=>({...row})};
-  assert.equal(body.requestId,requestId);
-  if(body.action==='commit'){
-   tries++;
-   row=tries===1&&!historyFails?{...row,outcomeCode:conflict?'NOT_SENT:ASSESSMENT_CHANGED_IN_CRM':'NOT_SENT:ASSESSMENT_PREFLIGHT_FAILED'}:{...row,state:'verified',assessmentSaved:true,outcomeCode:'READBACK_VERIFIED'};
-  }else if(body.action==='history'){
+  if(body.action==='generate')return{ok:true,json:async()=>({contract:{data:{synthetic:true},rendererVersion:version}})};
+  assert.equal(body.action,'complete');
+  // The durable ID is selected by the real server coordinator; the browser need not know its states.
+  tries++;
+  if(tries===1&&!historyFails){
+   row={...row,outcomeCode:conflict?'NOT_SENT:ASSESSMENT_CHANGED_IN_CRM':'NOT_SENT:ASSESSMENT_PREFLIGHT_FAILED'};
+  }else{
+   row={...row,state:'verified',assessmentSaved:true,outcomeCode:'READBACK_VERIFIED'};
    historyTries++;
    row=historyFails&&historyTries===1?{...row,historyState:'pending',historyOutcomeCode:'NOT_SENT:HISTORY_PREFLIGHT_FAILED'}:{...row,historySaved:true,historyState:'verified'};
-  }else if(body.action==='contract')return{ok:true,json:async()=>({contract:{data:{synthetic:true},rendererVersion:version}})};
-  else assert.fail('An unsent operation must not enter uncertain reconciliation: '+body.action);
+  }
   return{ok:true,json:async()=>({...row})};
  };
  w.eval(source);
@@ -43,16 +44,16 @@ function fixture(t,{historyFails=false,conflict=false}={}){
  return{click,actions,status:()=>w.document.getElementById('status').textContent,downloads:()=>downloads,recovery:()=>w.document.querySelector('details')};
 }
 test('same main button recovers a proven-unsent card and downloads without a manual resume click',async t=>{
- const f=fixture(t);await f.click();assert.match(f.status(),/ещё не отправлялась/);assert.equal(f.recovery().open,true);
- await f.click();assert.equal(f.downloads(),1);
- assert.deepEqual(f.actions,['prepare','commit','prepare','commit','history','contract']);
+ const f=fixture(t);await f.click();assert.match(f.status(),/не подтверждено/);assert.equal(f.downloads(),1);
+ await f.click();assert.equal(f.downloads(),2);
+ assert.deepEqual(f.actions,['generate','complete','generate','complete']);
 });
 test('same main button resumes a pending history without committing the card again',async t=>{
- const f=fixture(t,{historyFails:true});await f.click();assert.match(f.status(),/историю ещё не отправлялась/);
- await f.click();assert.equal(f.downloads(),1);
- assert.deepEqual(f.actions,['prepare','commit','history','prepare','history','contract']);
+ const f=fixture(t,{historyFails:true});await f.click();assert.match(f.status(),/история ещё не подтверждена/);assert.equal(f.downloads(),1);
+ await f.click();assert.equal(f.downloads(),2);
+ assert.deepEqual(f.actions,['generate','complete','generate','complete']);
 });
 test('a known CRM conflict is shown as a conflict, not an instruction to blindly resend',async t=>{
  const f=fixture(t,{conflict:true});await f.click();assert.match(f.status(),/Карточка изменилась в Bitrix/);
- assert.doesNotMatch(f.status(),/Нажмите «Скачать договор» ещё раз/);assert.equal(f.downloads(),0);
+ assert.doesNotMatch(f.status(),/Нажмите «Скачать договор» ещё раз/);assert.equal(f.downloads(),1);
 });

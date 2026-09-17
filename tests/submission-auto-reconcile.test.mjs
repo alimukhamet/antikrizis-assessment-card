@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {JSDOM} from 'jsdom';
 
-test('uncertain Bitrix save is reconciled read-only in the same download action', async () => {
+test('the browser uses one server synchronization action and does not orchestrate CRM state transitions', async () => {
   const dom = new JSDOM('<button id="anchor">Check</button><p id="status"></p>', {
     url: 'https://assessment.example', runScripts: 'outside-only',
   });
@@ -29,11 +29,11 @@ test('uncertain Bitrix save is reconciled read-only in the same download action'
     if (!options?.method) return {ok: true, json: async () => ({submission: row})};
     const body = JSON.parse(options.body);
     calls.push(body);
-    if (body.action === 'prepare') row = {requestId: body.requestId, state: 'prepared', assessmentSaved: false, historySaved: false, contractNumber: 'TEST'};
-    if (body.action === 'commit') row = {...row, state: 'uncertain', assessmentSaved: false, outcomeCode: 'ASSESSMENT_READBACK_MISMATCH'};
-    if (body.action === 'reconcile') row = {...row, state: 'verified', assessmentSaved: true, outcomeCode: 'READBACK_RECONCILED'};
-    if (body.action === 'history') row = {...row, historySaved: true};
-    if (body.action === 'contract') return {ok: true, json: async () => ({contract: {rendererVersion: 'a'.repeat(64), data: {client_name: 'SYNTHETIC CLIENT'}}})};
+    if (body.action === 'complete') {
+      assert.equal(downloads, 1, 'download must precede CRM confirmation');
+      row = {requestId: body.requestId, state: 'verified', assessmentSaved: true, historySaved: true};
+    }
+    if (body.action === 'generate') return {ok: true, json: async () => ({contract: {rendererVersion: 'a'.repeat(64), data: {client_name: 'SYNTHETIC CLIENT'}}})};
     return {ok: true, json: async () => row};
   };
 
@@ -45,8 +45,8 @@ test('uncertain Bitrix save is reconciled read-only in the same download action'
   const save = w.document.getElementById('saveAssessment');
   await save.onclick();
 
-  assert.deepEqual(calls.map(call => call.action), ['prepare', 'commit', 'reconcile', 'history', 'contract']);
-  assert.equal(calls.filter(call => call.action === 'commit').length, 1, 'CRM write must never be repeated');
+  assert.deepEqual(calls.map(call => call.action), ['generate', 'complete']);
+  assert.equal(calls.filter(call => ['commit','history','reconcile'].includes(call.action)).length, 0, 'Browser must not own CRM transitions');
   assert.equal(downloads, 1);
   assert.match(w.document.getElementById('status').textContent, /Договор готов/);
   dom.window.close();

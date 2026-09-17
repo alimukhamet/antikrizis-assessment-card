@@ -53,19 +53,31 @@ content excluding only newly generated CRM baseline and audit text. Concurrent
 identical insert losers may adopt the winning active record. The service always
 uses that record's request ID and persisted values, not its caller's replacement ID.
 
-## Limits and follow-on work
+## File generation and CRM confirmation are independent
 
-This is a targeted engine repair, not a rewrite of the whole application. The Word
-file still requires the existing CRM and history receipts; the business meaning of
-"saved contract" is unchanged. The browser still orchestrates multiple endpoints.
-A future single server coordinator/outbox could hide more of those details, but
-must preserve the same write boundaries and be migrated separately.
+The primary button now validates the current answers on the server (`generate`),
+saves the questionnaire draft, and makes the Word file available before CRM upload
+or save confirmation. The server's existing full `finalCheck` remains mandatory;
+client identity, evidence, document and destination checks are not bypassed.
+Generation is read-only and is not evidence of a signed contract, CRM save, or handoff.
+The response explicitly says synchronization was not checked.
 
-No database migration, runtime credential, approved contract template or CRM field
-mapping changes are required. Do not mass-reset old uncertain rows. Their historical
-error codes do not prove that nothing was sent. A particular stuck production deal
-requires its actual receipt/readback to establish recovery; code tests alone are not
-proof that deal 10479 is resolved.
+After the file is available, `complete` starts or resumes the CRM operation on the
+server: prepare, at most one claimed update, read-only reconciliation if needed,
+and history persistence. There are no new queues, timers that unlock receipts,
+background jobs, schema changes, keys, or storage resources. The browser awaits
+this request and shows the actual synchronization result separately from the file.
+A lost response leaves the original durable receipt available for a later retry.
+
+A CRM failure does not remove the file or claim a successful save. Even a historic
+uncertain receipt for older/different answers does not prevent generation from the
+CURRENT fully validated answers. Such a receipt still blocks overwriting CRM data
+until reconciled. We do not automatically resend or erase it. Resolving that old
+CRM state is distinct from making the requested Word document downloadable.
+
+The saved-version `contract` endpoint still requires both verified receipts.
+Existing clients and handoff checks retain their prior safety rules. The main
+button no longer needs the user to select an unfinished snapshot just to get a file.
 
 ## Focused checks
 

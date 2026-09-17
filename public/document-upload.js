@@ -27,7 +27,7 @@ window.DocumentUpload={mount(anchor,status){
    if(result.state==='prepared'){cancellable={...attempt};cancel.hidden=false;}
    if(result.state==='prepared')throw Error('Файлы ещё не отправлены. Устраните причину ошибки и повторите загрузку.');
     if(['writing','uncertain'].includes(result.state)&&!recovering){recovering=true;continue;}
-    if(result.state!=='verified')throw Error('Bitrix пока не подтвердил сохранение документов. Договор ещё не сформирован. Нажмите «Скачать договор» повторно — проверим результат без дублирования файлов.');
+    if(result.state!=='verified')throw Error('Bitrix пока не подтвердил сохранение документов. Нажмите «Скачать договор» повторно — проверим результат без дублирования файлов.');
     if(result.documentsUploaded){report('Документы сохранены в сделке.');return true;}
     if(!Number.isInteger(result.nextBatch)||result.nextBatch!==attempt.batchIndex+1)throw Error('Не удалось определить следующую часть загрузки.');attempt.batchIndex=result.nextBatch;recovering=false;
    }
