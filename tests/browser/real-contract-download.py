@@ -43,7 +43,7 @@ with sync_playwright() as p, TemporaryDirectory() as temp:
         const send=window.fetch;
         window.fetch=async(url,options)=>{
             const response=await send(url,options);
-            if(options?.body&&JSON.parse(options.body).action==='contract')return{ok:true,json:async()=>({contract:{rendererVersion:ContractRenderer.version,data}})};
+            if(options?.body&&JSON.parse(options.body).action==='complete')return{ok:true,json:async()=>({contract:{rendererVersion:ContractRenderer.version,data}})};
             return response;
         };
     }''', source)
@@ -63,7 +63,7 @@ with sync_playwright() as p, TemporaryDirectory() as temp:
         assert 'TEST-NOT-FOR-SIGNING' in text
         assert '{{' not in text and 'undefined' not in text
     actions = page.evaluate('fixture.calls.map(x=>x.action)')
-    assert actions == ['prepare','commit','history','contract']
+    assert actions == ['prepare','complete']
     with page.expect_download():
         page.locator('#downloadContractFile').click()
     assert page.evaluate('fixture.calls.map(x=>x.action)') == actions

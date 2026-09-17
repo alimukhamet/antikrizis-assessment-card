@@ -41,9 +41,10 @@ test('three unrecognized document details can be reviewed explicitly, then uploa
   else if(path.endsWith('/submission')){
    if(!body)value={submission:row};
    else if(body.action==='prepare')value=row={requestId:body.requestId,state:'prepared'};
-   else if(body.action==='commit')value=row={...row,state:'verified',assessmentSaved:true};
-   else if(body.action==='history')value=row={...row,historySaved:true};
-   else if(body.action==='contract')value={contract:{rendererVersion:'a'.repeat(64),data:{}}};
+   else if(body.action==='complete'){
+    assert.equal((await packages.checkDocumentPackage(repository,record,payload,'2026-09-16')).packageReady,true);
+    value=row={...row,state:'verified',assessmentSaved:true,historySaved:true,contract:{rendererVersion:'a'.repeat(64),data:{}}};
+   }
    else throw Error('Unexpected action '+body.action);
   }else throw Error('Unexpected request '+path);
   return{ok:true,json:async()=>value};
@@ -61,6 +62,6 @@ test('three unrecognized document details can be reviewed explicitly, then uploa
  }
  assert.equal(w.AssessmentCheck.result().readyToSubmit,true);await download.onclick();
  assert.equal(downloads,1);assert.equal(calls.filter(c=>c.path.endsWith('/document-reviews')).length,3);
- assert.deepEqual(calls.filter(c=>c.path.endsWith('/submission')).map(c=>c.body.action),['prepare','commit','history','contract']);
+ assert.deepEqual(calls.filter(c=>c.path.endsWith('/submission')).map(c=>c.body.action),['prepare','complete']);
  assert.equal(calls.filter(c=>c.path.endsWith('/uploads')).length,1);
 });

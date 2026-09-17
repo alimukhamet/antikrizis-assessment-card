@@ -6,6 +6,7 @@ import {assertSubmissionDestination} from '../../../../../lib/questionnaire/subm
 import {SubmissionRepository,type SubmissionRow} from '../../../../../lib/questionnaire/submission-repository';
 import {prepareFinalSubmission,commitFinalSubmission,reconcileFinalSubmission,cancelFinalPreparation,savedContract} from '../../../../../lib/questionnaire/final-submission';
 import {saveSubmissionHistory} from '../../../../../lib/questionnaire/submission-history';
+import {completeContractOperation} from '../../../../../lib/questionnaire/contract-operation';
 import {createAssessmentHistoryAdapter} from '../../../../../lib/crm/assessment-history';
 import {createAssessmentAdapter,AssessmentWriteError} from '../../../../../lib/crm/assessment-write';
 import {syncAssessmentIntake,type AssessmentIntakeSyncResult} from '../../../../../lib/crm/assessment-intake-sync';
@@ -13,14 +14,29 @@ export async function POST(request:Request,context:{params:Promise<{dealId:strin
  const denied=await requireStaffRequest(request);if(denied)return denied;
  try{
   const body=await boundedJson(request,256000);
-  if(typeof body.requestId!=='string'||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.requestId)||!['prepare','commit','reconcile','cancel','history','contract'].includes(String(body.action)))throw new RepositoryError('INVALID_SUBMISSION_REQUEST',400);
+  if(typeof body.requestId!=='string'||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.requestId)||!['prepare','complete','commit','reconcile','cancel','history','contract'].includes(String(body.action)))throw new RepositoryError('INVALID_SUBMISSION_REQUEST',400);
   const {dealId}=await context.params,{record,repository,actor}=await evidenceContext(request,dealId);
   const {env}=await import('cloudflare:workers');
   const runtime=env as typeof env & {DB?:D1Database};
   if(!runtime.DB)throw new RepositoryError('EVIDENCE_STORAGE_NOT_CONFIGURED',503);
-  if(['prepare','commit','history'].includes(String(body.action)))assertSubmissionDestination(record,body.destination);
+  if(['prepare','complete','commit','history'].includes(String(body.action)))assertSubmissionDestination(record,body.destination);
   const submissions=new SubmissionRepository(runtime.DB),adapter=createAssessmentAdapter(process.env.BITRIX_WEBHOOK??'');
   if(body.action==='contract')return Response.json({contract:await savedContract(submissions,record,actor,body.requestId)},{headers:{'cache-control':'no-store'}});
+  if(body.action==='complete'){
+   const signal=AbortSignal.timeout(90_000);
+   const result=await completeContractOperation({repository,submissions,record,actor,requestId:body.requestId,day:operatingDay(),signal,
+    adapter:createAssessmentAdapter(process.env.BITRIX_WEBHOOK??'',fetch,signal),
+    historyAdapter:createAssessmentHistoryAdapter(process.env.BITRIX_WEBHOOK??'',fetch,signal),
+    currentRecord:async()=>{
+     const fresh=await evidenceContext(request,dealId);
+     if(fresh.actor.id!==actor.id)throw new RepositoryError('SUBMISSION_ACTOR_OR_IDENTITY_CHANGED');
+     assertSubmissionDestination(fresh.record,body.destination);
+     return fresh.record;
+    },
+   }).catch(error=>{if(signal.aborted)throw new RepositoryError('CONTRACT_OPERATION_TIMEOUT',503);throw error;});
+   const assessmentIntakeSync=result.contract?await boundedVerifiedAssessmentIntakeSync(repository,dealId,result.row):undefined;
+   return Response.json({...present(result.row,assessmentIntakeSync),contract:result.contract,message:result.message},{headers:{'cache-control':'no-store'}});
+  }
   let row:SubmissionRow|null;
   if(body.action==='prepare'){
    if(!Number.isInteger(body.identityRevision))throw new RepositoryError('INVALID_SUBMISSION_REQUEST',400);

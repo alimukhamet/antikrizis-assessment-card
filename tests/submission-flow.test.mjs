@@ -4,17 +4,17 @@ function setup({uncertain=false,editDuringPrepare=false}={}){
  w.HostedAssessment={ready:()=>true,getContext:()=>({client:{external:{dealId:'11665'}}})};w.ServerDrafts={capture:()=>payload,reviewBindings:()=>[]};w.URL.createObjectURL=()=> 'blob:test';w.URL.revokeObjectURL=()=>{};w.HTMLAnchorElement.prototype.click=()=>{downloads++;};
  w.SubmissionDestination={confirm:async()=>({dealId:'11665',iin:'SYNTHETIC',identityRevision:1})};
  w.ContractRenderers={['a'.repeat(64)]:{render:async(data,version)=>{rendered={data,version};return new w.Blob(['SYNTHETIC CONTRACT'],{type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});}}};
- w.fetch=async(url,options)=>{if(!options?.method)return{ok:true,json:async()=>({submission:row})};const b=JSON.parse(options.body);calls.push(b);if(b.action==='prepare'){row={requestId:b.requestId,state:'prepared',assessmentSaved:false,historySaved:false,contractNumber:'TEST',reviewText:'SAVED SNAPSHOT'};if(editDuringPrepare)payload={answers:['EDITED']};}if(b.action==='commit')row={...row,state:uncertain?'uncertain':'verified',assessmentSaved:!uncertain};if(b.action==='reconcile')row={...row,state:'verified',assessmentSaved:true};if(b.action==='history')row={...row,historySaved:true};if(b.action==='cancel')row={...row,state:'cancelled'};return{ok:true,json:async()=>b.action==='contract'?{contract:{rendererVersion:'a'.repeat(64),data:{client_name:'SAVED PERSON'}}}:row};};
+ w.fetch=async(url,options)=>{if(!options?.method)return{ok:true,json:async()=>({submission:row})};const b=JSON.parse(options.body);calls.push(b);if(b.action==='prepare'){row={requestId:b.requestId,state:'prepared',assessmentSaved:false,historySaved:false,contractNumber:'TEST',reviewText:'SAVED SNAPSHOT'};if(editDuringPrepare)payload={answers:['EDITED']};}if(b.action==='complete'){const pending=uncertain&&row.state==='prepared';row={...row,state:pending?'uncertain':'verified',assessmentSaved:!pending,historySaved:!pending,contract:pending?null:{rendererVersion:'a'.repeat(64),data:{client_name:'SAVED PERSON'}}};}if(b.action==='cancel')row={...row,state:'cancelled'};return{ok:true,json:async()=>row};};
  w.eval(fs.readFileSync(new URL('../public/submission-flow.js',import.meta.url),'utf8'));const flow=w.SubmissionFlow.mount(w.document.getElementById('anchor'),w.document.getElementById('status'));
  const check=ready=>flow.checked({readyToSubmit:ready,identityRevision:1},{dealId:'11665',payload,bindings:[],signature:JSON.stringify({payload,bindings:[]})});
  return{w,flow,check,calls,save:[...w.document.querySelectorAll('button')].find(b=>b.textContent==='Скачать договор'),resume:()=>[...w.document.querySelectorAll('button')].find(b=>b.textContent.startsWith('Продолжить сохранение')),rendered:()=>rendered,downloads:()=>downloads};
 }
-test('one action saves fields, history and downloads the immutable contract snapshot',async()=>{const s=setup();s.check(false);assert.equal(s.save.disabled,false);s.check(true);await s.save.onclick();assert.deepEqual(s.calls.map(c=>c.action),['prepare','commit','history','contract']);assert.equal(new Set(s.calls.map(c=>c.requestId)).size,1);assert.equal(s.rendered().data.client_name,'SAVED PERSON');assert.equal(s.downloads(),1);});
-test('interrupted save resumes with readback, without another commit',async()=>{const s=setup({uncertain:true});s.check(true);await s.save.onclick();assert.deepEqual(s.calls.map(c=>c.action),['prepare','commit']);assert.equal(s.downloads(),0);await new Promise(setImmediate);await s.resume().onclick();assert.deepEqual(s.calls.map(c=>c.action),['prepare','commit','reconcile','history','contract']);assert.equal(s.downloads(),1);});
+test('one action saves fields, history and downloads the immutable contract snapshot',async()=>{const s=setup();s.check(false);assert.equal(s.save.disabled,false);s.check(true);await s.save.onclick();assert.deepEqual(s.calls.map(c=>c.action),['prepare','complete']);assert.equal(new Set(s.calls.map(c=>c.requestId)).size,1);assert.equal(s.rendered().data.client_name,'SAVED PERSON');assert.equal(s.downloads(),1);});
+test('interrupted save resumes with readback, without another commit',async()=>{const s=setup({uncertain:true});s.check(true);await s.save.onclick();assert.deepEqual(s.calls.map(c=>c.action),['prepare','complete']);assert.equal(s.downloads(),0);await new Promise(setImmediate);await s.resume().onclick();assert.deepEqual(s.calls.map(c=>c.action),['prepare','complete','complete']);assert.equal(s.downloads(),1);});
 test('editing answers during preparation cancels before any CRM write',async()=>{const s=setup({editDuringPrepare:true});s.check(true);await s.save.onclick();assert.deepEqual(s.calls.map(c=>c.action),['prepare','cancel']);assert.equal(s.downloads(),0);});
 test('download starts validation and saves draft documents before preparing the contract',async()=>{
  const s=setup(),steps=[];s.w.AssessmentCheck={run:async()=>{steps.push('check');s.check(true);},result:()=>({readyToSubmit:true})};s.w.ServerDrafts.save=async()=>{steps.push('draft');return true;};s.w.AssessmentDocumentUpload={submit:async()=>steps.push('documents')};const fetch=s.w.fetch;s.w.fetch=async(url,options)=>{if(options?.method)steps.push(JSON.parse(options.body).action);return fetch(url,options);};
- await s.save.onclick();assert.deepEqual(steps,['check','draft','documents','prepare','commit','history','contract']);assert.equal(s.downloads(),1);
+ await s.save.onclick();assert.deepEqual(steps,['check','draft','documents','prepare','complete']);assert.equal(s.downloads(),1);
 });
 test('incomplete answers and failed document persistence stop before contract submission',async()=>{
  const incomplete=setup();incomplete.w.AssessmentCheck={run:async()=>{},result:()=>({answersComplete:false})};await incomplete.save.onclick();assert.equal(incomplete.calls.length,0);assert.equal(incomplete.downloads(),0);
@@ -39,7 +39,7 @@ test('cancelling destination review prevents document, credential, field and his
  const s=setup();s.check(true);let documents=0;s.w.SubmissionDestination.confirm=async()=>null;s.w.AssessmentDocumentUpload={submit:async()=>documents++};await s.save.onclick();assert.equal(documents,0);assert.equal(s.calls.length,0);
 });
 test('every outbound submission action includes the confirmed destination',async()=>{
- const s=setup();s.check(true);await s.save.onclick();for(const call of s.calls.filter(c=>['prepare','commit','history'].includes(c.action)))assert.deepEqual(call.destination,{dealId:'11665',iin:'SYNTHETIC',identityRevision:1});
+ const s=setup();s.check(true);await s.save.onclick();for(const call of s.calls.filter(c=>['prepare','complete'].includes(c.action)))assert.deepEqual(call.destination,{dealId:'11665',iin:'SYNTHETIC',identityRevision:1});
 });
 test('a changed answer during destination review prevents all outbound writes',async()=>{
  const s=setup();s.check(true);s.w.SubmissionDestination.confirm=async()=>{s.w.ServerDrafts.capture=()=>({answers:['DIFFERENT']});return{dealId:'11665',iin:'SYNTHETIC',identityRevision:1};};await s.save.onclick();assert.equal(s.calls.length,0);
@@ -52,7 +52,7 @@ test('download exposes immediate busy/progress and retains a direct file link wi
  await s.save.onclick();assert.equal(s.calls.length,0);finish(true);await pending;
  assert.equal(events.at(-1).busy,false);assert.equal(s.downloads(),1);
  const link=s.w.document.getElementById('downloadContractFile');assert.equal(link.hidden,false);assert.match(link.download,/11665\.docx$/);assert.equal(link.isConnected,true);
- link.click();assert.equal(s.downloads(),2);assert.equal(s.calls.filter(c=>c.action==='commit').length,1);
+ link.click();assert.equal(s.downloads(),2);assert.equal(s.calls.filter(c=>c.action==='complete').length,1);
  s.flow.invalidate();assert.equal(link.hidden,true);assert.equal(link.hasAttribute('href'),false);s.w.close();
 });
 test('download and its controls do not wait for optional recovery status after completion',async()=>{
@@ -81,7 +81,7 @@ test('real upload and submission flows recover a delayed document receipt and th
   if(!options)return new Promise(()=>{});
   uploads.push(JSON.parse(options.body));return{ok:true,json:async()=>uploads.length===1?{state:'uncertain'}:{state:'verified',documentsUploaded:true}};
  };
- await s.save.onclick();assert.equal(uploads.length,2);assert.equal(uploads[1].action,'reconcile');assert.equal(uploads[0].requestId,uploads[1].requestId);assert.deepEqual(s.calls.map(c=>c.action),['prepare','commit','history','contract']);assert.equal(s.downloads(),1);s.w.close();
+ await s.save.onclick();assert.equal(uploads.length,2);assert.equal(uploads[1].action,'reconcile');assert.equal(uploads[0].requestId,uploads[1].requestId);assert.deepEqual(s.calls.map(c=>c.action),['prepare','complete']);assert.equal(s.downloads(),1);s.w.close();
 });
 
 test('an answer edited during asynchronous rendering prevents a stale download',async()=>{
@@ -94,13 +94,13 @@ test('an answer edited during asynchronous rendering prevents a stale download',
 });
 test('an answer edited while the saved contract is fetched prevents rendering',async()=>{
  const s=setup();s.check(true);const fetch=s.w.fetch;
- s.w.fetch=async(url,options)=>{const result=await fetch(url,options);if(options?.method&&JSON.parse(options.body).action==='contract')s.w.ServerDrafts.capture=()=>({answers:['CHANGED']});return result;};
+ s.w.fetch=async(url,options)=>{const result=await fetch(url,options);if(options?.method&&JSON.parse(options.body).action==='complete')s.w.ServerDrafts.capture=()=>({answers:['CHANGED']});return result;};
  await s.save.onclick();assert.equal(s.downloads(),0);assert.equal(s.rendered(),null);s.w.close();
 });
-test('an answer edited during history persistence prevents an outdated final file',async()=>{
+test('an answer edited during server continuation prevents an outdated final file',async()=>{
  const s=setup();s.check(true);const fetch=s.w.fetch;
- s.w.fetch=async(url,options)=>{const result=await fetch(url,options);if(options?.method&&JSON.parse(options.body).action==='history')s.w.ServerDrafts.capture=()=>({answers:['CHANGED']});return result;};
- await s.save.onclick();assert.equal(s.downloads(),0);assert.equal(s.calls.some(call=>call.action==='contract'),false);s.w.close();
+ s.w.fetch=async(url,options)=>{const result=await fetch(url,options);if(options?.method&&JSON.parse(options.body).action==='complete')s.w.ServerDrafts.capture=()=>({answers:['CHANGED']});return result;};
+ await s.save.onclick();assert.equal(s.downloads(),0);assert.equal(s.calls.filter(call=>call.action==='complete').length,1);s.w.close();
 });
 test('an empty renderer result never becomes a successful downloadable contract',async()=>{
  const s=setup();s.check(true);s.w.ContractRenderers['a'.repeat(64)].render=async()=>new s.w.Blob([]);

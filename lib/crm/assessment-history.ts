@@ -1,9 +1,10 @@
 import {bitrixHeaders} from './http-headers'; export class AssessmentHistoryError extends Error{constructor(public code:string,public notStarted=false){super(code);}}
 /** Uses only deal comments; never updates stages, invoices, files or assessment fields. */
-export function createAssessmentHistoryAdapter(webhook:string,send:typeof fetch=fetch){
+export function createAssessmentHistoryAdapter(webhook:string,send:typeof fetch=fetch,operationSignal?:AbortSignal){
  async function call(method:string,body:unknown){
   if(!webhook)throw new AssessmentHistoryError('BITRIX_NOT_CONFIGURED');
-  const response=await send(webhook.replace(/\/?$/,'/')+method+'.json',{method:'POST',headers:bitrixHeaders(webhook),body:JSON.stringify(body),redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(20000)});
+  operationSignal?.throwIfAborted();
+  const response=await send(webhook.replace(/\/?$/,'/')+method+'.json',{method:'POST',headers:bitrixHeaders(webhook),body:JSON.stringify(body),redirect:'manual',cache:'no-store',signal:operationSignal?AbortSignal.any([operationSignal,AbortSignal.timeout(20000)]):AbortSignal.timeout(20000)});
   if(!response.ok||!response.body)throw new AssessmentHistoryError('HISTORY_REQUEST_FAILED');
   const reader=response.body.getReader(),decoder=new TextDecoder();let text='',size=0;
   for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>2*1024*1024){await reader.cancel();throw new AssessmentHistoryError('HISTORY_RESPONSE_TOO_LARGE');}text+=decoder.decode(value,{stream:true});}
@@ -52,6 +53,7 @@ export function createAssessmentHistoryAdapter(webhook:string,send:typeof fetch=
   });
   if(prior)return prior;
   // Caller claims a durable once-only intent. A lost response is followed only by reads.
+  if(operationSignal?.aborted)throw new AssessmentHistoryError('HISTORY_PREFLIGHT_FAILED',true);
   try{await call('crm.timeline.comment.add',{fields:{ENTITY_ID:Number(dealId),ENTITY_TYPE:'deal',COMMENT:expected.text}});}catch{/* Reconcile even when the add response was lost. */}
   const saved=await find(dealId,submissionId,lawyerCard);if(!saved)throw new AssessmentHistoryError('HISTORY_OUTCOME_UNCERTAIN');return saved;
  }
