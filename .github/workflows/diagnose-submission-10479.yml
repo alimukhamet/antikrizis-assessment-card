@@ -1,0 +1,25 @@
+name: Diagnose submission 10479
+on:
+  push:
+    branches: [diagnose/submission-10479]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - run: npm ci --no-audit --no-fund
+      - name: Read submission state only
+        run: |
+          npx --no-install wrangler d1 execute antikrizis-assessment-card-production-db --remote --config wrangler.anti-krizis.jsonc --command "SELECT c.external_id AS deal_id, s.request_id, s.actor_id, s.authentication, s.state, s.outcome_code, s.history_state, s.history_outcome_code, s.created_at, s.updated_at FROM assessment_submissions s JOIN assessment_cases c ON c.id=s.case_id WHERE c.external_id='10479' ORDER BY s.created_at DESC LIMIT 10;"
