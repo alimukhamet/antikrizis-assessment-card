@@ -30,8 +30,9 @@ export class SubmissionRepository {
   const active=await this.active(record.id);
   if(active){
    if(active.identity_revision!==record.identity_revision)throw new RepositoryError('SUBMISSION_PENDING_OR_IDENTITY_CHANGED');
+   if(active.actor_id===actor.id&&active.payload_hash===hash)return active;
    // A same-worker prepared snapshot has never claimed the external write. It is safe to
-   // supersede after a page reload/new request ID instead of permanently blocking the deal.
+   // supersede after a page reload/new request ID when the employee changed the answers.
    if(active.actor_id===actor.id&&active.state==='prepared'){
     await this.db.prepare("UPDATE assessment_submissions SET state='cancelled',outcome_code='SUPERSEDED_BEFORE_WRITE',updated_at=? WHERE case_id=? AND request_id=? AND actor_id=? AND state='prepared'")
      .bind(new Date().toISOString(),record.id,active.request_id,actor.id).run();
