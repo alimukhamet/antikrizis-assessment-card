@@ -31,12 +31,15 @@ jobs:
           PY
           git apply --index --check /tmp/coordinator.patch
           git apply --index /tmp/coordinator.patch
+          test "$(git hash-object tests/review-to-download.test.mjs)" = '3ab05cb8ac7363f5db53acda149acdd0b39cd250'
           git diff --cached --stat
       - run: npm ci --no-audit --no-fund
       - name: Zero-warning lint
         run: npm run lint -- --max-warnings=0
       - name: Type check
         run: npx --no-install tsc --noEmit
+      - name: Focused coordinator and document-review regressions
+        run: node --test tests/review-to-download.test.mjs tests/contract-operation-route.test.mjs tests/submission-engine-regression.test.mjs tests/submission-flow.test.mjs tests/submission-main-button.test.mjs tests/submission-auto-reconcile.test.mjs
       - name: Full build and regression suite
         run: |
           if npm test > /tmp/assessment-tests.log 2>&1; then
