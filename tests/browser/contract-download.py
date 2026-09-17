@@ -21,12 +21,10 @@ SETUP = r'''() => {
  w.fetch=async(url,options)=>{
   if(!options?.method)return {ok:true,json:async()=>({submission:row})};
   const b=JSON.parse(options.body);calls.push(b);
-  if(b.action==='prepare'&&!row)row={requestId:b.requestId,state:'prepared',assessmentSaved:false,historySaved:false,contractNumber:'SYNTHETIC',reviewText:'SYNTHETIC SNAPSHOT'};
-  if(b.action==='commit')row={...row,state:'verified',assessmentSaved:true};
-  if(b.action==='reconcile')row={...row,state:'verified',assessmentSaved:true};
-  if(b.action==='history')row={...row,historySaved:true};
+  if(['complete','resume'].includes(b.action))row={requestId:row?.requestId||b.requestId,state:'verified',assessmentSaved:true,historySaved:true,contractNumber:'SYNTHETIC',reviewText:'SYNTHETIC SNAPSHOT',workflow:{status:'ready'},contract:{rendererVersion:'a'.repeat(64),data:{client_name:'SAVED PERSON'}}};
+  else throw Error('Unexpected browser save step '+b.action);
   if(b.action===w.editOnAction)payload={answers:['EDITED']};
-  return{ok:true,json:async()=>b.action==='contract'?{contract:{rendererVersion:'a'.repeat(64),data:{client_name:'SAVED PERSON'}}}:row};
+  return{ok:true,json:async()=>row};
  };
  document.addEventListener('click',e=>{if(e.target.id==='downloadContractFile'&&!e.defaultPrevented)downloads.push(e.target.href);});
  w.fixture={calls,generated,downloads,renderer,edit:()=>payload={answers:['EDITED']},switchClient:()=>dealId='900001',mark:()=>{const context={dealId,payload,bindings:[],signature:JSON.stringify({payload,bindings:[]})};w.fixture.flow.checked({readyToSubmit:true,identityRevision:1},context);}};
@@ -58,7 +56,7 @@ def run():
         with page.expect_download() as d:
             page.evaluate('fixture.save.onclick()')
         assert d.value.suggested_filename.endswith('11665.docx')
-        assert state()['actions']==['prepare','commit','history','contract']
+        assert state()['actions']==['complete']
         assert not state()['disabled'] and not state()['linkHidden']
         assert page.evaluate('fixture.generated[0].client_name')=='SAVED PERSON'
         passed('one click creates a real browser download from the saved snapshot')
@@ -84,7 +82,7 @@ def run():
         assert state()['downloads']==0
         passed('switching clients during rendering blocks the wrong client file')
 
-        for action in ['contract','history']:
+        for action in ['complete']:
             setup();page.evaluate('(action)=>window.editOnAction=action',action);page.evaluate('fixture.save.onclick()')
             assert state()['downloads']==0
             assert page.evaluate('fixture.generated.length')==0
@@ -110,7 +108,7 @@ def run():
         assert not state()['disabled']
         page.evaluate('ContractRenderer.ready=async()=>{}')
         with page.expect_download(): page.evaluate('fixture.save.onclick()')
-        assert state()['actions'].count('commit')==1
+        assert state()['actions'].count('complete')==1
         passed('dependency failure prevents writes and a retry works without reloading')
 
         setup();page.evaluate("const render=fixture.renderer.render;let first=true;fixture.renderer.render=async(...args)=>{if(first){first=false;throw Error('SYNTHETIC RENDER FAILURE')}return render(...args)};void 0;");page.evaluate('fixture.save.onclick()')
@@ -118,7 +116,7 @@ def run():
         page.wait_for_function("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Скачать сохранённый договор')")
         page.locator('details').evaluate('(node)=>node.open=true')
         with page.expect_download(): page.get_by_role('button',name='Скачать сохранённый договор',exact=True).click()
-        assert state()['actions'].count('commit')==1 and state()['actions'].count('history')==1
+        assert state()['actions']==['complete','resume']
         passed('saved contract can be recovered after render failure without duplicate writes')
 
         setup()

@@ -5,6 +5,7 @@ import type {EvidenceRepository} from '../../../../../lib/documents/repository';
 import {assertSubmissionDestination} from '../../../../../lib/questionnaire/submission-destination';
 import {SubmissionRepository,type SubmissionRow} from '../../../../../lib/questionnaire/submission-repository';
 import {prepareFinalSubmission,commitFinalSubmission,reconcileFinalSubmission,cancelFinalPreparation,savedContract} from '../../../../../lib/questionnaire/final-submission';
+import {completeSubmission} from '../../../../../lib/questionnaire/complete-submission';
 import {saveSubmissionHistory} from '../../../../../lib/questionnaire/submission-history';
 import {createAssessmentHistoryAdapter} from '../../../../../lib/crm/assessment-history';
 import {createAssessmentAdapter,AssessmentWriteError} from '../../../../../lib/crm/assessment-write';
@@ -13,13 +14,26 @@ export async function POST(request:Request,context:{params:Promise<{dealId:strin
  const denied=await requireStaffRequest(request);if(denied)return denied;
  try{
   const body=await boundedJson(request,256000);
-  if(typeof body.requestId!=='string'||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.requestId)||!['prepare','commit','reconcile','cancel','history','contract'].includes(String(body.action)))throw new RepositoryError('INVALID_SUBMISSION_REQUEST',400);
+  if(typeof body.requestId!=='string'||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.requestId)||!['prepare','commit','reconcile','cancel','history','contract','complete','resume'].includes(String(body.action)))throw new RepositoryError('INVALID_SUBMISSION_REQUEST',400);
   const {dealId}=await context.params,{record,repository,actor}=await evidenceContext(request,dealId);
   const {env}=await import('cloudflare:workers');
   const runtime=env as typeof env & {DB?:D1Database};
   if(!runtime.DB)throw new RepositoryError('EVIDENCE_STORAGE_NOT_CONFIGURED',503);
-  if(['prepare','commit','history'].includes(String(body.action)))assertSubmissionDestination(record,body.destination);
-  const submissions=new SubmissionRepository(runtime.DB),adapter=createAssessmentAdapter(process.env.BITRIX_WEBHOOK??'');
+  if(['prepare','commit','history','complete','resume'].includes(String(body.action)))assertSubmissionDestination(record,body.destination);
+  const submissions=new SubmissionRepository(runtime.DB);
+  // Bound the entire coordinated CRM sequence, not just each individual request.
+  // Aborting a request never resets a possibly attempted write to a sendable state.
+  const coordinated=body.action==='complete'||body.action==='resume';
+  const deadlineAt=Date.now()+80_000,deadline=coordinated?AbortSignal.timeout(80_000):null;
+  const send:typeof fetch=(url,init)=>fetch(url,deadline?{...init,signal:init?.signal?AbortSignal.any([init.signal,deadline]):deadline}:init);
+  const adapter=createAssessmentAdapter(process.env.BITRIX_WEBHOOK??'',send);
+  if(coordinated){
+   if(body.action==='complete'&&(!Number.isInteger(body.identityRevision)||!body.payload))throw new RepositoryError('INVALID_SUBMISSION_REQUEST',400);
+   const input=body.action==='complete'?{identityRevision:body.identityRevision as number,payload:body.payload,bindings:body.bindings}:undefined;
+   const result=await completeSubmission({repository,submissions,assessment:adapter,history:createAssessmentHistoryAdapter(process.env.BITRIX_WEBHOOK??'',send)},record,actor,body.requestId,operatingDay(),input,deadlineAt);
+   const sync=result.row.state==='verified'?await boundedVerifiedAssessmentIntakeSync(repository,dealId,result.row):undefined;
+   return Response.json({...present(result.row,sync),workflow:result.workflow,contract:result.contract},{headers:{'cache-control':'no-store'}});
+  }
   if(body.action==='contract')return Response.json({contract:await savedContract(submissions,record,actor,body.requestId)},{headers:{'cache-control':'no-store'}});
   let row:SubmissionRow|null;
   if(body.action==='prepare'){
