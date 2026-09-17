@@ -1,0 +1,22 @@
+name: Export contract repair source
+on:
+  push:
+    branches: [fix/one-button-contract]
+    paths: [.github/workflows/export-contract-source.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Archive only tracked release source, no credentials or customer data
+        run: git archive --format=tar.gz --output=/tmp/assessment-source.tar.gz e0489184330bf19e7eeed04341f6c6092f94a630
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exact-contract-source
+          path: /tmp/assessment-source.tar.gz
+          retention-days: 1
