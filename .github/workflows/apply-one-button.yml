@@ -1,0 +1,89 @@
+name: Verify exact one-button contract repair
+on:
+  push:
+    branches: [fix/one-button-contract]
+    paths: [.github/workflows/apply-one-button.yml, '.github/repairs/one-button/**']
+permissions:
+  contents: write
+jobs:
+  verify:
+    if: github.repository == 'alimukhamet/antikrizis-assessment-card'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ANTIKRIZIS_EXTERNAL_DEPLOY: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Apply only the hash-verified locally tested source
+        run: |
+          python - <<'PY'
+          import base64, gzip, hashlib, pathlib
+          source=''.join(pathlib.Path(f'.github/repairs/one-button/{i}.b64').read_text() for i in range(4))
+          patch=gzip.decompress(base64.b64decode(source,validate=True))
+          assert hashlib.sha256(patch).hexdigest()=='f9c8e4964c01895705d04b9715b5652b808a6607bdb0081c95c0a29899642ce0'
+          pathlib.Path('/tmp/one-button.patch').write_bytes(patch)
+          PY
+          git apply --unidiff-zero --check /tmp/one-button.patch
+          git apply --unidiff-zero /tmp/one-button.patch
+          cat > /tmp/one-button.sha256 <<'HASHES'
+          10c6b8e6f7483819a1e5a1633b798afe7f62954348dcdad89160f5c8d79dd2f3  app/api/assessment/[dealId]/submission/route.ts
+          09987bcce311303c8fbdb1e02e0b5df8743dbf5a1dcbd67d5fe0f79c8cf5cceb  docs/contract-save-engine.md
+          39d2258febfc16288ec583d96fffcfcd1066cad7c512f8d019f2ebd6aae64887  lib/questionnaire/contract-action.ts
+          9837101f58f1809c1fa10aed1012f7e9ee68d8d9368c4e066a46683b6ff989f2  public/submission-flow.js
+          ad7d9234d6c23d14f436be43ac82bfee0143fa0e09b7d20412f56f354d68831a  tests/browser/contract-download.py
+          6fab5dc7b50cf1ed788ea02f97b666e2aa2ce203e79b9e679de688490846ff53  tests/browser/real-contract-download.py
+          8719f1ae282f983bcc7a0e467ce00968b9a0dcfd8878ed391f68a949d25e62f6  tests/contract-action-route.test.mjs
+          983ece8e57af889c2f7f33111d188e2278427cbb3bc0ac7cd5c81b8931e8f13e  tests/submission-auto-reconcile.test.mjs
+          3a17280e05da2ea8e7fae323eacb1862f646feb03877ecd28c76443f581460cc  tests/submission-engine-regression.test.mjs
+          74a7092794319fdd4ccf1eef2bb2f4afd743d55d4a6187336ba1b686f4afe474  tests/submission-flow.test.mjs
+          b49799ba61942a2732d836d89ac6c50b71185ec5f3bdc50e1333a1a4beb9cae5  tests/submission-main-button.test.mjs
+          HASHES
+          sha256sum --check /tmp/one-button.sha256
+      - run: npm ci --no-audit --no-fund
+      - name: Lint with zero warnings
+        run: npm run lint -- --max-warnings=0
+      - name: Type check
+        run: npx --no-install tsc --noEmit
+      - name: Build production application
+        run: npm run build:anti-krizis
+      - name: Validate Worker package without publishing or accessing production
+        run: npx --no-install wrangler deploy --dry-run --config wrangler.anti-krizis.jsonc --outdir /tmp/one-button-worker
+      - name: Complete regression suite
+        run: |
+          if node --test tests/*.test.mjs > /tmp/one-button-tests.log 2>&1; then
+            tail -12 /tmp/one-button-tests.log
+          else
+            grep -A35 '^not ok' /tmp/one-button-tests.log || true
+            tail -12 /tmp/one-button-tests.log
+            exit 1
+          fi
+      - name: Preserve verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: one-button-verification
+          path: |
+            /tmp/one-button-tests.log
+            /tmp/one-button.sha256
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Commit only verified source and tests on the repair branch
+        run: |
+          sha256sum --check /tmp/one-button.sha256
+          git diff --exit-code -- templates package.json package-lock.json public/contract-renderer.js public/contract-words.mjs lib/questionnaire/schema.json
+          python - <<'PY'
+          import pathlib, subprocess
+          allowed={line.split('  ',1)[1] for line in pathlib.Path('/tmp/one-button.sha256').read_text().splitlines()}
+          changed=set(subprocess.check_output(['git','diff','--name-only'],text=True).splitlines())
+          new=set(subprocess.check_output(['git','ls-files','--others','--exclude-standard'],text=True).splitlines())
+          assert (changed|new)<=allowed, repr((changed|new)-allowed)
+          subprocess.run(['git','add','--',*sorted(allowed)],check=True)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Make validated contract downloads independent of CRM confirmation and coordinate saves on server'
+          git push origin HEAD:refs/heads/fix/one-button-contract
