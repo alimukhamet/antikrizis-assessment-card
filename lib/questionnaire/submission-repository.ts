@@ -14,18 +14,32 @@ export type SubmissionRow = {
  history_state:'pending'|'writing'|'uncertain'|'verified';history_comment_id:string|null;history_outcome_code:string|null;
  created_at:string;updated_at:string;
 };
-/** No automatic lease expiry: an interrupted external write must be reconciled. */
+/** No automatic lease expiry after an external write: writing/uncertain work must be reconciled. */
 export class SubmissionRepository {
  constructor(private db:D1Database){}
  get(caseId:string,requestId:string){return this.db.prepare('SELECT * FROM assessment_submissions WHERE case_id=? AND request_id=?').bind(caseId,requestId).first<SubmissionRow>();}
  latest(caseId:string,actorId:string){return this.db.prepare("SELECT * FROM assessment_submissions WHERE case_id=? AND actor_id=? AND state<>'cancelled' ORDER BY CASE WHEN state<>'verified' THEN 0 WHEN history_state<>'verified' THEN 1 ELSE 2 END,created_at DESC,rowid DESC LIMIT 1").bind(caseId,actorId).first<SubmissionRow>();}
+ active(caseId:string){return this.db.prepare("SELECT * FROM assessment_submissions WHERE case_id=? AND state NOT IN ('verified','cancelled') ORDER BY created_at DESC,rowid DESC LIMIT 1").bind(caseId).first<SubmissionRow>();}
  async prepare(record:CaseRow,requestId:string,payload:SubmissionPayload,actor:Actor){
   if(!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(requestId))throw new RepositoryError('INVALID_REQUEST_ID',400);
+  const current=await this.db.prepare('SELECT identity_revision FROM assessment_cases WHERE id=?').bind(record.id).first<{identity_revision:number}>();
+  if(!current||current.identity_revision!==record.identity_revision)throw new RepositoryError('SUBMISSION_PENDING_OR_IDENTITY_CHANGED');
   const serialized=JSON.stringify(payload);
   if(new TextEncoder().encode(serialized).length>500000)throw new RepositoryError('SUBMISSION_TOO_LARGE',413);
   const hash=await sha256(JSON.stringify({payload,identityRevision:record.identity_revision,actorId:actor.id}));
   const prior=await this.get(record.id,requestId);
   if(prior){if(prior.payload_hash!==hash)throw new RepositoryError('IDEMPOTENCY_KEY_REUSED');return prior;}
+  const active=await this.active(record.id);
+  if(active){
+   if(active.identity_revision!==record.identity_revision)throw new RepositoryError('SUBMISSION_PENDING_OR_IDENTITY_CHANGED');
+   if(active.actor_id===actor.id&&active.payload_hash===hash)return active;
+   // A same-worker prepared snapshot has never claimed the external write. It is safe to
+   // supersede after a page reload/new request ID when the employee changed the answers.
+   if(active.actor_id===actor.id&&active.state==='prepared'){
+    await this.db.prepare("UPDATE assessment_submissions SET state='cancelled',outcome_code='SUPERSEDED_BEFORE_WRITE',updated_at=? WHERE case_id=? AND request_id=? AND actor_id=? AND state='prepared'")
+     .bind(new Date().toISOString(),record.id,active.request_id,actor.id).run();
+   }else throw new RepositoryError('SUBMISSION_PENDING_OR_IDENTITY_CHANGED');
+  }
   const now=new Date().toISOString();
   await this.db.prepare("INSERT INTO assessment_submissions (id,case_id,request_id,identity_revision,payload_json,payload_hash,actor_id,authentication,state,created_at,updated_at) SELECT ?,?,?,?,?,?,?,?,'prepared',?,? WHERE EXISTS (SELECT 1 FROM assessment_cases WHERE id=? AND identity_revision=?) ON CONFLICT DO NOTHING")
    .bind(crypto.randomUUID(),record.id,requestId,record.identity_revision,serialized,hash,actor.id,actor.authentication,now,now,record.id,record.identity_revision).run();
