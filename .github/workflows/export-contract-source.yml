@@ -13,8 +13,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          ref: e0489184330bf19e7eeed04341f6c6092f94a630
       - name: Archive only tracked release source, no credentials or customer data
-        run: git archive --format=tar.gz --output=/tmp/assessment-source.tar.gz e0489184330bf19e7eeed04341f6c6092f94a630
+        run: git archive --format=tar.gz --output=/tmp/assessment-source.tar.gz HEAD
       - uses: actions/upload-artifact@v4
         with:
           name: exact-contract-source
