@@ -43,7 +43,7 @@ body[data-ux-mode=contract] .ux-handoff-area{display:none}
 body[data-ux-mode=handoff] .wf-steps,body[data-ux-mode=handoff] #documentStep,body[data-ux-mode=handoff] #documentReviewStep,body[data-ux-mode=handoff] #questionnaireStep,body[data-ux-mode=handoff] .wf-bottom-nav{display:none!important}
 body[data-ux-mode=handoff] .wf-draft-note{display:none}
 body[data-ux-mode=contract] .wf-credential,body[data-ux-mode=contract] #require-power{display:none}
-body[data-view=home] .task-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+body[data-view=home] .task-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 body[data-view=home] .task-card{min-height:230px}
 body[data-view=home] .task-card[data-main-action=contract]{background:var(--green-pale);border-color:#abc5b3}
 .ux-preview-disabled{opacity:.7}

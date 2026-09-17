@@ -91,12 +91,15 @@ test("both protected launcher URLs restore the two original tools and keep the a
     assert.match(response.headers.get('cache-control'),/no-store/);
     const dom=new JSDOM(await response.text());
     const cards=[...dom.window.document.querySelectorAll('.task-grid > .task-card')];
-    assert.equal(cards.length,3);
+    assert.equal(cards.length,4);
     assert.equal(cards[0].getAttribute('data-open-view'),'contract');
     assert.equal(cards[1].getAttribute('data-open-view'),'documents');
     for(const card of cards.slice(0,2)){assert.equal(card.tagName,'BUTTON');assert.equal(card.disabled,false);assert.equal(card.hasAttribute('href'),false);}
 
-    assert.equal(cards[2].getAttribute('href'),'https://gkb-credit-analyzer-kz.mukhamet-ali-ma.chatgpt.site');
+    assert.equal(cards[2].getAttribute('href'),'/assessment-review');
+    assert.equal(cards[3].getAttribute('href'),'/lawyer-handoff');
+    assert.deepEqual(cards.map(card=>card.querySelector('.task-number').textContent),['01','02','03','04']);
+    assert.ok(dom.window.document.querySelector('a[data-main-action="gkb"]'));
     dom.window.close();
   }
 });

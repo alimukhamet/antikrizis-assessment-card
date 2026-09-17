@@ -35,6 +35,7 @@
   $('handoffRefresh').disabled=busy||statusBusy||!ui.ready();
   const next=!ui.ready()?'Выберите клиента.':statusBusy?'Проверяем состояние…':!statusLoaded?'Нажмите «Проверить состояние».':pending?.state==='verified'?'Передано.':pending?'Можно продолжить сохранённую передачу.':!key?'Добавьте ЭЦП и подтвердите владельца.':!powerReady?'Проверьте доверенность.':!contract?'Добавьте подписанный PDF и подтвердите подпись.':'Готово к передаче.';
   $('handoffReason').textContent=message||next;
+  window.FileSelectionControls?.refresh();
  }
  async function request(body){
   const current=ui.context(),path='/api/assessment/'+current.client.external.dealId+'/handoff';
@@ -124,5 +125,13 @@
  document.addEventListener('assessment-client-readiness-changed',()=>{if(ui.ready()&&!pending)inspectPower().catch(()=>{});});
  for(const event of ['assessment-draft-restored','assessment-analysis-complete'])document.addEventListener(event,()=>setTimeout(()=>{inspectPower().catch(error=>{message=error.message;refresh();});},0));
  for(const event of ['assessment-client-readiness-changed','assessment-credentials-changed','assessment-draft-saved','assessment-files-selected','change'])document.addEventListener(event,()=>queueMicrotask(refresh));
+ window.HandoffFiles={
+  canEdit:()=>!busy&&!af.busy&&!statusBusy&&!pending&&statusLoaded&&ui.ready(),
+  selectionChanged(type){
+   if(type==='Доверенность'){inspection++;powerCheckedId=null;$('handoffPowerStatus').textContent='Выберите и проверьте доверенность.';$('handoffPowerReview').replaceChildren();}
+   if(type==='Подписанный договор')signedAgree.checked=false;
+   message='';refresh();
+  },
+ };
  refresh();if(ui.context())reset();
 })();

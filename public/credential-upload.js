@@ -90,5 +90,7 @@ window.CredentialUpload=(()=>{
  };
  button.onclick=()=>submit().catch(error=>{status.textContent=error.message;});
  if(typeof renderDocuments==='function'){const previousRender=renderDocuments;renderDocuments=function(){previousRender();refreshSelection();};}refreshSelection();
- return {verified,collected,submit,pendingOnly,offerExisting,nextAction,focusNext};
+ return {verified,collected,submit,pendingOnly,offerExisting,nextAction,focusNext,isBusy:()=>busy,
+  selectionChanged(){invalidate();owner.checked=false;password.value='';stored.hidden=true;status.textContent='';refreshSelection();statusChanged();},
+ };
 })();
