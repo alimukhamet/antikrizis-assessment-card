@@ -3,7 +3,7 @@ function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileM
 const repository=load('lib/documents/repository.ts');
 function setup(){let ready=true,writes=0,reads=0,reviewIds=['doc-review'],row=null;
  const record={id:'case',external_id:'11665',client_iin:'synthetic',identity_revision:1},actor={id:'worker:synthetic'},draft={answers:['test'],documents:[]},values={iin:'synthetic',card:'TEST'};
- const submissions={get:async()=>row,prepare:async(r,id,p,a)=>row={request_id:id,identity_revision:r.identity_revision,actor_id:a.id,state:'prepared',payload_json:JSON.stringify(p)}};
+ const submissions={get:async()=>row,active:async()=>row,latest:async()=>row,prepare:async(r,id,p,a)=>row={request_id:id,identity_revision:r.identity_revision,actor_id:a.id,state:'prepared',payload_json:JSON.stringify(p)}};
  const adapter={read:async()=>{reads++;return{iin:'synthetic'};}};
  const service=load('lib/questionnaire/final-submission.ts',{'../documents/repository':repository,'./history-snapshot':load('lib/questionnaire/history-snapshot.ts'),'./draft':{validateDraft:v=>v},'./review-bindings':{parseReviewBindings:v=>v||[]},'./final-check':{FINAL_VALIDATION_VERSION:'test-v',finalCheck:async()=>({payload:draft,compiled:{values},reviewIds,publicResult:{readyToSubmit:ready,preview:{contractData:{contract_number:'TEST'}},evidence:{approved:[]}}})},'./submission-service':{submitValidatedAssessment:async()=>{writes++;return row={...row,state:'verified'};}}});
  const args=[{},submissions,adapter,record,actor,'request'];return{prepare:()=>service.prepareFinalSubmission(...args,1,draft,[],'2026-09-10'),commit:()=>service.commitFinalSubmission(...args,'2026-09-10'),ready:v=>ready=v,reviews:v=>reviewIds=v,counts:()=>({writes,reads}),row:()=>row,actor,draft};

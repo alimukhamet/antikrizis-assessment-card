@@ -16,6 +16,9 @@ export async function saveSubmissionHistory(submissions:SubmissionRepository,ada
  let receipt;
  try{
   receipt=await (pending?adapter.append:adapter.reconcile)(record.external_id,record.client_iin,prior.id,text);
- }catch(error){return submissions.finishHistory(record.id,requestId,null,error instanceof AssessmentHistoryError?error.code:'HISTORY_OUTCOME_UNCERTAIN');}
+ }catch(error){
+  if(pending&&error instanceof AssessmentHistoryError&&error.notStarted)return submissions.releaseHistoryUnsent(record.id,requestId,error.code);
+  return submissions.finishHistory(record.id,requestId,null,error instanceof AssessmentHistoryError?error.code:'HISTORY_OUTCOME_UNCERTAIN');
+ }
  return submissions.finishHistory(record.id,requestId,receipt?.commentId??null,receipt?'HISTORY_READBACK_VERIFIED':'HISTORY_OUTCOME_UNCERTAIN');
 }
