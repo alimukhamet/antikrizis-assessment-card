@@ -1,4 +1,4 @@
-import {bitrixHeaders} from './http-headers'; export class AssessmentHistoryError extends Error{constructor(public code:string){super(code);}}
+import {bitrixHeaders} from './http-headers'; export class AssessmentHistoryError extends Error{constructor(public code:string,public notStarted=false){super(code);}}
 /** Uses only deal comments; never updates stages, invoices, files or assessment fields. */
 export function createAssessmentHistoryAdapter(webhook:string,send:typeof fetch=fetch){
  async function call(method:string,body:unknown){
@@ -42,8 +42,15 @@ export function createAssessmentHistoryAdapter(webhook:string,send:typeof fetch=
  }
  async function reconcile(dealId:string,iin:string,submissionId:string,lawyerCard:string){await identity(dealId,iin);return find(dealId,submissionId,lawyerCard);}
  async function append(dealId:string,iin:string,submissionId:string,lawyerCard:string){
-  await identity(dealId,iin);const prior=await find(dealId,submissionId,lawyerCard);if(prior)return prior;
-  const expected=comment(submissionId,lawyerCard);
+  // A failed identity/comment lookup has not appended anything. Keep that distinct
+  // from a lost add response; only the latter must remain read-only on retry.
+  const {prior,expected}=await (async()=>{
+   await identity(dealId,iin);
+   return {prior:await find(dealId,submissionId,lawyerCard),expected:comment(submissionId,lawyerCard)};
+  })().catch(error=>{
+   throw new AssessmentHistoryError(error instanceof AssessmentHistoryError?error.code:'HISTORY_PREFLIGHT_FAILED',true);
+  });
+  if(prior)return prior;
   // Caller claims a durable once-only intent. A lost response is followed only by reads.
   try{await call('crm.timeline.comment.add',{fields:{ENTITY_ID:Number(dealId),ENTITY_TYPE:'deal',COMMENT:expected.text}});}catch{/* Reconcile even when the add response was lost. */}
   const saved=await find(dealId,submissionId,lawyerCard);if(!saved)throw new AssessmentHistoryError('HISTORY_OUTCOME_UNCERTAIN');return saved;

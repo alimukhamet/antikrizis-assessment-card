@@ -10,7 +10,7 @@ export type AssessmentField = keyof typeof ASSESSMENT_FIELDS;
 export type AssessmentValues = Record<AssessmentField, string>;
 export type AssessmentBaseline = Record<AssessmentField, unknown>;
 export class AssessmentWriteError extends Error {
-  constructor(public code: string, public fields: AssessmentField[] = []) { super(code); }
+  constructor(public code: string, public fields: AssessmentField[] = [], public notStarted = false) { super(code); }
 }
 const numbers = new Set<AssessmentField>(['debt', 'months', 'payDay', 'summa']);
 /** Compare decimal text without floating point rounding or dropping the fraction. */
@@ -59,13 +59,25 @@ export function createAssessmentAdapter(webhook: string, send: typeof fetch = fe
     return Object.fromEntries(Object.entries(ASSESSMENT_FIELDS).map(([key, field]) => [key, deal[field] ?? null])) as AssessmentBaseline;
   }
   async function save(dealId: string, expectedIin: string, baseline: AssessmentBaseline, values: AssessmentValues) {
-    if (!/^\d{12}$/.test(expectedIin) || values.iin !== expectedIin) throw new AssessmentWriteError('CLIENT_IDENTITY_UNVERIFIED');
-    if ((Object.keys(ASSESSMENT_FIELDS) as AssessmentField[]).some(key => typeof values[key] !== 'string' || normalize(key, values[key]) === null)) throw new AssessmentWriteError('INVALID_ASSESSMENT_VALUES');
-    const before = await read(dealId);
-    if (before.iin !== expectedIin) throw new AssessmentWriteError('CASE_IDENTITY_CHANGED');
-    if (!changed(before, values).length) return {verified: true as const, alreadyApplied: true};
-    const conflicts = changed(before, baseline);
-    if (conflicts.length) throw new AssessmentWriteError('ASSESSMENT_CHANGED_IN_CRM', conflicts);
+    // This whole phase is read-only. Only this boundary may prove a retry is safe.
+    // Errors after crm.deal.update is invoked are always treated as possibly applied.
+    const alreadyApplied = await (async () => {
+      if (!/^\d{12}$/.test(expectedIin) || values.iin !== expectedIin) throw new AssessmentWriteError('CLIENT_IDENTITY_UNVERIFIED');
+      if ((Object.keys(ASSESSMENT_FIELDS) as AssessmentField[]).some(key => typeof values[key] !== 'string' || normalize(key, values[key]) === null)) throw new AssessmentWriteError('INVALID_ASSESSMENT_VALUES');
+      const before = await read(dealId);
+      if (before.iin !== expectedIin) throw new AssessmentWriteError('CASE_IDENTITY_CHANGED');
+      if (!changed(before, values).length) return true;
+      const conflicts = changed(before, baseline);
+      if (conflicts.length) throw new AssessmentWriteError('ASSESSMENT_CHANGED_IN_CRM', conflicts);
+      return false;
+    })().catch(error => {
+      throw new AssessmentWriteError(
+        error instanceof AssessmentWriteError ? error.code : 'ASSESSMENT_PREFLIGHT_FAILED',
+        error instanceof AssessmentWriteError ? error.fields : [],
+        true,
+      );
+    });
+    if (alreadyApplied) return {verified: true as const, alreadyApplied: true};
     // Bitrix has no conditional deal update. The caller must serialize submissions;
     // this check detects prior edits, but cannot prevent a simultaneous external edit.
     const fields = Object.fromEntries(Object.entries(ASSESSMENT_FIELDS).map(([key, field]) => [field, values[key as AssessmentField]]));

@@ -63,6 +63,16 @@ window.SubmissionFlow={mount(anchor,status){
   }
   return row;
  }
+ // Presentation only: the server receipt, not a browser retry counter, determines
+ // whether anything was sent. The main button resumes the same durable request.
+ function unsentMessage(code,history=false){
+  const reason=String(code||'').replace(/^NOT_SENT:/,'');
+  if(reason==='ASSESSMENT_CHANGED_IN_CRM')return 'Карточка изменилась в Bitrix. Ничего не отправлено. Сверьте изменения в сделке перед новой подготовкой договора.';
+  if(reason==='CASE_IDENTITY_CHANGED'||reason==='CLIENT_IDENTITY_UNVERIFIED')return 'Клиент сделки изменился. Ничего не отправлено. Откройте правильную сделку и проверьте получателя.';
+  if(reason==='BITRIX_NOT_CONFIGURED')return 'Подключение к Bitrix не настроено. Ничего не отправлено. Обратитесь к администратору.';
+  if(['HISTORY_CONTENT_MISMATCH','HISTORY_DUPLICATE_REFERENCE'].includes(reason))return 'В истории Bitrix есть конфликт сохранённой записи. Новая запись не отправлена. Нужна проверка администратором.';
+  return history?'Карточка сохранена. Запись в историю ещё не отправлялась. Нажмите «Скачать договор» ещё раз, чтобы продолжить.':'Карточка ещё не отправлялась: проверка Bitrix не завершилась. Нажмите «Скачать договор» ещё раз. Ответы сохранены.';
+ }
  async function advance(dealId,row,guard){
   const requestId=row.requestId;if(currentDeal()!==dealId)throw Error('Открыта другая сделка.');
   if(row.state==='prepared'){
@@ -72,13 +82,16 @@ window.SubmissionFlow={mount(anchor,status){
    if(!row.assessmentSaved&&['writing','uncertain'].includes(row.state)&&row.outcomeCode)row=await reconcilePending(dealId,row,guard);
   }else if(['writing','uncertain'].includes(row.state)){row=await reconcilePending(dealId,row,guard);}
   if(guard&&!guard())throw Error('Клиент или ответы изменились во время сохранения. Уже отправленные данные не удалены. Проверьте текущую версию.');
+  if(row.state==='cancelled'){attempt=null;throw Error('Эта подготовка отменена. Нажмите «Скачать договор» для текущей версии ответов.');}
+  if(row.state==='prepared'&&String(row.outcomeCode||'').startsWith('NOT_SENT:'))throw Error(unsentMessage(row.outcomeCode));
   if(!row.assessmentSaved)throw Error('Bitrix пока не подтвердил сохранение карточки. Повторной отправки не было. Откройте сохранённую версию и нажмите «Продолжить сохранение»; выполняется только безопасная проверка результата.');
   if(!row.historySaved){phase('Сохраняю…','Сохраняю анкету в историю сделки…');row=await post(dealId,{action:'history',requestId});}
+  if(!row.historySaved&&row.historyState==='pending'&&String(row.historyOutcomeCode||'').startsWith('NOT_SENT:'))throw Error(unsentMessage(row.historyOutcomeCode,true));
   if(!row.historySaved)throw Error('Карточка сохранена. История ещё не подтверждена; продолжите из сохранённой версии.');
   if(guard&&!guard())throw Error('Клиент или ответы изменились во время сохранения. Скачайте нужную версию из сохранённых договоров.');
   phase('Готовлю договор…','Готовлю сохранённый договор…');await download(dealId,requestId);report('Договор готов. Если скачивание не началось, нажмите «Скачать готовый файл договора» ниже. Карточка, документы и история сохранены в сделке.');
  }
- async function operate(action){if(busy)return;busy=true;busyLabel='Проверяю…';destination=null;destinationSnapshot=null;clearFile();save.disabled=resume.disabled=cancel.disabled=true;save.textContent=busyLabel;report('Проверяю данные для договора…');try{await action();}catch(error){report(error.message);}finally{busy=false;busyLabel='Скачать договор';resume.disabled=cancel.disabled=false;save.disabled=false;save.textContent=busyLabel;progress();void refresh();}}
+ async function operate(action){if(busy)return;busy=true;busyLabel='Проверяю…';destination=null;destinationSnapshot=null;clearFile();save.disabled=resume.disabled=cancel.disabled=true;save.textContent=busyLabel;report('Проверяю данные для договора…');try{await action();}catch(error){recovery.open=true;report(error.message);}finally{busy=false;busyLabel='Скачать договор';resume.disabled=cancel.disabled=false;save.disabled=false;save.textContent=busyLabel;progress();void refresh();}}
  save.onclick=()=>operate(async()=>{
   if(!checked||currentDeal()!==checked.dealId||signature()!==checked.signature){
    await window.AssessmentCheck?.run();

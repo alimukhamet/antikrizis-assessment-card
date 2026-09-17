@@ -2,9 +2,9 @@ import {RepositoryError,sha256,type CaseRow} from '../documents/repository';
 import type {Actor} from '../worker-session';
 import type {AssessmentBaseline,AssessmentValues} from '../crm/assessment-write';
 import type {DraftPayload} from './draft';
-import type {ApprovedAnswerEvidence} from './review-bindings';
+import type {ApprovedAnswerEvidence,ReviewBinding} from './review-bindings';
 export type SubmissionPayload = {
- schemaVersion:1; draft:DraftPayload; baseline:AssessmentBaseline; values:AssessmentValues;
+ schemaVersion:1; draft:DraftPayload; inputBindings?:ReviewBinding[]; baseline:AssessmentBaseline; values:AssessmentValues;
  // Trusted review IDs collected by the submission validator, never caller assertions.
  contractData:Record<string,unknown>;contractRendererVersion:string;lawyerCard:string;historyCard?:string; reviewIds:string[]; evidence:ApprovedAnswerEvidence[]; validationVersion:string; assessmentDay:string;
 };
@@ -14,6 +14,16 @@ export type SubmissionRow = {
  history_state:'pending'|'writing'|'uncertain'|'verified';history_comment_id:string|null;history_outcome_code:string|null;
  created_at:string;updated_at:string;
 };
+/** Metadata is not user intent. A fresh CRM read or audit timestamp must not create
+ * another save of identical content. The persisted payload/hash remain immutable;
+ * validation version, day, contract, answers and evidence are still compared. */
+function samePreparedContent(left:SubmissionPayload,right:SubmissionPayload){
+ const content=(payload:SubmissionPayload)=>JSON.stringify(Object.fromEntries(
+  Object.entries(payload).filter(([key])=>key!=='baseline'&&key!=='historyCard').sort(([a],[b])=>a.localeCompare(b)),
+  (_key,value)=>value&&typeof value==='object'&&!Array.isArray(value)
+   ?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b))):value);
+ return content(left)===content(right);
+}
 /** No automatic lease expiry after an external write: writing/uncertain work must be reconciled. */
 export class SubmissionRepository {
  constructor(private db:D1Database){}
@@ -32,19 +42,25 @@ export class SubmissionRepository {
   const active=await this.active(record.id);
   if(active){
    if(active.identity_revision!==record.identity_revision)throw new RepositoryError('SUBMISSION_PENDING_OR_IDENTITY_CHANGED');
-   if(active.actor_id===actor.id&&active.payload_hash===hash)return active;
+   if(active.actor_id===actor.id&&samePreparedContent(JSON.parse(active.payload_json),payload))return active;
    // A same-worker prepared snapshot has never claimed the external write. It is safe to
    // supersede after a page reload/new request ID when the employee changed the answers.
    if(active.actor_id===actor.id&&active.state==='prepared'){
-    await this.db.prepare("UPDATE assessment_submissions SET state='cancelled',outcome_code='SUPERSEDED_BEFORE_WRITE',updated_at=? WHERE case_id=? AND request_id=? AND actor_id=? AND state='prepared'")
-     .bind(new Date().toISOString(),record.id,active.request_id,actor.id).run();
+    const cancelled=await this.db.prepare("UPDATE assessment_submissions SET state='cancelled',outcome_code='SUPERSEDED_BEFORE_WRITE',updated_at=? WHERE case_id=? AND request_id=? AND actor_id=? AND state='prepared' AND identity_revision=? AND EXISTS (SELECT 1 FROM assessment_cases WHERE id=? AND identity_revision=?)")
+     .bind(new Date().toISOString(),record.id,active.request_id,actor.id,record.identity_revision,record.id,record.identity_revision).run();
+    if(cancelled.meta.changes!==1)throw new RepositoryError('SUBMISSION_PENDING_OR_IDENTITY_CHANGED');
    }else throw new RepositoryError('SUBMISSION_PENDING_OR_IDENTITY_CHANGED');
   }
   const now=new Date().toISOString();
   await this.db.prepare("INSERT INTO assessment_submissions (id,case_id,request_id,identity_revision,payload_json,payload_hash,actor_id,authentication,state,created_at,updated_at) SELECT ?,?,?,?,?,?,?,?,'prepared',?,? WHERE EXISTS (SELECT 1 FROM assessment_cases WHERE id=? AND identity_revision=?) ON CONFLICT DO NOTHING")
    .bind(crypto.randomUUID(),record.id,requestId,record.identity_revision,serialized,hash,actor.id,actor.authentication,now,now,record.id,record.identity_revision).run();
   const saved=await this.get(record.id,requestId);
-  if(!saved)throw new RepositoryError('SUBMISSION_PENDING_OR_IDENTITY_CHANGED');
+  if(!saved){
+   // Another identical tab may have won the unique active-case insert after our read.
+   const winner=await this.active(record.id);
+   if(winner&&winner.identity_revision===record.identity_revision&&winner.actor_id===actor.id&&samePreparedContent(JSON.parse(winner.payload_json),payload))return winner;
+   throw new RepositoryError('SUBMISSION_PENDING_OR_IDENTITY_CHANGED');
+  }
   if(saved.payload_hash!==hash)throw new RepositoryError('IDEMPOTENCY_KEY_REUSED');
   return saved;
  }
@@ -59,6 +75,18 @@ export class SubmissionRepository {
  async finishHistory(caseId:string,requestId:string,commentId:string|null,code:string){
   if(commentId!==null&&!/^[1-9]\d*$/.test(commentId))throw new RepositoryError('INVALID_HISTORY_RECEIPT');
   await this.db.prepare("UPDATE assessment_submissions SET history_state=?,history_comment_id=?,history_outcome_code=?,updated_at=? WHERE case_id=? AND request_id=? AND state='verified' AND history_state IN ('writing','uncertain')").bind(commentId?'verified':'uncertain',commentId,code,new Date().toISOString(),caseId,requestId).run();return this.get(caseId,requestId);
+ }
+ /** Only the claimant may call these with explicit adapter proof of zero external writes.
+  * Existing uncertain records are not unlocked merely because their outcome is old. */
+ async releaseUnsent(caseId:string,requestId:string,code:string){
+  await this.db.prepare("UPDATE assessment_submissions SET state='prepared',outcome_code=?,updated_at=? WHERE case_id=? AND request_id=? AND state IN ('writing','uncertain') AND history_state='pending'")
+   .bind('NOT_SENT:'+code,new Date().toISOString(),caseId,requestId).run();
+  return this.get(caseId,requestId);
+ }
+ async releaseHistoryUnsent(caseId:string,requestId:string,code:string){
+  await this.db.prepare("UPDATE assessment_submissions SET history_state='pending',history_outcome_code=?,updated_at=? WHERE case_id=? AND request_id=? AND state='verified' AND history_state IN ('writing','uncertain') AND history_comment_id IS NULL")
+   .bind('NOT_SENT:'+code,new Date().toISOString(),caseId,requestId).run();
+  return this.get(caseId,requestId);
  }
  async cancelPrepared(caseId:string,requestId:string,actorId:string){
   await this.db.prepare("UPDATE assessment_submissions SET state='cancelled',outcome_code='CANCELLED_BEFORE_WRITE',updated_at=? WHERE case_id=? AND request_id=? AND actor_id=? AND state='prepared'").bind(new Date().toISOString(),caseId,requestId,actorId).run();
