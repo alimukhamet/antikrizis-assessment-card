@@ -73,6 +73,8 @@ proof that deal 10479 is resolved.
 node --test tests/submission-engine-regression.test.mjs tests/submission-main-button.test.mjs
 ```
 
+The integration test loader rejects TypeScript parsing diagnostics before executing
+emitted JavaScript. A successful transpile is not a substitute for type checking.
 Run normal lint, TypeScript, build and the complete test suite before merge. For
 publication use the existing deployment workflow and inspect its actual deploy
 result; public asset equality alone cannot prove authenticated server behavior.
