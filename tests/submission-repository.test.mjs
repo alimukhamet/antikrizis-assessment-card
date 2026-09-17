@@ -6,7 +6,7 @@ const write=load('lib/crm/assessment-write.ts');
 const {submitValidatedAssessment}=load('lib/questionnaire/submission-service.ts',{'../crm/assessment-write':write});
 const actor={id:'worker:ramazan',authentication:'shared-password-worker-selection'},record={id:'case',identity_revision:1};
 const payload={schemaVersion:1,draft:{test:'synthetic snapshot'},baseline:{test:'before'},values:{test:'after'},reviewIds:[],validationVersion:'test',assessmentDay:'2026-09-10'};
-const first='00000000-0000-0000-0000-000000000001',second='00000000-0000-0000-0000-000000000002';
+const first='00000000-0000-0000-0000-000000000001',second='00000000-0000-0000-0000-000000000002',third='00000000-0000-0000-0000-000000000003';
 function setup(){
  const sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys=ON');
  for(const file of fs.readdirSync(new URL('../drizzle/',import.meta.url)).filter(f=>f.endsWith('.sql')).sort())sqlite.exec(fs.readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8'));
@@ -20,13 +20,14 @@ test('immutable submission retries survive a repository restart',async()=>{
  assert.equal(saved.id,restored.id);assert.equal(restored.authentication,actor.authentication);
  await assert.rejects(repo.prepare(record,first,{...payload,values:{test:'changed'}},actor),/IDEMPOTENCY_KEY_REUSED/);
 });
-test('only one submission per case can be active and only one worker can claim it',async()=>{
- const {repo}=setup();await repo.prepare(record,first,payload,actor);
- await assert.rejects(repo.prepare(record,second,payload,actor),/SUBMISSION_PENDING/);
- assert.equal(await repo.claim(record,first),true);assert.equal(await repo.claim(record,first),false);
- await repo.finish(record.id,first,false,'READBACK_UNCERTAIN');
- assert.equal(await repo.claim(record,first),false);
- await assert.rejects(repo.prepare(record,second,payload,actor),/SUBMISSION_PENDING/);
+test('identical unfinished work is resumed while a changed prepared snapshot is safely superseded',async()=>{
+ const {repo}=setup();const original=await repo.prepare(record,first,payload,actor);
+ const resumed=await repo.prepare(record,second,payload,actor);assert.equal(resumed.request_id,first);assert.equal(resumed.id,original.id);
+ const changed=await repo.prepare(record,second,{...payload,values:{test:'changed'}},actor);assert.equal(changed.request_id,second);assert.equal(changed.state,'prepared');
+ const cancelled=await repo.get(record.id,first);assert.equal(cancelled.state,'cancelled');assert.equal(cancelled.outcome_code,'SUPERSEDED_BEFORE_WRITE');
+ assert.equal(await repo.claim(record,second),true);assert.equal(await repo.claim(record,second),false);
+ await repo.finish(record.id,second,false,'READBACK_UNCERTAIN');assert.equal(await repo.claim(record,second),false);
+ await assert.rejects(repo.prepare(record,third,{...payload,values:{test:'another'}},actor),/SUBMISSION_PENDING/);
 });
 test('verified outcome releases case and cannot be downgraded by a late failure',async()=>{
  const {repo}=setup();await repo.prepare(record,first,payload,actor);await repo.claim(record,first);
