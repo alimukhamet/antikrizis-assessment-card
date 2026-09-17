@@ -4,7 +4,7 @@ import {RepositoryError} from '../../../../../lib/documents/repository';
 import {HandoffRepository,type HandoffRow} from '../../../../../lib/questionnaire/handoff-repository';
 import {validateHandoffDocuments,runHandoff} from '../../../../../lib/questionnaire/handoff-service';
 import {UploadManifestRepository} from '../../../../../lib/documents/upload-manifest';
-import {createHandoffAdapter} from '../../../../../lib/crm/lawyer-handoff';
+import {createHandoffAdapter,sameHandoffDestination} from '../../../../../lib/crm/lawyer-handoff';
 import {createCrmDocumentReader,createVerifiedDocumentUploadAdapter} from '../../../../../lib/crm/document-download';
 import {assertSubmissionDestination} from '../../../../../lib/questionnaire/submission-destination';
 async function store(){const {env}=await import('cloudflare:workers');const db=(env as typeof env&{DB?:D1Database}).DB;if(!db)throw new RepositoryError('EVIDENCE_STORAGE_NOT_CONFIGURED',503);return{handoffs:new HandoffRepository(db),manifests:new UploadManifestRepository(db)};}
@@ -34,7 +34,7 @@ export async function POST(request:Request,context:{params:Promise<{dealId:strin
   if(!row){
    if(body.action!=='send'||typeof body.requestId!=='string'||typeof body.powerId!=='string'||typeof body.signedId!=='string'||body.signedConfirmed!==true)throw new RepositoryError('HANDOFF_DOCUMENTS_REQUIRED',400);
    const validated=await validateHandoffDocuments(repository,record,body.powerId,body.signedId,operatingDay()),destination=await stages.discover(dealId,record.client_iin??'');
-   if(JSON.stringify(body.stage)!==JSON.stringify(destination))throw new RepositoryError('HANDOFF_STAGE_CHANGED');
+   if(!sameHandoffDestination(body.stage,destination))throw new RepositoryError('HANDOFF_STAGE_CHANGED');
    row=await stores.handoffs.prepare(record,body.requestId,{...validated,destination,powerId:body.powerId,signedId:body.signedId,signedConfirmed:true,confirmedAt:new Date().toISOString()},actor);
   }
   if(!['send','resume'].includes(String(body.action)))throw new RepositoryError('INVALID_HANDOFF_ACTION',400);

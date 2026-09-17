@@ -14,10 +14,10 @@ const {UploadManifestRepository}=load('lib/documents/upload-manifest.ts',{'./rep
 const service=load('lib/questionnaire/handoff-service.ts',{'../documents/repository':evidence,'../documents/analysis-service':{analysisVersion:'test'},'../documents/package-check':{checkDocumentPackage:async()=>({packageReady:true,manuallyReviewed:[]})},'../documents/upload-service':load('lib/documents/upload-service.ts',{'./repository':evidence,'../crm/document-upload':upload}),'../documents/upload-plan':load('lib/documents/upload-plan.ts',{'./repository':evidence}),'../crm/lawyer-handoff':crm});
 const record={id:'case',identity_revision:1,client_iin:'000000000010',external_id:'900001'},actor={id:'staff',authentication:'test'};
 const destination={categoryId:'13',fromStageId:'C13:FINAL_INVOICE',fromStageName:'Договор',stageId:'C13:WON',stageName:'Сделка завершена'};
-function transport(){const state={deal:{ID:'900001',CATEGORY_ID:'13',STAGE_ID:'C13:FINAL_INVOICE',STAGE_SEMANTIC_ID:'P',UF_CRM_AI_IIN:'000000000010'},writes:[],history:[],timeout:false,robot:false,name:'Сделка завершена'};
+function transport(){const state={deal:{ID:'900001',CATEGORY_ID:'13',STAGE_ID:'C13:FINAL_INVOICE',STAGE_SEMANTIC_ID:'P',UF_CRM_AI_IIN:'000000000010'},writes:[],history:[],timeout:false,robot:false,name:'Сделка завершена',semantic:'S'};
  state.send=async(url,options)=>{const method=url.split('/').at(-1),body=JSON.parse(options.body);let result;
   if(method==='crm.deal.get.json')result=state.deal;
-  else if(method==='crm.status.list.json'){assert.equal(body.filter.ENTITY_ID,'DEAL_STAGE_13');result=[{STATUS_ID:'C13:FINAL_INVOICE',NAME:'Договор'},{STATUS_ID:'C13:WON',NAME:state.name}];}
+  else if(method==='crm.status.list.json'){assert.equal(body.filter.ENTITY_ID,'DEAL_STAGE_13');result=[{STATUS_ID:'C13:FINAL_INVOICE',NAME:'Договор'},{STATUS_ID:'C13:WON',NAME:state.name,SEMANTICS:state.semantic,ENTITY_ID:'DEAL_STAGE_13'}];}
   else if(method==='crm.deal.update.json'){state.writes.push(body);if(state.timeout)throw Error('network lost');state.deal={...state.deal,CATEGORY_ID:state.robot?'1':'13',STAGE_ID:state.robot?'C1:NEW':'C13:WON'};result=true;}
   else if(method==='crm.stagehistory.list.json')result={items:state.history};else throw Error(method);
   return{ok:true,json:async()=>({result})};};return state;
@@ -27,8 +27,8 @@ test('handoff resolves the named final sales stage and writes no fields except S
  assert.deepEqual(JSON.parse(JSON.stringify(stage)),destination);assert.equal(await adapter.move(record.external_id,record.client_iin,stage,'2026-09-16T08:00:00Z'),true);
  assert.deepEqual(s.writes,[{id:'900001',fields:{STAGE_ID:'C13:WON'}}]);
 });
-test('wrong identity, another pipeline, changed source stage and wrong destination name cannot trigger the robot',async()=>{
- for(const change of [s=>s.deal.UF_CRM_AI_IIN='000000000029',s=>s.deal.CATEGORY_ID='1',s=>s.deal.STAGE_ID='C13:NEW',s=>s.name='Different final stage']){
+test('wrong identity, another pipeline, changed source stage and invalid destination semantics cannot trigger the robot',async()=>{
+ for(const change of [s=>s.deal.UF_CRM_AI_IIN='000000000029',s=>s.deal.CATEGORY_ID='1',s=>s.deal.STAGE_ID='C13:NEW',s=>s.semantic='F']){
   const s=transport();change(s);const a=crm.createHandoffAdapter('https://synthetic.invalid/rest/',s.send);
   await assert.rejects(a.move(record.external_id,record.client_iin,destination,'2026-09-16T08:00:00Z'));assert.equal(s.writes.length,0);
  }
@@ -88,4 +88,29 @@ test('malformed CRM bodies and stage rows fail closed without any stage write',a
  s.send=async(url,options)=>url.includes('crm.status.list')?{ok:true,json:async()=>({result:[null,{STATUS_ID:'C13:WON',NAME:'Сделка завершена'}]})}:original(url,options);
  const a=crm.createHandoffAdapter('https://synthetic.invalid/rest/',s.send);
  await assert.rejects(a.discover(record.external_id,record.client_iin),/HANDOFF_STAGE_UNVERIFIED/);assert.equal(s.writes.length,0);
+});
+
+test('production final-stage label and harmless renames keep the exact approved transition',async()=>{
+ for(const name of ['Сделка успешна','Сделка завершена','Переименованная успешная стадия']){
+  const s=transport();s.name=name;const a=crm.createHandoffAdapter('https://synthetic.invalid/rest/',s.send);
+  const target=await a.discover(record.external_id,record.client_iin);
+  assert.equal(target.stageId,'C13:WON');assert.equal(target.stageName,name);
+  // A prepared snapshot may retain the former label; only IDs authorize the move.
+  assert.equal(await a.move(record.external_id,record.client_iin,destination,'2026-09-16T08:00:00Z'),true);
+  assert.deepEqual(s.writes,[{id:'900001',fields:{STAGE_ID:'C13:WON'}}]);
+ }
+});
+test('destination comparison accepts labels only, never a different pipeline or stage',()=>{
+ assert.equal(crm.sameHandoffDestination({...destination,stageName:'Сделка успешна'},destination),true);
+ for(const field of ['categoryId','fromStageId','stageId'])assert.equal(crm.sameHandoffDestination({...destination,[field]:'other'},destination),false);
+ for(const bad of [null,[],{},'C13:WON'])assert.equal(crm.sameHandoffDestination(bad,destination),false);
+});
+test('duplicate, foreign-directory or explicitly unsuccessful destinations remain blocked',async()=>{
+ for(const alter of [rows=>rows.push({...rows[1]}),rows=>rows[1].ENTITY_ID='DEAL_STAGE_1',rows=>rows[1].EXTRA={SEMANTICS:'failure'},rows=>rows[1].NAME='']){
+  const s=transport(),original=s.send;
+  s.send=async(url,options)=>{const response=await original(url,options);if(url.includes('crm.status.list')){const value=await response.json();alter(value.result);return{ok:true,json:async()=>value};}return response;};
+  const a=crm.createHandoffAdapter('https://synthetic.invalid/rest/',s.send);
+  await assert.rejects(a.move(record.external_id,record.client_iin,destination,'2026-09-16T08:00:00Z'),e=>e.notStarted===true);
+  assert.equal(s.writes.length,0);
+ }
 });
