@@ -10,9 +10,12 @@ import {httpHeaders} from './bitrix-headers-helper.mjs';
 
 function load(file, imports = {}, clock = Date) {
  const exports = {};
- vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file, import.meta.url), 'utf8'), {
-  compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022},
- }).outputText, {exports, require: name => name === './http-headers' ? httpHeaders : imports[name],
+ const compiled=ts.transpileModule(fs.readFileSync(new URL('../'+file, import.meta.url), 'utf8'), {
+  compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022}, reportDiagnostics:true,
+ });
+ const errors=(compiled.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error);
+ assert.equal(errors.length,0,file+': '+errors.map(d=>ts.flattenDiagnosticMessageText(d.messageText,' ')).join('; '));
+ vm.runInNewContext(compiled.outputText, {exports, require: name => name === './http-headers' ? httpHeaders : imports[name],
   crypto: webcrypto, TextEncoder, TextDecoder, Uint8Array, Date: clock, JSON, Set, Map, AbortSignal});
  return exports;
 }
@@ -160,7 +163,7 @@ test('cross-worker and changed client identity cannot adopt another unfinished s
 test('service uses the durable request ID and snapshot returned by repository recovery',async t=>{
  const f=fixture(t),first=await f.prepare(),payload=JSON.parse(first.payload_json);
  const result=await submitValidatedAssessment(f.repo,write.createAssessmentAdapter('https://synthetic.invalid/',async(url,init)=>{
-  const body=JSON.parse(init.body);
+  assert.equal(JSON.parse(init.body).id,'11665');
   if(url.endsWith('crm.deal.get.json'))return Response.json({result:{ID:'11665',...Object.fromEntries(Object.entries(write.ASSESSMENT_FIELDS).map(([k,v])=>[v,payload.values[k]]))}});
   assert.fail('Already applied values should not be written');
  }),f.record,request2,payload,f.actor);

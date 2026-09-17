@@ -18,10 +18,11 @@ export type SubmissionRow = {
  * another save of identical content. The persisted payload/hash remain immutable;
  * validation version, day, contract, answers and evidence are still compared. */
 function samePreparedContent(left:SubmissionPayload,right:SubmissionPayload){
- const content=(payload:SubmissionPayload)=>JSON.stringify(Object.fromEntries(
-  Object.entries(payload).filter(([key])=>key!=='baseline'&&key!=='historyCard').sort(([a],[b])=>a.localeCompare(b)),
+ const content=(payload:SubmissionPayload)=>JSON.stringify(
+  Object.fromEntries(Object.entries(payload).filter(([key])=>key!=='baseline'&&key!=='historyCard')),
   (_key,value)=>value&&typeof value==='object'&&!Array.isArray(value)
-   ?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b))):value);
+   ?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b))):value,
+ );
  return content(left)===content(right);
 }
 /** No automatic lease expiry after an external write: writing/uncertain work must be reconciled. */
