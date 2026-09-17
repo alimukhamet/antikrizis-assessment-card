@@ -28,6 +28,7 @@ approval are synthetic. They are not authenticated production end-to-end tests.
 | Persist the original snapshot; serialize claims and conditional transitions | `SubmissionRepository` |
 | Prove whether a failure happened before the external write boundary | CRM adapter |
 | Use the durable request ID and never replay an uncertain write | Save/history services |
+| Continue card, readback, history and contract release | `contract-operation.ts` |
 | Display progress and download the saved renderer/data | `submission-flow.js` |
 
 ## State rules
@@ -53,24 +54,35 @@ content excluding only newly generated CRM baseline and audit text. Concurrent
 identical insert losers may adopt the winning active record. The service always
 uses that record's request ID and persisted values, not its caller's replacement ID.
 
-## Limits and follow-on work
+## Two requests, one salesperson action
 
-This is a targeted engine repair, not a rewrite of the whole application. The Word
-file still requires the existing CRM and history receipts; the business meaning of
-"saved contract" is unchanged. The browser still orchestrates multiple endpoints.
-A future single server coordinator/outbox could hide more of those details, but
-must preserve the same write boundaries and be migrated separately.
+The main button retains a read-only `prepare` phase, so editing answers or cancelling
+client confirmation can still stop the operation before a CRM write. After the
+browser checks that the frozen selection is unchanged, it sends one `complete`
+request. `completeContractOperation` owns commit, bounded read-only reconciliation,
+history, and release of the immutable contract data. The browser no longer decides
+which individual CRM action to issue. It renders the returned contract or the
+server's explanation and uses the same main button for retry.
 
-No database migration, runtime credential, approved contract template or CRM field
-mapping changes are required. Do not mass-reset old uncertain rows. Their historical
-error codes do not prove that nothing was sent. A particular stuck production deal
-requires its actual receipt/readback to establish recovery; code tests alone are not
-proof that deal 10479 is resolved.
+The coordinator reauthorizes/refreshes the client between stages and checks the
+original employee and destination. A shared 90-second signal bounds its CRM calls,
+with the existing 20-second per-call limits retained. A timeout is not evidence of
+failure to write: retries always use the durable receipt. Each continuation attempts
+at most one card write and one history append; repeated checks are read-only.
+
+Legacy action endpoints remain available for already-open tabs. No new public
+unauthenticated endpoint, credential, D1 schema, queue, storage binding, dependency,
+contract template or CRM field mapping is introduced. Contract release still requires
+both verified receipts. The browser still performs document intake and rendering.
+
+Do not mass-reset old uncertain rows. Their error codes do not prove that nothing
+was sent. A particular stuck production deal still needs its actual receipt/readback;
+synthetic tests are not proof that deal 10479 is recovered.
 
 ## Focused checks
 
 ```sh
-node --test tests/submission-engine-regression.test.mjs tests/submission-main-button.test.mjs
+node --test tests/submission-engine-regression.test.mjs tests/submission-main-button.test.mjs tests/contract-operation-route.test.mjs
 ```
 
 The integration test loader rejects TypeScript parsing diagnostics before executing

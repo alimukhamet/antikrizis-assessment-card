@@ -40,12 +40,13 @@ function changed(a: AssessmentBaseline, b: AssessmentBaseline) {
     return left === null || right === null || left !== right;
   });
 }
-export function createAssessmentAdapter(webhook: string, send: typeof fetch = fetch) {
+export function createAssessmentAdapter(webhook: string, send: typeof fetch = fetch, operationSignal?: AbortSignal) {
   async function call(method: string, body: unknown) {
     if (!webhook) throw new AssessmentWriteError('BITRIX_NOT_CONFIGURED');
+    operationSignal?.throwIfAborted();
     const response = await send(webhook.replace(/\/?$/, '/') + method + '.json', {
       method: 'POST', headers: bitrixHeaders(webhook), body: JSON.stringify(body),
-      signal: AbortSignal.timeout(20000), cache: 'no-store',
+      signal: operationSignal ? AbortSignal.any([operationSignal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000), cache: 'no-store',
     });
     if (!response.ok) throw new AssessmentWriteError('BITRIX_REQUEST_FAILED');
     const json = await response.json() as {error?: string; result?: unknown};
@@ -81,6 +82,7 @@ export function createAssessmentAdapter(webhook: string, send: typeof fetch = fe
     // Bitrix has no conditional deal update. The caller must serialize submissions;
     // this check detects prior edits, but cannot prevent a simultaneous external edit.
     const fields = Object.fromEntries(Object.entries(ASSESSMENT_FIELDS).map(([key, field]) => [field, values[key as AssessmentField]]));
+    if (operationSignal?.aborted) throw new AssessmentWriteError('ASSESSMENT_PREFLIGHT_FAILED', [], true);
     try { await call('crm.deal.update', {id: dealId, fields}); }
     catch { /* A lost response may still mean the write applied. Read back first. */ }
     let after: AssessmentBaseline;

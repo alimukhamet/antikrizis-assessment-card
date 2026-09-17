@@ -16,7 +16,7 @@ function load(file, imports = {}, clock = Date) {
  const errors=(compiled.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error);
  assert.equal(errors.length,0,file+': '+errors.map(d=>ts.flattenDiagnosticMessageText(d.messageText,' ')).join('; '));
  vm.runInNewContext(compiled.outputText, {exports, require: name => name === './http-headers' ? httpHeaders : imports[name],
-  crypto: webcrypto, TextEncoder, TextDecoder, Uint8Array, Date: clock, JSON, Set, Map, AbortSignal});
+  crypto: webcrypto, TextEncoder, TextDecoder, Uint8Array, Date: clock, JSON, Set, Map, AbortSignal, setTimeout, clearTimeout});
  return exports;
 }
 const evidence = load('lib/documents/repository.ts');
@@ -56,6 +56,7 @@ function fixture(t) {
   const body = JSON.parse(init.body);
   if (method === 'crm.deal.get') {
    if (options.readFails || (options.readbackFails && cardWrites > 0)) throw Error('SYNTHETIC READ FAILURE');
+   if(cardWrites>0&&options.staleReadbacks>0){options.staleReadbacks--;return Response.json({result:{ID:'11665',...Object.fromEntries(Object.entries(write.ASSESSMENT_FIELDS).map(([key,field])=>[field,baseline[key]]))}});}
    return Response.json({result:{ID:'11665',...Object.fromEntries(Object.entries(write.ASSESSMENT_FIELDS).map(([key,field])=>[field,state[key]]))}});
   }
   if (method === 'crm.deal.update') {
@@ -92,8 +93,12 @@ function fixture(t) {
  const commit = (id=request1) => service.commitFinalSubmission({},repo,adapter,record,actor,id,'2026-09-17');
  const reconcile = (id=request1) => service.reconcileFinalSubmission(repo,adapter,record,actor,id);
  const saveHistory = (id=request1) => saveSubmissionHistory(repo,historyAdapter,record,actor,id);
+ const coordinator=load('lib/questionnaire/contract-operation.ts',{
+  '../documents/repository':evidence,'./final-submission':service,'./submission-history':{saveSubmissionHistory},
+ });
+ const complete=(overrides={})=>coordinator.completeContractOperation({repository:{},submissions:repo,adapter,historyAdapter,record,actor,requestId:request1,day:'2026-09-17',currentRecord:async()=>({...record}),...overrides});
  return {sqlite,repo,db,record,actor,draft,state,options,calls,prepare,commit,reconcile,saveHistory,
-  counts:()=>({cardWrites,historyWrites,validations}),service};
+  counts:()=>({cardWrites,historyWrites,validations}),service,complete};
 }
 
 test('page reload reuses the same preparation despite a new request ID and clock tick',async t=>{
@@ -214,4 +219,105 @@ test('a prepared snapshot claimed by a competing tab cannot be superseded',async
  await assert.rejects(f.repo.prepare(f.record,request2,{...payload,values:{...payload.values,card:'DIFFERENT'}},f.actor),/SUBMISSION_PENDING/);
  assert.equal((await f.repo.get(f.record.id,request1)).state,'writing');
  assert.equal(await f.repo.get(f.record.id,request2),null);
+});
+
+
+test('server operation completes card, history and contract with one continuation',async t=>{
+ const f=fixture(t);await f.prepare();const result=await f.complete();
+ assert.equal(result.row.state,'verified');assert.equal(result.row.history_state,'verified');
+ assert.equal(result.contract.data.contract_number,'TEST');
+ assert.deepEqual(f.counts(),{cardWrites:1,historyWrites:1,validations:2});
+ const retried=await f.complete();assert.deepEqual(retried.contract,result.contract);
+ assert.deepEqual(f.counts(),{cardWrites:1,historyWrites:1,validations:2});
+});
+test('server operation reconciles a stale Bitrix readback without resending',async t=>{
+ const f=fixture(t);await f.prepare();f.options.staleReadbacks=2;
+ const result=await f.complete();assert.ok(result.contract);
+ assert.equal(f.counts().cardWrites,1);assert.equal(f.counts().historyWrites,1);
+});
+test('lost completed response and reloaded request return the original contract',async t=>{
+ const f=fixture(t),original=await f.prepare();await f.complete();
+ const restored=await f.prepare(request2);assert.equal(restored.request_id,original.request_id);
+ assert.ok((await f.complete({requestId:restored.request_id})).contract);
+ assert.equal(f.counts().cardWrites,1);assert.equal(f.counts().historyWrites,1);
+});
+test('parallel server continuations can never add two card writes or timeline entries',async t=>{
+ const f=fixture(t);await f.prepare();await Promise.all([f.complete(),f.complete(),f.complete()]);
+ const result=await f.complete();assert.ok(result.contract);
+ assert.equal(f.counts().cardWrites,1);assert.equal(f.counts().historyWrites,1);
+});
+test('server operation stops on a proven-unsent preflight failure and retries on the next click',async t=>{
+ const f=fixture(t);await f.prepare();f.options.readFails=true;
+ const stopped=await f.complete();assert.equal(stopped.contract,null);assert.equal(stopped.row.state,'prepared');
+ assert.match(stopped.message,/ещё не отправлялась/);assert.equal(f.counts().cardWrites,0);
+ f.options.readFails=false;assert.ok((await f.complete()).contract);assert.equal(f.counts().cardWrites,1);
+});
+test('server operation retries history without resending the verified card',async t=>{
+ const f=fixture(t);await f.prepare();f.options.historyReadFails=true;
+ const stopped=await f.complete();assert.equal(stopped.contract,null);assert.equal(stopped.row.state,'verified');
+ assert.equal(stopped.row.history_state,'pending');assert.equal(f.counts().historyWrites,0);
+ f.options.historyReadFails=false;assert.ok((await f.complete()).contract);
+ assert.equal(f.counts().cardWrites,1);assert.equal(f.counts().historyWrites,1);
+});
+test('an old uncertain operation remains read-only across every continuation',async t=>{
+ const f=fixture(t);await f.prepare();await f.repo.claim(f.record,request1);
+ await f.repo.finish(f.record.id,request1,false,'BITRIX_REQUEST_FAILED');
+ for(let i=0;i<2;i++)assert.equal((await f.complete()).contract,null);
+ assert.equal(f.counts().cardWrites,0);assert.equal(f.counts().historyWrites,0);
+ assert.equal((await f.repo.get(f.record.id,request1)).state,'uncertain');
+});
+test('server operation does not produce a contract for wrong actor or stale identity',async t=>{
+ const f=fixture(t);await f.prepare();
+ await assert.rejects(f.complete({actor:{...f.actor,id:'other'}}),/SUBMISSION_ACTOR_OR_IDENTITY_CHANGED/);
+ await assert.rejects(f.complete({currentRecord:async()=>({...f.record,identity_revision:2})}),/SUBMISSION_DESTINATION_CHANGED/);
+ assert.equal(f.counts().cardWrites,0);assert.equal(f.counts().historyWrites,0);
+});
+test('destination change after card persistence stops history and contract release',async t=>{
+ const f=fixture(t);await f.prepare();let checks=0;
+ await assert.rejects(f.complete({currentRecord:async()=>++checks===1?{...f.record}:{...f.record,client_iin:'000000000002'}}),/SUBMISSION_DESTINATION_CHANGED/);
+ assert.equal(f.counts().cardWrites,1);assert.equal(f.counts().historyWrites,0);
+});
+test('destination change after history persistence prevents contract release',async t=>{
+ const f=fixture(t);await f.prepare();let checks=0;
+ await assert.rejects(f.complete({currentRecord:async()=>++checks<3?{...f.record}:{...f.record,identity_revision:2}}),/SUBMISSION_DESTINATION_CHANGED/);
+ assert.equal(f.counts().cardWrites,1);assert.equal(f.counts().historyWrites,1);
+});
+test('cancelled or missing operations cannot create a contract',async t=>{
+ const f=fixture(t);await assert.rejects(f.complete(),/SUBMISSION_NOT_FOUND/);
+ await f.prepare();await f.repo.cancelPrepared(f.record.id,request1,f.actor.id);
+ const result=await f.complete();assert.equal(result.contract,null);assert.equal(result.row.state,'cancelled');
+ assert.equal(f.counts().cardWrites,0);assert.equal(f.counts().historyWrites,0);
+});
+test('deadline stops continuation before a write and retains a retryable snapshot',async t=>{
+ const f=fixture(t);await f.prepare();const controller=new AbortController();controller.abort(Error('SYNTHETIC DEADLINE'));
+ await assert.rejects(f.complete({signal:controller.signal}),/SYNTHETIC DEADLINE/);
+ assert.equal(f.counts().cardWrites,0);assert.equal((await f.repo.get(f.record.id,request1)).state,'prepared');
+ assert.ok((await f.complete()).contract);
+});
+test('server coordinator stops on CRM conflicts rather than claiming false success',async t=>{
+ const f=fixture(t);await f.prepare();f.state.card='EXTERNAL EDIT';
+ const result=await f.complete();assert.equal(result.contract,null);assert.match(result.message,/Карточка изменилась в Bitrix/);
+ assert.equal(f.counts().cardWrites,0);assert.equal(f.counts().historyWrites,0);
+});
+
+
+test('expired adapter deadline before the update boundary proves no write started',async()=>{
+ const controller=new AbortController();let requests=0;
+ const adapter=write.createAssessmentAdapter('https://synthetic.invalid/',async()=>{
+  requests++;controller.abort(Error('DEADLINE'));
+  return Response.json({result:{ID:'11665',...Object.fromEntries(Object.entries(write.ASSESSMENT_FIELDS).map(([key,field])=>[field,key==='card'?'BEFORE':values[key]]))}});
+ },controller.signal);
+ await assert.rejects(adapter.save('11665',iin,{...values,card:'BEFORE'},values),error=>error.notStarted===true);
+ assert.equal(requests,1);
+});
+test('expired history deadline before append proves no comment was sent',async()=>{
+ const controller=new AbortController();let requests=0;
+ const adapter=history.createAssessmentHistoryAdapter('https://synthetic.invalid/',async(url)=>{
+  requests++;
+  if(url.endsWith('crm.deal.get.json'))return Response.json({result:{ID:'11665',UF_CRM_AI_IIN:iin}});
+  assert.ok(url.endsWith('crm.timeline.comment.list.json'));controller.abort(Error('DEADLINE'));
+  return Response.json({result:[]});
+ },controller.signal);
+ await assert.rejects(adapter.append('11665',iin,request1,'SYNTHETIC'),error=>error.notStarted===true);
+ assert.equal(requests,2);
 });

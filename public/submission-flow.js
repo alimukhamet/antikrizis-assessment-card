@@ -20,8 +20,8 @@ window.SubmissionFlow={mount(anchor,status){
   const selected=await SubmissionDestination.confirm();if(!selected)throw Error('Отправка отменена.');
   destination=selected;destinationSnapshot=before;guardDestination();
  }
- const messages={SUBMISSION_DESTINATION_CHANGED:'Получатель изменился. Откройте сделку заново.',ASSESSMENT_NOT_READY:'Ответы или документы требуют проверки.',SUBMISSION_PENDING_OR_IDENTITY_CHANGED:'Есть незавершённое сохранение. Откройте сохранённую версию ниже.',SUBMISSION_EVIDENCE_CHANGED:'Источники изменились. Отмените подготовку и проверьте анкету заново.',SUBMISSION_VALIDATION_CHANGED:'Правила проверки обновились. Отмените подготовку и проверьте анкету заново.',IDEMPOTENCY_KEY_REUSED:'Для этого сохранения уже зафиксирована другая версия ответов.',SUBMISSION_ACTOR_OR_IDENTITY_CHANGED:'Сотрудник или клиент изменился. Откройте сделку заново.',CONTRACT_SNAPSHOT_UNAVAILABLE:'Версия договора недоступна; требуется восстановление.',CASE_IDENTITY_CHANGED:'Клиент сделки изменился.'};
- async function post(dealId,body){if(['prepare','commit','history'].includes(body.action)){guardDestination();body={...body,destination};}const url=`/api/assessment/${encodeURIComponent(dealId)}/submission`,options={method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},message=code=>messages[code]||'Операция не подтверждена. Проверьте сохранённую версию и повторите.';if(HostedAssessment.requestJson)return HostedAssessment.requestJson(url,options,{timeoutMs:120000,message});const response=await fetch(url,options),data=await response.json();if(!response.ok)throw Error(message(data.error));return data;}
+ const messages={CONTRACT_OPERATION_TIMEOUT:'Проверка сохранения заняла слишком много времени. Нажмите «Скачать договор» ещё раз без изменения ответов: система продолжит ту же операцию.',SUBMISSION_DESTINATION_CHANGED:'Получатель изменился. Откройте сделку заново.',ASSESSMENT_NOT_READY:'Ответы или документы требуют проверки.',SUBMISSION_PENDING_OR_IDENTITY_CHANGED:'Есть незавершённое сохранение. Откройте сохранённую версию ниже.',SUBMISSION_EVIDENCE_CHANGED:'Источники изменились. Отмените подготовку и проверьте анкету заново.',SUBMISSION_VALIDATION_CHANGED:'Правила проверки обновились. Отмените подготовку и проверьте анкету заново.',IDEMPOTENCY_KEY_REUSED:'Для этого сохранения уже зафиксирована другая версия ответов.',SUBMISSION_ACTOR_OR_IDENTITY_CHANGED:'Сотрудник или клиент изменился. Откройте сделку заново.',CONTRACT_SNAPSHOT_UNAVAILABLE:'Версия договора недоступна; требуется восстановление.',CASE_IDENTITY_CHANGED:'Клиент сделки изменился.'};
+ async function post(dealId,body){if(['prepare','complete','commit','history'].includes(body.action)){guardDestination();body={...body,destination};}const url=`/api/assessment/${encodeURIComponent(dealId)}/submission`,options={method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},message=code=>messages[code]||'Операция не подтверждена. Проверьте сохранённую версию и повторите.';if(HostedAssessment.requestJson)return HostedAssessment.requestJson(url,options,{timeoutMs:120000,message});const response=await fetch(url,options),data=await response.json();if(!response.ok)throw Error(message(data.error));return data;}
  async function refresh(){
   const dealId=currentDeal(),token=++generation;latest=null;recovery.hidden=true;if(!dealId)return;
   try{const response=await fetch(`/api/assessment/${encodeURIComponent(dealId)}/submission`,{cache:'no-store'});if(!response.ok)return;const data=await response.json();if(token!==generation||currentDeal()!==dealId)return;
@@ -29,10 +29,10 @@ window.SubmissionFlow={mount(anchor,status){
    resume.textContent=latest.state==='verified'&&latest.historySaved?'Скачать сохранённый договор':`Продолжить сохранение договора ${latest.contractNumber}`;cancel.hidden=latest.state!=='prepared';
   }catch{/* A failed status fetch never authorizes a new write. */}
  }
- async function download(dealId,requestId){
+ async function download(dealId,contract){
   const savedSignature=signature();
   const guardDownload=()=>{if(currentDeal()!==dealId||signature()!==savedSignature)throw Error('Клиент или ответы изменились во время подготовки договора. Проверьте текущую версию и скачайте договор заново.');};
-  const {contract}=await post(dealId,{action:'contract',requestId});const version=contract?.rendererVersion;
+  const version=contract?.rendererVersion;
   guardDownload();
   // Preload with the retryable bounded loader even for immutable older renderers.
   if(currentRenderer?.ready)await currentRenderer.ready();
@@ -51,45 +51,20 @@ window.SubmissionFlow={mount(anchor,status){
   // A visible, persistent link gives Safari/in-app browsers a fresh user gesture.
   fileLink.focus({preventScroll:true});fileLink.scrollIntoView?.({block:'nearest'});
  }
- async function reconcilePending(dealId,row,guard){
-  if(!['writing','uncertain'].includes(row.state))return row;
-  const delays=[0,500,1200,2500];
-  for(const delay of delays){
-   if(delay)await new Promise(resolve=>setTimeout(resolve,delay));
-   if(guard&&!guard())throw Error('Клиент или ответы изменились во время проверки сохранения. Проверьте текущую версию.');
-   phase('Проверяю…','Подтверждаю сохранение карточки в Bitrix…');
-   row=await post(dealId,{action:'reconcile',requestId:row.requestId});
-   if(row.assessmentSaved||!['writing','uncertain'].includes(row.state))return row;
-  }
-  return row;
- }
- // Presentation only: the server receipt, not a browser retry counter, determines
- // whether anything was sent. The main button resumes the same durable request.
- function unsentMessage(code,history=false){
-  const reason=String(code||'').replace(/^NOT_SENT:/,'');
-  if(reason==='ASSESSMENT_CHANGED_IN_CRM')return 'Карточка изменилась в Bitrix. Ничего не отправлено. Сверьте изменения в сделке перед новой подготовкой договора.';
-  if(reason==='CASE_IDENTITY_CHANGED'||reason==='CLIENT_IDENTITY_UNVERIFIED')return 'Клиент сделки изменился. Ничего не отправлено. Откройте правильную сделку и проверьте получателя.';
-  if(reason==='BITRIX_NOT_CONFIGURED')return 'Подключение к Bitrix не настроено. Ничего не отправлено. Обратитесь к администратору.';
-  if(['HISTORY_CONTENT_MISMATCH','HISTORY_DUPLICATE_REFERENCE'].includes(reason))return 'В истории Bitrix есть конфликт сохранённой записи. Новая запись не отправлена. Нужна проверка администратором.';
-  return history?'Карточка сохранена. Запись в историю ещё не отправлялась. Нажмите «Скачать договор» ещё раз, чтобы продолжить.':'Карточка ещё не отправлялась: проверка Bitrix не завершилась. Нажмите «Скачать договор» ещё раз. Ответы сохранены.';
- }
+ // The server owns commit, readback and timeline transitions. The browser only
+ // guards the user's selection and renders the immutable contract returned to it.
  async function advance(dealId,row,guard){
-  const requestId=row.requestId;if(currentDeal()!==dealId)throw Error('Открыта другая сделка.');
-  if(row.state==='prepared'){
-   if(guard&&!guard()){await post(dealId,{action:'cancel',requestId});throw Error('Ответы изменились. Проверьте анкету заново.');}
-   phase('Сохраняю…','Сохраняю карточку в Bitrix…');row=await post(dealId,{action:'commit',requestId});
-   // A write may have succeeded while Bitrix readback is briefly stale. Reconcile is read-only and never repeats the write.
-   if(!row.assessmentSaved&&['writing','uncertain'].includes(row.state)&&row.outcomeCode)row=await reconcilePending(dealId,row,guard);
-  }else if(['writing','uncertain'].includes(row.state)){row=await reconcilePending(dealId,row,guard);}
-  if(guard&&!guard())throw Error('Клиент или ответы изменились во время сохранения. Уже отправленные данные не удалены. Проверьте текущую версию.');
-  if(row.state==='cancelled'){attempt=null;throw Error('Эта подготовка отменена. Нажмите «Скачать договор» для текущей версии ответов.');}
-  if(row.state==='prepared'&&String(row.outcomeCode||'').startsWith('NOT_SENT:'))throw Error(unsentMessage(row.outcomeCode));
-  if(!row.assessmentSaved)throw Error('Bitrix пока не подтвердил сохранение карточки. Повторной отправки не было. Откройте сохранённую версию и нажмите «Продолжить сохранение»; выполняется только безопасная проверка результата.');
-  if(!row.historySaved){phase('Сохраняю…','Сохраняю анкету в историю сделки…');row=await post(dealId,{action:'history',requestId});}
-  if(!row.historySaved&&row.historyState==='pending'&&String(row.historyOutcomeCode||'').startsWith('NOT_SENT:'))throw Error(unsentMessage(row.historyOutcomeCode,true));
-  if(!row.historySaved)throw Error('Карточка сохранена. История ещё не подтверждена; продолжите из сохранённой версии.');
-  if(guard&&!guard())throw Error('Клиент или ответы изменились во время сохранения. Скачайте нужную версию из сохранённых договоров.');
-  phase('Готовлю договор…','Готовлю сохранённый договор…');await download(dealId,requestId);report('Договор готов. Если скачивание не началось, нажмите «Скачать готовый файл договора» ниже. Карточка, документы и история сохранены в сделке.');
+  if(currentDeal()!==dealId)throw Error('Открыта другая сделка.');
+  if(guard&&!guard()){
+   if(row.state==='prepared')await post(dealId,{action:'cancel',requestId:row.requestId});
+   throw Error('Ответы изменились. Проверьте анкету заново.');
+  }
+  phase('Готовлю договор…','Сохраняю проверенную версию и готовлю договор…');
+  const result=await post(dealId,{action:'complete',requestId:row.requestId});
+  if(guard&&!guard())throw Error('Клиент или ответы изменились во время сохранения. Сохранённая версия не удалена. Проверьте текущие ответы.');
+  if(!result.contract)throw Error(result.message||'Сохранение ещё не подтверждено. Нажмите «Скачать договор» ещё раз без изменения ответов.');
+  await download(dealId,result.contract);
+  report('Договор готов. Если скачивание не началось, нажмите «Скачать готовый файл договора» ниже. Карточка и история сохранены в сделке.');
  }
  async function operate(action){if(busy)return;busy=true;busyLabel='Проверяю…';destination=null;destinationSnapshot=null;clearFile();save.disabled=resume.disabled=cancel.disabled=true;save.textContent=busyLabel;report('Проверяю данные для договора…');try{await action();}catch(error){recovery.open=true;report(error.message);}finally{busy=false;busyLabel='Скачать договор';resume.disabled=cancel.disabled=false;save.disabled=false;save.textContent=busyLabel;progress();void refresh();}}
  save.onclick=()=>operate(async()=>{

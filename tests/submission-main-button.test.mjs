@@ -21,14 +21,14 @@ function fixture(t,{historyFails=false,conflict=false}={}){
   const body=JSON.parse(options.body);actions.push(body.action);
   if(body.action==='prepare')return{ok:true,json:async()=>({...row})};
   assert.equal(body.requestId,requestId);
-  if(body.action==='commit'){
+  if(body.action==='complete'){
    tries++;
-   row=tries===1&&!historyFails?{...row,outcomeCode:conflict?'NOT_SENT:ASSESSMENT_CHANGED_IN_CRM':'NOT_SENT:ASSESSMENT_PREFLIGHT_FAILED'}:{...row,state:'verified',assessmentSaved:true,outcomeCode:'READBACK_VERIFIED'};
-  }else if(body.action==='history'){
-   historyTries++;
-   row=historyFails&&historyTries===1?{...row,historyState:'pending',historyOutcomeCode:'NOT_SENT:HISTORY_PREFLIGHT_FAILED'}:{...row,historySaved:true,historyState:'verified'};
-  }else if(body.action==='contract')return{ok:true,json:async()=>({contract:{data:{synthetic:true},rendererVersion:version}})};
-  else assert.fail('An unsent operation must not enter uncertain reconciliation: '+body.action);
+   if(tries===1&&!historyFails)row={...row,outcomeCode:conflict?'NOT_SENT:ASSESSMENT_CHANGED_IN_CRM':'NOT_SENT:ASSESSMENT_PREFLIGHT_FAILED',message:conflict?'Карточка изменилась в Bitrix. Ничего не отправлено.':'Карточка ещё не отправлялась. Повторите действие.'};
+   else{
+    row={...row,state:'verified',assessmentSaved:true};historyTries++;
+    row=historyFails&&historyTries===1?{...row,historyState:'pending',historyOutcomeCode:'NOT_SENT:HISTORY_PREFLIGHT_FAILED',message:'Запись в историю ещё не отправлялась.'}:{...row,historySaved:true,historyState:'verified',contract:{data:{synthetic:true},rendererVersion:version}};
+   }
+  }else assert.fail('The browser must not coordinate individual CRM actions: '+body.action);
   return{ok:true,json:async()=>({...row})};
  };
  w.eval(source);
@@ -45,12 +45,12 @@ function fixture(t,{historyFails=false,conflict=false}={}){
 test('same main button recovers a proven-unsent card and downloads without a manual resume click',async t=>{
  const f=fixture(t);await f.click();assert.match(f.status(),/ещё не отправлялась/);assert.equal(f.recovery().open,true);
  await f.click();assert.equal(f.downloads(),1);
- assert.deepEqual(f.actions,['prepare','commit','prepare','commit','history','contract']);
+ assert.deepEqual(f.actions,['prepare','complete','prepare','complete']);
 });
 test('same main button resumes a pending history without committing the card again',async t=>{
  const f=fixture(t,{historyFails:true});await f.click();assert.match(f.status(),/историю ещё не отправлялась/);
  await f.click();assert.equal(f.downloads(),1);
- assert.deepEqual(f.actions,['prepare','commit','history','prepare','history','contract']);
+ assert.deepEqual(f.actions,['prepare','complete','prepare','complete']);
 });
 test('a known CRM conflict is shown as a conflict, not an instruction to blindly resend',async t=>{
  const f=fixture(t,{conflict:true});await f.click();assert.match(f.status(),/Карточка изменилась в Bitrix/);
