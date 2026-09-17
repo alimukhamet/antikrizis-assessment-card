@@ -1,9 +1,9 @@
 {
   "file": "templates/assessment-card.html",
   "suffixHashes": {
-    "<div class=\"task-grid\">": "64af6ebf1f68db8028b5c0393945dce23d046d4c36eb14f3bf6c0e6c7ec5b95e",
-    "<header class=\"workflow-header\"": "0030f658efddbcdd0d638679e1402c0f084f62e0a1b1aaac1ede5f4db1f037a5"
+    "<div class=\"task-grid\">": "343d37e25d1562cf1c92e0a5c514685e3205541b77534e3d9536172bb10993d1",
+    "<header class=\"workflow-header\"": "fdb744dfa77aced46b054aa683d4640637b8cd6bd59f6f35b14d7a7e916bdeba"
   },
   "baseCommit": "256d2e064d41888c78edc3e0e9d1a518b703dc03",
-  "change": "Retire tools 01 and 02; preserve canonical form, exports, and document renderer."
+  "change": "Restore original tools 01/02 from pre-retirement navigation; preserve original form, legal template and save/upload functions. Same-version libraries load locally first."
 }

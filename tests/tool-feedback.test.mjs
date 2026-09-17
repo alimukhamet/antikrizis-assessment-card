@@ -80,7 +80,7 @@ test('three operational entries preserve the analyzer and report version matches
  assert.equal(fs.existsSync('public/assessment-card.html'),false,'Static assets must not shadow the canonical protected tool');
  for(const path of ['templates/assessment-card.html']){
   const dom=new JSDOM(fs.readFileSync(path,'utf8')),cards=dom.window.document.querySelectorAll('.task-grid>.task-card');assert.equal(cards.length,3);
-  assert.equal(cards[0].getAttribute('href'),'/assessment-review');assert.equal(cards[1].getAttribute('href'),'/lawyer-handoff');assert.match(cards[2].href,/gkb-credit-analyzer-kz/);assert.equal(cards[0].target,'_top');assert.equal(cards[1].target,'_top');dom.window.close();
+  assert.equal(cards[0].getAttribute('data-open-view'),'contract');assert.equal(cards[1].getAttribute('data-open-view'),'documents');assert.match(cards[2].href,/gkb-credit-analyzer-kz/);assert.equal(cards[0].disabled,false);assert.equal(cards[1].disabled,false);dom.window.close();
  }
  const dom=new JSDOM(fs.readFileSync('public/questionnaire.html','utf8'));assert.equal(dom.window.document.body.dataset.assessmentVersion,release.version);assert.ok(dom.window.document.querySelector('script[src="/tool-feedback.js"]'));dom.window.close();
 });

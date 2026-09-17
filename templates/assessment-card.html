@@ -323,7 +323,7 @@
     <div class="home-hero">
       <div class="eyebrow">Работа со сделкой</div>
       <h1>Что нужно сделать?</h1>
-      <p>Подготовьте договор. После подписания передайте дело юристам.</p>
+      <p>Создайте договор или загрузите документы в сделку.</p>
       <section class="competition" aria-labelledby="competition-title">
 <div class="competition-head"><div><h2 id="competition-title">Результаты продаж</h2><p>Сделки, переданные юристам</p></div><div class="period-switch" aria-label="Период отчёта"><button data-sales-period="today" aria-pressed="false">Сегодня</button><button data-sales-period="current_week" aria-pressed="false">Неделя</button><button data-sales-period="current_month" aria-pressed="true">Месяц</button><button data-sales-period="custom" aria-pressed="false">Даты</button></div></div>
 <div class="payment-switch" aria-label="Вид оплаты"><button data-sales-payment="all" aria-pressed="true">Все</button><button data-sales-payment="423" aria-pressed="false">50/50</button><button data-sales-payment="261" aria-pressed="false">После определения</button><button data-sales-payment="263" aria-pressed="false">До определения</button></div>
@@ -341,18 +341,18 @@
         <a href="/my-earnings" target="_top"><span>Мой заработок</span><span aria-hidden="true">→</span></a>
       </nav>
       <div class="task-grid">
-        <a class="task-card" href="/assessment-review" target="_top" data-main-action="contract">
+        <button class="task-card" type="button" data-open-view="contract" data-main-action="contract">
           <span class="task-number">01</span>
-          <h2>Сформировать договор</h2>
-          <p>Документы клиента → проверка ответов → договор. Вся карточка и черновик сохраняются.</p>
-          <span class="task-link"><span>Открыть клиента</span><span>→</span></span>
-        </a>
-        <a class="task-card" href="/lawyer-handoff" target="_top" data-main-action="handoff">
+          <h2>Создать договор</h2>
+          <p>Заполнить карточку и скачать договор.</p>
+          <span class="task-link"><span>Открыть</span><span>→</span></span>
+        </button>
+        <button class="task-card" type="button" data-open-view="documents" data-main-action="documents">
           <span class="task-number">02</span>
-          <h2>Передать юристам</h2>
-          <p>ЭЦП, доверенность и подписанный договор из TrustMe с QR. Всё остальное — из карточки клиента.</p>
-          <span class="task-link"><span>Подготовить передачу</span><span>→</span></span>
-        </a>
+          <h2>Загрузить документы</h2>
+          <p>Прикрепить файлы к сделке в Bitrix.</p>
+          <span class="task-link"><span>Открыть</span><span>→</span></span>
+        </button>
         <a class="task-card" href="https://gkb-credit-analyzer-kz.mukhamet-ali-ma.chatgpt.site" target="_blank" rel="noopener" data-main-action="gkb">
           <span class="task-number">03</span>
           <h2>Проверить кредитный отчёт</h2>
@@ -937,11 +937,13 @@ const COMPANY = {
 
 const LIB_URLS = {
   pizzip: [
+    "/vendor/contracts/pizzip-3.1.7.min.js",
     "https://cdn.jsdelivr.net/npm/pizzip@3.1.7/dist/pizzip.js",
     "https://cdnjs.cloudflare.com/ajax/libs/pizzip/3.1.7/pizzip.js",
     "https://unpkg.com/pizzip@3.1.7/dist/pizzip.js"
   ],
   docxtemplater: [
+    "/vendor/contracts/docxtemplater-3.50.0.min.js",
     "https://cdn.jsdelivr.net/npm/docxtemplater@3.50.0/build/docxtemplater.js",
     "https://cdnjs.cloudflare.com/ajax/libs/docxtemplater/3.50.0/docxtemplater.js",
     "https://unpkg.com/docxtemplater@3.50.0/build/docxtemplater.js"
@@ -1958,15 +1960,7 @@ const VIEW_COPY={
   contract:{title:"Договор и карточка",subtitle:"Оценка клиента и оформление договора",clear:"Очистить форму"},
   documents:{title:"Загрузка документов",subtitle:"Отдельная отправка файлов в Bitrix",clear:"Очистить файлы"}
 };
-function openCurrentAssessment(){
-  const target=new URL('/assessment-review',window.location.origin);
-  const dealId=$("dealId").value.trim()||new URLSearchParams(window.location.search).get('dealId')||'';
-  if(/^[1-9]\d*$/.test(dealId))target.searchParams.set('dealId',dealId);
-  window.top.location.assign(target.href);
-}
 function openView(view){
-  // The two legacy forms are retired; retain their implementation for canonical exports.
-  if(view==='contract'||view==='documents'){openCurrentAssessment();return;}
   if(view==="documents"){
     if(!$("docClientName").value.trim()&&$("fio").value.trim()) $("docClientName").value=$("fio").value.trim();
     if(segVal.docSocialPayments===null&&getCheckedArray("socialStatus").length){
@@ -2494,8 +2488,8 @@ async function uploadDocuments(){
   }
 }
 
-$("contractBtn").onclick = openCurrentAssessment;
-$("docsBtn").onclick = openCurrentAssessment;
+$("contractBtn").onclick = submitContractAndAssessment;
+$("docsBtn").onclick = uploadDocuments;
 $("clearBtn").onclick = clearForm;
 $("dealId").addEventListener("input",()=>scheduleDealLookup());
 $("dealId").addEventListener("change",()=>scheduleDealLookup(0));

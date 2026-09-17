@@ -84,7 +84,7 @@ test("captures every fact needed to build the later document checklist", async (
   assert.match(card, /marital:\s*\{bx:"UF_CRM_AI_MARITAL"\}/);
 });
 
-test("both launcher URLs offer three deliberate destinations without selecting a client", async () => {
+test("both protected launcher URLs restore the two original tools and keep the analyzer", async () => {
   for (const path of ['/assessment-card', '/assessment-card.html']) {
     const response=await fetchBuilt(path);
     assert.equal(response.status,200);
@@ -92,39 +92,37 @@ test("both launcher URLs offer three deliberate destinations without selecting a
     const dom=new JSDOM(await response.text());
     const cards=[...dom.window.document.querySelectorAll('.task-grid > .task-card')];
     assert.equal(cards.length,3);
-    assert.equal(cards[0].getAttribute('href'),'/assessment-review');
-    assert.equal(cards[1].getAttribute('href'),'/lawyer-handoff');
-    for(const card of cards.slice(0,2)){assert.equal(card.tagName,'A');assert.equal(card.getAttribute('target'),'_top');assert.equal(card.href.includes('dealId'),false);}
+    assert.equal(cards[0].getAttribute('data-open-view'),'contract');
+    assert.equal(cards[1].getAttribute('data-open-view'),'documents');
+    for(const card of cards.slice(0,2)){assert.equal(card.tagName,'BUTTON');assert.equal(card.disabled,false);assert.equal(card.hasAttribute('href'),false);}
 
     assert.equal(cards[2].getAttribute('href'),'https://gkb-credit-analyzer-kz.mukhamet-ali-ma.chatgpt.site');
     dom.window.close();
   }
 });
 
-test("legacy navigation and action buttons lead to the new assessment without writing client data", async () => {
+test("original navigation opens separate forms and reconnects their original handlers", async () => {
   const html=await readFile(new URL('../templates/assessment-card.html',import.meta.url),'utf8');
-  const dom=new JSDOM(html);
-  const document=dom.window.document;
-  const targets=[];
-  const context=vm.createContext({document,$:id=>document.getElementById(id),URL,URLSearchParams,
-    window:{location:{origin:'https://site.test',search:'?dealId=11749'},top:{location:{assign:url=>targets.push(url)}}},
-    onChange(){throw Error('A retired form was opened');},
-    submitContractAndAssessment(){throw Error('Legacy contract write');},
-    uploadDocuments(){throw Error('Legacy document write');}
+  const dom=new JSDOM(html),document=dom.window.document,calls=[];
+  const contract=()=>calls.push('contract'),documents=()=>calls.push('documents');
+  const context=vm.createContext({document,$:id=>document.getElementById(id),
+    window:{scrollTo(){}},onChange(){},segVal:{docSocialPayments:'0',docSalaryBank:'0'},
+    submitContractAndAssessment:contract,uploadDocuments:documents
   });
   vm.runInContext(html.slice(html.indexOf('const VIEW_COPY='),html.indexOf('// ── Build Bitrix fields payload ──')),context);
   vm.runInContext(html.slice(html.indexOf('$("contractBtn").onclick ='),html.indexOf('$("clearBtn").onclick =')),context);
-  for (const view of ['contract','documents']) vm.runInContext(`openView('${view}')`,context);
-  document.getElementById('contractBtn').click();
-  document.getElementById('docsBtn').click();
-  assert.deepEqual(targets,Array(4).fill('https://site.test/assessment-review?dealId=11749'));
+  document.querySelector('[data-open-view="contract"]').click();
+  assert.equal(document.body.dataset.view,'contract');
+  assert.equal(document.getElementById('contractBtn').onclick,contract);
+  document.getElementById('backBtn').click();
   assert.equal(document.body.dataset.view,'home');
-  document.getElementById('dealId').value='11223';
-  vm.runInContext('openCurrentAssessment()',context);
-  assert.equal(targets.at(-1),'https://site.test/assessment-review?dealId=11223');
-  document.getElementById('dealId').value='wrong';
-  vm.runInContext('openCurrentAssessment()',context);
-  assert.equal(targets.at(-1),'https://site.test/assessment-review');
+  document.querySelector('[data-open-view="documents"]').click();
+  assert.equal(document.body.dataset.view,'documents');
+  assert.equal(document.getElementById('docsBtn').onclick,documents);
+  assert.deepEqual(calls,[],'Opening a tool must never write or submit a deal');
+  document.getElementById('contractBtn').click();document.getElementById('docsBtn').click();
+  assert.deepEqual(calls,['contract','documents']);
+  assert.equal(html.includes('openCurrentAssessment'),false);
   dom.window.close();
 });
 
