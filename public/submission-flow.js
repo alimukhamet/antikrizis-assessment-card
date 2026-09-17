@@ -51,14 +51,28 @@ window.SubmissionFlow={mount(anchor,status){
   // A visible, persistent link gives Safari/in-app browsers a fresh user gesture.
   fileLink.focus({preventScroll:true});fileLink.scrollIntoView?.({block:'nearest'});
  }
+ async function reconcilePending(dealId,row,guard){
+  if(!['writing','uncertain'].includes(row.state))return row;
+  const delays=[0,500,1200,2500];
+  for(const delay of delays){
+   if(delay)await new Promise(resolve=>setTimeout(resolve,delay));
+   if(guard&&!guard())throw Error('Клиент или ответы изменились во время проверки сохранения. Проверьте текущую версию.');
+   phase('Проверяю…','Подтверждаю сохранение карточки в Bitrix…');
+   row=await post(dealId,{action:'reconcile',requestId:row.requestId});
+   if(row.assessmentSaved||!['writing','uncertain'].includes(row.state))return row;
+  }
+  return row;
+ }
  async function advance(dealId,row,guard){
   const requestId=row.requestId;if(currentDeal()!==dealId)throw Error('Открыта другая сделка.');
   if(row.state==='prepared'){
    if(guard&&!guard()){await post(dealId,{action:'cancel',requestId});throw Error('Ответы изменились. Проверьте анкету заново.');}
    phase('Сохраняю…','Сохраняю карточку в Bitrix…');row=await post(dealId,{action:'commit',requestId});
-  }else if(['writing','uncertain'].includes(row.state)){phase('Проверяю…','Проверяю результат сохранения…');row=await post(dealId,{action:'reconcile',requestId});}
+   // A write may have succeeded while Bitrix readback is briefly stale. Reconcile is read-only and never repeats the write.
+   if(!row.assessmentSaved&&['writing','uncertain'].includes(row.state)&&row.outcomeCode)row=await reconcilePending(dealId,row,guard);
+  }else if(['writing','uncertain'].includes(row.state)){row=await reconcilePending(dealId,row,guard);}
   if(guard&&!guard())throw Error('Клиент или ответы изменились во время сохранения. Уже отправленные данные не удалены. Проверьте текущую версию.');
-  if(!row.assessmentSaved)throw Error('Сохранение карточки ещё не подтверждено. Повторите проверку через сохранённую версию; повторной отправки не будет.');
+  if(!row.assessmentSaved)throw Error('Bitrix пока не подтвердил сохранение карточки. Повторной отправки не было. Откройте сохранённую версию и нажмите «Продолжить сохранение»; выполняется только безопасная проверка результата.');
   if(!row.historySaved){phase('Сохраняю…','Сохраняю анкету в историю сделки…');row=await post(dealId,{action:'history',requestId});}
   if(!row.historySaved)throw Error('Карточка сохранена. История ещё не подтверждена; продолжите из сохранённой версии.');
   if(guard&&!guard())throw Error('Клиент или ответы изменились во время сохранения. Скачайте нужную версию из сохранённых договоров.');
