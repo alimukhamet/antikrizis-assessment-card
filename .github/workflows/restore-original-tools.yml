@@ -1,0 +1,61 @@
+name: Verify original two-tool restoration
+on:
+  push:
+    branches: [restore/original-contract-and-upload]
+    paths: [.github/workflows/restore-original-tools.yml, .github/repairs/restore-original-tools.patch, tests/restored-original-tools.test.mjs]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      ANTIKRIZIS_EXTERNAL_DEPLOY: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Apply the exact locally verified restoration
+        run: |
+          echo '371cfea481a5e7ef772a8206818b4b5c0aeede65b6e1ca633f18f83c991014fa  .github/repairs/restore-original-tools.patch' | sha256sum --check
+          git apply --index --check .github/repairs/restore-original-tools.patch
+          git apply --index .github/repairs/restore-original-tools.patch
+          test "$(git hash-object templates/assessment-card.html)" = '4a4ca824c031bd908adbd2cad03fdec4c9db6999'
+          test "$(git hash-object tests/restored-original-tools.test.mjs)" = '1c0f26adebdfdc5f00c4bfc73f0b1fbfd4a4f079'
+          git diff --cached --stat
+      - run: npm ci --no-audit --no-fund
+      - name: Lint and type check
+        run: |
+          npm run lint -- --max-warnings=0
+          npx --no-install tsc --noEmit
+      - name: Run the restored original handlers and real DOCX renderer
+        run: node --test tests/restored-original-tools.test.mjs
+      - name: Full build and regression suite
+        run: |
+          if npm test > /tmp/original-tools-tests.log 2>&1; then
+            tail -12 /tmp/original-tools-tests.log
+          else
+            grep -A35 '^not ok' /tmp/original-tools-tests.log || true
+            tail -18 /tmp/original-tools-tests.log
+            exit 1
+          fi
+      - name: Check existing Cloudflare package without deployment
+        run: npx --no-install wrangler deploy --dry-run --config wrangler.anti-krizis.jsonc --outdir /tmp/restored-tools-worker
+      - name: Preserve test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-tools-test-log
+          path: /tmp/original-tools-tests.log
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Commit only verified restoration and remove helper
+        run: |
+          git diff --exit-code
+          git rm -- .github/workflows/restore-original-tools.yml .github/repairs/restore-original-tools.patch
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Restore original independent contract and document upload tools'
+          git push origin HEAD:refs/heads/restore/original-contract-and-upload

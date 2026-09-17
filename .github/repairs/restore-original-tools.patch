@@ -1,0 +1,186 @@
+diff --git a/templates/assessment-card.html b/templates/assessment-card.html
+index 2da9208..4a4ca82 100644
+--- a/templates/assessment-card.html
++++ b/templates/assessment-card.html
+@@ -323,7 +323,7 @@
+     <div class="home-hero">
+       <div class="eyebrow">Работа со сделкой</div>
+       <h1>Что нужно сделать?</h1>
+-      <p>Подготовьте договор. После подписания передайте дело юристам.</p>
++      <p>Создайте договор или загрузите документы в сделку.</p>
+       <section class="competition" aria-labelledby="competition-title">
+ <div class="competition-head"><div><h2 id="competition-title">Результаты продаж</h2><p>Сделки, переданные юристам</p></div><div class="period-switch" aria-label="Период отчёта"><button data-sales-period="today" aria-pressed="false">Сегодня</button><button data-sales-period="current_week" aria-pressed="false">Неделя</button><button data-sales-period="current_month" aria-pressed="true">Месяц</button><button data-sales-period="custom" aria-pressed="false">Даты</button></div></div>
+ <div class="payment-switch" aria-label="Вид оплаты"><button data-sales-payment="all" aria-pressed="true">Все</button><button data-sales-payment="423" aria-pressed="false">50/50</button><button data-sales-payment="261" aria-pressed="false">После определения</button><button data-sales-payment="263" aria-pressed="false">До определения</button></div>
+@@ -341,18 +341,18 @@
+         <a href="/my-earnings" target="_top"><span>Мой заработок</span><span aria-hidden="true">→</span></a>
+       </nav>
+       <div class="task-grid">
+-        <a class="task-card" href="/assessment-review" target="_top" data-main-action="contract">
++        <button class="task-card" type="button" data-open-view="contract" data-main-action="contract">
+           <span class="task-number">01</span>
+-          <h2>Сформировать договор</h2>
+-          <p>Документы клиента → проверка ответов → договор. Вся карточка и черновик сохраняются.</p>
+-          <span class="task-link"><span>Открыть клиента</span><span>→</span></span>
+-        </a>
+-        <a class="task-card" href="/lawyer-handoff" target="_top" data-main-action="handoff">
++          <h2>Создать договор</h2>
++          <p>Заполнить карточку и скачать договор.</p>
++          <span class="task-link"><span>Открыть</span><span>→</span></span>
++        </button>
++        <button class="task-card" type="button" data-open-view="documents" data-main-action="documents">
+           <span class="task-number">02</span>
+-          <h2>Передать юристам</h2>
+-          <p>ЭЦП, доверенность и подписанный договор из TrustMe с QR. Всё остальное — из карточки клиента.</p>
+-          <span class="task-link"><span>Подготовить передачу</span><span>→</span></span>
+-        </a>
++          <h2>Загрузить документы</h2>
++          <p>Прикрепить файлы к сделке в Bitrix.</p>
++          <span class="task-link"><span>Открыть</span><span>→</span></span>
++        </button>
+         <a class="task-card" href="https://gkb-credit-analyzer-kz.mukhamet-ali-ma.chatgpt.site" target="_blank" rel="noopener" data-main-action="gkb">
+           <span class="task-number">03</span>
+           <h2>Проверить кредитный отчёт</h2>
+@@ -937,11 +937,13 @@ const COMPANY = {
+ 
+ const LIB_URLS = {
+   pizzip: [
++    "/vendor/contracts/pizzip-3.1.7.min.js",
+     "https://cdn.jsdelivr.net/npm/pizzip@3.1.7/dist/pizzip.js",
+     "https://cdnjs.cloudflare.com/ajax/libs/pizzip/3.1.7/pizzip.js",
+     "https://unpkg.com/pizzip@3.1.7/dist/pizzip.js"
+   ],
+   docxtemplater: [
++    "/vendor/contracts/docxtemplater-3.50.0.min.js",
+     "https://cdn.jsdelivr.net/npm/docxtemplater@3.50.0/build/docxtemplater.js",
+     "https://cdnjs.cloudflare.com/ajax/libs/docxtemplater/3.50.0/docxtemplater.js",
+     "https://unpkg.com/docxtemplater@3.50.0/build/docxtemplater.js"
+@@ -1958,15 +1960,7 @@ const VIEW_COPY={
+   contract:{title:"Договор и карточка",subtitle:"Оценка клиента и оформление договора",clear:"Очистить форму"},
+   documents:{title:"Загрузка документов",subtitle:"Отдельная отправка файлов в Bitrix",clear:"Очистить файлы"}
+ };
+-function openCurrentAssessment(){
+-  const target=new URL('/assessment-review',window.location.origin);
+-  const dealId=$("dealId").value.trim()||new URLSearchParams(window.location.search).get('dealId')||'';
+-  if(/^[1-9]\d*$/.test(dealId))target.searchParams.set('dealId',dealId);
+-  window.top.location.assign(target.href);
+-}
+ function openView(view){
+-  // The two legacy forms are retired; retain their implementation for canonical exports.
+-  if(view==='contract'||view==='documents'){openCurrentAssessment();return;}
+   if(view==="documents"){
+     if(!$("docClientName").value.trim()&&$("fio").value.trim()) $("docClientName").value=$("fio").value.trim();
+     if(segVal.docSocialPayments===null&&getCheckedArray("socialStatus").length){
+@@ -2494,8 +2488,8 @@ async function uploadDocuments(){
+   }
+ }
+ 
+-$("contractBtn").onclick = openCurrentAssessment;
+-$("docsBtn").onclick = openCurrentAssessment;
++$("contractBtn").onclick = submitContractAndAssessment;
++$("docsBtn").onclick = uploadDocuments;
+ $("clearBtn").onclick = clearForm;
+ $("dealId").addEventListener("input",()=>scheduleDealLookup());
+ $("dealId").addEventListener("change",()=>scheduleDealLookup(0));
+diff --git a/tests/fixtures/canonical-workflow-hashes.json b/tests/fixtures/canonical-workflow-hashes.json
+index bf2d161..f81ac50 100644
+--- a/tests/fixtures/canonical-workflow-hashes.json
++++ b/tests/fixtures/canonical-workflow-hashes.json
+@@ -1,9 +1,9 @@
+ {
+   "file": "templates/assessment-card.html",
+   "suffixHashes": {
+-    "<div class=\"task-grid\">": "64af6ebf1f68db8028b5c0393945dce23d046d4c36eb14f3bf6c0e6c7ec5b95e",
+-    "<header class=\"workflow-header\"": "0030f658efddbcdd0d638679e1402c0f084f62e0a1b1aaac1ede5f4db1f037a5"
++    "<div class=\"task-grid\">": "343d37e25d1562cf1c92e0a5c514685e3205541b77534e3d9536172bb10993d1",
++    "<header class=\"workflow-header\"": "fdb744dfa77aced46b054aa683d4640637b8cd6bd59f6f35b14d7a7e916bdeba"
+   },
+   "baseCommit": "256d2e064d41888c78edc3e0e9d1a518b703dc03",
+-  "change": "Retire tools 01 and 02; preserve canonical form, exports, and document renderer."
++  "change": "Restore original tools 01/02 from pre-retirement navigation; preserve original form, legal template and save/upload functions. Same-version libraries load locally first."
+ }
+diff --git a/tests/rendered-html.test.mjs b/tests/rendered-html.test.mjs
+index 3cad978..9da9035 100644
+--- a/tests/rendered-html.test.mjs
++++ b/tests/rendered-html.test.mjs
+@@ -84,7 +84,7 @@ test("captures every fact needed to build the later document checklist", async (
+   assert.match(card, /marital:\s*\{bx:"UF_CRM_AI_MARITAL"\}/);
+ });
+ 
+-test("both launcher URLs offer three deliberate destinations without selecting a client", async () => {
++test("both protected launcher URLs restore the two original tools and keep the analyzer", async () => {
+   for (const path of ['/assessment-card', '/assessment-card.html']) {
+     const response=await fetchBuilt(path);
+     assert.equal(response.status,200);
+@@ -92,39 +92,37 @@ test("both launcher URLs offer three deliberate destinations without selecting a
+     const dom=new JSDOM(await response.text());
+     const cards=[...dom.window.document.querySelectorAll('.task-grid > .task-card')];
+     assert.equal(cards.length,3);
+-    assert.equal(cards[0].getAttribute('href'),'/assessment-review');
+-    assert.equal(cards[1].getAttribute('href'),'/lawyer-handoff');
+-    for(const card of cards.slice(0,2)){assert.equal(card.tagName,'A');assert.equal(card.getAttribute('target'),'_top');assert.equal(card.href.includes('dealId'),false);}
++    assert.equal(cards[0].getAttribute('data-open-view'),'contract');
++    assert.equal(cards[1].getAttribute('data-open-view'),'documents');
++    for(const card of cards.slice(0,2)){assert.equal(card.tagName,'BUTTON');assert.equal(card.disabled,false);assert.equal(card.hasAttribute('href'),false);}
+ 
+     assert.equal(cards[2].getAttribute('href'),'https://gkb-credit-analyzer-kz.mukhamet-ali-ma.chatgpt.site');
+     dom.window.close();
+   }
+ });
+ 
+-test("legacy navigation and action buttons lead to the new assessment without writing client data", async () => {
++test("original navigation opens separate forms and reconnects their original handlers", async () => {
+   const html=await readFile(new URL('../templates/assessment-card.html',import.meta.url),'utf8');
+-  const dom=new JSDOM(html);
+-  const document=dom.window.document;
+-  const targets=[];
+-  const context=vm.createContext({document,$:id=>document.getElementById(id),URL,URLSearchParams,
+-    window:{location:{origin:'https://site.test',search:'?dealId=11749'},top:{location:{assign:url=>targets.push(url)}}},
+-    onChange(){throw Error('A retired form was opened');},
+-    submitContractAndAssessment(){throw Error('Legacy contract write');},
+-    uploadDocuments(){throw Error('Legacy document write');}
++  const dom=new JSDOM(html),document=dom.window.document,calls=[];
++  const contract=()=>calls.push('contract'),documents=()=>calls.push('documents');
++  const context=vm.createContext({document,$:id=>document.getElementById(id),
++    window:{scrollTo(){}},onChange(){},segVal:{docSocialPayments:'0',docSalaryBank:'0'},
++    submitContractAndAssessment:contract,uploadDocuments:documents
+   });
+   vm.runInContext(html.slice(html.indexOf('const VIEW_COPY='),html.indexOf('// ── Build Bitrix fields payload ──')),context);
+   vm.runInContext(html.slice(html.indexOf('$("contractBtn").onclick ='),html.indexOf('$("clearBtn").onclick =')),context);
+-  for (const view of ['contract','documents']) vm.runInContext(`openView('${view}')`,context);
+-  document.getElementById('contractBtn').click();
+-  document.getElementById('docsBtn').click();
+-  assert.deepEqual(targets,Array(4).fill('https://site.test/assessment-review?dealId=11749'));
++  document.querySelector('[data-open-view="contract"]').click();
++  assert.equal(document.body.dataset.view,'contract');
++  assert.equal(document.getElementById('contractBtn').onclick,contract);
++  document.getElementById('backBtn').click();
+   assert.equal(document.body.dataset.view,'home');
+-  document.getElementById('dealId').value='11223';
+-  vm.runInContext('openCurrentAssessment()',context);
+-  assert.equal(targets.at(-1),'https://site.test/assessment-review?dealId=11223');
+-  document.getElementById('dealId').value='wrong';
+-  vm.runInContext('openCurrentAssessment()',context);
+-  assert.equal(targets.at(-1),'https://site.test/assessment-review');
++  document.querySelector('[data-open-view="documents"]').click();
++  assert.equal(document.body.dataset.view,'documents');
++  assert.equal(document.getElementById('docsBtn').onclick,documents);
++  assert.deepEqual(calls,[],'Opening a tool must never write or submit a deal');
++  document.getElementById('contractBtn').click();document.getElementById('docsBtn').click();
++  assert.deepEqual(calls,['contract','documents']);
++  assert.equal(html.includes('openCurrentAssessment'),false);
+   dom.window.close();
+ });
+ 
+diff --git a/tests/tool-feedback.test.mjs b/tests/tool-feedback.test.mjs
+index 3f2e502..cab4e1c 100644
+--- a/tests/tool-feedback.test.mjs
++++ b/tests/tool-feedback.test.mjs
+@@ -80,7 +80,7 @@ test('three operational entries preserve the analyzer and report version matches
+  assert.equal(fs.existsSync('public/assessment-card.html'),false,'Static assets must not shadow the canonical protected tool');
+  for(const path of ['templates/assessment-card.html']){
+   const dom=new JSDOM(fs.readFileSync(path,'utf8')),cards=dom.window.document.querySelectorAll('.task-grid>.task-card');assert.equal(cards.length,3);
+-  assert.equal(cards[0].getAttribute('href'),'/assessment-review');assert.equal(cards[1].getAttribute('href'),'/lawyer-handoff');assert.match(cards[2].href,/gkb-credit-analyzer-kz/);assert.equal(cards[0].target,'_top');assert.equal(cards[1].target,'_top');dom.window.close();
++  assert.equal(cards[0].getAttribute('data-open-view'),'contract');assert.equal(cards[1].getAttribute('data-open-view'),'documents');assert.match(cards[2].href,/gkb-credit-analyzer-kz/);assert.equal(cards[0].disabled,false);assert.equal(cards[1].disabled,false);dom.window.close();
+  }
+  const dom=new JSDOM(fs.readFileSync('public/questionnaire.html','utf8'));assert.equal(dom.window.document.body.dataset.assessmentVersion,release.version);assert.ok(dom.window.document.querySelector('script[src="/tool-feedback.js"]'));dom.window.close();
+ });
