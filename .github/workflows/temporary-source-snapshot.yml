@@ -1,0 +1,26 @@
+name: Temporary source snapshot
+on:
+  push:
+    branches: [refactor/server-contract-operation]
+    paths: [.github/workflows/temporary-source-snapshot.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Archive tracked source only, without credentials or runtime data
+        run: |
+          git archive --format=zip HEAD -o /tmp/assessment-source.zip
+          git rev-parse HEAD > /tmp/source-commit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: assessment-source-snapshot
+          path: |
+            /tmp/assessment-source.zip
+            /tmp/source-commit.txt
+          retention-days: 1
