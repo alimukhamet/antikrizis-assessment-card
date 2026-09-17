@@ -59,6 +59,30 @@ export function createAssessmentAdapter(webhook: string, send: typeof fetch = fe
     if (!deal || String(deal.ID) !== dealId) throw new AssessmentWriteError('DEAL_NOT_FOUND');
     return Object.fromEntries(Object.entries(ASSESSMENT_FIELDS).map(([key, field]) => [key, deal[field] ?? null])) as AssessmentBaseline;
   }
+  /** The portal's legacy debt summary may round to whole tenge. Accept that
+   * storage projection only when every other field AND the exact questionnaire
+   * match, and live metadata explicitly proves zero-decimal scalar storage.
+   * The precise debt is still sent and retained in the immutable card/snapshot.
+   * Baseline conflict detection deliberately does not use this comparison.
+   */
+  async function readbackMismatches(current: AssessmentBaseline, expected: AssessmentValues) {
+    const mismatches = changed(current, expected);
+    if (mismatches.length !== 1 || mismatches[0] !== 'debt') return mismatches;
+    const totals = [...expected.card.matchAll(/^Общий долг по указанным обязательствам: (\d+(?:\.\d+)?) ₸$/gm)];
+    if (totals.length !== 1 || decimal(totals[0][1]) !== decimal(expected.debt)) return mismatches;
+    const amount = /^(\d+)(?:\.(\d{1,2}))?$/.exec(expected.debt);
+    if (!amount) return mismatches;
+    const rounded = (BigInt(amount[1]) + ((amount[2]?.[0] || '0') >= '5' ? BigInt(1) : BigInt(0))).toString();
+    if (normalize('debt', current.debt) !== rounded) return mismatches;
+    try {
+      const result = await call('crm.deal.userfield.list', {filter: {FIELD_NAME: ASSESSMENT_FIELDS.debt}});
+      if (!Array.isArray(result) || result.length !== 1) return mismatches;
+      const field = result[0];
+      if (field?.FIELD_NAME === ASSESSMENT_FIELDS.debt && field.USER_TYPE_ID === 'double' &&
+          field.MULTIPLE === 'N' && (field.SETTINGS?.PRECISION === 0 || field.SETTINGS?.PRECISION === '0')) return [];
+    } catch { /* Unknown field precision must never weaken confirmation. */ }
+    return mismatches;
+  }
   async function save(dealId: string, expectedIin: string, baseline: AssessmentBaseline, values: AssessmentValues) {
     // This whole phase is read-only. Only this boundary may prove a retry is safe.
     // Errors after crm.deal.update is invoked are always treated as possibly applied.
@@ -67,7 +91,7 @@ export function createAssessmentAdapter(webhook: string, send: typeof fetch = fe
       if ((Object.keys(ASSESSMENT_FIELDS) as AssessmentField[]).some(key => typeof values[key] !== 'string' || normalize(key, values[key]) === null)) throw new AssessmentWriteError('INVALID_ASSESSMENT_VALUES');
       const before = await read(dealId);
       if (before.iin !== expectedIin) throw new AssessmentWriteError('CASE_IDENTITY_CHANGED');
-      if (!changed(before, values).length) return true;
+      if (!(await readbackMismatches(before, values)).length) return true;
       const conflicts = changed(before, baseline);
       if (conflicts.length) throw new AssessmentWriteError('ASSESSMENT_CHANGED_IN_CRM', conflicts);
       return false;
@@ -88,7 +112,7 @@ export function createAssessmentAdapter(webhook: string, send: typeof fetch = fe
     let after: AssessmentBaseline;
     try { after = await read(dealId); }
     catch { throw new AssessmentWriteError('ASSESSMENT_SAVE_UNCERTAIN'); }
-    const mismatches = changed(after, values);
+    const mismatches = await readbackMismatches(after, values);
     if (mismatches.length) throw new AssessmentWriteError('ASSESSMENT_READBACK_MISMATCH', mismatches);
     return {verified: true as const, alreadyApplied: false};
   }
@@ -97,7 +121,7 @@ export function createAssessmentAdapter(webhook: string, send: typeof fetch = fe
     if((Object.keys(ASSESSMENT_FIELDS) as AssessmentField[]).some(key=>typeof values[key]!=='string'||normalize(key,values[key])===null))throw new AssessmentWriteError('INVALID_ASSESSMENT_VALUES');
     const current=await read(dealId);
     if(current.iin!==expectedIin)throw new AssessmentWriteError('CASE_IDENTITY_CHANGED');
-    const mismatches=changed(current,values);
+    const mismatches=await readbackMismatches(current,values);
     return {verified:mismatches.length===0,mismatches};
   }
   return {read, save, reconcile};
