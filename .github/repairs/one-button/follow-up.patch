@@ -1,0 +1,48 @@
+diff --git a/public/assessment-workflow.js b/public/assessment-workflow.js
+index c3c321f..f412cef 100644
+--- a/public/assessment-workflow.js
++++ b/public/assessment-workflow.js
+@@ -115 +115 @@ window.AssessmentWorkflow=(()=>{
+- const finalHelp=make('p','Нажмите «Проверить»: ответы из документов подтверждаются один раз, без кнопки у каждого поля. Карточка и документы сохранятся в Bitrix. Договор скачается.','hint');$('checkQuestions').before(finalHelp);
++ const finalHelp=make('p','Нажмите «Скачать договор»: ответы и документы пройдут проверку, затем будет сформирован файл. Сохранение в Bitrix показывается отдельно и не блокирует готовый файл.','hint');$('checkQuestions').before(finalHelp);
+diff --git a/public/document-upload.js b/public/document-upload.js
+index 44452ba..1db7022 100644
+--- a/public/document-upload.js
++++ b/public/document-upload.js
+@@ -30 +30 @@ window.DocumentUpload={mount(anchor,status){
+-    if(result.state!=='verified')throw Error('Bitrix пока не подтвердил сохранение документов. Договор ещё не сформирован. Нажмите «Скачать договор» повторно — проверим результат без дублирования файлов.');
++    if(result.state!=='verified')throw Error('Bitrix пока не подтвердил сохранение документов. Нажмите «Скачать договор» повторно — проверим результат без дублирования файлов.');
+diff --git a/public/submission-flow.js b/public/submission-flow.js
+index c7ac3a1..4099907 100644
+--- a/public/submission-flow.js
++++ b/public/submission-flow.js
+@@ -23 +23 @@ window.SubmissionFlow={mount(anchor,status){
+- const messages={SUBMISSION_DESTINATION_CHANGED:'Получатель изменился. Откройте сделку заново.',ASSESSMENT_NOT_READY:'Ответы или документы требуют проверки.',SUBMISSION_PENDING_OR_IDENTITY_CHANGED:'Есть незавершённое сохранение. Откройте сохранённую версию ниже.',SUBMISSION_EVIDENCE_CHANGED:'Источники изменились. Отмените подготовку и проверьте анкету заново.',SUBMISSION_VALIDATION_CHANGED:'Правила проверки обновились. Отмените подготовку и проверьте анкету заново.',IDEMPOTENCY_KEY_REUSED:'Для этого сохранения уже зафиксирована другая версия ответов.',SUBMISSION_ACTOR_OR_IDENTITY_CHANGED:'Сотрудник или клиент изменился. Откройте сделку заново.',CONTRACT_SNAPSHOT_UNAVAILABLE:'Версия договора недоступна; требуется восстановление.',CASE_IDENTITY_CHANGED:'Клиент сделки изменился.'};
++ const messages={SUBMISSION_DESTINATION_CHANGED:'Получатель изменился. Откройте сделку заново.',ASSESSMENT_NOT_READY:'Ответы или документы требуют проверки.',SUBMISSION_PENDING_OR_IDENTITY_CHANGED:'Предыдущая отправка в Bitrix ещё не подтверждена или изменился сотрудник/клиент. Новая отправка не выполнена.',SUBMISSION_EVIDENCE_CHANGED:'Источники изменились. Отмените подготовку и проверьте анкету заново.',SUBMISSION_VALIDATION_CHANGED:'Правила проверки обновились. Отмените подготовку и проверьте анкету заново.',IDEMPOTENCY_KEY_REUSED:'Для этого сохранения уже зафиксирована другая версия ответов.',SUBMISSION_ACTOR_OR_IDENTITY_CHANGED:'Сотрудник или клиент изменился. Откройте сделку заново.',CONTRACT_SNAPSHOT_UNAVAILABLE:'Версия договора недоступна; требуется восстановление.',CASE_IDENTITY_CHANGED:'Клиент сделки изменился.'};
+diff --git a/tests/document-upload-ui.test.mjs b/tests/document-upload-ui.test.mjs
+index 3f5e74f..7ae0bbd 100644
+--- a/tests/document-upload-ui.test.mjs
++++ b/tests/document-upload-ui.test.mjs
+@@ -13 +13 @@ test('persistent uncertainty stops visibly, and the optional cancellation lookup
+- await assert.rejects(s.flow.submit(),/Договор ещё не сформирован/);assert.equal(s.calls.length,2);
++ await assert.rejects(s.flow.submit(),/не подтвердил сохранение документов/);assert.equal(s.calls.length,2);
+diff --git a/tests/review-to-download.test.mjs b/tests/review-to-download.test.mjs
+index 0910645..df0d185 100644
+--- a/tests/review-to-download.test.mjs
++++ b/tests/review-to-download.test.mjs
+@@ -15 +15 @@ const packages=load('lib/documents/package-check.ts',{'./analysis-service':{anal
+-test('three unrecognized document details can be reviewed explicitly, then uploaded and downloaded through the real browser flows',async t=>{
++test('three unrecognized document details can be reviewed explicitly, then downloaded before CRM upload through the real browser flows',async t=>{
+@@ -27 +27 @@ test('three unrecognized document details can be reviewed explicitly, then uploa
+- w.URL.createObjectURL=()=> 'blob:synthetic';w.URL.revokeObjectURL=()=>{};w.HTMLAnchorElement.prototype.click=()=>downloads++;
++ w.URL.createObjectURL=()=> 'blob:synthetic';w.URL.revokeObjectURL=()=>{};w.HTMLAnchorElement.prototype.click=()=>{assert.equal(calls.some(c=>c.path.endsWith('/uploads')),false,'File available before CRM upload');downloads++;};
+@@ -43,4 +43,2 @@ test('three unrecognized document details can be reviewed explicitly, then uploa
+-   else if(body.action==='prepare')value=row={requestId:body.requestId,state:'prepared'};
+-   else if(body.action==='commit')value=row={...row,state:'verified',assessmentSaved:true};
+-   else if(body.action==='history')value=row={...row,historySaved:true};
+-   else if(body.action==='contract')value={contract:{rendererVersion:'a'.repeat(64),data:{}}};
++   else if(body.action==='generate'){assert.equal((await packages.checkDocumentPackage(repository,record,payload,'2026-09-16')).packageReady,true);value={contract:{rendererVersion:'a'.repeat(64),data:{}}};}
++   else if(body.action==='complete')value=row={requestId:body.requestId,state:'verified',assessmentSaved:true,historySaved:true};
+@@ -64 +62 @@ test('three unrecognized document details can be reviewed explicitly, then uploa
+- assert.deepEqual(calls.filter(c=>c.path.endsWith('/submission')).map(c=>c.body.action),['prepare','commit','history','contract']);
++ assert.deepEqual(calls.filter(c=>c.path.endsWith('/submission')).map(c=>c.body.action),['generate','complete']);

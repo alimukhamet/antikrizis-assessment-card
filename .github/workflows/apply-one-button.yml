@@ -26,17 +26,24 @@ jobs:
           patch=gzip.decompress(base64.b64decode(source,validate=True))
           assert hashlib.sha256(patch).hexdigest()=='f9c8e4964c01895705d04b9715b5652b808a6607bdb0081c95c0a29899642ce0'
           pathlib.Path('/tmp/one-button.patch').write_bytes(patch)
+          assert hashlib.sha256(pathlib.Path('.github/repairs/one-button/follow-up.patch').read_bytes()).hexdigest()=='38545fca9e5166f7f6b30f6fecdd7efeb73577f4f564d37a6e6fd600d255d84e'
           PY
           git apply --unidiff-zero --check /tmp/one-button.patch
           git apply --unidiff-zero /tmp/one-button.patch
+          git apply --unidiff-zero --check .github/repairs/one-button/follow-up.patch
+          git apply --unidiff-zero .github/repairs/one-button/follow-up.patch
           cat > /tmp/one-button.sha256 <<'HASHES'
           10c6b8e6f7483819a1e5a1633b798afe7f62954348dcdad89160f5c8d79dd2f3  app/api/assessment/[dealId]/submission/route.ts
           09987bcce311303c8fbdb1e02e0b5df8743dbf5a1dcbd67d5fe0f79c8cf5cceb  docs/contract-save-engine.md
           39d2258febfc16288ec583d96fffcfcd1066cad7c512f8d019f2ebd6aae64887  lib/questionnaire/contract-action.ts
-          9837101f58f1809c1fa10aed1012f7e9ee68d8d9368c4e066a46683b6ff989f2  public/submission-flow.js
+          3f02fc14f5a3ef688d99787665995c42b6931309a39a5c0c53a8bbe8576697e9  public/assessment-workflow.js
+          1853666fa764a48ef77730814322ad8a5dd5743963a3a416e6023a2699b990a1  public/document-upload.js
+          a387742fe243aeb11f6eb479bebe94f884395b6762dc48d3e740e9d2194b8acf  public/submission-flow.js
           ad7d9234d6c23d14f436be43ac82bfee0143fa0e09b7d20412f56f354d68831a  tests/browser/contract-download.py
           6fab5dc7b50cf1ed788ea02f97b666e2aa2ce203e79b9e679de688490846ff53  tests/browser/real-contract-download.py
           8719f1ae282f983bcc7a0e467ce00968b9a0dcfd8878ed391f68a949d25e62f6  tests/contract-action-route.test.mjs
+          2e587b68d6b30679a3c6b31881590f3dbc591c3ce116c0c71b95b51874776d34  tests/document-upload-ui.test.mjs
+          f0d13fc9655cf099c3159ddfd2b0865d2adeee40ba045505f38e84f8332e35c3  tests/review-to-download.test.mjs
           983ece8e57af889c2f7f33111d188e2278427cbb3bc0ac7cd5c81b8931e8f13e  tests/submission-auto-reconcile.test.mjs
           3a17280e05da2ea8e7fae323eacb1862f646feb03877ecd28c76443f581460cc  tests/submission-engine-regression.test.mjs
           74a7092794319fdd4ccf1eef2bb2f4afd743d55d4a6187336ba1b686f4afe474  tests/submission-flow.test.mjs
