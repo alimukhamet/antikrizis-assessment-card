@@ -76,11 +76,11 @@ test('report UI preserves failed message and idempotency, and never sends input 
  s.succeed();send();await new Promise(r=>setTimeout(r,0));assert.equal(s.calls.length,2);assert.equal(s.calls[0].requestId,s.calls[1].requestId);
  assert.equal(s.calls[0].dealId,'11665');assert.equal(s.calls[0].fieldId,'n8040_r2');assert.ok(!JSON.stringify(s.calls).includes('private-'));assert.match(s.d.getElementById('feedbackStatus').textContent,/сохранено/);
 });
-test('three operational entries preserve the analyzer and report version matches its saved record version',()=>{
+test('four operational entries preserve the analyzer and report version matches its saved record version',()=>{
  assert.equal(fs.existsSync('public/assessment-card.html'),false,'Static assets must not shadow the canonical protected tool');
  for(const path of ['templates/assessment-card.html']){
-  const dom=new JSDOM(fs.readFileSync(path,'utf8')),cards=dom.window.document.querySelectorAll('.task-grid>.task-card');assert.equal(cards.length,3);
-  assert.equal(cards[0].getAttribute('data-open-view'),'contract');assert.equal(cards[1].getAttribute('data-open-view'),'documents');assert.match(cards[2].href,/gkb-credit-analyzer-kz/);assert.equal(cards[0].disabled,false);assert.equal(cards[1].disabled,false);dom.window.close();
+  const dom=new JSDOM(fs.readFileSync(path,'utf8')),cards=dom.window.document.querySelectorAll('.task-grid>.task-card');assert.equal(cards.length,4);
+  assert.equal(cards[0].getAttribute('data-open-view'),'contract');assert.equal(cards[1].getAttribute('data-open-view'),'documents');assert.equal(cards[2].getAttribute('href'),'/assessment-review');assert.equal(cards[3].getAttribute('href'),'/lawyer-handoff');assert.match(dom.window.document.querySelector('[data-main-action=gkb]').href,/gkb-credit-analyzer-kz/);assert.equal(cards[0].disabled,false);assert.equal(cards[1].disabled,false);dom.window.close();
  }
  const dom=new JSDOM(fs.readFileSync('public/questionnaire.html','utf8'));assert.equal(dom.window.document.body.dataset.assessmentVersion,release.version);assert.ok(dom.window.document.querySelector('script[src="/tool-feedback.js"]'));dom.window.close();
 });

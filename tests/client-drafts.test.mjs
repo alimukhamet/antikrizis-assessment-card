@@ -131,3 +131,21 @@ test('each loan defaults into the claim and explicit exclusion survives reopenin
  const legacy=structuredClone(a.store);for(const group of legacy.payload.groups)if(group.id==='creditors')group.rows=group.rows.map(row=>row.filter(answer=>answer.key!=='loanClaimIncluded'));
  const c=await setup(t,legacy);await c.load();assert.ok([...c.d.querySelectorAll('#creditors [data-loan-claim]')].every(e=>e.checked));
 });
+
+test('an explicitly discarded unsent filename stays removed after saving and reopening',async t=>{
+ const seed=await setup(t);await seed.load();const payload=JSON.parse(JSON.stringify(seed.w.ServerDrafts.capture()));
+ payload.pendingFiles=['mistake.pdf','keep.pdf'];payload.answers.find(a=>a.key==='fio').value='KEEP TYPED ANSWERS';
+ const s=await setup(t,{payload,revision:1});await s.load();
+ assert.equal(s.w.ServerDrafts.forgetPendingFile('not-selected.pdf'),false);
+ s.run('af.busy=true');assert.equal(s.w.ServerDrafts.forgetPendingFile('mistake.pdf'),false);s.run('af.busy=false');
+ assert.equal(s.w.ServerDrafts.forgetPendingFile('mistake.pdf'),true);
+ assert.deepEqual(Array.from(s.w.ServerDrafts.capture().pendingFiles),['keep.pdf']);
+ assert.equal(s.d.getElementById('fio').value,'KEEP TYPED ANSWERS');assert.equal(await s.w.ServerDrafts.save(),true);
+ const reopened=await setup(t,s.store);await reopened.load();assert.deepEqual(Array.from(reopened.w.ServerDrafts.pendingFiles()),['keep.pdf']);
+});
+test('a late failed draft save cannot replace the status or readiness of a different client',async t=>{
+ const s=await setup(t);await s.load();let finish;s.setWriteGate(new Promise(resolve=>finish=resolve));s.fail();s.edit('fio','SYNTHETIC OLD');
+ const saving=s.w.ServerDrafts.save();await tick();const current={...s.w.HostedAssessment.getContext(),client:{external:{dealId:'900002'},title:'SYNTHETIC NEW'}};
+ s.w.HostedAssessment.getContext=()=>current;s.d.getElementById('draftStatus').textContent='NEW CLIENT STATUS';finish();assert.equal(await saving,false);
+ assert.equal(s.d.getElementById('draftStatus').textContent,'NEW CLIENT STATUS');assert.equal(s.w.ServerDrafts.canSwitch(),true);
+});

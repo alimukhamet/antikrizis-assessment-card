@@ -273,13 +273,13 @@ function afAnalysisProgress(done,total){
 }
 function afRenderResults(){
  const root=$af('afFileResults');root.replaceChildren();
- for(const item of selectedFiles){const r=af.results.get(item.id)||(item.storedDocumentId?{sourceOnly:true}:null);if(!r)continue;
+ for(const item of selectedFiles){const r=af.results.get(item.id)||(item.storedDocumentId?{sourceOnly:true}:{pending:true});
   const shortType={'ГКБ — краткий отчёт':'ГКБ краткий','ГКБ — полный отчёт':'ГКБ полный','Справка ЕНПФ':'ЕНПФ','Выписка Kaspi Gold':'Kaspi','Удостоверение личности':'Удостоверение','Ф6 об отсутствии имущества':'Ф6','Справка по выплатам пенсии и пособий':'Пенсии и пособия'};
   const displayType=item.type&&item.type!=='Другой документ'?shortType[item.type]||item.type:r.type&&r.kind!=='other'?shortType[r.type]||r.type:item.file.name;
   const box=afEl('details',undefined,'af-file'),summary=afEl('summary'),name=afEl('strong',afExcluded(item)?'Ключ ЭЦП':displayType);summary.title=item.file.name;box.dataset.fileId=String(item.id);
   const wrongOwner=Boolean(r.identity?.iin&&HostedAssessment.getContext()?.client.iin&&r.identity.iin!==HostedAssessment.getContext().client.iin&&item.person==='Клиент');
-  const state=r.sourceOnly?'Сохранён':r.error?'Не прочитан':wrongOwner?'Другой клиент':r.documentReview?.type===item.type?'Проверено сотрудником':r.draftOnly?'Прочитан · для черновика':r.blocked?'Сверить вручную':r.excluded?'Отдельно':r.duplicate?'Повтор':'Прочитан';
-  summary.append(name,afEl('span',state,'af-file-state'+(r.error||wrongOwner?' needs-review':'')));box.append(summary);
+  const state=r.pending?'Выбран':r.sourceOnly?'Сохранён':r.error?'Не прочитан':wrongOwner?'Другой клиент':r.documentReview?.type===item.type?'Проверено сотрудником':r.draftOnly?'Прочитан · для черновика':r.blocked?'Сверить вручную':r.excluded?'Отдельно':r.duplicate?'Повтор':'Прочитан';
+  summary.append(name,afEl('span',item.file.name,'af-file-filename'),afEl('span',state,'af-file-state'+(r.error||wrongOwner?' needs-review':'')));box.append(summary);
   box.append(afEl('p',afExcluded(item)?'Ключ ЭЦП':item.file.name,'af-original-name'));box.append(afEl('p',(r.pages||0)+' стр.'+(item.person?' · '+item.person:''),'hint'));
   const attention=afDocumentAttention(item);if(attention)box.append(afEl('p',attention.message,'af-document-attention'+(attention.kind==='error'?' error':'')));
   if(r.error&&item.storedDocumentId){const retry=afEl('button','Повторить чтение','btn btn-ghost');retry.type='button';retry.onclick=()=>afAnalyze({onlyPending:true});box.append(retry);}
@@ -290,8 +290,10 @@ function afRenderResults(){
   const notes=afEl('ul');(r.notes||[]).filter(t=>!t.startsWith('Подлинность документа')&&!t.startsWith('Использован ранее')).forEach(t=>notes.append(afEl('li',t)));
   if(notes.children.length){const info=afEl('details',undefined,'af-document-notes');info.append(afEl('summary','Подробности чтения'),notes);box.append(info);}
   if(r.sourcePreview||item.storedDocumentId){const b=afEl('button','Открыть документ');b.type='button';b.className='btn btn-ghost';b.onclick=()=>afSource({fileId:item.id,page:1});box.append(b);}
-  if(!afExcluded(item)&&window.DocumentReplacement)box.append(DocumentReplacement.button(item));
-  root.append(box);
+  const entry=afEl('article',undefined,'af-file-entry'),actions=afEl('div',undefined,'file-selection-actions');
+  if(!afExcluded(item)&&window.DocumentReplacement)actions.append(DocumentReplacement.button(item));
+  if(window.FileSelectionControls)actions.append(FileSelectionControls.button(item));
+  entry.append(box,actions);root.append(entry);
  }
 }
 

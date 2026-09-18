@@ -2,11 +2,11 @@
 window.DocumentReplacement=(()=>{
  const current=()=>HostedAssessment.getContext();
  async function replace(item,file){
-  if(af.busy||!HostedAssessment.ready()||!selectedFiles.includes(item))return false;
+  if(af.busy||window.FileSelectionControls?.locked()||!HostedAssessment.ready()||!selectedFiles.includes(item))return false;
   if(afExcluded({file,type:item.type})){afStatus('Для ЭЦП используйте замену в разделе ЭЦП.',true);return false;}
   const context=current(),dealId=context.client.external.dealId;
   if(!await ServerDrafts.save({automatic:true}))return false;
-  if(current()!==context||!selectedFiles.includes(item)||af.busy)return false;
+  if(current()!==context||!selectedFiles.includes(item)||af.busy||window.FileSelectionControls?.locked())return false;
   const locked=[...document.getElementById('documentStep').querySelectorAll('input,select,button')].map(e=>[e,e.disabled]);
   af.busy=true;locked.forEach(([e])=>e.disabled=true);afStatus('Читаем новый файл. Прежний документ остаётся в черновике…');
   let replaced=false;
@@ -20,7 +20,9 @@ window.DocumentReplacement=(()=>{
    for(const [id,source]of af.sources)if(source.fileId===item.id){source.stale=true;source.pending=true;source.reviewId=null;const control=document.getElementById(id);if(control)control.dataset.sourceReplaced='true';}
    af.conflicts=af.conflicts.filter(conflict=>conflict.src.fileId!==item.id);
    selectedFiles.splice(selectedFiles.indexOf(item),1,candidate);af.results.set(candidate.id,result);replaced=true;
-   afClientChoices();afApply();renderDocuments();
+   window.FileSelectionControls?.selectionChanged(item.type);
+   if(window.ClientContextUI?.mode!=='handoff'){afClientChoices();afApply();}
+   renderDocuments();
    afStatus('Документ заменён. Ответы сохранены; отмеченные поля нужно сверить с новым файлом.');
   }catch(error){afStatus(error.message||'Замена не удалась. Прежний файл оставлен.',true);}
   finally{af.busy=false;locked.forEach(([e,disabled])=>e.disabled=disabled);afRenderResults();refreshMarkers();afRefresh();document.dispatchEvent(new Event('assessment-analysis-complete'));if(replaced)await ServerDrafts.save({automatic:true});}

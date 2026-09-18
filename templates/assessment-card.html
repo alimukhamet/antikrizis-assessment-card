@@ -57,7 +57,7 @@
   .sales-metric.primary strong{color:#fff}
   .sales-summary-status{min-height:1.1em;margin:9px 1px 0;color:var(--text-muted);font-size:.68rem}
   .sales-summary-status.error{color:var(--red);font-weight:700}
-  .task-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;text-align:left}
+  .task-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;text-align:left}
   .task-card{appearance:none;width:100%;min-height:250px;border:1px solid var(--border);border-radius:22px;background:#fff;padding:24px;text-align:left;text-decoration:none;color:var(--text);cursor:pointer;display:flex;flex-direction:column;transition:transform .18s,box-shadow .18s,border-color .18s;box-shadow:0 3px 12px rgba(24,54,34,.04)}
   .task-card:not(:disabled):hover{transform:translateY(-3px);border-color:#abc5b3;box-shadow:var(--shadow)}
   .task-card:disabled{background:#edf1ed;cursor:not-allowed;box-shadow:none}
@@ -274,7 +274,7 @@
   .personal-shortcuts a:focus-visible{outline:3px solid var(--green-mid);outline-offset:3px}
   @media(max-width:360px){.personal-shortcuts{grid-template-columns:1fr}}
 </style>
-<link rel="stylesheet" href="/operations.css"></head>
+<link rel="stylesheet" href="/operations.css"><link rel="stylesheet" href="/file-selection-controls.css"></head>
 <body data-view="home">
 <div id="toast" class="toast"></div>
 <div id="filePreviewModal" class="file-preview hidden" role="dialog" aria-modal="true" aria-labelledby="filePreviewName">
@@ -353,13 +353,20 @@
           <p>Прикрепить файлы к сделке в Bitrix.</p>
           <span class="task-link"><span>Открыть</span><span>→</span></span>
         </button>
-        <a class="task-card" href="https://gkb-credit-analyzer-kz.mukhamet-ali-ma.chatgpt.site" target="_blank" rel="noopener" data-main-action="gkb">
+        <a class="task-card" href="/assessment-review" target="_top" data-main-action="assessment">
           <span class="task-number">03</span>
-          <h2>Проверить кредитный отчёт</h2>
-          <p>Анализатор отчётов ГКБ и ПКБ Казахстана.</p>
-          <span class="task-link"><span>Открыть анализатор</span><span>↗</span></span>
+          <h2>Договор из документов</h2>
+          <p>Новый инструмент: документы, проверка ответов и договор.</p>
+          <span class="task-link"><span>Открыть оценку</span><span>→</span></span>
+        </a>
+        <a class="task-card" href="/lawyer-handoff" target="_top" data-main-action="handoff">
+          <span class="task-number">04</span>
+          <h2>Передать юристам</h2>
+          <p>ЭЦП, доверенность и подписанный договор.</p>
+          <span class="task-link"><span>Открыть передачу</span><span>→</span></span>
         </a>
       </div>
+      <a class="payment-shortcut" href="https://gkb-credit-analyzer-kz.mukhamet-ali-ma.chatgpt.site" target="_blank" rel="noopener" data-main-action="gkb"><span>Проверить кредитный отчёт</span><span aria-hidden="true">↗</span></a>
       <a class="payment-shortcut" href="https://antikrizis-payment-control.mukhamet-ali-ma.chatgpt.site/" target="_blank" rel="noopener"><span>Контроль оплат</span><span aria-hidden="true">↗</span></a>
     </div>
   </main>
@@ -1691,10 +1698,12 @@ function renderBatchDocuments(){
     const remove=document.createElement("button");
     remove.type="button";
     remove.className="batch-remove";
-    remove.textContent="×";
+    remove.textContent="Убрать";
     remove.title="Убрать файл";
     remove.setAttribute("aria-label","Убрать "+item.file.name);
     remove.addEventListener("click",()=>{
+      if($("contractBtn").dataset.busy||$("docsBtn").dataset.busy)return;
+      if(item.key==="eds"){$("docEdsPassword").value="";setEdsPasswordVisibility(false);}
       if(activePreviewFile===item.file) closeFilePreview();
       batchDocuments=batchDocuments.filter(doc=>doc.id!==item.id);
       $("batchConfirmed").checked=false;
@@ -2501,5 +2510,5 @@ $("dealId").addEventListener("keydown",event=>{
 });
 onChange();
 </script>
-</body>
+<script src="/legacy-file-controls.js"></script></body>
 </html>

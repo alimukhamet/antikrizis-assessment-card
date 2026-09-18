@@ -1,9 +1,9 @@
 {
   "file": "templates/assessment-card.html",
   "suffixHashes": {
-    "<div class=\"task-grid\">": "343d37e25d1562cf1c92e0a5c514685e3205541b77534e3d9536172bb10993d1",
-    "<header class=\"workflow-header\"": "fdb744dfa77aced46b054aa683d4640637b8cd6bd59f6f35b14d7a7e916bdeba"
+    "<div class=\"task-grid\">": "09e4ba5d1c213d3a9e1d757d9ee4ed26563362a416dcd3822d6e220b73a9d83a",
+    "<header class=\"workflow-header\"": "51874fd66e4a474e4314428a75826ab5095db4de1b126ce669a2b970c279e0b4"
   },
   "baseCommit": "256d2e064d41888c78edc3e0e9d1a518b703dc03",
-  "change": "Restore original tools 01/02 from pre-retirement navigation; preserve original form, legal template and save/upload functions. Same-version libraries load locally first."
+  "change": "Keep original tools 01/02 and expose newer assessment/handoff as 03/04; add non-destructive file selection controls. Approved DOCX remains unchanged."
 }

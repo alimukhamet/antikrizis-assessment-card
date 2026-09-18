@@ -350,7 +350,7 @@ test('an unreadable stored scan stays openable without document-condition answer
  const s=setup(t);await s.load();s.mount();
  s.run(`selectedFiles=[{id:1,type:'Удостоверение личности',person:'Клиент',storedDocumentId:'scan',file:{name:'scan.pdf'}}];af.results.set(1,{kind:'other',blocked:true,notes:['Тип документа не установлен по содержимому.']});afRenderResults();`);
  const row=s.d.querySelector('.af-file');assert.match(row.querySelector('summary').textContent,/Удостоверение.*Сверить вручную/);assert.ok(!row.querySelector('summary .needs-review'));
- assert.ok([...row.querySelectorAll('button')].some(b=>b.textContent==='Открыть документ'));assert.ok([...row.querySelectorAll('button')].some(b=>b.textContent==='Заменить'));assert.equal(row.querySelector('.af-document-notes').open,false);
+ assert.ok([...row.querySelectorAll('button')].some(b=>b.textContent==='Открыть документ'));const replacement=row.closest('.af-file-entry').querySelector('.af-replace-document');assert.ok(replacement);assert.equal(replacement.closest('details.af-file'),null);assert.equal(row.querySelector('.af-document-notes').open,false);
 });
 test('replacement actions become enabled when restored documents finish reading',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();
