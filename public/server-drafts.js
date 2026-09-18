@@ -23,6 +23,12 @@ window.ServerDrafts=(()=>{
   clearTimeout(timer);if(loading||!HostedAssessment.ready()||!baselineLoaded)return;
   if(isDirty()){showDraftStatus('Есть несохранённые изменения…');timer=setTimeout(()=>{if(af.busy){changed();return;}save({automatic:true});},1500);}
  }
+ // A restored pending filename has no stored original to delete. Discarding
+ // that selection is explicit, versioned with the draft, and never edits Bitrix.
+ function forgetPendingFile(name){
+  if(typeof name!=='string'||!baselineLoaded||loading||af.busy||!HostedAssessment.ready()||window.FileSelectionControls?.locked()||!missingFiles.includes(name))return false;
+  missingFiles=missingFiles.filter(value=>value!==name);changed();return true;
+ }
  async function inspect(){
   if(!HostedAssessment.ready()||loading)return;
   const sequence=++epoch,b=base(),initialSnapshot=JSON.stringify(capture());
@@ -42,20 +48,20 @@ window.ServerDrafts=(()=>{
   if(loading||af.busy||!HostedAssessment.ready()){showDraftStatus('Дождитесь загрузки клиента и документов.');return false;}
   if(!baselineLoaded){showDraftStatus('Откройте сохранённый черновик перед продолжением.');return false;}
   if(options.automatic&&!isDirty())return true;
-  const path=base(),payload=capture(),body={payload,expectedRevision:revision,identityRevision:HostedAssessment.getContext().identityRevision},signature=JSON.stringify(body);
+  const savedContext=HostedAssessment.getContext(),path=base(),payload=capture(),body={payload,expectedRevision:revision,identityRevision:HostedAssessment.getContext().identityRevision},signature=JSON.stringify(body);
   if(request?.signature!==signature)request={signature,requestId:crypto.randomUUID()};body.requestId=request.requestId;
   $('saveDraft').disabled=true;showDraftStatus('Сохраняем черновик…');
   saveTask=(async()=>{
    try{
     const result=await api(path+'/draft',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if(path!==base())return false;
+    if(savedContext!==HostedAssessment.getContext())return false;
     revision=result.revision;request=null;baselineSnapshot=JSON.stringify(payload);
     if(result.latestRevision!==result.revision)throw Object.assign(Error(message('DRAFT_CHANGED')),{code:'DRAFT_CHANGED'});
     $('loadDraft').classList.add('hidden');
     showDraftStatus('Черновик сохранён · '+new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})+(payload.pendingFiles.length?' · выбрать заново: '+payload.pendingFiles.length:''));
     document.dispatchEvent(new Event('assessment-draft-saved'));return true;
-   }catch(e){if(['DRAFT_CHANGED','CASE_IDENTITY_CHANGED'].includes(e.code)){baselineLoaded=false;$('loadDraft').classList.remove('hidden');}showDraftStatus(e.message);return false;}
-   finally{$('saveDraft').disabled=false;}
+   }catch(e){if(savedContext!==HostedAssessment.getContext())return false;if(['DRAFT_CHANGED','CASE_IDENTITY_CHANGED'].includes(e.code)){baselineLoaded=false;$('loadDraft').classList.remove('hidden');}showDraftStatus(e.message);return false;}
+   finally{if(savedContext===HostedAssessment.getContext())$('saveDraft').disabled=false;}
   })();
   const result=await saveTask;saveTask=null;if(result&&isDirty())changed();return result;
  }
@@ -105,6 +111,6 @@ window.ServerDrafts=(()=>{
   const row=control.closest('.repeat-item'),group=row?.closest('.repeat');
   return [{key:controlKey(control),...(group?{group:group.id,row:[...group.querySelector(':scope > .repeat-rows').children].indexOf(row)}:{}),documentId:source.server.documentId,extractionId:source.server.extractionId,factKey:source.serverFactKey,reviewId:source.pending||source.stale?null:source.reviewId||null}];
  });}
- return{mount,capture,reviewBindings,save,restore,inspect,loadState:()=>loadState,pendingFiles:()=>missingFiles.filter(name=>!selectedFiles.some(item=>item.file.name===name)&&!(window.CredentialUpload?.collected?.()&&/\.(p12|pfx|key)$/i.test(name))),recovery:()=>recoverySnapshot,isDirty,hasTransientFiles,changed,isBusy:()=>loading||Boolean(saveTask),canSwitch:()=>baselineLoaded&&!loading};
+ return{mount,capture,reviewBindings,save,restore,inspect,forgetPendingFile,loadState:()=>loadState,pendingFiles:()=>missingFiles.filter(name=>!selectedFiles.some(item=>item.file.name===name)&&!(window.CredentialUpload?.collected?.()&&/\.(p12|pfx|key)$/i.test(name))),recovery:()=>recoverySnapshot,isDirty,hasTransientFiles,changed,isBusy:()=>loading||Boolean(saveTask),canSwitch:()=>baselineLoaded&&!loading};
 })();
 ServerDrafts.mount();

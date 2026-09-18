@@ -18,6 +18,7 @@ window.FileSelectionControls=(()=>{
  }
  function remove(item){
   if(locked()||!selectedFiles.includes(item))return false;
+  window.ServerDrafts?.forgetPendingFile?.(item.file.name);
   selectedFiles=selectedFiles.filter(entry=>entry!==item);
   af.results.delete(item.id);af.conflicts=af.conflicts.filter(entry=>entry.src.fileId!==item.id);
   // The original render wrapper marks answers sourced from the removed file as stale.
@@ -43,8 +44,27 @@ window.FileSelectionControls=(()=>{
  const signedRemove=make('button','Убрать PDF','btn btn-ghost file-selection-remove');signedRemove.type='button';signedRemove.id='handoffSignedRemove';
  $('handoffSignedOpen')?.after(signedRemove);
  signedRemove.onclick=()=>{const item=selectedFiles.find(e=>e.type==='Подписанный договор'&&e.person==='Клиент');if(item)remove(item);};
+ const pendingList=make('div',null,'file-selection-list');pendingList.id='pendingFileSelections';pendingList.hidden=true;
+ const pendingHost=window.ClientContextUI?.mode==='handoff'?$('uxHandoff'):$('afFileResults');pendingHost?.append(pendingList);
+ let pendingSignature=null;
+ function refreshPending(disabled){
+  const names=[...new Set(window.ServerDrafts?.pendingFiles?.()||[])];
+  const signature=JSON.stringify(names);
+  if(signature!==pendingSignature){
+   pendingSignature=signature;pendingList.replaceChildren();
+   for(const name of names){
+    const row=make('div',null,'file-selection-row'),copy=make('span',name+' · выберите файл заново','file-selection-name');
+    const remove=make('button','Убрать из черновика','btn btn-ghost');remove.type='button';remove.setAttribute('aria-label','Убрать из черновика '+name);
+    remove.onclick=()=>{if(locked()||!ServerDrafts.forgetPendingFile(name))return;notify();};
+    row.append(copy,remove);pendingList.append(row);
+   }
+  }
+  // The file-result renderer rebuilds its contents; keep this list mounted.
+  if(pendingHost&&!pendingList.isConnected)pendingHost.append(pendingList);
+  pendingList.hidden=!names.length;pendingList.querySelectorAll('button').forEach(e=>e.disabled=disabled);
+ }
  function refresh(){
-  const disabled=locked();
+  const disabled=locked();refreshPending(disabled);
   for(const group of groups){
    const entries=selectedFiles.filter(e=>e.type===group.host.dataset.requiredDocument&&e.person==='Клиент');
    const signature=JSON.stringify(entries.map(e=>[e.id,e.file.name,e.storedDocumentId]));

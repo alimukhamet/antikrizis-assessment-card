@@ -31,8 +31,8 @@ test('reopening restores cancellation without revalidating an obsolete document 
 });
 test('reopening restores unsent credential cancellation without selecting the key again',async()=>{
  const dom=new JSDOM('<div class="field"><input id="previewEdsPassword"></div><input id="fio">',{runScripts:'outside-only',url:'https://assessment.example'}),w=dom.window,calls=[],requestId='00000000-0000-0000-0000-000000000789';
- w.selectedFiles=[];w.refreshRequiredDocuments=()=>{};w.HostedAssessment={ready:()=>true,getContext:()=>({client:{external:{dealId:'11665'}}})};
- w.fetch=async(url,options)=>{if(!options)return{ok:true,json:async()=>({credentials:null,unsent:{requestId}})};calls.push(JSON.parse(options.body));return{ok:true,json:async()=>({state:'cancelled'})};};
+ w.selectedFiles=[];w.refreshRequiredDocuments=()=>{};w.eval(fs.readFileSync(new URL('../public/hosted-assessment.js',import.meta.url),'utf8'));const context={identityRevision:1,client:{external:{dealId:'11665'}}};w.HostedAssessment.ready=()=>true;w.HostedAssessment.getContext=()=>context;
+ w.fetch=async(url,options={})=>{if(!options.method||options.method==='GET')return{ok:true,json:async()=>({credentials:null,unsent:{requestId}})};calls.push(JSON.parse(options.body));return{ok:true,json:async()=>({state:'cancelled'})};};
  w.eval(fs.readFileSync(new URL('../public/credential-upload.js',import.meta.url),'utf8'));await tick();
  const cancel=[...w.document.querySelectorAll('button')].find(b=>b.textContent==='Отменить неотправленную ЭЦП');assert.equal(cancel.hidden,false);await cancel.onclick();
  assert.deepEqual(calls,[{action:'cancel',requestId}]);assert.equal(cancel.hidden,true);assert.equal(w.document.getElementById('previewEdsPassword').value,'');w.close();

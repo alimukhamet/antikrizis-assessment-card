@@ -207,7 +207,7 @@ window.AssessmentWorkflow=(()=>{
   show('documents',{focus:false});$(id).focus();$(id).scrollIntoView({block:'center'});return false;
  }
  function focusFile(id){
-  const row=[...$('afFileResults').children].find(node=>node.dataset.fileId===String(id));
+  const row=[...$('afFileResults').querySelectorAll('details.af-file')].find(node=>node.dataset.fileId===String(id));
   if(row){row.open=true;row.querySelector('summary').focus({preventScroll:true});row.scrollIntoView({block:'start',behavior:'smooth'});}
  }
  function collectionAction(row){

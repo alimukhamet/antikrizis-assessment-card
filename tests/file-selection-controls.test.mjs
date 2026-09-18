@@ -78,3 +78,13 @@ test('handoff exposes per-file removal and replacement without the hidden file l
 test('prepared, uncertain and verified handoffs cannot silently remove files from their saved operation',async t=>{
  for(const state of ['prepared','writing','uncertain','verified']){const s=await handoff(t,state);assert.equal(s.d.getElementById('handoffSignedRemove').disabled,true);assert.equal(s.w.FileSelectionControls.remove(s.w.selectedFiles[0]),false);assert.equal(s.w.selectedFiles.length,3);}
 });
+
+test('unsent restored filenames have visible dismissal and cannot reappear after removing a reselected file',async t=>{
+ const s=await assessment(t);let names=['wrong.pdf','keep.pdf'];
+ s.w.ServerDrafts.pendingFiles=()=>names.filter(name=>!s.run('selectedFiles').some(item=>item.file.name===name));
+ s.w.ServerDrafts.forgetPendingFile=name=>{const exists=names.includes(name);names=names.filter(n=>n!==name);return exists;};
+ s.w.FileSelectionControls.refresh();
+ const list=s.d.getElementById('pendingFileSelections');assert.ok(list);assert.equal(list.hidden,false);
+ list.querySelector('[aria-label="Убрать из черновика keep.pdf"]').click();assert.deepEqual(names,['wrong.pdf']);
+ const item=choose(s,'Доверенность',false);s.w.FileSelectionControls.remove(item);assert.deepEqual(names,[]);assert.equal(list.hidden,true);
+});
