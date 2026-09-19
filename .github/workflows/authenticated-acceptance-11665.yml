@@ -40,7 +40,7 @@ jobs:
           import fs from 'node:fs';
           const dir=process.argv[2];
           const read=name=>JSON.parse(fs.readFileSync(dir+'/'+name,'utf8'));
-          const fileFor=p=>p.replace(/[\/:]/g,'__')+'.json';
+          const fileFor=p=>p.replace(/[\/:]/g,'_')+'.json';
           const get=p=>read(fileFor(p));
           const assessment=get('/api/assessment/11665');
           const draft=get('/api/assessment/11665/draft');
