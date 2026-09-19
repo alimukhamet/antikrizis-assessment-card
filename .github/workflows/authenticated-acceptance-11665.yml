@@ -1,0 +1,81 @@
+name: Authenticated acceptance probe 11665
+on:
+  push:
+    branches: [diagnose/authenticated-acceptance-11665]
+    paths: [.github/workflows/authenticated-acceptance-11665.yml]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORIGIN: https://assessment.anti-krizis.kz
+      ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
+    steps:
+      - name: Require test password
+        run: |
+          test -n "$ASSESSMENT_TEST_PASSWORD" || { echo "::error::ASSESSMENT_TEST_PASSWORD is missing"; exit 1; }
+      - name: Login through normal staff auth and inspect synthetic deal only
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          payload="$(jq -nc --arg password "$ASSESSMENT_TEST_PASSWORD" '{worker:"ali",password:$password}')"
+          code="$(curl --silent --show-error --max-time 20             -c "$tmp/cookies"             -H 'content-type: application/json'             -H "origin: $ORIGIN"             -H 'sec-fetch-site: same-origin'             -o "$tmp/login.json" -w '%{http_code}'             --data-binary "$payload" "$ORIGIN/api/session")"
+          test "$code" = "200" || { echo "::error::login HTTP=$code"; cat "$tmp/login.json" | jq '{ok,error}'; exit 1; }
+          test "$(jq -r '.ok // false' "$tmp/login.json")" = "true"
+          code="$(curl --silent --show-error --max-time 20 -b "$tmp/cookies" -o "$tmp/session.json" -w '%{http_code}' "$ORIGIN/api/session")"
+          test "$code" = "200" || { echo "::error::session HTTP=$code"; exit 1; }
+          jq -e '.ok == true and .actor.worker == "ali"' "$tmp/session.json" >/dev/null
+
+          for path in             "/api/assessment/11665"             "/api/assessment/11665/draft"             "/api/assessment/11665/submission"             "/api/assessment/11665/uploads"             "/api/assessment/11665/credentials"             "/api/assessment/11665/handoff"             "/api/assessment/11665/crm-intake"; do
+            safe="$(printf '%s' "$path" | tr '/:' '__')"
+            code="$(curl --silent --show-error --max-time 30 -b "$tmp/cookies" -o "$tmp/$safe.json" -w '%{http_code}' "$ORIGIN$path")"
+            echo "$path HTTP=$code"
+            test "$code" = "200" || { jq '{error,code,message}' "$tmp/$safe.json" 2>/dev/null || true; exit 1; }
+          done
+
+          node --input-type=module "$tmp" <<'NODE'
+          import fs from 'node:fs';
+          const dir=process.argv[2];
+          const read=name=>JSON.parse(fs.readFileSync(dir+'/'+name,'utf8'));
+          const fileFor=p=>p.replace(/[\/:]/g,'__')+'.json';
+          const get=p=>read(fileFor(p));
+          const assessment=get('/api/assessment/11665');
+          const draft=get('/api/assessment/11665/draft');
+          const submission=get('/api/assessment/11665/submission');
+          const uploads=get('/api/assessment/11665/uploads');
+          const credentials=get('/api/assessment/11665/credentials');
+          const handoff=get('/api/assessment/11665/handoff');
+          const intake=get('/api/assessment/11665/crm-intake');
+          const summary={
+            dealId:'11665',
+            authenticated:true,
+            assessment:{
+              caseId:Boolean(assessment?.caseId),
+              identityRevision:assessment?.identityRevision ?? null,
+              hasClient:Boolean(assessment?.client),
+              hasIin:Boolean(assessment?.client?.iin),
+              categoryId:assessment?.client?.external?.categoryId ?? null,
+              stageId:assessment?.client?.external?.stageId ?? null,
+            },
+            draft:{present:Boolean(draft?.draft),pendingFiles:Array.isArray(draft?.draft?.pendingFiles)?draft.draft.pendingFiles.length:null},
+            submission:{present:Boolean(submission?.submission),state:submission?.submission?.state ?? null,assessmentSaved:submission?.submission?.assessmentSaved ?? null,historySaved:submission?.submission?.historySaved ?? null,hasContract:Boolean(submission?.submission?.contract)},
+            uploads:{unsent:Boolean(uploads?.unsent)},
+            credentials:{verified:credentials?.credentials?.verified===true,files:Array.isArray(credentials?.credentials?.files)?credentials.credentials.files.length:0,unsent:Boolean(credentials?.unsent)},
+            handoff:{present:Boolean(handoff?.handoff),state:handoff?.handoff?.state ?? null,stageError:handoff?.stageError ?? null},
+            intake:{documents:Array.isArray(intake?.documents)?intake.documents.length:0},
+          };
+          fs.mkdirSync('/tmp/acceptance-11665',{recursive:true});
+          fs.writeFileSync('/tmp/acceptance-11665/summary.json',JSON.stringify(summary,null,2));
+          console.log(JSON.stringify(summary,null,2));
+          NODE
+      - name: Upload redacted acceptance summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-11665-redacted
+          path: /tmp/acceptance-11665/summary.json
+          retention-days: 1
+          if-no-files-found: ignore
