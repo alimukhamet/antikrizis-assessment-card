@@ -1,0 +1,79 @@
+name: Authenticated Tool 01 browser acceptance v2
+on:
+  push:
+    branches: [diagnose/authenticated-acceptance-11665]
+    paths: [.github/workflows/authenticated-tool01-browser-v2.yml]
+permissions:
+  contents: read
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      ORIGIN: https://assessment.anti-krizis.kz
+      ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: python -m pip install --disable-pip-version-check --quiet playwright==1.55.0
+      - name: Real production acceptance on synthetic deal 11665
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          import json, os, shutil, tempfile
+          from pathlib import Path
+          from zipfile import ZipFile
+          from playwright.sync_api import sync_playwright
+          origin=os.environ['ORIGIN']; password=os.environ['ASSESSMENT_TEST_PASSWORD']
+          chrome=shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser')
+          assert chrome
+          report={'dealId':'11665','authenticated':False,'launcher':False,'dealLoaded':False,'confirmation':False,'downloaded':False,'docxValid':False,'success':False,'browserErrors':[],'failedResponses':[]}
+          with sync_playwright() as p, tempfile.TemporaryDirectory() as td:
+            b=p.chromium.launch(executable_path=chrome,headless=True,args=['--no-sandbox'])
+            c=b.new_context(accept_downloads=True); page=c.new_page()
+            page.on('pageerror',lambda e:report['browserErrors'].append(str(e)[:160]))
+            page.on('response',lambda r:report['failedResponses'].append({'path':r.url.replace(origin,''),'status':r.status}) if r.url.startswith(origin) and r.status>=400 else None)
+            page.goto(origin+'/login?returnTo=%2Fassessment-card',wait_until='domcontentloaded',timeout=30000)
+            page.locator('select[name="worker"]').select_option('ali'); page.locator('input[name="password"]').fill(password)
+            page.get_by_role('button',name='Войти').click(); page.wait_for_url(lambda u:'/login' not in str(u),timeout=30000)
+            page.goto(origin+'/assessment-card',wait_until='networkidle',timeout=45000)
+            report['authenticated']='/login' not in page.url
+            report['launcher']=page.locator('.task-grid > .task-card').count()==4
+            page.locator('[data-open-view="contract"]').click()
+            page.locator('#dealId').fill('11665'); page.locator('#dealId').press('Enter')
+            page.wait_for_function("document.getElementById('iin').value.trim().length===12 && document.getElementById('fio').value.trim().length>1",timeout=30000)
+            report['dealLoaded']=True
+            vals={'dognum':'TEST-11665-A','dependents':'0','procedure':'199','incomeClientOff':'300000','incomeClientUnoff':'0','debt':'7000000','overdueDays':'180','lastCreditDate':'2025-01','kaspiTurnover':'100000','creditors':'SYNTHETIC BANK','creditPurpose':'SYNTHETIC ACCEPTANCE TEST','guarantors':'Нет','comment':'SYNTHETIC ACCEPTANCE TEST - NOT FOR SIGNING','summa':'400000','contractDate':'2026-09-19','months':'5','payDay':'20','grafType':'261'}
+            for k,v in vals.items(): page.locator('#'+k).fill(v)
+            page.locator('#marital').select_option(index=2)
+            for k in ['works','children','salaryOtherBank','ip','realEstate','cars','carSale','ludo']: page.evaluate("(x)=>setSegmentValue(x,'0')",k)
+            page.locator('input[name="socialStatus"][value="Нет"]').check(); page.locator('input[name="creditType"]').first.check()
+            page.evaluate('onChange()')
+            missing=page.evaluate('validate(readState())')
+            assert not missing, 'FORM_VALIDATION_FAILED:'+','.join(map(str,missing))
+            with page.expect_download(timeout=90000) as info:
+              page.locator('#contractBtn').click()
+              page.locator('#targetConfirmModal:not(.hidden)').wait_for(timeout=20000); report['confirmation']=True
+              page.locator('#targetConfirmApprove').click()
+            dl=info.value; target=Path(td)/'contract.docx'; dl.save_as(target)
+            assert not dl.failure()
+            report['downloaded']=target.exists() and target.stat().st_size>10000
+            with ZipFile(target) as z:
+              assert z.testzip() is None
+              xml=z.read('word/document.xml').decode()
+              report['docxValid']='TEST-11665-A' in xml and '{{' not in xml and 'undefined' not in xml
+            text=page.locator('#info').inner_text()
+            report['success']='Карточка сохранена' in text and 'Договор скачан' in text
+            c.close(); b.close()
+          Path('/tmp/tool01-v2.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
+          print(json.dumps(report,ensure_ascii=False,indent=2))
+          assert all([report['authenticated'],report['launcher'],report['dealLoaded'],report['confirmation'],report['downloaded'],report['docxValid'],report['success']]),report
+          PY
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tool01-production-acceptance-v2-redacted
+          path: /tmp/tool01-v2.json
+          retention-days: 1
+          if-no-files-found: ignore
