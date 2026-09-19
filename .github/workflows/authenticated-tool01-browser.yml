@@ -44,7 +44,7 @@ jobs:
               page.locator('select[name="worker"]').select_option('ali')
               page.locator('input[name="password"]').fill(password)
               page.get_by_role('button',name='Войти').click()
-              page.wait_for_url(lambda u: '/login' not in u.path,timeout=30000)
+              page.wait_for_url(lambda u: '/login' not in str(u),timeout=30000)
               page.goto(ORIGIN+'/',wait_until='networkidle',timeout=45000)
               report['authenticated']='/login' not in page.url
               report['homeFourTools']=page.locator('.task-grid > .task-card').count()==4
