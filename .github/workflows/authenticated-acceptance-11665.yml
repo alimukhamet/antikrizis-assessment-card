@@ -36,7 +36,7 @@ jobs:
             test "$code" = "200" || { jq '{error,code,message}' "$tmp/$safe.json" 2>/dev/null || true; exit 1; }
           done
 
-          node --input-type=module "$tmp" <<'NODE'
+          node --input-type=module - "$tmp" <<'NODE'
           import fs from 'node:fs';
           const dir=process.argv[2];
           const read=name=>JSON.parse(fs.readFileSync(dir+'/'+name,'utf8'));
