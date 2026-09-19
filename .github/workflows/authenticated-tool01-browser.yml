@@ -1,0 +1,120 @@
+name: Authenticated Tool 01 browser acceptance
+on:
+  push:
+    branches: [diagnose/authenticated-acceptance-11665]
+    paths: [.github/workflows/authenticated-tool01-browser.yml]
+permissions:
+  contents: read
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      ORIGIN: https://assessment.anti-krizis.kz
+      ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install browser driver only
+        run: python -m pip install --disable-pip-version-check --quiet playwright==1.55.0
+      - name: Run real production Tool 01 on synthetic deal 11665
+        run: |
+          set -euo pipefail
+          test -n "$ASSESSMENT_TEST_PASSWORD"
+          python <<'PY'
+          import json, os, shutil, tempfile
+          from pathlib import Path
+          from zipfile import ZipFile
+          from playwright.sync_api import sync_playwright
+
+          ORIGIN=os.environ['ORIGIN']
+          password=os.environ['ASSESSMENT_TEST_PASSWORD']
+          executable=shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser')
+          if not executable:
+              raise RuntimeError('SYSTEM_CHROME_NOT_FOUND')
+          report={'dealId':'11665','authenticated':False,'homeFourTools':False,'dealLoaded':False,'confirmationShown':False,'downloaded':False,'docxValid':False,'successMessage':False,'browserErrors':[],'failedResponses':[]}
+          with sync_playwright() as p, tempfile.TemporaryDirectory() as td:
+              browser=p.chromium.launch(executable_path=executable,headless=True,args=['--no-sandbox'])
+              context=browser.new_context(accept_downloads=True)
+              page=context.new_page()
+              page.on('pageerror',lambda exc: report['browserErrors'].append(str(exc)[:200]))
+              page.on('response',lambda r: report['failedResponses'].append({'path':r.url.replace(ORIGIN,''),'status':r.status}) if r.url.startswith(ORIGIN) and r.status>=400 else None)
+              page.goto(ORIGIN+'/login?returnTo=%2F',wait_until='domcontentloaded',timeout=30000)
+              page.locator('select[name="worker"]').select_option('ali')
+              page.locator('input[name="password"]').fill(password)
+              page.get_by_role('button',name='Войти').click()
+              page.wait_for_url(lambda u: '/login' not in u.path,timeout=30000)
+              page.goto(ORIGIN+'/',wait_until='networkidle',timeout=45000)
+              report['authenticated']='/login' not in page.url
+              report['homeFourTools']=page.locator('.task-grid > .task-card').count()==4
+              page.locator('[data-open-view="contract"]').click()
+              page.locator('#dealId').fill('11665')
+              page.locator('#dealId').press('Enter')
+              page.wait_for_function("document.getElementById('iin').value.trim().length===12 && document.getElementById('fio').value.trim().length>1",timeout=30000)
+              report['dealLoaded']=True
+
+              values={
+                'dognum':'TEST-11665-A',
+                'dependents':'0',
+                'procedure':'199',
+                'incomeClientOff':'300000',
+                'incomeClientUnoff':'0',
+                'debt':'7000000',
+                'overdueDays':'180',
+                'lastCreditDate':'2025-01',
+                'kaspiTurnover':'100000',
+                'creditors':'SYNTHETIC BANK',
+                'creditPurpose':'SYNTHETIC ACCEPTANCE TEST',
+                'guarantors':'Нет',
+                'comment':'SYNTHETIC ACCEPTANCE TEST - NOT FOR SIGNING',
+                'summa':'400000',
+                'contractDate':'2026-09-19',
+                'months':'5',
+                'payDay':'20',
+                'grafType':'261',
+              }
+              for key,val in values.items():
+                  page.locator('#'+key).fill(val)
+              marital=page.locator('#marital')
+              marital.select_option(index=2)
+              for key in ['works','children','salaryOtherBank','ip','realEstate','cars','carSale','ludo']:
+                  page.evaluate("(key)=>setSegmentValue(key,'0')",key)
+              page.locator('input[name="socialStatus"][value="Нет"]').check()
+              page.locator('input[name="creditType"]').first.check()
+              page.evaluate('onChange()')
+              missing=page.evaluate('validate(readState())')
+              if missing:
+                  raise AssertionError('FORM_VALIDATION_FAILED:'+','.join(map(str,missing)))
+
+              with page.expect_download(timeout=90000) as dl:
+                  page.locator('#contractBtn').click()
+                  page.locator('#targetConfirmModal:not(.hidden)').wait_for(timeout=20000)
+                  report['confirmationShown']=True
+                  page.locator('#targetConfirmApprove').click()
+              download=dl.value
+              target=Path(td)/'tool01.docx'
+              download.save_as(target)
+              if download.failure():
+                  raise AssertionError('DOWNLOAD_FAILED:'+str(download.failure()))
+              report['downloaded']=target.exists() and target.stat().st_size>10000
+              with ZipFile(target) as z:
+                  assert z.testzip() is None
+                  xml=z.read('word/document.xml').decode('utf-8')
+                  report['docxValid']=('TEST-11665-A' in xml and '{{' not in xml and 'undefined' not in xml)
+              info=page.locator('#info').inner_text()
+              report['successMessage']='Карточка сохранена' in info and 'Договор скачан' in info
+              if not all([report['authenticated'],report['homeFourTools'],report['dealLoaded'],report['confirmationShown'],report['downloaded'],report['docxValid'],report['successMessage']]):
+                  raise AssertionError('ACCEPTANCE_FLAGS_FAILED:'+json.dumps(report,ensure_ascii=False))
+              context.close();browser.close()
+          Path('/tmp/tool01-acceptance.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
+          print(json.dumps(report,ensure_ascii=False,indent=2))
+          PY
+      - name: Upload redacted result only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tool01-production-acceptance-redacted
+          path: /tmp/tool01-acceptance.json
+          retention-days: 1
+          if-no-files-found: ignore
