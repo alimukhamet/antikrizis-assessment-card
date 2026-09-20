@@ -1,7 +1,7 @@
 import labels from './kz-labels.json';
 import type { PageText } from './read-pdf';
 import {extractPowerParties,type PowerParties} from './power-of-attorney';
-export const EXTRACTION_VERSION = 'rules-native-17';
+export const EXTRACTION_VERSION = 'rules-native-18';
 export type Fact = { key: string; value: string; page: number; source: string };
 export type Credit = { contractNumber: string; contractCode?: string; page: number; facts: Fact[]; components: Record<string, string | null>; comparisonDebt?:Fact; relatedPartiesNotice?: {page:number;source:string} };
 export type BankStatement={from:string|null;to:string|null;credits:string;topUps:string;topUpsVerified:boolean;debits:string;transactions:number;reconciled:boolean;rowsReadable:boolean;sourcePage:number;reconciliation?:string;gambling?:{total:string;matches:Array<{date:string;amount:string;description:string;page:number}>}};
@@ -41,7 +41,10 @@ function questionnaireCreditType(financing:string|null,purpose:string|null,objec
 }
 export function extractNative(pages: PageText[]): NativeExtraction {
   const raw = pages.map(p => p.text).join('\n'), head = raw.slice(0,14000).toLowerCase().replace(/ё/g,'е');
-  const modernShort=/дербес\s+кредиттік есеп/.test(head)&&/қысқаша нысан/.test(head);
+  // Choose the layout from the first report title. Older reports also mention
+  // "Дербес кредиттік есеп" in their explanatory pages; that is not their format.
+  const reportTitle=/(?:дербес\s+кредиттік есеп|персональный кредитный отчет|жеке кредиттік есеп)/u.exec(head)?.[0];
+  const modernShort=Boolean(reportTitle?.startsWith('дербес')&&/қысқаша нысан/.test(head.slice(0,1500)));
   const credit = modernShort || /персональный кредитный отчет|жеке кредиттік есеп/.test(head);
   const kind = credit ? /краткая форма|қысқаша/.test(head) ? 'gkb_short' : 'gkb_full'
     : /kaspi/.test(head) && /выписка/.test(head) ? 'kaspi'

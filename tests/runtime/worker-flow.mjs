@@ -50,6 +50,8 @@ test('built Worker persists a complete contract and recovers a handoff without d
  assert.equal((await api('/api/session')).ok,true);
  const crossOrigin=await mf.dispatchFetch(origin+'/api/assessment/900001/draft',{method:'POST',headers:{origin:'https://untrusted.synthetic.invalid',cookie,'content-type':'application/json'},body:'{}'});
  assert.equal(crossOrigin.status,403);await crossOrigin.arrayBuffer();
+ for(const method of ['crm.deal.update','crm.timeline.comment.add','crm.item.update'])assert.equal((await api('/api/bitrix/'+method,{id:900001},410)).error,'OLD_TOOL_RETIRED');
+ assert.equal(crm.counts.assessmentWrites,0);assert.equal(crm.counts.historyWrites,0);
  const context=await api('/api/assessment/900001');
  assert.equal(context.identityRevision,1);
  const fixture=await seed(db,await mf.getR2Bucket('FILES'));

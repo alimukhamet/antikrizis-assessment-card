@@ -11,6 +11,7 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    ".wrangler/**", // Generated local Worker bundles and persistence fixtures.
     "public/vendor/contracts/**", // Unmodified pinned upstream distributions, verified by hash.
     "public/pdf-assets/**", // Unmodified generated Mozilla distribution.
     "next-env.d.ts",

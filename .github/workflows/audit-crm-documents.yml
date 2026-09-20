@@ -26,7 +26,5 @@ jobs:
         if: always()
         with:
           name: crm-document-audit
-          path: |
-            crm-document-audit.json
-            crm-document-diagnostics.json
+          path: crm-document-audit.json
           retention-days: 1

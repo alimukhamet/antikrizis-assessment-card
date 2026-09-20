@@ -84,27 +84,25 @@ test("captures every fact needed to build the later document checklist", async (
   assert.match(card, /marital:\s*\{bx:"UF_CRM_AI_MARITAL"\}/);
 });
 
-test("both protected launcher URLs restore the two original tools and keep the analyzer", async () => {
+test("both protected launcher URLs publish only tools 03 and 04 and retain the sales dashboard", async () => {
   for (const path of ['/assessment-card', '/assessment-card.html']) {
     const response=await fetchBuilt(path);
     assert.equal(response.status,200);
     assert.match(response.headers.get('cache-control'),/no-store/);
     const dom=new JSDOM(await response.text());
     const cards=[...dom.window.document.querySelectorAll('.task-grid > .task-card')];
-    assert.equal(cards.length,4);
-    assert.equal(cards[0].getAttribute('data-open-view'),'contract');
-    assert.equal(cards[1].getAttribute('data-open-view'),'documents');
-    for(const card of cards.slice(0,2)){assert.equal(card.tagName,'BUTTON');assert.equal(card.disabled,false);assert.equal(card.hasAttribute('href'),false);}
-
-    assert.equal(cards[2].getAttribute('href'),'/assessment-review');
-    assert.equal(cards[3].getAttribute('href'),'/lawyer-handoff');
-    assert.deepEqual(cards.map(card=>card.querySelector('.task-number').textContent),['01','02','03','04']);
+    assert.equal(cards.length,2);
+    assert.deepEqual(cards.map(card=>card.getAttribute('href')),['/assessment-review','/lawyer-handoff']);
+    assert.deepEqual(cards.map(card=>card.querySelector('.task-number').textContent),['03','04']);
+    assert.equal(dom.window.document.querySelector('[data-open-view],#contractBtn,#docsBtn,#dealLookup'),null);
+    assert.ok(dom.window.document.querySelector('script[src="/tools-home.js"]'));
+    assert.ok(dom.window.document.querySelector('.competition'));
     assert.ok(dom.window.document.querySelector('a[data-main-action="gkb"]'));
     dom.window.close();
   }
 });
 
-test("original navigation opens separate forms and reconnects their original handlers", async () => {
+test("archived original navigation is retained for recovery and template provenance", async () => {
   const html=await readFile(new URL('../templates/assessment-card.html',import.meta.url),'utf8');
   const dom=new JSDOM(html),document=dom.window.document,calls=[];
   const contract=()=>calls.push('contract'),documents=()=>calls.push('documents');
@@ -286,17 +284,11 @@ test("adds the completed questionnaire to the Bitrix deal history", async () => 
   assert.ok(comment < download);
 });
 
-test("limits the public assessment proxy to the methods used by the card", async () => {
-  const route = await readFile(
-    new URL("../app/api/bitrix/[method]/route.ts", import.meta.url),
-    "utf8",
-  );
-
-  assert.match(route, /const ASSESSMENT_METHODS = new Set/);
-  assert.match(route, /"crm\.deal\.get"/);
-  assert.match(route, /"crm\.deal\.update"/);
-  assert.match(route, /"crm\.timeline\.comment\.add"/);
-  assert.match(route, /"crm\.item\.get"/);
-  assert.match(route, /"crm\.item\.update"/);
-  assert.match(route, /error: "METHOD_NOT_ALLOWED"/);
+test('retired legacy writes return 410 even when Bitrix is unavailable',async()=>{
+ for(const method of ['crm.deal.update','crm.timeline.comment.add','crm.item.update','CRM.DEAL.UPDATE.json']){
+  const response=await fetchBuilt('/api/bitrix/'+method,{origin:'http://localhost','content-type':'application/json'},'POST');
+  assert.equal(response.status,410);assert.equal((await response.json()).error,'OLD_TOOL_RETIRED');
+  const denied=await fetchBuilt('/api/bitrix/'+method,{cookie:''},'POST');assert.equal(denied.status,401);
+  const foreign=await fetchBuilt('/api/bitrix/'+method,{origin:'https://foreign.invalid'},'POST');assert.equal(foreign.status,403);
+ }
 });

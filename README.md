@@ -4,7 +4,7 @@ For deployment outside ChatGPT Sites, start with
 [OWN_HOSTING_HANDOFF.md](OWN_HOSTING_HANDOFF.md) and
 [environment.example](environment.example).
 
-Fourth tool on the existing Assessment Card Site. Publication alongside the existing three tools was authorized on 14 September 2026. The original contract, document-upload and credit-report entries remain available; this is not a retirement of the old workflow.
+Current portal: https://assessment.anti-krizis.kz. On 20 September 2026 the owner explicitly authorized retiring tools 01 and 02. Only 03 (prepare contract) and 04 (handoff to lawyers) are published as the main workflows. The archived original template stays in source for contract generation and recovery; it is not served. The legacy Bitrix proxy rejects its three write methods with HTTP 410. Existing Bitrix data, saved originals, drafts and operation receipts are retained. The separate historical chatgpt.site is outside this retirement scope.
 
 Canonical Site: https://antikrizis-assessment-card.mukhamet-ali-ma.chatgpt.site
 
@@ -15,7 +15,7 @@ Canonical Site: https://antikrizis-assessment-card.mukhamet-ali-ma.chatgpt.site
 3. Select the existing required documents. Digital PDF text is extracted and cached; recognized answers keep document and page references.
 4. Check document ownership, type, periods and conflicts. Ask the client for unanswered information. Preserve whether a value came from a document or a client answer.
 5. Draft answers and ordinary original files are saved in D1/R2. They are not sent to Bitrix just because the employee leaves or reloads the draft.
-6. Click «Скачать договор»: complete required checks, upload documents/EDS through the existing handoff, save the assessment, verify Bitrix readback and history, then download the saved contract.
+6. Click «Сохранить и скачать»: complete required checks, upload ordinary documents, save the assessment, verify Bitrix readback and history, then download the saved contract.
 7. Use «Сообщить об ошибке» to report a problem without changing the client assessment. Ali sees all reports at `/assessment-feedback`; other workers see their own.
 
 Documents, drafts, inspections, submissions and upload receipts are separate records. A timeout does not prove that an external write failed. Retrying recovers the original operation. An owner can cancel an upload only while the server can prove it never started; cancellation remains available after reopening the case.
@@ -54,7 +54,7 @@ Keep `.env*`, `.dev.vars*`, local databases, real keys, CRM responses and recove
 
 As of 12 September 2026, the build, 255 tests, TypeScript and lint pass. Synthetic live Bitrix acceptance verified document/EDS upload, byte readback, safe retry, assessment fields, history and saved contract download. The downloaded contract was inspected across 12 pages. Local migration recovery also passed with a running destination app.
 
-Scanned financial GKB/Kaspi processing still requires an OCR service integration and end-to-end validation. Native extraction and supported manual inspections do not complete that requirement. No paid OCR service is enabled. Browser sign-in, reload, sign-out and error handling pass with an isolated local test account. The fourth-tool publication is explicitly authorized. Hosted retention/recovery access and broader scanned-document acceptance remain limitations on fully retiring the old tool. Test counts do not establish document authenticity or universal extraction accuracy.
+Scanned financial GKB/Kaspi processing still requires an OCR service integration and end-to-end validation. Native extraction and supported manual inspections do not complete that requirement. No paid OCR service is enabled. Browser sign-in, reload, sign-out and error handling pass with an isolated local test account. The owner authorized the portal cutover on 20 September 2026. Scanned financial reports still require an original PDF with readable text; they must not be silently treated as verified. See RELIABILITY.md for current release gates and remaining employee acceptance. Test counts do not establish document authenticity or universal extraction accuracy.
 
 ## Migration
 

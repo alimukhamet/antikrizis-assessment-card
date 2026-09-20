@@ -54,5 +54,5 @@ test('same main button resumes a pending history without committing the card aga
 });
 test('a known CRM conflict is shown as a conflict, not an instruction to blindly resend',async t=>{
  const f=fixture(t,{conflict:true});await f.click();assert.match(f.status(),/Карточка изменилась в Bitrix/);
- assert.doesNotMatch(f.status(),/Нажмите «Скачать договор» ещё раз/);assert.equal(f.downloads(),0);
+ assert.doesNotMatch(f.status(),/Нажмите «Сохранить и скачать» ещё раз/);assert.equal(f.downloads(),0);
 });

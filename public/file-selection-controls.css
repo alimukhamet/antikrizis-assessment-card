@@ -12,3 +12,9 @@
 .af-file-filename{flex-basis:100%;order:2;color:var(--text-mid,#555)}
 .batch-actions .batch-remove{width:auto;min-width:66px;padding:6px 10px;font-size:13px}
 @media(max-width:560px){.file-selection-row{align-items:flex-start}.file-selection-actions{width:100%}.file-selection-actions .btn{min-height:42px}.af-file-entry{padding:10px}}
+@media(min-width:621px){
+ .af-file-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:8px 12px}
+ .af-file-entry>.af-file{min-width:0;border:0!important}
+ .af-file-entry>.file-selection-actions{margin:0;align-self:start;padding-top:12px}
+ .af-file-entry>.file-selection-actions .btn{font-size:12px}
+}

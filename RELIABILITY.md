@@ -28,3 +28,14 @@ After every release the deploy workflow runs the same read-only audit. This is a
 ## Remaining live acceptance
 
 A real employee must complete the permitted synthetic sales case through contract download and handoff in the production UI. The existing designated test deal 11665 was outside sales during the September 20 audit; it must not be moved back or repurposed silently. Production case data was not modified to manufacture readiness. Local recovery tests and authenticated read-only production checks do not prove real Bitrix automation or employee acceptance.
+
+
+## Portal cutover — 20 September 2026
+
+The owner explicitly retired tools 01 and 02. The launcher now publishes only 03/04; both legacy launcher URLs serve the current home screen. Old cached tabs receive `OLD_TOOL_RETIRED` (HTTP 410) for `crm.deal.update`, `crm.timeline.comment.add` and `crm.item.update`. Authentication and origin checks still apply first. Tools 03/04 retain their dedicated validated, recoverable write routes. The archived source template and all stored/CRM data remain intact; no old Site is deleted.
+
+The interface has one compact title/client bar, a direct Bitrix import action, three contract steps, and a clear “Сохранить и скачать” action. The raw questionnaire stays hidden until the working interface initializes; failed or stalled startup offers a reload action. Desktop and 390 px browser checks cover the launcher, saved-client selection, document intake, answers, contract screen and handoff layout using synthetic local data.
+
+A bounded real Bitrix audit read 24 PDFs / 613 pages in six cases without modifying their saved drafts. It found a short-report layout error: explanatory text in legacy Kazakh reports mentioned the newer format. Version `rules-native-18` chooses the first report title and extracts all 9/7/5 loans from those three reports. Shortened contract identifiers remain reconciliation blockers. Fixtures cover this regression without storing real client details in the repository. Document reading is not evidence of authenticity, universal extraction accuracy, or employee acceptance.
+
+Release checks assert the current launcher and all three retired methods using normal staff authentication, in addition to existing saved-case/API and public-asset checks. The signed intake test uses an explicitly disposed pinned Worker runtime; it no longer relies on a development server that could leave background processes running after its assertions finished.

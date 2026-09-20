@@ -120,7 +120,7 @@ test('navigation and source shortcuts reveal their fields without mutating the d
 
 test('step changes preserve a checked snapshot; editing an answer invalidates it',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();
- const save=[...s.d.querySelectorAll('button')].find(node=>node.textContent==='Скачать договор');
+ const save=[...s.d.querySelectorAll('button')].find(node=>node.textContent==='Сохранить и скачать');
  assert.equal(save.disabled,false);
  await s.d.getElementById('checkQuestions').onclick();assert.equal(save.disabled,false);
  for(const name of ['documents','answers','contract']){s.w.AssessmentWorkflow.show(name,{focus:false});assert.equal(save.disabled,false);}

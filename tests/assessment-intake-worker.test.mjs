@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { readdir, readFile } from 'node:fs/promises';
+import { Miniflare } from 'miniflare';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { spawnSync } from 'node:child_process';
 import { createHmac } from 'node:crypto';
 
 const root = resolve(new URL('..', import.meta.url).pathname);
@@ -36,31 +36,18 @@ let persist;
 
 test('built worker exposes only the signed Assessment machine routes before staff auth', async (t) => {
   persist = mkdtempSync(join(tmpdir(), 'assessment-intake-worker-'));
-  const config = join(root, 'dist/server/wrangler.json');
-  const schema = join(persist, 'schema.sql');
-  writeFileSync(schema, 'CREATE TABLE assessment_cases (id TEXT PRIMARY KEY, external_system TEXT NOT NULL, external_id TEXT NOT NULL, client_iin TEXT, identity_revision INTEGER NOT NULL, title TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(external_system, external_id));');
-  const wrangler = join(root, 'node_modules/.bin/wrangler');
-  const seeded = spawnSync(wrangler, ['d1', 'execute', 'DB', '--local', '--persist-to', persist, '--config', config, `--file=${schema}`], { cwd: root, encoding: 'utf8', env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
-  assert.equal(seeded.status, 0, seeded.stderr || seeded.stdout);
-
-  const { unstable_dev } = await import(pathToFileURL(join(root, 'node_modules/wrangler/wrangler-dist/cli.js')).href);
-  dev = await unstable_dev(join(root, 'dist/server/index.js'), {
-    config,
-    local: true,
-    persistTo: persist,
-    port: 0,
-    logLevel: 'none',
-    vars: {
-      ASSESSMENT_INTAKE_HMAC_SECRET: secret,
-      ASSESSMENT_INTAKE_APPROVED_ORIGIN: approvedOrigin,
-      SITE_SESSION_TOKEN: 'staff-session-secret-for-tests-32-bytes',
-    },
-    experimental: { disableExperimentalWarning: true },
+  const modulePaths=(await readdir(join(root,'dist/server'),{recursive:true})).filter(path=>/\.m?js$/.test(path)).sort((a,b)=>a==='index.js'?-1:b==='index.js'?1:a.localeCompare(b));
+  const modules=await Promise.all(modulePaths.map(async path=>({type:'ESModule',path,contents:await readFile(join(root,'dist/server',path),'utf8')})));
+  // Use the same pinned, explicitly disposed local Worker runtime as recovery tests.
+  const runtime=new Miniflare({modules,compatibilityDate:'2026-05-22',compatibilityFlags:['nodejs_compat'],
+    d1Databases:{DB:'synthetic-intake'},d1Persist:persist,r2Buckets:{FILES:'synthetic-files'},
+    bindings:{ASSESSMENT_INTAKE_HMAC_SECRET:secret,ASSESSMENT_INTAKE_APPROVED_ORIGIN:approvedOrigin,SITE_SESSION_TOKEN:'staff-session-secret-for-tests-32-bytes'},
+    outboundService:()=>{throw Error('No outbound service is authorized in this test');}
   });
-  t.after(async () => {
-    await dev?.stop();
-    rmSync(persist, { recursive: true, force: true });
-  });
+  t.after(async()=>{await runtime.dispose();rmSync(persist,{recursive:true,force:true});});
+  const db=await runtime.getD1Database('DB');
+  await db.prepare('CREATE TABLE assessment_cases (id TEXT PRIMARY KEY, external_system TEXT NOT NULL, external_id TEXT NOT NULL, client_iin TEXT, identity_revision INTEGER NOT NULL, title TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(external_system, external_id))').run();
+  dev={fetch:(path,options)=>runtime.dispatchFetch(new URL(path,'https://synthetic.invalid'),options)};
 
   const manifest = {
     dealId,

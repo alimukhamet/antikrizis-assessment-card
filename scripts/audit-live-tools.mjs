@@ -20,6 +20,17 @@ try{
  await request('/api/session',{worker:'ali',password:process.env.ASSESSMENT_TEST_PASSWORD});
  report.authenticated=(await request('/api/session')).ok===true;
  report.status=await request('/api/status');
+ const launcher=await fetch(origin+'/assessment-card.html',{headers:{cookie},redirect:'error',signal:AbortSignal.timeout(30_000)});
+ const launcherHtml=await launcher.text();
+ report.launcher={status:launcher.status,currentTools:['assessment','handoff'].every(tool=>launcherHtml.includes('data-main-action="'+tool+'"')),legacyFormsAbsent:!/(?:id="(?:contractBtn|docsBtn|dealLookup)"|data-open-view=)/.test(launcherHtml)};
+ if(launcher.status!==200||!report.launcher.currentTools||!report.launcher.legacyFormsAbsent)throw Error('Current-only launcher verification failed');
+ report.retiredMethods=[];
+ for(const method of ['crm.deal.update','crm.timeline.comment.add','crm.item.update']){
+  const response=await fetch(origin+'/api/bitrix/'+method,{method:'POST',headers:{cookie,origin,'content-type':'application/json'},body:'{}',redirect:'error',signal:AbortSignal.timeout(30_000)}),data=await response.json();
+  report.retiredMethods.push({method,status:response.status,code:data.error});
+  if(response.status!==410||data.error!=='OLD_TOOL_RETIRED')throw Error('Legacy write method remains available: '+method);
+ }
+
  for(const id of caseIds){
   const root='/api/assessment/'+id,item={dealId:id};report.cases.push(item);
   const assessment=await request(root);

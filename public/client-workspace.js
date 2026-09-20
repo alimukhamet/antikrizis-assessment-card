@@ -96,7 +96,7 @@ window.ClientWorkspace=(()=>{
  const clients=button(HostedAssessment.ready()?'Другой клиент':'Выбрать',open);clients.id='openClients';clients.setAttribute('aria-label',HostedAssessment.ready()?'Сменить клиента':'Выбрать клиента');document.querySelector('.wf-client-copy').after(clients);
  const picker=document.querySelector('.wf-case-picker');picker.querySelector('summary').textContent='По номеру сделки';
  document.addEventListener('assessment-case-opened',()=>{picker.querySelector('summary').textContent='По номеру сделки';clients.textContent='Другой клиент';clients.setAttribute('aria-label','Сменить клиента');});
- const importer=button('Взять из Bitrix',importDocuments);importer.id='importCrmDocuments';(document.querySelector('.wf-tools-content')||document.querySelector('.wf-upload-actions')).prepend(importer);
+ const importer=button('Взять из Bitrix',importDocuments);importer.id='importCrmDocuments';importer.className='btn btn-main';$('afChoose').before(importer);
  const notice=el('p',null,'hint');notice.id='crmImportStatus';notice.setAttribute('role','status');document.querySelector('.wf-upload-box').append(notice);
  window.AssessmentWorkflow?.refresh();
  return{open,switchTo,importDocuments};

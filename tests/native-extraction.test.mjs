@@ -75,3 +75,18 @@ test('modern short format fails closed on missing rows, totals, role, identity o
  }
  const p=modernShortPages();delete p[0].layoutText;const r=rules.extractNative(p);assert.equal(r.identity.iin,null);assert.ok(r.findings.includes('DOCUMENT_IDENTITY_UNVERIFIED'));
 });
+
+test('Kazakh legacy short report keeps its own layout when later guidance names the newer report',()=>{
+ const text=shortReport(shortRows)
+  .replace('Персональный кредитный отчет (краткая форма)','Жеке кредиттік есеп (қысқаша нысан)')
+  .replace('Дата выдачи:', 'Тегі: Тестов\nАты: Тест\nӘкесінің аты: Тестович\nЖСН: 991231300003\nБерілген күні:')
+  .replace('Действующие обязательства','Қолданыстағы міндеттемелер')
+  .replace('Общая сумма задолженности/валюта:','Жалпы қарыз/валюта:')
+  .replaceAll('Нет данных','Деректер жоқ');
+ const baseline=rules.extractNative(page(text));
+ const withGuidance=rules.extractNative(page(text+'\nДербес кредиттік есеп туралы қосымша ақпарат'));
+ assert.equal(withGuidance.identity.name,'Тестов Тест Тестович');assert.equal(withGuidance.identity.iin,'991231300003');assert.equal(withGuidance.issuedAt,'2026-09-10');
+ assert.equal(withGuidance.credits.length,2);
+ assert.equal(withGuidance.creditList.complete,true);
+ assert.deepEqual(withGuidance,baseline,'Unrelated report descriptions must not change identity, date, loans or reconciliation');
+});

@@ -43,7 +43,7 @@ window.AssessmentWorkflow=(()=>{
  workspace.replaceChildren(client,status,identity,oldName);workspace.className='wf-client';oldName.hidden=true;top.prepend(workspace);moreContent.append(picker);
  for(const button of moreContent.querySelectorAll('button'))if(!button.getAttribute('aria-label'))button.setAttribute('aria-label',button.textContent.trim());
  picker.open=false;picker.hidden=true;
- const draftNote=make('p','Черновик в инструменте. В Bitrix — при скачивании договора.','wf-draft-note');top.append(draftNote);
+ const draftNote=make('p','Ответы сохраняются автоматически. В Bitrix — после «Сохранить и скачать».','wf-draft-note');moreContent.append(draftNote);
 
  const nav=make('nav',null,'wf-steps');nav.setAttribute('aria-label','Подготовка договора');top.after(nav);
  const stages=[['documents','Документы','Добавьте файлы клиента'],['answers','Ответы','Проверьте и дополните'],['contract','Договор','Проверьте и сохраните']];
@@ -68,7 +68,7 @@ window.AssessmentWorkflow=(()=>{
  // Keep the actual file input and its handlers. No second visible batch picker.
  const fileInput=$('previewDocuments');fileInput.classList.add('wf-file-input');documentStep.append(fileInput);oldBatch.remove();
  documentStep.append(analysisActions);
- $('afChoose').textContent='Добавить файлы';$('afChoose').className='btn btn-main';$('afChoose').title='PDF или ZIP до 35 МБ. Сохраняются в черновике.';
+ $('afChoose').textContent='С компьютера';$('afChoose').className='btn btn-ghost';$('afChoose').title='Добавить PDF или ZIP до 35 МБ. Сохраняются в черновике.';
  $('afAnalyze').className='btn btn-ghost';
  analysisActions.classList.add('wf-upload-actions');
  const uploadBox=make('div',null,'wf-upload-box'),documentTools=details('Ещё','wf-document-tools'),toolsBody=make('div',null,'wf-tools-content');documentTools.id='workflowDocumentTools';
@@ -132,7 +132,7 @@ window.AssessmentWorkflow=(()=>{
  function downloadProgress(){
   downloadNotice.hidden=active!=='contract'||!downloadState.message;downloadNotice.textContent=downloadState.message;
   nextStep.disabled=active==='contract'&&downloadState.busy;nextStep.setAttribute('aria-busy',String(nextStep.disabled));
-  if(active==='contract')nextStep.textContent=downloadState.busy?(downloadState.label||'Проверяю…'):'Скачать договор';
+  if(active==='contract')nextStep.textContent=downloadState.busy?(downloadState.label||'Проверяю…'):'Сохранить и скачать';
  }
  document.addEventListener('assessment-submission-progress',event=>{downloadState=event.detail;downloadProgress();});
  document.addEventListener('assessment-case-opened',()=>{downloadState={busy:false,message:''};downloadProgress();});
@@ -162,7 +162,7 @@ window.AssessmentWorkflow=(()=>{
   if(!tabs.has(name))return false;
   const blocked=name!=='documents'&&!collection().ready;
   if(blocked){name='documents';remember=false;}
-  active=name;document.body.dataset.assessmentWorkflow=name;previous.hidden=name==='documents';stepCaption.textContent=name==='documents'?'1 из 3':name==='answers'?'2 из 3':'3 из 3';nextStep.textContent=name==='documents'?'Далее: ответы →':name==='answers'?'Далее: договор →':'Скачать договор';
+  active=name;document.body.dataset.assessmentWorkflow=name;previous.hidden=name==='documents';stepCaption.textContent=name==='documents'?'1 из 3':name==='answers'?'2 из 3':'3 из 3';nextStep.textContent=name==='documents'?'Далее: ответы →':name==='answers'?'Далее: договор →':'Сохранить и скачать';
   const answerIssues=$('answerCheckIssues');if(answerIssues&&name!=='documents')(name==='answers'?answerIntro:contractIntro).append(answerIssues);
   if(remember&&HostedAssessment.ready())try{sessionStorage.setItem('assessment-step:'+HostedAssessment.getContext().client.external.dealId,name);}catch{/* Navigation still works when browser storage is unavailable. */}
   for(const node of document.querySelectorAll('[data-assessment-step]')){
@@ -170,7 +170,7 @@ window.AssessmentWorkflow=(()=>{
   }
   for(const [key,{button}]of tabs){if(key===name)button.setAttribute('aria-current','step');else button.removeAttribute('aria-current');}
   if(name==='answers')openNextSection();
-  if(focus){const target=blocked?collectionNotice:name==='documents'?documentStep:name==='answers'?answerIntro:contractIntro;target.tabIndex=-1;target.focus({preventScroll:true});target.scrollIntoView({block:'start',behavior:window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
+  if(focus){const target=blocked?collectionNotice:name==='documents'?documentStep:name==='answers'?answerIntro:contractIntro;target.tabIndex=-1;target.focus({preventScroll:true});(blocked?target:document.querySelector('.ux-context')||target).scrollIntoView({block:'start',behavior:window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
   collectionStatus();downloadProgress();return !blocked;
  }
  function openNextSection(){
@@ -240,7 +240,7 @@ window.AssessmentWorkflow=(()=>{
    collectionNotice.classList.toggle('wf-collection-complete',state.ready);
    const heading=make('div',null,'wf-collection-header');
    const progress=af.progress;
-   const title=af.busy?af.unpacking?'Открываем ZIP…':progress?.total?'Прочитано документов · '+progress.done+' из '+progress.total:'Получаем список документов…':absent.length?'Не хватает документов · '+absent.length:pending.length?'Завершите добавление · '+pending.length:state.context.length?'Основные документы добавлены':state.attention.length?'Проверьте замечания · '+state.attention.length:'Обязательные документы добавлены';
+   const title=af.busy?af.unpacking?'Открываем ZIP…':progress?.total?'Прочитано документов · '+progress.done+' из '+progress.total:'Получаем список документов…':absent.length?'Не хватает документов · '+absent.length:pending.length?'Завершите добавление · '+pending.length:state.context.length?'Основные документы добавлены':state.attention.length?'Проверьте замечания · '+state.attention.length:'Файлы добавлены';
    heading.append(make('strong',title,'wf-collection-title'),make('span',state.provided+' из '+state.rows.length+' в пакете','wf-collection-count'));collectionNotice.append(heading);
    const list=(rows,waiting=false)=>{
     const entries=make('ul',null,'wf-collection-list');
