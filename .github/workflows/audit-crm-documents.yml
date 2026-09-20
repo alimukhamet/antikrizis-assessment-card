@@ -1,0 +1,27 @@
+name: Bitrix document reading audit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Read a bounded sample of existing CRM documents
+        env:
+          ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
+        run: node scripts/audit-crm-documents.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: crm-document-audit
+          path: crm-document-audit.json
+          retention-days: 1
