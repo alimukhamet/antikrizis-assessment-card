@@ -4,6 +4,7 @@ import {writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 const origin='https://assessment.anti-krizis.kz',report={origin,scope:'inbound-document-analysis',cases:[],failures:[]};
 let cookie='';
+const diagnostics=[];
 async function request(path,body){
  const response=await fetch(origin+path,{method:body?'POST':'GET',headers:{origin,cookie,'content-type':'application/json'},body:body?JSON.stringify(body):undefined,redirect:'error',signal:AbortSignal.timeout(90_000)});
  if(path==='/api/session'&&body)cookie=response.headers.getSetCookie().map(c=>c.split(';')[0]).join('; ');
@@ -31,6 +32,10 @@ try{
     try{
      const analysis=await request(root+'/crm-documents',{fileId:ref.id,identityRevision:context.identityRevision});
      const document=analysis.document,extraction=document?.extraction;
+     if(extraction?.kind==='gkb_short'&&!extraction.credits?.length){
+      const redact=text=>{for(const token of [extraction.identity?.iin,extraction.identity?.name,context.client?.iin,context.client?.title].filter(Boolean))text=text.split(token).join('[REDACTED]');return text;};
+      diagnostics.push({dealId:item.dealId,fileId:ref.id,pages:document.pages.map(p=>({...p,text:redact(p.text),...(p.layoutText?{layoutText:redact(p.layoutText)}:{})}))});
+     }
      Object.assign(result,{state:'read',pages:document?.totalPages,kind:extraction?.kind,credits:extraction?.credits?.length,identityMatches:!!extraction?.identity?.iin&&extraction.identity.iin===context.client.iin,identityRevisionMatches:analysis.identityRevision===context.identityRevision,findings:analysis.findings,cacheHit:analysis.cacheHit,persisted:analysis.persisted});
      if(!(result.pages>0)||!result.identityRevisionMatches||!result.persisted)report.failures.push({dealId:item.dealId,fileId:ref.id,code:'ANALYSIS_RESPONSE_INCOMPLETE'});
     }catch(error){result.state=['CREDENTIAL_NOT_ANALYSED','NOT_A_SUPPORTED_PDF'].includes(error.code)?'excluded':'failed';result.code=error.code||'REQUEST_FAILED';if(result.state==='failed')report.failures.push({dealId:item.dealId,fileId:ref.id,code:result.code});}
@@ -42,4 +47,5 @@ try{
  }
 }catch(error){report.failures.push({code:error.code||error.message});}
 report.summary={cases:report.cases.length,read:report.cases.flatMap(c=>c.documents).filter(d=>d.state==='read').length,excluded:report.cases.flatMap(c=>c.documents).filter(d=>d.state==='excluded').length,pages:report.cases.flatMap(c=>c.documents).reduce((n,d)=>n+(d.pages||0),0),failures:report.failures.length};
+await writeFile('crm-document-diagnostics.json',JSON.stringify(diagnostics,null,2));
 await writeFile('crm-document-audit.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report.summary));if(report.failures.length)process.exitCode=1;
