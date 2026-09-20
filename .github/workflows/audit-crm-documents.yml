@@ -1,6 +1,9 @@
 name: Bitrix document reading audit
 on:
   workflow_dispatch:
+  push:
+    branches: [fix/tool-rollout-audit]
+    paths: [scripts/audit-crm-documents.mjs, .github/workflows/audit-crm-documents.yml]
 permissions:
   contents: read
 jobs:
