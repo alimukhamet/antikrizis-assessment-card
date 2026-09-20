@@ -100,3 +100,17 @@ test('a prepared handoff cancels cleanly and restores inputs without a stage wri
  assert.equal(s.d.getElementById('handoffSignedFile').disabled,false);
  assert.equal(s.calls.filter(c=>c.method==='POST').length,1);
 });
+
+test('restored signed PDF is read and identity checked before any handoff side effect',async t=>{
+ const order=[];const s=await setup(t,(path,options)=>{
+  if(path.endsWith('/handoff-check'))return response({identityRevision:1,documents:{packageReady:true,issues:[],manuallyReviewed:[]}});
+  if(options.method==='POST'){order.push('send');return response({handoff:{...saved,state:'verified'}});}
+  return response({handoff:null,destination:stage,stageError:null});
+ });
+ s.w.selectedFiles=[{id:1,type:'Доверенность',person:'Клиент',file:{name:'power.pdf'},storedDocumentId:'power'},{id:2,type:'Подписанный договор',person:'Клиент',file:{name:'signed.pdf'},storedDocumentId:'signed'}];
+ let wrong=false;s.w.HostedAssessment.analyzeFile=async item=>{order.push('read-'+item.storedDocumentId);return {...s.context(),documentId:item.storedDocumentId,document:{totalPages:2,extraction:{identity:{iin:wrong?'different-client':s.context().client.iin}}}};};
+ s.w.HostedAssessment.adapt=a=>({server:{documentId:a.documentId}});s.w.CredentialUpload.submit=async()=>{order.push('credentials');};
+ await s.d.getElementById('handoffPowerCheck').onclick();const agree=s.d.getElementById('handoffSignedConfirmed');agree.checked=true;await agree.onchange();assert.equal(s.d.getElementById('handoffSend').disabled,false);
+ wrong=true;await s.d.getElementById('handoffSend').onclick();assert.equal(order.includes('credentials'),false);assert.equal(order.includes('send'),false);assert.match(s.d.getElementById('handoffReason').textContent,/другой клиент/);
+ wrong=false;await s.d.getElementById('handoffSend').onclick();assert.deepEqual(order.slice(-3),['read-signed','credentials','send']);assert.equal(s.w.ServerDrafts.capture().answers[0].value,'KEEP');
+});

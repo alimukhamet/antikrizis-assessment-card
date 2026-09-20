@@ -4,6 +4,17 @@
  const preview=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('pre');
  summary.textContent='Предпросмотр карточки для юриста';text.style.whiteSpace='pre-wrap';text.style.fontFamily='inherit';
  preview.append(summary,text);preview.hidden=true;button.after(preview);
+ const answerIssues=document.createElement('ul');answerIssues.id='answerCheckIssues';answerIssues.hidden=true;button.after(answerIssues);
+ function answerTarget(issue){
+  if(!issue.group){
+   if(issue.key?.startsWith('choice:'))return [...document.querySelectorAll('#questionnaireStep input')].find(input=>input.name===issue.key.split(':')[1]);
+   if(issue.key?.startsWith('holding:'))return [...document.querySelectorAll('#questionnaireStep [data-holding]')].find(input=>input.dataset.owner===issue.key.split(':')[1]);
+   return document.getElementById(issue.key?.replace(/^exact:/,''));
+  }
+  const row=document.getElementById(issue.group)?.querySelector('.repeat-rows')?.children[issue.row??0];
+  return [...row?.querySelectorAll('input,select,textarea')||[]].find(e=>e.id.replace(/_r\d+$/,'')===issue.key);
+ }
+ function focusAnswer(issue){const target=answerTarget(issue);if(target){window.AssessmentWorkflow?.reveal(target);target.focus();}}
  const documentActions=document.createElement('section');documentActions.className='af-workspace';documentActions.id='documentReviewStep';
  const documentHeading=document.createElement('h2');documentHeading.textContent='Проверка документов';
  const documentButton=document.createElement('button');documentButton.type='button';documentButton.className='btn btn-main';documentButton.id='checkDocuments';documentButton.textContent='Проверить документы';
@@ -17,13 +28,13 @@
  const upload=DocumentUpload.mount(documentButton,documentStatus);window.AssessmentDocumentUpload=upload;let lastResult=null;
  const submission=SubmissionFlow.mount(button,document.getElementById('checkStatus'));
  const contract=document.createElement('button');contract.type='button';contract.className='btn btn-ghost';contract.textContent='Скачать предварительный договор';contract.hidden=true;preview.append(contract);let contractValues=null;
- for(const event of ['input','change','assessment-case-opened'])document.addEventListener(event,event=>{if(event.target.closest?.('[data-document-review]'))return;if(event.type!=='assessment-case-opened'&&!event.target.closest?.('#questionnaireStep,#documentStep')&&event.target.id!=='afDate')return;upload.invalidate();submission.invalidate();preview.hidden=true;documents.textContent='';contract.hidden=true;contractValues=null;});
+ for(const event of ['input','change','assessment-case-opened'])document.addEventListener(event,event=>{if(event.target.closest?.('[data-document-review]'))return;if(event.type!=='assessment-case-opened'&&!event.target.closest?.('#questionnaireStep,#documentStep')&&event.target.id!=='afDate')return;upload.invalidate();submission.invalidate();preview.hidden=true;answerIssues.hidden=true;answerIssues.replaceChildren();documents.textContent='';contract.hidden=true;contractValues=null;});
  contract.onclick=async()=>{if(!contractValues)return;contract.disabled=true;try{const selected=contractValues,blob=await ContractRenderer.render(selected);if(contractValues!==selected)throw Error('Ответы изменились. Проверьте анкету заново.');const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='Предварительный договор.docx';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(error){document.getElementById('checkStatus').textContent=error.message;}finally{contract.disabled=false;}};
  window.AssessmentCheck={run:()=>check('answers'),documents:()=>check('documents'),result:()=>lastResult};
  button.onclick=()=>check('answers');
  documentButton.onclick=()=>check('documents');
  async function check(mode){
-  lastResult=null;
+  lastResult=null;answerIssues.replaceChildren();answerIssues.hidden=true;
   if(button.disabled||documentButton.disabled)return;
   const status=mode==='documents'?documentStatus:document.getElementById('checkStatus');
   if(!HostedAssessment.ready()){status.textContent='Сначала откройте сделку.';return;}
@@ -56,11 +67,14 @@
    }
    if(result.evidence?.issues.length){status.textContent=`Нужна повторная проверка ответов из документов: ${result.evidence.issues.length}. Откройте источники и подтвердите актуальные значения.`;return;}
    if(result.answersComplete){text.textContent=result.preview?.lawyerCard||'';preview.hidden=!text.textContent;contractValues=result.preview?.contractData||null;contract.hidden=!contractValues;status.textContent=result.readyToSubmit?'Ответы и документы проверены. Можно сохранить карточку и скачать договор.':'Обязательные ответы заполнены. Можно скачать предварительный договор для проверки. Перед сохранением завершите проверку документов.';return;}
-   status.textContent=`Нужно проверить ответы: ${result.issues.length}. `+result.issues.slice(0,5).map(i=>i.label).join('; ');
-   const first=result.issues[0];let target;
-   if(first?.group){const row=document.getElementById(first.group)?.querySelector('.repeat-rows')?.children[first.row??0];target=[...row?.querySelectorAll('input,select,textarea')||[]].find(e=>e.id.replace(/_r\d+$/,'')===first.key);}
-   else target=document.getElementById(first?.key);
-   if(target){window.AssessmentWorkflow?.reveal(target);target.focus();}
+   status.textContent=`Нужно проверить ответы: ${result.issues.length}. Нажмите на пункт, чтобы перейти к полю.`;
+   for(const issue of result.issues){
+    const row=document.createElement('li'),link=document.createElement('button');link.type='button';link.className='btn btn-ghost';
+    const group=issue.group?document.getElementById(issue.group)?.querySelector('h2,h3,h4')?.textContent?.trim():'';
+    link.textContent=(issue.group?(group|| (issue.group==='creditors'?'Кредит':'Запись'))+' · '+((issue.row??0)+1)+' — ':'')+issue.label;
+    link.onclick=()=>focusAnswer(issue);row.append(link);answerIssues.append(row);
+   }
+   answerIssues.hidden=false;if(result.issues[0])focusAnswer(result.issues[0]);
   }catch(error){status.textContent=error.message;}finally{button.disabled=false;documentButton.disabled=false;}
  }
 })();

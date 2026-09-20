@@ -77,7 +77,22 @@ window.HostedAssessment=(()=>{
   document.dispatchEvent(new Event('assessment-identity-confirmed'));
   return response.analysis;
  }
- async function analyzeFile(item,preferences={}){const path=item.storedDocumentId?base()+'/documents/'+encodeURIComponent(item.storedDocumentId)+'/analyze':base()+'/documents';const options=item.storedDocumentId?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cacheOnly:preferences.cacheOnly===true})}:{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Document-Name':encodeURIComponent(item.file.name)},body:item.file};let result;try{result=await json(path,options,{timeoutMs:preferences.restoreOnly?25000:60000});}catch(error){if(error.code!=='CACHE_REPROCESS_REQUIRED'||!item.storedDocumentId||preferences.restoreOnly)throw error;result=await json(path,{...options,body:JSON.stringify({cacheOnly:false})},{timeoutMs:60000});}if(result.documentId)item.storedDocumentId=result.documentId;return result;}
+ async function analyzeFile(item,preferences={}){
+  const current=context,documentId=item.storedDocumentId,file=item.file;
+  const unchanged=()=>context===current&&item.storedDocumentId===documentId&&item.file===file;
+  const path=documentId?base()+'/documents/'+encodeURIComponent(documentId)+'/analyze':base()+'/documents';
+  const options=documentId?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cacheOnly:preferences.cacheOnly===true})}:{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Document-Name':encodeURIComponent(file.name)},body:file};
+  let result;
+  try{result=await json(path,options,{timeoutMs:preferences.restoreOnly?25000:60000});}
+  catch(error){
+   if(error.code!=='CACHE_REPROCESS_REQUIRED'||!documentId||!unchanged())throw error;
+   // A reader release does not invalidate the saved original. Refresh only its
+   // analysis; restoreOnly still prevents the caller from replacing user answers.
+   result=await json(path,{...options,body:JSON.stringify({cacheOnly:false})},{timeoutMs:60000});
+  }
+  if(!unchanged())throw Error('Клиент или документ изменился. Результат не применён.');
+  if(result.documentId)item.storedDocumentId=result.documentId;return result;
+ }
  function ready(){return !!context;}
  function adapt(payload){
   if(!ready()||payload.client.external.dealId!==context.client.external.dealId)throw Error('Ответ получен для другой сделки. Ничего не заполнено.');

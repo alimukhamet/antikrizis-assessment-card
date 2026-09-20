@@ -28,3 +28,17 @@ test('client search leaves the current review and lawyer preview intact',async()
  assert.equal(s.preview.hidden,false);assert.equal(s.preview.querySelector('pre').textContent,'SYNTHETIC PREVIEW');
  s.edit();assert.equal(s.preview.hidden,true);s.w.close();
 });
+
+test('every missing answer has a link to the exact repeated loan row',async()=>{
+ const issues=Array.from({length:6},(_,row)=>({group:'creditors',row,key:'n8041',label:'Ежемесячный платёж'}));
+ const s=setup(async()=>({ok:true,json:async()=>({answersComplete:false,issues})})),d=s.w.document;
+ const group=d.createElement('section');group.id='creditors';group.innerHTML='<h3>Кредиты</h3><div class="repeat-rows">'+issues.map((_,i)=>'<div><input id="n8041_r'+i+'"></div>').join('')+'</div>';d.getElementById('questionnaireStep').append(group);
+ await s.button.onclick();const links=d.querySelectorAll('#answerCheckIssues button');assert.equal(links.length,6);assert.match(links[5].textContent,/6 — Ежемесячный платёж/);links[5].click();assert.equal(d.activeElement.id,'n8041_r5');assert.equal(d.activeElement.value,'');
+ s.edit();assert.equal(d.getElementById('answerCheckIssues').hidden,true);s.w.close();
+});
+
+test('missing checkbox-group answers link to their visible choices',async()=>{
+ const s=setup(async()=>({ok:true,json:async()=>({answersComplete:false,issues:[{key:'choice:socialStatus:',label:'Социальный статус'},{key:'holding:client:',label:'Имущество'}]})})),d=s.w.document;
+ d.getElementById('questionnaireStep').insertAdjacentHTML('beforeend','<input type="checkbox" name="socialStatus" id="social-choice"><input type="checkbox" data-holding="none" data-owner="client" id="property-choice">');
+ await s.button.onclick();assert.equal(d.activeElement.id,'social-choice');d.querySelectorAll('#answerCheckIssues button')[1].click();assert.equal(d.activeElement.id,'property-choice');assert.equal(d.activeElement.checked,false);s.w.close();
+});

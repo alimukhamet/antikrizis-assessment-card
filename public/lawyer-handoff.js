@@ -97,7 +97,24 @@
    if(!await ServerDrafts.save({automatic:true}))throw Error('PDF прочитан, но черновик не сохранён. Нажмите «Сохранить черновик» перед продолжением.');message='PDF сохранён. Проверьте клиента, подпись и QR.';
   }catch(error){if(ui.context()===current)message=error.message;}finally{if(ui.context()===current){busy=false;signedInput.value='';refresh();}}
  };
- signedAgree.onchange=()=>{message='';refresh();};
+ async function inspectSigned(current,item){
+  if(!item)throw Error(explanation('HANDOFF_SIGNED_PDF_REQUIRED'));
+  const analysis=await HostedAssessment.analyzeFile(item,{cacheOnly:true});
+  if(ui.context()!==current||signed()!==item)throw Error('Клиент или подписанный PDF изменился. Проверьте текущий файл.');
+  if(analysis.client?.external?.dealId!==current.client.external.dealId||analysis.identityRevision!==current.identityRevision)throw Error(explanation('CASE_IDENTITY_CHANGED'));
+  if(!analysis.document?.totalPages)throw Error(explanation('HANDOFF_SIGNED_PDF_REQUIRED'));
+  const iin=analysis.document.extraction?.identity?.iin;
+  if(iin&&iin!==current.client.iin)throw Error(explanation('WRONG_CLIENT'));
+  // Read/preview only: a signed contract must never fill intake answers.
+  af.results.set(item.id,HostedAssessment.adapt(analysis));
+ }
+ signedAgree.onchange=async()=>{
+  message='';if(!signedAgree.checked||busy||pending){refresh();return;}
+  const current=ui.context(),item=signed();busy=true;message='Проверяем сохранённый PDF…';refresh();
+  try{await inspectSigned(current,item);if(ui.context()===current&&signed()===item)message='PDF прочитан. Подпись и QR подтверждены вами.';}
+  catch(error){if(ui.context()===current&&signed()===item){signedAgree.checked=false;message=error.message;}}
+  finally{if(ui.context()===current){busy=false;refresh();}}
+ };
  send.onclick=async()=>{
   if(send.disabled)return;busy=true;message='';refresh();const current=ui.context(),selectedPower=power()?.storedDocumentId,selectedSigned=signed()?.storedDocumentId,oldPending=pending;
   try{
@@ -106,6 +123,8 @@
    if(!oldPending){
     if(selectedPower!==power()?.storedDocumentId||selectedSigned!==signed()?.storedDocumentId||!signedAgree.checked)throw Error('Пакет изменился. Проверьте документы заново.');
     if(!await ServerDrafts.save({automatic:true}))throw Error('Сначала сохраните черновик.');
+    // Reprocess an older saved signed PDF before any outbound upload/stage write.
+    await inspectSigned(current,signed());
     message='Сохраняем ЭЦП и проверяем файлы…';refresh();await CredentialUpload.submit();
     if(ui.context()!==current||selectedPower!==power()?.storedDocumentId||selectedSigned!==signed()?.storedDocumentId||!signedAgree.checked)throw Error('Пакет изменился. Проверьте документы заново.');
    }

@@ -88,12 +88,14 @@ window.ServerDrafts=(()=>{
   $('needsSocialDoc').value=p.docContext.social;$('needsSalaryDoc').value=p.docContext.salaryBank==='other'?'1':p.docContext.salaryBank??(p.docContext.salary==='1'?'1':'');
   syncBenefitAnswer();
   selectedFiles=[];fileSequence=0;
-  const failed=[];for(const doc of p.documents){if(!doc.originalName){failed.push(doc.documentId);continue;}selectedFiles.push({id:++fileSequence,file:{name:doc.originalName,size:0,type:'application/pdf'},type:doc.type,person:doc.person||'Клиент',storedDocumentId:doc.documentId});}
+  const failed=[];for(const doc of p.documents){if(!doc.originalName)failed.push(doc.documentId);selectedFiles.push({id:++fileSequence,file:{name:doc.originalName||'Сохранённый документ — '+doc.type,size:0,type:'application/pdf'},type:doc.type,person:doc.person||'Клиент',storedDocumentId:doc.documentId});}
   revision=draft.revision;request=null;baselineLoaded=true;$('loadDraft').classList.add('hidden');renderDocuments();afRenderResults();afRenderConflicts();afClientChoices();children();spouse();kaspi();visibilityRules();afRefresh();document.dispatchEvent(new Event('assessment-draft-restored'));
   baselineSnapshot=JSON.stringify(capture());
   if(recovered&&HostedAssessment.getContext().client.iin)$('iin').value=HostedAssessment.getContext().client.iin;
   loadStatus('documents');
-  if(selectedFiles.length)await afAnalyze({cacheOnly:true,restoreOnly:true});
+  // Handoff owns its two PDFs and credentials. Unrelated intake analysis must
+  // neither delay this screen nor repopulate the saved questionnaire.
+  if(selectedFiles.length&&new URLSearchParams(location.search).get('mode')!=='handoff')await afAnalyze({cacheOnly:true,restoreOnly:true});
   showDraftStatus('Черновик загружен · версия '+revision+' · в облаке: '+selectedFiles.length+'.'+(recovered?' Документы восстановлены после обновления ИИН.':'')+(failed.length?' Не удалось получить: '+failed.length+'.':'')+(p.pendingFiles.length?' Выбрать заново: '+p.pendingFiles.length+'.':''));
  }catch(e){loadStatus('error',e.message);showDraftStatus(e.message);}finally{loading=false;$('loadDraft').disabled=false;if(loadState.phase!=='error')loadStatus('ready');changed();}}
  function mount(){

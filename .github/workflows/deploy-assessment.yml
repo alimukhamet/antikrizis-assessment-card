@@ -49,8 +49,17 @@ jobs:
           npm run build:anti-krizis
           npx --no-install wrangler deploy --dry-run --config wrangler.anti-krizis.jsonc --outdir /tmp/assessment-worker-dry-run
 
+      - name: Require regression checks before production deployment
+        run: |
+          if node --test tests/*.test.mjs > /tmp/assessment-release-tests.log 2>&1; then
+            tail -12 /tmp/assessment-release-tests.log
+          else
+            tail -100 /tmp/assessment-release-tests.log
+            exit 1
+          fi
+
       - name: Deploy existing Worker configuration
-        run: npx --no-install wrangler deploy --config wrangler.anti-krizis.jsonc
+        run: npx --no-install wrangler deploy --keep-vars --config wrangler.anti-krizis.jsonc
 
       - name: Verify live contract assets
         run: |
@@ -61,6 +70,8 @@ jobs:
             'submission-flow.js'
             'hosted-assessment.js'
             'server-drafts.js'
+            'server-answer-check.js'
+            'money-input.js'
             'lawyer-handoff.js'
             'operations.js'
             'operations.css'

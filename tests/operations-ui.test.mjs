@@ -11,7 +11,7 @@ async function respondConfirmation(s,pending,accept=true){
  if(accept){const checkbox=dialog.querySelector('input[type="checkbox"]');checkbox.checked=true;checkbox.dispatchEvent(new s.w.Event('change'));assert.equal(button.disabled,false);button.click();}else dialog.querySelector('.btn-ghost').click();
  return pending;
 }
-async function setup(t,{identity=null,mode='contract',draft=null,stageError=null,delayedDraft=false,handoff=null,powerReady=true,clientIin='000000000010',analyze=null,draftResponse=null,fastTimeout=false}={}){
+async function setup(t,{identity=null,mode='contract',draft=null,stageError=null,delayedDraft=false,handoff=null,powerReady=true,clientIin='000000000010',analyze=null,draftResponse=null,fastTimeout=false,answerIssues=[]}={}){
  const dom=new JSDOM(html,{url:'https://synthetic.invalid/questionnaire.html'+(mode==='handoff'?'?mode=handoff':''),runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window,d=w.document,run=code=>vm.runInContext(code,dom.getInternalVMContext()),calls=[],errors=[];
  w.HTMLElement.prototype.scrollIntoView=function(){};
  w.HTMLElement.prototype.getClientRects=function(){return this.isConnected&&!this.closest('.hidden,[hidden]')?[{}]:[];};
@@ -34,7 +34,7 @@ async function setup(t,{identity=null,mode='contract',draft=null,stageError=null
   else if(analyze&&path.endsWith('/analyze'))return analyze(path,options,context);
   else if(path.endsWith('/documents/power/analyze'))result={...context,documentId:'power',extractionId:'parsed-power',eligibleForAutofill:true,document:{totalPages:2,pages:[{text:'Synthetic page',needsOcr:false},{text:'Synthetic page two',needsOcr:false}],extraction:{identity:{iin:context.client.iin},kind:'power_of_attorney',facts:[],credits:[],findings:[]}},reviewContext:{pages:2,iin:context.client.iin}};
   else if(path.endsWith('/handoff-check'))result={identityRevision:1,documents:{packageReady:powerReady,issues:powerReady?[]:[{code:'POWER_SCOPE_REVIEW_REQUIRED',documentId:'power',message:'Сверьте полномочия.'}],manuallyReviewed:[],structurallyChecked:powerReady?['Доверенность']:[]}};
-  else if(path.endsWith('/check'))result={identityRevision:1,answersComplete:false,issues:[],documents:{issues:[],manuallyReviewed:[]},evidence:{issues:[]}};
+  else if(path.endsWith('/check'))result={identityRevision:1,answersComplete:false,issues:answerIssues,documents:{issues:[],manuallyReviewed:[]},evidence:{issues:[]}};
   else throw Error('Unexpected request '+path);
   return{ok:true,json:async()=>result};
  };
@@ -113,9 +113,10 @@ test('stalled draft read times out visibly and retry safely loads without saving
  assert.equal(s.w.ServerDrafts.loadState().phase,'error');assert.equal(s.d.getElementById('questionnaireStep').inert,true);assert.match(s.d.getElementById('uxLoadStatus').textContent,/Сервер не ответил/);
  await s.d.querySelector('#uxLoadStatus button').onclick();await tick();assert.equal(s.d.body.dataset.uxClientState,'ready');assert.equal(s.calls.some(c=>c.method==='POST'),false);
 });
-test('opening an outdated cache does not silently reprocess and missing IIN has a clear deal-level warning',async t=>{
- const stale=await setup(t,{draft:storedDraft(),analyze:async()=>({ok:false,json:async()=>({error:'CACHE_REPROCESS_REQUIRED'})})});await stale.load();await tick();
- assert.equal(stale.calls.filter(c=>c.path.endsWith('/analyze')).length,1);assert.equal(JSON.parse(stale.calls.find(c=>c.path.endsWith('/analyze')).body).cacheOnly,true);assert.equal(stale.d.body.dataset.uxClientState,'ready');assert.match(stale.run('af.results.get(1).error'),/Версия обработки изменилась/);
+test('opening an outdated analysis refreshes its PDF while preserving answers and missing-IIN warnings',async t=>{
+ const draft=storedDraft([{key:'fio',value:'KEEP MANUAL NAME',checked:false},{key:'iin',value:'000000000010',checked:false}]);
+ const stale=await setup(t,{draft,analyze:async(p,o,c)=>JSON.parse(o.body).cacheOnly?{ok:false,json:async()=>({error:'CACHE_REPROCESS_REQUIRED'})}:{ok:true,json:async()=>evidence(c)}});await stale.load();await tick();
+ const reads=stale.calls.filter(c=>c.path.endsWith('/analyze'));assert.deepEqual(reads.map(c=>JSON.parse(c.body).cacheOnly),[true,false]);assert.equal(reads[0].path,reads[1].path);assert.equal(stale.d.body.dataset.uxClientState,'ready');assert.equal(stale.run('af.results.get(1).error'),undefined);assert.equal(stale.d.getElementById('fio').value,'KEEP MANUAL NAME');assert.equal(stale.w.ServerDrafts.isDirty(),false);assert.equal(stale.calls.some(c=>c.method==='POST'&&c.path.endsWith('/draft')),false);
  const missing=await setup(t,{draft:storedDraft(),clientIin:null,analyze:async(p,o,c)=>({ok:true,json:async()=>evidence(c)})});await missing.load();await tick();assert.equal(missing.d.getElementById('uxIdentityWarning').hidden,false);assert.match(missing.d.getElementById('uxIdentityWarning').textContent,/ИИН заполняется из ГКБ/);assert.equal(missing.run('af.results.get(1).blocked'),true);
 });
 test('document IIN is confirmed once, enables verified flow and preserves manual edits',async t=>{
@@ -209,4 +210,12 @@ test('unknown Bitrix destination fails closed and a saved uncertain attempt only
  const s=await setup(t,{mode:'handoff',handoff});await s.load();s.w.ClientContextUI.confirm=async()=>({dealId:'900001',iin:'000000000010',identityRevision:1});s.w.CredentialUpload.submit=()=>{throw Error('Must not resend keys');};
  assert.equal(s.d.getElementById('handoffSend').disabled,false);await s.d.getElementById('handoffSend').onclick();
  const writes=s.calls.filter(c=>c.method==='POST'&&c.path.endsWith('/handoff'));assert.equal(writes.length,1);assert.equal(JSON.parse(writes[0].body).action,'resume');assert.equal(JSON.parse(writes[0].body).requestId,handoff.requestId);
+});
+
+ test('missing-answer links stay visible after navigation to the field and back to contract',async t=>{
+ const s=await setup(t,{answerIssues:[{group:'creditors',row:0,key:'n8041',label:'Ежемесячный платёж'}]});await s.load();s.d.getElementById('needsSocialDoc').value='0';s.d.getElementById('needsSalaryDoc').value='none';
+ s.run('requiredDocumentLabels().forEach((type,i)=>selectedFiles.push({id:i+1,type,person:"Клиент",storedDocumentId:"synthetic-"+i,file:{name:"synthetic-"+i+".pdf"}}))');
+ s.w.AssessmentWorkflow.show('contract');await s.w.AssessmentCheck.run();
+ const links=s.d.getElementById('answerCheckIssues');assert.equal(links.hidden,false);assert.equal(links.closest('[data-assessment-step]').dataset.stepCurrent,'true');assert.equal(s.d.body.dataset.assessmentWorkflow,'answers');assert.equal(s.d.activeElement.tagName,'MONEY-INPUT');assert.match(s.d.activeElement.source.id,/^n8041/);assert.equal(s.d.activeElement.shadowRoot.activeElement.tagName,'INPUT');
+ s.w.AssessmentWorkflow.show('contract');assert.equal(links.closest('[data-assessment-step]').dataset.stepCurrent,'true');links.querySelector('button').click();assert.equal(s.d.body.dataset.assessmentWorkflow,'answers');
 });

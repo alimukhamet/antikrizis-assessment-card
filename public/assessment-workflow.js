@@ -163,6 +163,7 @@ window.AssessmentWorkflow=(()=>{
   const blocked=name!=='documents'&&!collection().ready;
   if(blocked){name='documents';remember=false;}
   active=name;document.body.dataset.assessmentWorkflow=name;previous.hidden=name==='documents';stepCaption.textContent=name==='documents'?'1 из 3':name==='answers'?'2 из 3':'3 из 3';nextStep.textContent=name==='documents'?'Далее: ответы →':name==='answers'?'Далее: договор →':'Скачать договор';
+  const answerIssues=$('answerCheckIssues');if(answerIssues&&name!=='documents')(name==='answers'?answerIntro:contractIntro).append(answerIssues);
   if(remember&&HostedAssessment.ready())try{sessionStorage.setItem('assessment-step:'+HostedAssessment.getContext().client.external.dealId,name);}catch{/* Navigation still works when browser storage is unavailable. */}
   for(const node of document.querySelectorAll('[data-assessment-step]')){
    const current=node.dataset.assessmentStep===name;node.dataset.stepCurrent=String(current);node.setAttribute('aria-hidden',String(!current));
@@ -309,7 +310,7 @@ window.AssessmentWorkflow=(()=>{
   reviewDetails.querySelector('summary').textContent='Проверка документов'+(lastCheck?.documents?.issues.length?' · '+lastCheck.documents.issues.length:'');
   reviewLink.hidden=!(lastCheck?.documents?.issues.length);
   const issues=lastCheck?.checkMode==='answers'?lastCheck.issues||[]:[];
-  answerNotice.hidden=!issues.length;answerNotice.textContent=issues.length?'Уточните ответы: '+issues.slice(0,5).map(issue=>issue.label).join('; ')+'.':'';
+  answerNotice.hidden=!issues.length;answerNotice.textContent=issues.length?'Уточните ответы · '+issues.length+'. Выберите поле в списке.':'';
   const filled=$('afFilled').textContent;
   if(!af.busy)$('afAnalyze').disabled=selectedFiles.length===0;
   $('afReview').closest('span').classList.toggle('wf-needs-review',pending>0);
