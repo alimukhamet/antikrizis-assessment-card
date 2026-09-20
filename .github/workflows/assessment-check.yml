@@ -52,6 +52,8 @@ jobs:
             tail -12 /tmp/assessment-tests.log
             exit 1
           fi
+      - name: Require runtime persistence and recovery checks
+        run: npm run test:runtime
       - name: Type check
         run: npx --no-install tsc --noEmit
       - name: Preserve test evidence

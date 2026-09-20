@@ -3,6 +3,8 @@
 // Never emit credentials, questionnaire values, client names, or document bytes.
 import {writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
+import {auditFailures} from './live-audit-result.mjs';
+const caseIds=['10479','11749','11877','11665'];
 const origin='https://assessment.anti-krizis.kz';
 let cookie='';
 const report={origin,authenticated:false,cases:[]};
@@ -18,7 +20,7 @@ try{
  await request('/api/session',{worker:'ali',password:process.env.ASSESSMENT_TEST_PASSWORD});
  report.authenticated=(await request('/api/session')).ok===true;
  report.status=await request('/api/status');
- for(const id of ['10479','11749','11877','11665']){
+ for(const id of caseIds){
   const root='/api/assessment/'+id,item={dealId:id};report.cases.push(item);
   const assessment=await request(root);
   item.identityRevision=assessment.identityRevision;item.hasIin=Boolean(assessment.client?.iin);
@@ -57,5 +59,8 @@ try{
   }
  }
 }catch(error){report.error=error.message;process.exitCode=1;}
+report.failures=auditFailures(report,caseIds);
+report.ok=report.failures.length===0;
+if(!report.ok)process.exitCode=1;
 await writeFile('live-tools-audit.json',JSON.stringify(report,null,2));
 console.log(JSON.stringify(report,null,2));

@@ -8,7 +8,7 @@ on:
         default: false
   push:
     branches: [fix/tool-rollout-audit]
-    paths: ['scripts/audit-live-tools.mjs', '.github/workflows/audit-live-tools.yml']
+    paths: ['scripts/audit-live-tools.mjs', 'scripts/live-audit-result.mjs', '.github/workflows/audit-live-tools.yml']
 permissions:
   contents: read
 jobs:

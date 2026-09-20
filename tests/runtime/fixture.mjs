@@ -1,0 +1,23 @@
+import {EvidenceRepository} from '../../lib/documents/repository.ts';
+import {analysisVersion} from '../../lib/documents/analysis-version.ts';
+import schema from '../../lib/questionnaire/schema.json' with {type:'json'};
+
+export async function seed(db,files){
+ const iin='000000000010',today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Almaty'}).format(new Date());
+ const prior=new Date(today+'T00:00:00Z');prior.setUTCFullYear(prior.getUTCFullYear()-1);const from=prior.toISOString().slice(0,10);
+ const repo=new EvidenceRepository(db,files),record=await repo.syncCase({external:{system:'bitrix',dealId:'900001'},title:'SYNTHETIC ONLY',iin,retrievedAt:new Date().toISOString()});
+ const actor={id:'worker:ali',worker:'ali',displayName:'Synthetic',authentication:'shared-password-worker-selection'};
+ const values={fio:'SYNTHETIC ONLY',enforcementDetails:'Нет',iin,dognum:'TEST-NOT-FOR-SIGNING',marital:'Холост / не замужем',dependents:'0',childrenTotal:'0',procedure:'199','count-clientjobs':'0','count-clientunofficial':'0',clientBenefitsCount:'0',c8037:'0',hardshipReason:'Платежи вношу, трудностей нет',kaspiAnnual:'0',gamblingTransfers:'no',lawyerNotesStatus:'no',n8044:'0',summa:'500000',contractDate:today,months:'5',payDay:'7',grafType:'423'};
+ const credit={n8038:'TEST BANK',loanContractId:'TEST-001',n8038Start:'2025-01',n8039:'Потребительский кредит',loanStatus:'Платится по графику',n8040:'100.25',n8041:'10.00',n8042:'0',loanParticipants:'Нет'};
+ const payload={schemaVersion:1,answers:schema.scalar.map(f=>({key:f.key,value:values[f.key]||'',checked:['choice:socialStatus:Нет','holding:client:none','choice:debtPurpose:Жильё'].includes(f.key)})),groups:schema.groups.map(g=>({id:g.id,rows:g.id==='creditors'?[g.fields.map(f=>({key:f.key,value:credit[f.key]||'',checked:false}))]:[],rowKeys:g.id==='creditors'?[`creditors|${iin}|TEST BANK|TEST-001`]:[]})),docContext:{social:'0',salary:'0',salaryBank:'none'},documents:[],pendingFiles:[]};
+ const documents=[];
+ for(const [type,kind] of [['ГКБ — краткий отчёт','gkb_short'],['ГКБ — полный отчёт','gkb_full'],['Справка ЕНПФ','enpf'],['Ф6 об отсутствии имущества','property'],['Удостоверение личности','identity'],['Выписка Kaspi Gold','kaspi'],['Доверенность','power_of_attorney'],['Подписанный договор','unknown']]){
+  // Intentionally seeded extracted fixtures: this suite tests storage and the
+  // workflow, while native PDF interpretation has separate regression tests.
+  const result={read:{totalPages:1,pages:[{page:1,text:'SYNTHETIC ONLY '+kind,needsOcr:false}]},extraction:{kind,identity:{iin,name:'SYNTHETIC ONLY'},issuedAt:today,facts:[],findings:[],coverage:{from,to:today},bankStatement:{from,to:today,reconciled:true,rowsReadable:true},credits:kind.startsWith('gkb_')?[{contractNumber:'TEST-001',page:1,facts:Object.entries({creditor:'TEST BANK',contractIdentifier:'TEST-001',loanStatus:'Платится по графику',debtOutstanding:'100.25',monthlyPayment:'10.00',overdueDays:'0'}).map(([key,value])=>({key,value,page:1,source:'SYNTHETIC ONLY'}))}]:[]}};
+  const saved=await repo.store(record.id,new TextEncoder().encode('%PDF-1.4\nSYNTHETIC ONLY '+kind+'\n%%EOF'),kind+'.pdf',actor,analysisVersion,result);
+  const document={documentId:saved.document.id,type,person:'Клиент',kind,originalKey:saved.document.original_key};documents.push(document);
+  if(!['power_of_attorney','unknown'].includes(kind))payload.documents.push({documentId:document.documentId,type,person:'Клиент'});
+ }
+ return {payload,documents,record,today,from,iin};
+}

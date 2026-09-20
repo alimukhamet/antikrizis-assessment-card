@@ -32,11 +32,17 @@ jobs:
           node-version: '22'
           package-manager-cache: false
 
-      - name: Require Cloudflare deployment credentials
+      - name: Require deployment and live verification credentials
+        env:
+          ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
             echo '::error::Cloudflare deployment credentials are not configured in this repository.'
             echo 'Expected GitHub Actions secrets: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.'
+            exit 1
+          fi
+          if [ -z "$ASSESSMENT_TEST_PASSWORD" ]; then
+            echo '::error::ASSESSMENT_TEST_PASSWORD is required for post-deployment verification.'
             exit 1
           fi
 
@@ -57,6 +63,9 @@ jobs:
             tail -100 /tmp/assessment-release-tests.log
             exit 1
           fi
+
+      - name: Require runtime persistence and recovery checks
+        run: npm run test:runtime
 
       - name: Deploy existing Worker configuration
         run: npx --no-install wrangler deploy --keep-vars --config wrangler.anti-krizis.jsonc
@@ -116,3 +125,17 @@ jobs:
           done
           echo '::error::Deployment command completed, but live release assets did not converge to this commit.'
           exit 1
+
+      - name: Verify authenticated production read paths
+        env:
+          ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
+        run: node scripts/audit-live-tools.mjs
+
+      - name: Preserve live audit result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-live-tools-audit
+          path: live-tools-audit.json
+          if-no-files-found: ignore
+          retention-days: 1
