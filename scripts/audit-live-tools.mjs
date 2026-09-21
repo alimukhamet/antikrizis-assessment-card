@@ -1,3 +1,4 @@
+const previewNative=process.env.PREVIEW_NATIVE_ANALYSIS==='1'?(await import('../.audit-native-preview.mjs')).extractNative:null;
 // Normal sign-in, existing cases and validation. Optional refresh updates only
 // derived analysis for stored originals; it never saves answers or writes Bitrix.
 // Never emit credentials, questionnaire values, client names, or document bytes.
@@ -52,6 +53,10 @@ try{
         try{
          const a=await request(root+'/documents/'+encodeURIComponent(doc.documentId)+'/analyze',{cacheOnly:true}),text=a.document?.pages?.[0]?.text||'';
          Object.assign(result,{kind:a.document?.extraction?.kind,pages:a.document?.totalPages,issuedAt:a.reviewContext?.issuedAt,expiresAt:a.reviewContext?.expiresAt,allHistory:a.reviewContext?.allHistory,periodLabel:/Барлық\s+кезең\s*\/\s*Весь\s+период/i.test(text),periodBeforeLabel:/Весь\s+период\s*Период:/i.test(text),periodAfterLabel:/Период:\s*Барлық\s+кезең\s*\/\s*Весь\s+период/i.test(text),documentReview:a.documentReview,findings:a.findings});
+         if(previewNative&&a.document?.pages){
+          const preview=previewNative(a.document.pages),st=preview.bankStatement;
+          result.parserPreview={kind:preview.kind,identityMatches:!!preview.identity.iin&&preview.identity.iin===assessment.client.iin,findings:preview.findings,...(st?{statement:{from:st.from,to:st.to,rowsReadable:st.rowsReadable,reconciled:st.reconciled,topUpsVerified:st.topUpsVerified,transactions:st.transactions,reconciliation:st.reconciliation}}:{})};
+         }
          if(a.document?.extraction?.kind?.startsWith('gkb_'))creditReports.push(a.document.extraction);
         }catch(error){result.error=error.code||'REQUEST_FAILED';}
        }

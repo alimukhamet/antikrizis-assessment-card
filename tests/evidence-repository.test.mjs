@@ -54,3 +54,12 @@ test('export preserves same-timestamp review insertion order, including withdraw
  assert.ok(bundle.reviews[1].sequence>bundle.reviews[0].sequence);assert.equal(bundle.reviews.at(-1).disposition,'unresolved');
  assert.equal((await repo.exportCase(other.id)).reviews.length,0);await assert.rejects(()=>repo.exportCase('missing'),/CASE_NOT_FOUND/);
 });
+test('Kazakh Kaspi update invalidates only affected v18 analyses and preserves unrelated review identities',async()=>{
+ const {repo}=setup(),c=await repo.syncCase(client());
+ for(const [index,kind,text,compatible] of [[1,'gkb_full','Персональный кредитный отчет',true],[2,'kaspi','Kaspi ВЫПИСКА',true],[3,'unknown','«Kaspi Bank» АҚ ҮЗІНДІ КӨШІРМЕ',false],[4,'identity','Удостоверение личности',true]]){
+  const a=await repo.store(c.id,new Uint8Array([index]),'synthetic.pdf',actor,'pdf-test:rules-native-18',{read:{pages:[{text}]},extraction:{kind}});
+  const cached=await repo.cached(c.id,a.document.original_sha256,'pdf-test:rules-native-19');assert.equal(Boolean(cached),compatible);if(compatible)assert.equal(cached.extraction.id,a.extraction.id);
+  assert.equal(await repo.cached(c.id,a.document.original_sha256,'pdf-different:rules-native-19'),null);
+  assert.ok(await repo.cached(c.id,a.document.original_sha256,'pdf-test:rules-native-18'));
+ }
+});

@@ -309,49 +309,28 @@
     {
       "key": "holding:client:real",
       "type": "checkbox",
-      "label": "Что зарегистрировано на ваше имя?*",
+      "label": "Какое имущество зарегистрировано на ваше имя?*",
       "required": false,
       "conditions": []
     },
     {
       "key": "holding:client:car",
       "type": "checkbox",
-      "label": "Что зарегистрировано на ваше имя?*",
-      "required": false,
-      "conditions": []
-    },
-    {
-      "key": "holding:client:ip",
-      "type": "checkbox",
-      "label": "Что зарегистрировано на ваше имя?*",
-      "required": false,
-      "conditions": []
-    },
-    {
-      "key": "holding:client:too",
-      "type": "checkbox",
-      "label": "Что зарегистрировано на ваше имя?*",
-      "required": false,
-      "conditions": []
-    },
-    {
-      "key": "holding:client:kh",
-      "type": "checkbox",
-      "label": "Что зарегистрировано на ваше имя?*",
+      "label": "Какое имущество зарегистрировано на ваше имя?*",
       "required": false,
       "conditions": []
     },
     {
       "key": "holding:client:other",
       "type": "checkbox",
-      "label": "Что зарегистрировано на ваше имя?*",
+      "label": "Какое имущество зарегистрировано на ваше имя?*",
       "required": false,
       "conditions": []
     },
     {
       "key": "holding:client:none",
       "type": "checkbox",
-      "label": "Что зарегистрировано на ваше имя?*",
+      "label": "Какое имущество зарегистрировано на ваше имя?*",
       "required": false,
       "conditions": []
     },
@@ -359,7 +338,7 @@
       "key": "holding:client:unknown",
       "type": "checkbox",
       "legacy": true,
-      "label": "Что зарегистрировано на ваше имя?*",
+      "label": "Какое имущество зарегистрировано на ваше имя?*",
       "required": false,
       "conditions": []
     },
@@ -396,7 +375,7 @@
     {
       "key": "holding:partner:real",
       "type": "checkbox",
-      "label": "Что зарегистрировано на имя супруга(и)?*",
+      "label": "Какое имущество зарегистрировано на имя супруга(и)?*",
       "required": false,
       "conditions": [
         "partnerAssets"
@@ -405,34 +384,7 @@
     {
       "key": "holding:partner:car",
       "type": "checkbox",
-      "label": "Что зарегистрировано на имя супруга(и)?*",
-      "required": false,
-      "conditions": [
-        "partnerAssets"
-      ]
-    },
-    {
-      "key": "holding:partner:ip",
-      "type": "checkbox",
-      "label": "Что зарегистрировано на имя супруга(и)?*",
-      "required": false,
-      "conditions": [
-        "partnerAssets"
-      ]
-    },
-    {
-      "key": "holding:partner:too",
-      "type": "checkbox",
-      "label": "Что зарегистрировано на имя супруга(и)?*",
-      "required": false,
-      "conditions": [
-        "partnerAssets"
-      ]
-    },
-    {
-      "key": "holding:partner:kh",
-      "type": "checkbox",
-      "label": "Что зарегистрировано на имя супруга(и)?*",
+      "label": "Какое имущество зарегистрировано на имя супруга(и)?*",
       "required": false,
       "conditions": [
         "partnerAssets"
@@ -441,7 +393,7 @@
     {
       "key": "holding:partner:other",
       "type": "checkbox",
-      "label": "Что зарегистрировано на имя супруга(и)?*",
+      "label": "Какое имущество зарегистрировано на имя супруга(и)?*",
       "required": false,
       "conditions": [
         "partnerAssets"
@@ -450,7 +402,7 @@
     {
       "key": "holding:partner:none",
       "type": "checkbox",
-      "label": "Что зарегистрировано на имя супруга(и)?*",
+      "label": "Какое имущество зарегистрировано на имя супруга(и)?*",
       "required": false,
       "conditions": [
         "partnerAssets"
@@ -460,7 +412,7 @@
       "key": "holding:partner:unknown",
       "type": "checkbox",
       "legacy": true,
-      "label": "Что зарегистрировано на имя супруга(и)?*",
+      "label": "Какое имущество зарегистрировано на имя супруга(и)?*",
       "required": false,
       "conditions": [
         "partnerAssets"
@@ -509,6 +461,70 @@
       ],
       "required": true,
       "conditions": []
+    },
+    {
+      "key": "holding:client:ip",
+      "type": "checkbox",
+      "label": "Есть ли у вас ИП, доля в ТОО или КХ?*",
+      "required": false,
+      "conditions": []
+    },
+    {
+      "key": "holding:client:too",
+      "type": "checkbox",
+      "label": "Есть ли у вас ИП, доля в ТОО или КХ?*",
+      "required": false,
+      "conditions": []
+    },
+    {
+      "key": "holding:client:kh",
+      "type": "checkbox",
+      "label": "Есть ли у вас ИП, доля в ТОО или КХ?*",
+      "required": false,
+      "conditions": []
+    },
+    {
+      "key": "holding:client:businessNone",
+      "type": "checkbox",
+      "label": "Есть ли у вас ИП, доля в ТОО или КХ?*",
+      "required": false,
+      "conditions": []
+    },
+    {
+      "key": "holding:partner:ip",
+      "type": "checkbox",
+      "label": "Есть ли у супруга(и) ИП, доля в ТОО или КХ?*",
+      "required": false,
+      "conditions": [
+        "partnerBusiness"
+      ]
+    },
+    {
+      "key": "holding:partner:too",
+      "type": "checkbox",
+      "label": "Есть ли у супруга(и) ИП, доля в ТОО или КХ?*",
+      "required": false,
+      "conditions": [
+        "partnerBusiness"
+      ]
+    },
+    {
+      "key": "holding:partner:kh",
+      "type": "checkbox",
+      "label": "Есть ли у супруга(и) ИП, доля в ТОО или КХ?*",
+      "required": false,
+      "conditions": [
+        "partnerBusiness"
+      ]
+    },
+    {
+      "key": "holding:partner:businessNone",
+      "type": "checkbox",
+      "label": "Есть ли у супруга(и) ИП, доля в ТОО или КХ?*",
+      "required": false,
+      "conditions": [
+        "partnerBusiness"
+      ]
     },
     {
       "key": "choice:debtPurpose:Погашение других долгов",
@@ -738,17 +754,31 @@
       "min": "0"
     },
     {
+      "key": "enforcementStatus",
+      "type": "select-one",
+      "label": "Есть ли исполнительные производства или исполнительные надписи?*",
+      "options": [
+        "",
+        "no",
+        "yes",
+        "legacy"
+      ],
+      "required": true,
+      "conditions": []
+    },
+    {
       "key": "enforcementDetails",
       "type": "textarea",
-      "label": "Какие исполнительные производства или исполнительные надписи есть? Укажите количество и подробности*",
-      "required": true,
+      "legacy": true,
+      "label": "Прежние сведения о взысканиях",
+      "required": false,
       "conditions": []
     },
     {
       "key": "unknown:enforcementDetails",
       "type": "checkbox",
       "legacy": true,
-      "label": "Какие исполнительные производства или исполнительные надписи есть? Укажите количество и подробности*",
+      "label": "Прежние сведения о взысканиях",
       "required": false,
       "conditions": []
     },
@@ -1172,98 +1202,6 @@
       ]
     },
     {
-      "id": "clientip",
-      "conditions": [
-        "client-asset-ip"
-      ],
-      "fields": [
-        {
-          "key": "n8010",
-          "type": "select-one",
-          "label": "Деятельность сейчас ведётся?*",
-          "options": [
-            "",
-            "Да",
-            "Нет"
-          ],
-          "required": true,
-          "conditions": []
-        },
-        {
-          "key": "n8011",
-          "type": "number",
-          "label": "Выручка этого бизнеса за последние 12 месяцев, ₸*",
-          "required": true,
-          "conditions": [],
-          "min": "0"
-        }
-      ]
-    },
-    {
-      "id": "clienttoo",
-      "conditions": [
-        "client-asset-too"
-      ],
-      "fields": [
-        {
-          "key": "n8012",
-          "type": "select-one",
-          "label": "Деятельность сейчас ведётся?*",
-          "options": [
-            "",
-            "Да",
-            "Нет"
-          ],
-          "required": true,
-          "conditions": []
-        },
-        {
-          "key": "n8013",
-          "type": "number",
-          "label": "Выручка этого бизнеса за последние 12 месяцев, ₸*",
-          "required": true,
-          "conditions": [],
-          "min": "0"
-        },
-        {
-          "key": "n8014",
-          "type": "number",
-          "label": "Доля в ТОО, %*",
-          "required": true,
-          "conditions": [],
-          "min": "0"
-        }
-      ]
-    },
-    {
-      "id": "clientkh",
-      "conditions": [
-        "client-asset-kh"
-      ],
-      "fields": [
-        {
-          "key": "n8015",
-          "type": "select-one",
-          "label": "Деятельность сейчас ведётся?*",
-          "options": [
-            "",
-            "Да",
-            "Нет"
-          ],
-          "required": true,
-          "conditions": []
-        },
-        {
-          "key": "n8016",
-          "type": "number",
-          "label": "Выручка этого бизнеса за последние 12 месяцев, ₸*",
-          "required": true,
-          "conditions": [],
-          "min": "0"
-        }
-      ]
-    },
-    {
       "id": "partnerreal",
       "conditions": [
         "partner-asset-real",
@@ -1368,101 +1306,6 @@
       ]
     },
     {
-      "id": "partnerip",
-      "conditions": [
-        "partner-asset-ip",
-        "partnerAssets"
-      ],
-      "fields": [
-        {
-          "key": "n8025",
-          "type": "select-one",
-          "label": "Деятельность сейчас ведётся?*",
-          "options": [
-            "",
-            "Да",
-            "Нет"
-          ],
-          "required": true,
-          "conditions": []
-        },
-        {
-          "key": "n8026",
-          "type": "number",
-          "label": "Выручка этого бизнеса за последние 12 месяцев, ₸*",
-          "required": true,
-          "conditions": [],
-          "min": "0"
-        }
-      ]
-    },
-    {
-      "id": "partnertoo",
-      "conditions": [
-        "partner-asset-too",
-        "partnerAssets"
-      ],
-      "fields": [
-        {
-          "key": "n8027",
-          "type": "select-one",
-          "label": "Деятельность сейчас ведётся?*",
-          "options": [
-            "",
-            "Да",
-            "Нет"
-          ],
-          "required": true,
-          "conditions": []
-        },
-        {
-          "key": "n8028",
-          "type": "number",
-          "label": "Выручка этого бизнеса за последние 12 месяцев, ₸*",
-          "required": true,
-          "conditions": [],
-          "min": "0"
-        },
-        {
-          "key": "n8029",
-          "type": "number",
-          "label": "Доля в ТОО, %*",
-          "required": true,
-          "conditions": [],
-          "min": "0"
-        }
-      ]
-    },
-    {
-      "id": "partnerkh",
-      "conditions": [
-        "partner-asset-kh",
-        "partnerAssets"
-      ],
-      "fields": [
-        {
-          "key": "n8030",
-          "type": "select-one",
-          "label": "Деятельность сейчас ведётся?*",
-          "options": [
-            "",
-            "Да",
-            "Нет"
-          ],
-          "required": true,
-          "conditions": []
-        },
-        {
-          "key": "n8031",
-          "type": "number",
-          "label": "Выручка этого бизнеса за последние 12 месяцев, ₸*",
-          "required": true,
-          "conditions": [],
-          "min": "0"
-        }
-      ]
-    },
-    {
       "id": "transfers",
       "conditions": [
         "panel-c8037"
@@ -1526,6 +1369,193 @@
           "label": "На что использовали полученные деньги?*",
           "required": true,
           "conditions": []
+        }
+      ]
+    },
+    {
+      "id": "clientip",
+      "conditions": [
+        "client-asset-ip"
+      ],
+      "fields": [
+        {
+          "key": "n8010",
+          "type": "select-one",
+          "label": "Деятельность сейчас ведётся?*",
+          "options": [
+            "",
+            "Да",
+            "Нет"
+          ],
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "n8011",
+          "type": "number",
+          "label": "Выручка этого бизнеса за последние 12 месяцев, ₸*",
+          "required": true,
+          "conditions": [],
+          "min": "0"
+        }
+      ]
+    },
+    {
+      "id": "clienttoo",
+      "conditions": [
+        "client-asset-too"
+      ],
+      "fields": [
+        {
+          "key": "n8012",
+          "type": "select-one",
+          "label": "Деятельность сейчас ведётся?*",
+          "options": [
+            "",
+            "Да",
+            "Нет"
+          ],
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "n8013",
+          "type": "number",
+          "label": "Выручка этого бизнеса за последние 12 месяцев, ₸*",
+          "required": true,
+          "conditions": [],
+          "min": "0"
+        },
+        {
+          "key": "n8014",
+          "type": "number",
+          "label": "Доля в ТОО, %*",
+          "required": true,
+          "conditions": [],
+          "min": "0"
+        }
+      ]
+    },
+    {
+      "id": "clientkh",
+      "conditions": [
+        "client-asset-kh"
+      ],
+      "fields": [
+        {
+          "key": "n8015",
+          "type": "select-one",
+          "label": "Деятельность сейчас ведётся?*",
+          "options": [
+            "",
+            "Да",
+            "Нет"
+          ],
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "n8016",
+          "type": "number",
+          "label": "Выручка этого бизнеса за последние 12 месяцев, ₸*",
+          "required": true,
+          "conditions": [],
+          "min": "0"
+        }
+      ]
+    },
+    {
+      "id": "partnerip",
+      "conditions": [
+        "partner-asset-ip",
+        "partnerBusiness"
+      ],
+      "fields": [
+        {
+          "key": "n8025",
+          "type": "select-one",
+          "label": "Деятельность сейчас ведётся?*",
+          "options": [
+            "",
+            "Да",
+            "Нет"
+          ],
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "n8026",
+          "type": "number",
+          "label": "Выручка этого бизнеса за последние 12 месяцев, ₸*",
+          "required": true,
+          "conditions": [],
+          "min": "0"
+        }
+      ]
+    },
+    {
+      "id": "partnertoo",
+      "conditions": [
+        "partner-asset-too",
+        "partnerBusiness"
+      ],
+      "fields": [
+        {
+          "key": "n8027",
+          "type": "select-one",
+          "label": "Деятельность сейчас ведётся?*",
+          "options": [
+            "",
+            "Да",
+            "Нет"
+          ],
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "n8028",
+          "type": "number",
+          "label": "Выручка этого бизнеса за последние 12 месяцев, ₸*",
+          "required": true,
+          "conditions": [],
+          "min": "0"
+        },
+        {
+          "key": "n8029",
+          "type": "number",
+          "label": "Доля в ТОО, %*",
+          "required": true,
+          "conditions": [],
+          "min": "0"
+        }
+      ]
+    },
+    {
+      "id": "partnerkh",
+      "conditions": [
+        "partner-asset-kh",
+        "partnerBusiness"
+      ],
+      "fields": [
+        {
+          "key": "n8030",
+          "type": "select-one",
+          "label": "Деятельность сейчас ведётся?*",
+          "options": [
+            "",
+            "Да",
+            "Нет"
+          ],
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "n8031",
+          "type": "number",
+          "label": "Выручка этого бизнеса за последние 12 месяцев, ₸*",
+          "required": true,
+          "conditions": [],
+          "min": "0"
         }
       ]
     },
@@ -1667,6 +1697,36 @@
           "conditions": [
             "purpose-other"
           ]
+        }
+      ]
+    },
+    {
+      "id": "enforcements",
+      "conditions": [
+        "enforcementRecords"
+      ],
+      "fields": [
+        {
+          "key": "enforcementCreditor",
+          "type": "text",
+          "label": "Взыскатель / кредитор*",
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "enforcementAmount",
+          "type": "number",
+          "label": "Сумма взыскания, ₸*",
+          "required": true,
+          "conditions": [],
+          "min": "0"
+        },
+        {
+          "key": "enforcementNote",
+          "type": "textarea",
+          "label": "Номер, ЧСИ / нотариус, другие сведения — если известны",
+          "required": false,
+          "conditions": []
         }
       ]
     }

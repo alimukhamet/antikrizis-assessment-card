@@ -86,7 +86,7 @@ window.ClientWorkspace=(()=>{
      af.results.set(item.id,result);
     }catch(error){if(error.code==='CREDENTIAL_NOT_ANALYSED'){keysSkipped++;window.CredentialUpload?.offerExisting(files[i].id);}else failures.push('Файл № '+files[i].id+': '+error.message);}finally{afAnalysisProgress(i+1,files.length);}
    }
-   afRenderResults();afClientChoices();if($('afClient').value)afApply();renderDocuments();afRefresh();
+   afMergeDuplicateSelections();afRenderResults();afClientChoices();if($('afClient').value)afApply();renderDocuments();afRefresh();
    notice.textContent='Добавлено PDF: '+imported+(reused?' · Уже в черновике: '+reused:'')+(failures.length?' · Не удалось прочитать: '+failures.length:'')+(keysSkipped?' · ЭЦП найдена в сделке':'')+'.';
    $('crmImportErrors')?.remove();
    if(failures.length){const details=el('details');details.id='crmImportErrors';details.append(el('summary','Какие файлы не добавлены'));for(const message of failures)details.append(el('p',message,'hint'));notice.after(details);}

@@ -90,6 +90,8 @@ jobs:
             'submission-flow.js'
             'hosted-assessment.js'
             'server-drafts.js'
+            'intake-data.js'
+            'enforcement-editor.js'
             'vendor/contracts/pizzip-3.1.7.min.js'
             'vendor/contracts/docxtemplater-3.50.0.min.js'
           )

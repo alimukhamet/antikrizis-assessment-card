@@ -1,3 +1,4 @@
+import {normalizeIntake} from '../../public/intake-data.mjs';
 import schema from './schema.json';
 import {RepositoryError}from'../documents/repository';
 import {distinctDraftDocuments} from './draft-recovery';
@@ -41,5 +42,5 @@ export function validateDraft(value:unknown):DraftPayload{
   });
  }
  const scalarAnswers=answers(draft.answers,scalar);for(const answer of scalarAnswers){const target=definitions.get(answer.key)?.groupTarget;if(target&&/^\d+$/.test(answer.value)){const group=groups.find(g=>g.id===target);if(!group||group.rows.length!==Number(answer.value))throw new RepositoryError('DRAFT_COUNT_MISMATCH',400);}}
- return {schemaVersion:1,answers:scalarAnswers,groups,docContext:{social:String(ctx.social),salary:String(ctx.salary),...(ctx.salaryBank!==undefined?{salaryBank:ctx.salaryBank as DraftPayload['docContext']['salaryBank']}:{})},documents,pendingFiles:draft.pendingFiles.map(f=>text(f,240)),...(documentReviewDrafts?.length?{documentReviewDrafts}:{})};
+ return normalizeIntake({schemaVersion:1 as const,answers:scalarAnswers,groups,docContext:{social:String(ctx.social),salary:String(ctx.salary),...(ctx.salaryBank!==undefined?{salaryBank:ctx.salaryBank as DraftPayload['docContext']['salaryBank']}:{})},documents,pendingFiles:draft.pendingFiles.map(f=>text(f,240)),...(documentReviewDrafts?.length?{documentReviewDrafts}:{})});
 }

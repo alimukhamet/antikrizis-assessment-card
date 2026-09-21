@@ -85,6 +85,8 @@ jobs:
             'submission-flow.js'
             'hosted-assessment.js'
             'server-drafts.js'
+            'intake-data.js'
+            'enforcement-editor.js'
             'document-review.js'
             'gkb-comparison.mjs'
             'gkb-comparison-ui.mjs'

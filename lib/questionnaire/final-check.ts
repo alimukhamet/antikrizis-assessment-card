@@ -5,7 +5,7 @@ import {compileAssessment} from './compile-assessment';
 import {parseReviewBindings,checkReviewBindings} from './review-bindings';
 import {checkDocumentPackage} from '../documents/package-check';
 import {contractData} from './contract-data';
-export const FINAL_VALIDATION_VERSION='assessment-final-8';
+export const FINAL_VALIDATION_VERSION='assessment-final-9';
 /** Shared by preview, preparation and commit; none trusts a client readiness flag. */
 export async function finalCheck(repository:EvidenceRepository,record:CaseRow,raw:unknown,rawBindings:unknown,day:string){
  const payload=validateDraft(raw),bindings=parseReviewBindings(rawBindings);

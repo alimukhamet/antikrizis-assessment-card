@@ -349,7 +349,7 @@ test('replacement keeps typed answers and persists the retired source as a final
 test('an unreadable stored scan stays openable without document-condition answers',async t=>{
  const s=setup(t);await s.load();s.mount();
  s.run(`selectedFiles=[{id:1,type:'Удостоверение личности',person:'Клиент',storedDocumentId:'scan',file:{name:'scan.pdf'}}];af.results.set(1,{kind:'other',blocked:true,notes:['Тип документа не установлен по содержимому.']});afRenderResults();`);
- const row=s.d.querySelector('.af-file');assert.match(row.querySelector('summary').textContent,/Удостоверение.*Сверить вручную/);assert.ok(!row.querySelector('summary .needs-review'));
+ const row=s.d.querySelector('.af-file');assert.match(row.querySelector('summary').textContent,/Тип не определён.*Сверить вручную/);assert.ok(!row.querySelector('summary .needs-review'));assert.match(row.textContent,/Выбран как: Удостоверение личности/);
  assert.ok([...row.querySelectorAll('button')].some(b=>b.textContent==='Открыть документ'));const replacement=row.closest('.af-file-entry').querySelector('.af-replace-document');assert.ok(replacement);assert.equal(replacement.closest('details.af-file'),null);assert.equal(row.querySelector('.af-document-notes').open,false);
 });
 test('replacement actions become enabled when restored documents finish reading',async t=>{
@@ -445,4 +445,13 @@ test('a confirmed replacement EDS key clears only obsolete key reminders in the 
  assert.deepEqual(s.capture().pendingFiles,['missing-synthetic.pdf','replacement.p12']);
  assert.doesNotMatch(JSON.stringify(s.capture()),/SYNTHETIC SECRET|SYNTHETIC KEY/);
  s.run("selectedFiles[0].person='Супруг(а)'");assert.ok(s.capture().pendingFiles.includes('old-synthetic.p12'));
+});
+
+
+test('duplicate PDF selections merge only after their types agree and answer sources remain attached',async t=>{
+ const s=setup(t);await s.load();
+ s.run(`selectedFiles=[{id:1,type:'ГКБ — краткий отчёт',person:'Клиент',storedDocumentId:'same',file:{name:'statement.pdf'}},{id:2,type:'Выписка Kaspi Gold',person:'Клиент',storedDocumentId:'same',file:{name:'statement.pdf'}}];af.results.set(1,{kind:'other'});af.results.set(2,{kind:'kaspi'});af.sources.set('kaspiAnnual',{fileId:2});afMergeDuplicateSelections();`);
+ assert.equal(s.run('selectedFiles.length'),2);
+ s.run(`selectedFiles[0].type='Выписка Kaspi Gold';afMergeDuplicateSelections();`);
+ assert.equal(s.run('selectedFiles.length'),1);assert.equal(s.run("af.sources.get('kaspiAnnual').fileId"),1);assert.equal(s.run('selectedFiles[0].storedDocumentId'),'same');
 });

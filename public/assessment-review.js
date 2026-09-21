@@ -272,16 +272,32 @@ function afDocumentAttention(item){
 function afAnalysisProgress(done,total){
  af.progress={done,total};$af('afProgress').value=done;$af('afProgress').max=Math.max(1,total);window.AssessmentWorkflow?.refresh();
 }
+// Collapse repeated selections only after both refer to the same stored PDF and type.
+// The original stays in evidence storage; answer sources keep their surviving file ID.
+function afMergeDuplicateSelections(){
+ const seen=new Map(),duplicates=new Map();
+ for(const item of selectedFiles){
+  const documentId=item.storedDocumentId||af.results.get(item.id)?.server?.documentId;
+  if(!documentId||!item.type)continue;
+  const key=JSON.stringify([documentId,item.type,item.person]);
+  if(seen.has(key))duplicates.set(item.id,seen.get(key));else seen.set(key,item.id);
+ }
+ if(!duplicates.size)return;
+ for(const source of af.sources.values())if(duplicates.has(source.fileId))source.fileId=duplicates.get(source.fileId);
+ selectedFiles=selectedFiles.filter(item=>!duplicates.has(item.id));
+ for(const id of duplicates.keys())af.results.delete(id);
+}
 function afRenderResults(){
  const root=$af('afFileResults');root.replaceChildren();
  for(const item of selectedFiles){const r=af.results.get(item.id)||(item.storedDocumentId?{sourceOnly:true}:{pending:true});
   const shortType={'ГКБ — краткий отчёт':'ГКБ краткий','ГКБ — полный отчёт':'ГКБ полный','Справка ЕНПФ':'ЕНПФ','Выписка Kaspi Gold':'Kaspi','Удостоверение личности':'Удостоверение','Ф6 об отсутствии имущества':'Ф6','Справка по выплатам пенсии и пособий':'Пенсии и пособия'};
-  const displayType=item.type&&item.type!=='Другой документ'?shortType[item.type]||item.type:r.type&&r.kind!=='other'?shortType[r.type]||r.type:item.file.name;
+  const displayType=r.kind==='other'&&!r.documentReview?'Тип не определён':item.type&&item.type!=='Другой документ'?shortType[item.type]||item.type:r.type&&r.kind!=='other'?shortType[r.type]||r.type:item.file.name;
   const box=afEl('details',undefined,'af-file'),summary=afEl('summary'),name=afEl('strong',afExcluded(item)?'Ключ ЭЦП':displayType);summary.title=item.file.name;box.dataset.fileId=String(item.id);
   const wrongOwner=Boolean(r.identity?.iin&&HostedAssessment.getContext()?.client.iin&&r.identity.iin!==HostedAssessment.getContext().client.iin&&item.person==='Клиент');
   const state=r.pending?'Выбран':r.sourceOnly?'Сохранён':r.error?'Не прочитан':wrongOwner?'Другой клиент':r.documentReview?.type===item.type?'Проверено сотрудником':r.draftOnly?'Прочитан · для черновика':item.type==='ГКБ — краткий отчёт'&&window.GkbComparison?.resolved?.(item.id)?'Сверён с полным':r.blocked?'Сверить вручную':r.excluded?'Отдельно':r.duplicate?'Повтор':'Прочитан';
   summary.append(name,afEl('span',item.file.name,'af-file-filename'),afEl('span',state,'af-file-state'+(r.error||wrongOwner?' needs-review':'')));box.append(summary);
   box.append(afEl('p',afExcluded(item)?'Ключ ЭЦП':item.file.name,'af-original-name'));box.append(afEl('p',(r.pages||0)+' стр.'+(item.person?' · '+item.person:''),'hint'));
+  if(r.kind==='other'&&item.type)box.append(afEl('p','Выбран как: '+item.type+'. Это назначение файла, а не результат распознавания.','hint'));
   const attention=afDocumentAttention(item);if(attention)box.append(afEl('p',attention.message,'af-document-attention'+(attention.kind==='error'?' error':'')));
   if(attention?.kind==='credits'){const compare=afEl('button','Сверить кредиты','btn btn-ghost');compare.type='button';compare.onclick=()=>window.GkbComparison?.open?.();box.append(compare);}
   if(r.error&&item.storedDocumentId){const retry=afEl('button','Повторить чтение','btn btn-ghost');retry.type='button';retry.onclick=()=>afAnalyze({onlyPending:true});box.append(retry);}
@@ -330,6 +346,7 @@ async function afAnalyze(preferences={}){
    }catch(e){fail++;af.results.set(item.id,{error:e.message,notes:['Файл не заполнен автоматически. Проверьте вручную.']});}
    afRenderResults();afAnalysisProgress(done,files.length);
   }
+  if(!preferences.restoreOnly)afMergeDuplicateSelections();
   $af('afProgress').value=files.length;afClientChoices();
   if($af('afClient').value&&[...af.results.values()].some(r=>(!r.blocked||r.draftOnly)&&!r.error)){af.restoringEvidence=Boolean(preferences.restoreOnly);try{await afApply();}finally{af.restoringEvidence=false;}}else afStatus('Распознавание завершено. Нераспознанные ответы заполните вручную.');
   if(fail)afStatus('Не удалось обработать файлов: '+fail+'. Остальные результаты сохранены. Проверьте результаты по документам.',true);

@@ -60,8 +60,17 @@ export class EvidenceRepository {
  }
  async cached(caseId:string,originalHash:string,version:string){
   const document=await this.db.prepare('SELECT * FROM assessment_documents WHERE case_id=? AND original_sha256=?').bind(caseId,originalHash).first<DocumentRow>();if(!document)return null;
-  const extraction=await this.db.prepare('SELECT * FROM assessment_extractions WHERE document_id=? AND version=?').bind(document.id,version).first<ExtractionRow>();if(!extraction)return null;
-  return {document,extraction,result:await this.readResult(extraction)};
+  let extraction=await this.db.prepare('SELECT * FROM assessment_extractions WHERE document_id=? AND version=?').bind(document.id,version).first<ExtractionRow>();
+  if(extraction)return {document,extraction,result:await this.readResult(extraction)};
+  // rules-native-19 adds Kazakh Kaspi only. Keep v18 evidence and staff reviews
+  // for unaffected PDFs; a changed parser must not invalidate every saved case.
+  if(!version.endsWith(':rules-native-19'))return null;
+  extraction=await this.db.prepare('SELECT * FROM assessment_extractions WHERE document_id=? AND version=?').bind(document.id,version.replace(/:rules-native-19$/,':rules-native-18')).first<ExtractionRow>();
+  if(!extraction)return null;
+  const result=await this.readResult(extraction) as {extraction?:{kind?:string};read?:{pages?:Array<{text:string}>}};
+  const head=result.read?.pages?.map(p=>p.text).join('\n').slice(0,14000).toLowerCase()||'';
+  if(!result.extraction?.kind||/kaspi/.test(head)&&/үзінді\s+көшірме/u.test(head))return null;
+  return {document,extraction,result};
  }
  async readResult(extraction:ExtractionRow):Promise<unknown>{
   const object=await this.files.get(extraction.result_key);if(!object)throw new RepositoryError('EVIDENCE_OBJECT_MISSING',503);
