@@ -1,7 +1,7 @@
 import labels from './kz-labels.json';
 import type { PageText } from './read-pdf';
 import {extractPowerParties,type PowerParties} from './power-of-attorney';
-export const EXTRACTION_VERSION = 'rules-native-19';
+export const EXTRACTION_VERSION = 'rules-native-20';
 export type Fact = { key: string; value: string; page: number; source: string };
 export type Credit = { contractNumber: string; contractCode?: string; page: number; facts: Fact[]; components: Record<string, string | null>; comparisonDebt?:Fact; relatedPartiesNotice?: {page:number;source:string} };
 export type BankStatement={from:string|null;to:string|null;credits:string;topUps:string;topUpsVerified:boolean;debits:string;transactions:number;reconciled:boolean;rowsReadable:boolean;sourcePage:number;reconciliation?:string;gambling?:{total:string;matches:Array<{date:string;amount:string;description:string;page:number}>}};
@@ -42,6 +42,15 @@ export function identityCardDates(pages:Array<{page:number;text:string}>){
  if(invalid||issued.size>1||expires.size>1||issuedAt&&expiresAt&&issuedAt>expiresAt)return {issuedAt:null,expiresAt:null,page:null};
  return {issuedAt,expiresAt,page:issuedAt?issued.get(issuedAt)!:expiresAt?expires.get(expiresAt)!:null};
 }
+function identityCardHeader(text:string){
+ return /^([А-ЯӘІҢҒҮҰҚӨҺЁ -]+)\n([А-ЯӘІҢҒҮҰҚӨҺЁ -]+)\n([А-ЯӘІҢҒҮҰҚӨҺЁ -]+)\n\d{2}\.\d{2}\.\d{4}\s*\n(\d{12})\s*\n\d{9}\b/m.exec(text);
+}
+function identityCardWithoutIssuer(text:string,pages:PageText[]){
+ const header=identityCardHeader(text),dates=identityCardDates(pages);
+ // Some digital cards render the title/issuer as graphics. Demand the full
+ // printed card structure, a checksum-valid IIN, MRZ and an unambiguous term.
+ return !!header&&validIin(header[4])&&/^[A-Z]+<<[A-Z<]+\s*$/m.test(text)&&!!dates.issuedAt&&!!dates.expiresAt;
+}
 /** Questionnaire categories agreed for GKB intake; preserve the bureau wording in the source. */
 function questionnaireCreditType(financing:string|null,purpose:string|null,object:string|null):string|null{
  if(financing==='Кредитная карта')return 'Кредитная карта';
@@ -66,7 +75,7 @@ export function extractNative(pages: PageText[]): NativeExtraction {
     : /об отсутствии \(наличии\) недвижимого имущества/.test(head) ? 'property'
     : /информация о пенсионных выплатах и пособиях/.test(head) ? 'benefits'
     : /выдача\s+информации\s+о\s+поступлении\s+и\s+движении\s+средств\s+вкладчика\s+единого\s+накопительного\s+пенсионного\s+фонда/.test(head) ? 'enpf'
-    : /удостоверение личности|жеке куәлік/.test(head)||/МИНИСТЕРСТВО ВНУТРЕННИХ ДЕЛ РК|(?:ҚАЗАҚСТАН РЕСПУБЛИКАСЫНЫҢ|ҚР)\s+ІШКІ ІСТЕР МИНИСТРЛІГІ/iu.test(raw)&&/^[A-Z]+<<[A-Z<]+$/m.test(raw)&&/^\d{12}\s*$/m.test(raw) ? 'identity'
+    : /удостоверение личности|жеке куәлік/.test(head)||/МИНИСТЕРСТВО ВНУТРЕННИХ ДЕЛ РК|(?:ҚАЗАҚСТАН РЕСПУБЛИКАСЫНЫҢ|ҚР)\s+ІШКІ ІСТЕР МИНИСТРЛІГІ/iu.test(raw)&&/^[A-Z]+<<[A-Z<]+$/m.test(raw)&&/^\d{12}\s*$/m.test(raw)||identityCardWithoutIssuer(raw,pages) ? 'identity'
     : /(?:^|\n)\s*доверенность\s*(?:\n|$)/i.test(raw) ? 'power_of_attorney' : 'unknown';
   const output: NativeExtraction = { version: EXTRACTION_VERSION, kind, identity: { iin:null, name:null }, issuedAt:null, facts:[], credits:[], findings:[] };
   if (pages.some(p => p.needsOcr)) output.findings.push('OCR_OR_PAGE_REVIEW_REQUIRED');
@@ -120,7 +129,7 @@ export function extractNative(pages: PageText[]): NativeExtraction {
     extractEnpfPayers(pages,output);
   }
   if(kind==='identity'&&!output.identity.iin){
-    const card=/^([А-ЯӘІҢҒҮҰҚӨҺЁ -]+)\n([А-ЯӘІҢҒҮҰҚӨҺЁ -]+)\n([А-ЯӘІҢҒҮҰҚӨҺЁ -]+)\n\d{2}\.\d{2}\.\d{4}\s*\n(\d{12})\s*\n\d{9}\b/m.exec(raw);
+    const card=identityCardHeader(raw);
     if(card&&validIin(card[4]))output.identity={iin:card[4],name:card.slice(1,4).join(' ').replace(/\s+/g,' ').trim()};
   }
   if(kind==='identity'){const dates=identityCardDates(pages);output.issuedAt=dates.issuedAt;output.expiresAt=dates.expiresAt;}

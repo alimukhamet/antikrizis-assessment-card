@@ -98,3 +98,8 @@ test('bilingual digital ID dates come from its validity range, never birth date 
  assert.equal(dates.issuedAt,'2017-10-09');assert.equal(dates.expiresAt,'2027-10-08');
  for(const t of ['Туған күні / Дата рождения: 11.07.1991','31.02.2020 - 01.03.2030','01.01.2030 - 01.01.2020','01.01.2020 - 01.01.2030\n02.02.2021 - 02.02.2031'])assert.equal(rules.identityCardDates(page(t)).expiresAt,null,t);
 });
+test('digital ID with graphical issuer is recognized only from complete card structure',()=>{
+ const card='ТЕСТОВ\nСЫНАҚ\nТЕСТОВИЧ\n03.05.1987\n991231300003\n123456789\nОБЛАСТЬ\nКАЗАХ\n17.12.2024 - 16.12.2034\n<<<<<<<<<<<<<<<<<<<<\nTESTOV<<SYNAQ<<<<<<<<<<<<';
+ const r=rules.extractNative(page(card));assert.equal(r.kind,'identity');assert.equal(r.identity.iin,'991231300003');assert.equal(r.identity.name,'ТЕСТОВ СЫНАҚ ТЕСТОВИЧ');assert.equal(r.issuedAt,'2024-12-17');assert.equal(r.expiresAt,'2034-12-16');
+ for(const [from,to] of [['991231300003','991231300004'],['123456789','12345'],['TESTOV<<SYNAQ<<<<<<<<<<<<',''],['17.12.2024 - 16.12.2034','17.12.2024'],['ТЕСТОВ\nСЫНАҚ\nТЕСТОВИЧ','ТЕСТОВ СЫНАҚ ТЕСТОВИЧ']])assert.equal(rules.extractNative(page(card.replace(from,to))).kind,'unknown',from);
+});
