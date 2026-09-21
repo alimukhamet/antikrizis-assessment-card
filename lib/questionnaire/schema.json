@@ -314,6 +314,13 @@
       "conditions": []
     },
     {
+      "key": "holding:client:land",
+      "type": "checkbox",
+      "label": "Какое имущество зарегистрировано на ваше имя?*",
+      "required": false,
+      "conditions": []
+    },
+    {
       "key": "holding:client:car",
       "type": "checkbox",
       "label": "Какое имущество зарегистрировано на ваше имя?*",
@@ -366,7 +373,7 @@
     {
       "key": "n8017",
       "type": "textarea",
-      "label": "Что ещё зарегистрировано?*",
+      "label": "Укажите другое имущество*",
       "required": true,
       "conditions": [
         "client-asset-other"
@@ -374,6 +381,15 @@
     },
     {
       "key": "holding:partner:real",
+      "type": "checkbox",
+      "label": "Какое имущество зарегистрировано на имя супруга(и)?*",
+      "required": false,
+      "conditions": [
+        "partnerAssets"
+      ]
+    },
+    {
+      "key": "holding:partner:land",
       "type": "checkbox",
       "label": "Какое имущество зарегистрировано на имя супруга(и)?*",
       "required": false,
@@ -443,7 +459,7 @@
     {
       "key": "n8032",
       "type": "textarea",
-      "label": "Что ещё зарегистрировано?*",
+      "label": "Укажите другое имущество*",
       "required": true,
       "conditions": [
         "partner-asset-other",
@@ -1167,6 +1183,65 @@
       ]
     },
     {
+      "id": "clientland",
+      "conditions": [
+        "client-asset-land"
+      ],
+      "fields": [
+        {
+          "key": "clientLandDescription",
+          "type": "text",
+          "label": "Адрес или описание участка*",
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "clientLandOwnership",
+          "type": "select-one",
+          "label": "Вид собственности*",
+          "options": [
+            "",
+            "sole",
+            "joint",
+            "share"
+          ],
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "clientLandShare",
+          "type": "number",
+          "label": "Доля по документам, %*",
+          "required": true,
+          "conditions": [
+            "ownership-share"
+          ],
+          "min": "0.01",
+          "max": "100"
+        },
+        {
+          "key": "clientLandValue",
+          "type": "number",
+          "label": "Примерная стоимость участка, ₸*",
+          "required": true,
+          "conditions": [],
+          "min": "0"
+        },
+        {
+          "key": "clientLandPledged",
+          "type": "select-one",
+          "label": "Участок в залоге?*",
+          "options": [
+            "",
+            "Нет",
+            "Да"
+          ],
+          "required": true,
+          "conditions": []
+        }
+      ]
+    },
+    {
       "id": "clientcars",
       "conditions": [
         "client-asset-car"
@@ -1259,6 +1334,66 @@
           "key": "n8021",
           "type": "select-one",
           "label": "Недвижимость в залоге?*",
+          "options": [
+            "",
+            "Нет",
+            "Да"
+          ],
+          "required": true,
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "id": "partnerland",
+      "conditions": [
+        "partner-asset-land",
+        "partnerAssets"
+      ],
+      "fields": [
+        {
+          "key": "partnerLandDescription",
+          "type": "text",
+          "label": "Адрес или описание участка*",
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "partnerLandOwnership",
+          "type": "select-one",
+          "label": "Вид собственности*",
+          "options": [
+            "",
+            "sole",
+            "joint",
+            "share"
+          ],
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "partnerLandShare",
+          "type": "number",
+          "label": "Доля по документам, %*",
+          "required": true,
+          "conditions": [
+            "ownership-share"
+          ],
+          "min": "0.01",
+          "max": "100"
+        },
+        {
+          "key": "partnerLandValue",
+          "type": "number",
+          "label": "Примерная стоимость участка, ₸*",
+          "required": true,
+          "conditions": [],
+          "min": "0"
+        },
+        {
+          "key": "partnerLandPledged",
+          "type": "select-one",
+          "label": "Участок в залоге?*",
           "options": [
             "",
             "Нет",

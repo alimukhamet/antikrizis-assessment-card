@@ -16,7 +16,7 @@ export function contractData(payload:DraftPayload,trustedIin:string|null,evidenc
  const parts=v.fio.trim().split(/\s+/),short=parts.length>1?parts[0]+' '+parts.slice(1).map(p=>p[0]+'.').join(' '):v.fio;
  const describe=(groups:string[])=>active.filter(a=>a.group&&groups.includes(a.group)&&a.value).map(a=>`${a.group!.startsWith('partner')?'Супруг(а)':'Клиент'}, запись ${a.row!+1}: ${a.label.replace(/\*/g,'')} — ${displayAnswer(a)}`).join('; ');
  const holdings=(owner:string)=>active.filter(a=>a.key.startsWith(`holding:${owner}:`)).map(a=>a.value);
- const property=(owner:string)=>{const chosen=holdings(owner);if(chosen.includes('unknown'))return 'Неизвестно — уточнить';if(chosen.includes('none'))return 'Нет';return [describe([owner+'real',owner+'cars']),active.find(a=>a.key===(owner==='client'?'n8017':'n8032'))?.value].filter(Boolean).join('; ')||'Не указано среди выбранного имущества';};
+ const property=(owner:string)=>{const chosen=holdings(owner);if(chosen.includes('unknown'))return 'Неизвестно — уточнить';if(chosen.includes('none'))return 'Нет';return [describe([owner+'real',owner+'land',owner+'cars']),active.find(a=>a.key===(owner==='client'?'n8017':'n8032'))?.value].filter(Boolean).join('; ')||'Не указано среди выбранного имущества';};
  const business=(groups:string[])=>describe(groups)||(holdings('client').includes('unknown')?'Неизвестно — уточнить':'Нет');
  const loans=payload.groups.find(g=>g.id==='creditors')?.rows||[];
  const creditors=[...new Set(loans.map(r=>r.find(a=>a.key==='n8038')!.value))].join('; ');

@@ -36,7 +36,7 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   if(c==='kaspiWhyField'||c==='partnerKaspiWhyField')return highKaspi(c.startsWith('partner'));
   if(c==='panel-c8037')return value('c8037')==='1';
   const asset=/^(client|partner)-asset-(.+)$/.exec(c);if(asset)return checked(`holding:${asset[1]}:${asset[2]}`);
-  if(c==='ownership-share')return value('n8004Kind',row)==='share'||value('n8019Kind',row)==='share';
+  if(c==='ownership-share')return ['n8004Kind','n8019Kind','clientLandOwnership','partnerLandOwnership'].some(key=>value(key,row)==='share');
   if(c==='transfer-other')return value('n8033',row)==='Другое';
   if(c==='purpose-other')return value('n8043',row)==='Другое';
   if(c==='benefit-other')return value('clientBenefitType',row)==='Другая государственная выплата'||value('partnerBenefitType',row)==='Другая государственная выплата';
@@ -83,8 +83,8 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   else displayAnswers.push({key:'enforcementDetails',label:'Прежние сведения о взысканиях',value:value('enforcementDetails')});
  }else if(value('enforcementStatus')==='yes'&&value('enforcementDetails')&&!/^нет[.!]?$/iu.test(value('enforcementDetails')))displayAnswers.push({key:'enforcementDetails',label:'Прежние сведения о взысканиях',value:value('enforcementDetails')});
  const rowRequiredLabels:Record<string,string>={
-  clientreal:'Добавьте данные выбранной недвижимости клиента',clientcars:'Добавьте выбранный автомобиль клиента',clientip:'Добавьте данные ИП клиента',clienttoo:'Добавьте данные доли в ТОО клиента',clientkh:'Добавьте данные КХ клиента',
-  partnerreal:'Добавьте данные выбранной недвижимости супруга(и)',partnercars:'Добавьте выбранный автомобиль супруга(и)',partnerip:'Добавьте данные ИП супруга(и)',partnertoo:'Добавьте данные доли в ТОО супруга(и)',partnerkh:'Добавьте данные КХ супруга(и)',
+  clientreal:'Добавьте данные выбранной недвижимости клиента',clientland:'Добавьте земельный участок клиента',clientcars:'Добавьте выбранный автомобиль клиента',clientip:'Добавьте данные ИП клиента',clienttoo:'Добавьте данные доли в ТОО клиента',clientkh:'Добавьте данные КХ клиента',
+  partnerreal:'Добавьте данные выбранной недвижимости супруга(и)',partnerland:'Добавьте земельный участок супруга(и)',partnercars:'Добавьте выбранный автомобиль супруга(и)',partnerip:'Добавьте данные ИП супруга(и)',partnertoo:'Добавьте данные доли в ТОО супруга(и)',partnerkh:'Добавьте данные КХ супруга(и)',
   enforcements:'Добавьте взыскателя и сумму взыскания',transfers:'Добавьте запись о переданном имуществе',creditors:'Добавьте хотя бы одного кредитора / обязательство',
  };
  for(const g of schema.groups){if(!active(g.conditions))continue;const rows=groups.get(g.id)?.rows||[];
@@ -97,7 +97,7 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
  }
  const choices=[{prefix:'choice:socialStatus:',kinds:null as string[]|null,none:'Нет',key:'choice:socialStatus:',label:'Социальный статус'}];
  for(const owner of ['client',...(married?['partner']:[])]){
-  choices.push({prefix:`holding:${owner}:`,kinds:['real','car','other','none','unknown'],none:'none',key:`holding:${owner}:`,label:owner==='client'?'Имущество клиента':'Имущество супруга(и)'});
+  choices.push({prefix:`holding:${owner}:`,kinds:['real','land','car','other','none','unknown'],none:'none',key:`holding:${owner}:`,label:owner==='client'?'Имущество клиента':'Имущество супруга(и)'});
   choices.push({prefix:`holding:${owner}:`,kinds:['ip','too','kh','businessNone'],none:'businessNone',key:`holding:${owner}:business`,label:owner==='client'?'Бизнес и регистрация клиента':'Бизнес и регистрация супруга(и)'});
  }
  for(const choice of choices){

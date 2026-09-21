@@ -8,7 +8,7 @@
  function answerTarget(issue){
   if(!issue.group){
    if(issue.key?.startsWith('choice:'))return [...document.querySelectorAll('#questionnaireStep input')].find(input=>input.name===issue.key.split(':')[1]);
-   if(issue.key?.startsWith('holding:'))return [...document.querySelectorAll('#questionnaireStep [data-holding]')].find(input=>input.dataset.owner===issue.key.split(':')[1]&&(issue.key.endsWith(':business')?['ip','too','kh','businessNone'].includes(input.dataset.holding):['real','car','other','none','unknown'].includes(input.dataset.holding)));
+   if(issue.key?.startsWith('holding:'))return [...document.querySelectorAll('#questionnaireStep [data-holding]')].find(input=>input.dataset.owner===issue.key.split(':')[1]&&(issue.key.endsWith(':business')?['ip','too','kh','businessNone'].includes(input.dataset.holding):['real','land','car','other','none','unknown'].includes(input.dataset.holding)));
    return document.getElementById(issue.key?.replace(/^exact:/,''));
   }
   const row=document.getElementById(issue.group)?.querySelector('.repeat-rows')?.children[issue.row??0];

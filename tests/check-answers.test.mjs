@@ -179,3 +179,23 @@ test('legacy enforcement notes remain usable without inventing structured facts'
  set(p,'enforcementDetails','Original creditor notes without a known amount');const saved=validateDraft(p);assert.equal(saved.answers.find(a=>a.key==='enforcementStatus').value,'legacy');assert.equal(saved.groups.find(g=>g.id==='enforcements').rows.length,0);assert.equal(contractData(p,iin).enforcement,'Original creditor notes without a known amount');
  set(p,'unknown:enforcementDetails','on',true);assert.ok(has(run(p),'enforcementStatus'));
 });
+
+test('land has separate repeated details, validates shares and reaches the contract and lawyer card',()=>{
+ const p=fixture();set(p,'holding:client:none','none',false);set(p,'holding:client:land','land',true);
+ assert.ok(has(run(p),'clientland','ROW_REQUIRED'));
+ const group=p.groups.find(g=>g.id==='clientland'),definition=schema.groups.find(g=>g.id==='clientland');
+ const values={clientLandDescription:'SYNTHETIC LAND 1',clientLandOwnership:'share',clientLandShare:'25',clientLandValue:'0',clientLandPledged:'Нет'};
+ group.rows=[definition.fields.map(f=>({key:f.key,value:values[f.key]||'',checked:false}))];group.rowKeys=[null];
+ assert.equal(run(p).answersComplete,true,JSON.stringify(run(p).issues));
+ const second=structuredClone(group.rows[0]);second.find(a=>a.key==='clientLandDescription').value='SYNTHETIC LAND 2';second.find(a=>a.key==='clientLandOwnership').value='sole';second.find(a=>a.key==='clientLandShare').value='';group.rows.push(second);group.rowKeys.push(null);
+ for(const text of [contractData(p,iin).property,compileAssessment(p,iin).lawyerCard]){assert.match(text,/SYNTHETIC LAND 1/);assert.match(text,/SYNTHETIC LAND 2/);assert.match(text,/Долевая собственность/);}
+ const share=group.rows[0].find(a=>a.key==='clientLandShare');share.value='';assert.ok(has(run(p),'clientLandShare','ANSWER_REQUIRED'));share.value='101';assert.ok(has(run(p),'clientLandShare','INVALID_NUMBER'));
+ set(p,'holding:client:none','none',true);assert.ok(has(run(p),'holding:client:','CONFLICTING_CHOICES'));
+});
+test('legacy land remains in the original property group and spouse land is conditional on marriage',()=>{
+ const p=fixture();p.answers=p.answers.filter(a=>!a.key.endsWith(':land'));p.groups=p.groups.filter(g=>!g.id.endsWith('land'));
+ set(p,'holding:client:none','none',false);set(p,'holding:client:real','real',true);const g=p.groups.find(g=>g.id==='clientreal'),values={n8003:'Земельный участок',n8004Kind:'sole',n8005:'10000',n8006:'Нет'};
+ g.rows=[schema.groups.find(g=>g.id==='clientreal').fields.map(f=>({key:f.key,value:values[f.key]||'',checked:false}))];g.rowKeys=['clientreal|SYNTHETIC EXISTING LAND'];
+ const restored=validateDraft(p);assert.equal(JSON.stringify(restored.groups),JSON.stringify(p.groups));assert.match(contractData(restored,iin).property,/Земельный участок/);
+ p.answers.push({key:'holding:partner:land',value:'land',checked:true});assert.ok(!has(run(p),'partnerland','ROW_REQUIRED'));set(p,'marital','В браке');assert.ok(has(run(p),'partnerland','ROW_REQUIRED'));
+});

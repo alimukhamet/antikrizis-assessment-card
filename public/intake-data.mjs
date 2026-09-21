@@ -8,7 +8,7 @@ export function normalizeIntake(payload) {
   if(get(prefix+'businessNone'))continue;
   const selected=answers.filter(a=>a.key.startsWith(prefix)&&a.checked).map(a=>a.key.slice(prefix.length));
   const answered=selected.length>0&&!selected.includes('unknown');
-  const property=selected.some(k=>['real','car','other'].includes(k));
+  const property=selected.some(k=>['real','land','car','other'].includes(k));
   const business=selected.some(k=>['ip','too','kh'].includes(k));
   // A contradictory legacy "none" is left contradictory for the validator.
   if(answered&&!property&&!selected.includes('none'))put(prefix+'none','none',true);
