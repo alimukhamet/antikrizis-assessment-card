@@ -17,13 +17,13 @@ function numberMatches(short:string,full:string){
  return full.length>pieces[0].length+pieces[1].length&&full.startsWith(pieces[0])&&full.endsWith(pieces[1]);
 }
 /** Cross-check only. Never replaces extracted IDs or approves short-report facts. */
-export function matchShortReport(short:Analysis,full:Analysis,clientIin:string|null,day:string):CreditMatch[]|null{
+function matchReportLoans(short:Analysis,full:Analysis,clientIin:string|null,day:string,allowMissingBalance=false):CreditMatch[]|null{
  const s=short.extraction,f=full.extraction;
  if(!clientIin||s.identity.iin!==clientIin||f.identity.iin!==clientIin||s.kind!=='gkb_short'||f.kind!=='gkb_full')return null;
  if(!s.issuedAt||s.issuedAt!==f.issuedAt||gkbFreshness(s.issuedAt,day).length)return null;
  if(!short.read.pages.length||!full.read.pages.length)return null;
  if(short.read.pages.some(p=>p.needsOcr)||full.read.pages.some(p=>p.needsOcr))return null;
- if(f.findings.length||!s.findings.includes('SHORT_CONTRACT_ID_TRUNCATED')||s.findings.some(v=>!['SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED'].includes(v)))return null;
+ if(f.findings.some(v=>!allowMissingBalance||v!=='TOTAL_DEBT_REQUIRES_RECONCILIATION')||!s.findings.includes('SHORT_CONTRACT_ID_TRUNCATED')||s.findings.some(v=>!['SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED'].includes(v)))return null;
  if(!s.credits.length||s.credits.length>f.credits.length)return null;
  const used=new Set<number>(),matches:CreditMatch[]=[];
  for(const [shortIndex,credit] of s.credits.entries()){
@@ -36,7 +36,8 @@ export function matchShortReport(short:Analysis,full:Analysis,clientIin:string|n
   // Demand unique matches before consuming rows; never resolve ambiguity by order.
   if(candidates.length!==1||used.has(candidates[0]))return null;
   const fullIndex=candidates[0],other=f.credits[fullIndex],ff=Object.fromEntries(other.facts.map(v=>[v.key,v.value]));
-  if(debt!==amount(ff.debtOutstanding)||!/^\d+$/.test(ff.overdueDays||'')||BigInt(sf.overdueDays)!==BigInt(ff.overdueDays))return null;
+  const missingBalance=allowMissingBalance&&ff.debtOutstanding===undefined&&!other.comparisonDebt&&other.components?.remaining===null&&amount(other.components.arrears??undefined)===BigInt(0)&&amount(other.components.penalty??undefined)===BigInt(0)&&['interest','fine'].every(key=>other.components[key]===null||other.components[key]===undefined||amount(other.components[key])===BigInt(0));
+  if(!missingBalance&&debt!==amount(ff.debtOutstanding)||!/^\d+$/.test(ff.overdueDays||'')||BigInt(sf.overdueDays)!==BigInt(ff.overdueDays))return null;
   used.add(fullIndex);
   matches.push({shortIndex,fullIndex,shortNumber:credit.contractNumber,fullNumber:other.contractNumber,shortPage:credit.page,fullPage:other.page});
  }
@@ -44,6 +45,19 @@ export function matchShortReport(short:Analysis,full:Analysis,clientIin:string|n
  // full report and questionnaire; only an explicit zero debt AND zero arrears qualifies.
  if(f.credits.some((credit,index)=>{const values=Object.fromEntries(credit.facts.map(v=>[v.key,v.value]));return !used.has(index)&&(amount(values.debtOutstanding)!==BigInt(0)||!/^0+$/.test(values.overdueDays||''));}))return null;
  return matches;
+}
+export function matchShortReport(short:Analysis,full:Analysis,clientIin:string|null,day:string){return matchReportLoans(short,full,clientIin,day);}
+
+/** A proposal for an employee, never an automatic match or a zero-balance inference. */
+export function shortBalanceReviewPlan(short:Analysis,full:Analysis,clientIin:string|null,day:string){
+ const s=short.extraction,f=full.extraction;
+ if(!f.creditList?.complete||s.creditList?.declared!==s.credits.length||!f.findings.includes('TOTAL_DEBT_REQUIRES_RECONCILIATION'))return null;
+ const matches=matchReportLoans(short,full,clientIin,day,true);if(!matches)return null;
+ const balances=matches.filter(m=>!f.credits[m.fullIndex].facts.some(f=>f.key==='debtOutstanding')).map(m=>{
+  const a=s.credits[m.shortIndex],b=f.credits[m.fullIndex],fact=a.facts.find(f=>f.key==='debtOutstanding')!,cents=amount(fact.value)!;
+  return {...m,creditor:b.facts.find(f=>f.key==='creditor')!.value,contractNumber:b.contractCode||b.contractNumber,aliases:[...new Set([b.contractNumber,b.contractCode].filter((v):v is string=>!!v))],amount:`${cents/BigInt(100)}.${String(cents%BigInt(100)).padStart(2,'0')}`,shortPage:fact.page||a.page,fullPage:b.page};
+ });
+ return balances.length?{matches,balances,activeLoans:f.credits.length,issuedAt:s.issuedAt!}:null;
 }
 
 /** Explain why staff need another report or reconciliation; never grants approval. */

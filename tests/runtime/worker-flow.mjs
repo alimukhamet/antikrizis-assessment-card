@@ -21,7 +21,7 @@ test('built Worker persists a complete contract and recovers a handoff without d
  const fixtureDir=await mkdtemp(resolve('.wrangler/runtime-fixture-'));
  t.after(()=>rm(fixtureDir,{recursive:true,force:true}));
  await build({entryPoints:['tests/runtime/fixture.mjs'],bundle:true,platform:'node',format:'esm',packages:'external',outfile:join(fixtureDir,'fixture.mjs'),logLevel:'silent'});
- const {seed}=await import(pathToFileURL(join(fixtureDir,'fixture.mjs')).href);
+ const {seed,seedMissingBalance}=await import(pathToFileURL(join(fixtureDir,'fixture.mjs')).href);
  const modulePaths=(await readdir('dist/server',{recursive:true})).filter(n=>/\.m?js$/.test(n)).sort((a,b)=>a==='index.js'?-1:b==='index.js'?1:a.localeCompare(b));
  const modules=await Promise.all(modulePaths.map(async path=>({type:'ESModule',path,contents:await readFile(join('dist/server',path),'utf8')})));
  const crm=syntheticCrm();
@@ -95,5 +95,21 @@ test('built Worker persists a complete contract and recovers a handoff without d
  await api(root+'/draft',{requestId:crypto.randomUUID(),identityRevision:1,expectedRevision:0,payload:fixture.payload},409);
  assert.deepEqual((await api(root+'/draft')).draft,saved.draft);
  assert.equal((await api(root+'/credentials')).credentials.verified,true);
- console.log('Verified: durable draft, stored contract, uploads, credentials and handoff recovery; CRM writes were each applied before a simulated lost response.');
+ // The manager's source choice uses the same deployed routes and durable storage.
+ const missing=await seedMissingBalance(await mf.getD1Database('DB'),await mf.getR2Bucket('FILES'),fixture);
+ await api(root+'/draft',{requestId:crypto.randomUUID(),identityRevision:1,expectedRevision:1,payload:missing.payload});
+ const reviewInput={shortDocumentId:missing.shortDocumentId,fullDocumentId:missing.fullDocumentId,identityRevision:1};
+ const blocked=await api(root+'/check',{payload:missing.payload,bindings:[]});assert.equal(blocked.readyToSubmit,false);assert.ok(blocked.documents.issues.some(i=>i.code==='SHORT_CREDIT_REVIEW_REQUIRED'));
+ const {inspection}=await api(root+'/gkb-reviews',{action:'inspect',...reviewInput});assert.equal(inspection.plan.balances.length,1);assert.equal(inspection.review,null);
+ const confirm={action:'confirm',...reviewInput,planKey:inspection.planKey,requestId:crypto.randomUUID()};
+ await api(root+'/gkb-reviews',{...confirm,planKey:'stale'},409);
+ const receipt=await api(root+'/gkb-reviews',confirm);assert.deepEqual(await api(root+'/gkb-reviews',confirm),receipt);
+ const ready=await api(root+'/check',{payload:missing.payload,bindings:[]});assert.equal(ready.readyToSubmit,true,JSON.stringify(ready));assert.equal(ready.documents.loanCoverage.present,1);assert.equal(ready.documents.gkbEvidence[0].reviewId,receipt.reviewId);
+ await mf.dispose();mf=new Miniflare(options);
+ const reopened=await api(root+'/gkb-reviews',{action:'inspect',...reviewInput});assert.equal(reopened.inspection.review.reviewId,receipt.reviewId);assert.equal((await api(root+'/draft')).draft.revision,2);
+ const changed=structuredClone(missing.payload);changed.groups.find(g=>g.id==='creditors').rows[0].find(a=>a.key==='n8040').value='100.26';
+ const invalidated=await api(root+'/check',{payload:changed,bindings:[]});assert.equal(invalidated.readyToSubmit,false);assert.equal(invalidated.documents.gkbEvidence.length,0);
+ await api(root+'/gkb-reviews',{action:'withdraw',...reviewInput,planKey:inspection.planKey,reviewId:receipt.reviewId,requestId:crypto.randomUUID()});
+ assert.equal((await api(root+'/check',{payload:missing.payload,bindings:[]})).readyToSubmit,false);assert.equal(crm.counts.assessmentWrites,1);assert.equal(crm.counts.historyWrites,1);assert.equal(crm.counts.stageWrites,1);
+ console.log('Verified: durable draft, contract, handoff recovery and explicit GKB source confirmation; retries, restart, changed amounts and withdrawal; no duplicate CRM writes.');
 });

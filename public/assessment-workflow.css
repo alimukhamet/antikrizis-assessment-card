@@ -150,6 +150,7 @@ body[data-assessment-workflow] .card:has(>.wf-answer-section){padding:0}
 .wf-gkb-status:focus-visible{outline:2px solid #245c36;outline-offset:3px}
 .gkb-dialog{width:min(690px,calc(100vw - 28px));max-height:85vh;padding:22px;border:1px solid #d6e1d9;border-radius:14px;background:#fff;color:#243c2c;box-sizing:border-box;overflow:auto}
 .gkb-dialog::backdrop{background:#17332566}
+.gkb-review-actions{position:sticky;bottom:-22px;background:#fff;border-top:1px solid #d6e1d9;padding:14px 0;margin-top:14px}.gkb-review-actions label{display:flex;gap:8px;align-items:flex-start;font-size:14px}.gkb-review-actions input{flex:none;margin-top:3px}.gkb-dialog .gkb-review-actions .btn-main{min-height:42px;font-size:14px}.wf-gkb-status.reviewed{color:#245d39;background:#eaf3e8}
 .gkb-dialog-head,.gkb-row-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .gkb-dialog h2{font-size:18px;margin:0}.gkb-dialog p{font-size:14px;line-height:1.5;margin:10px 0}
 .gkb-dialog .btn{padding:6px 9px;font-size:12px;min-height:32px;margin:0}
@@ -158,7 +159,7 @@ body[data-assessment-workflow] .card:has(>.wf-answer-section){padding:0}
 .gkb-row{padding:13px 0;border-top:1px solid #e1e8e2;font-size:13px}.gkb-row-head{align-items:flex-start;flex-wrap:wrap}.gkb-row-head>span{font-size:12px;color:#728176;overflow-wrap:anywhere}
 .gkb-sources{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}.gkb-sources>div{display:flex;align-items:flex-start;flex-direction:column;gap:5px}.gkb-sources span{font-size:12px;color:#728176}
 .gkb-dialog>details>summary{cursor:pointer;font-size:14px;padding:12px 0}
-@media(max-width:450px){.wf-answer-section>summary:has(.wf-gkb-status){flex-wrap:wrap}.wf-answer-section>summary:has(.wf-gkb-status)>span:first-child{flex-basis:75%}.wf-gkb-status{margin-left:20px}.gkb-dialog{padding:16px}.gkb-totals,.gkb-sources{grid-template-columns:1fr}}
+@media(max-width:450px){.wf-answer-section>summary:has(.wf-gkb-status){flex-wrap:wrap}.wf-answer-section>summary:has(.wf-gkb-status)>span:first-child{flex-basis:75%}.wf-gkb-status{margin-left:20px}.gkb-dialog{padding:16px}.gkb-review-actions{bottom:-16px}.gkb-totals,.gkb-sources{grid-template-columns:1fr}}
 .wf-section-count{display:inline-grid;place-items:center;min-width:25px;height:25px;border-radius:50%;background:#eaf0e7;color:#45634e;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
 .wf-answer-section[open]>summary{margin-bottom:0;border-radius:13px 13px 0 0;border-bottom:1px solid #dfe7de;background:#f0f5ed}
 .wf-answer-section>.fields{padding:18px}
