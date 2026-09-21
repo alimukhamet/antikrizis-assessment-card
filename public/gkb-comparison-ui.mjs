@@ -62,7 +62,7 @@ function render(){
  if(result.inspection)dialog.append(make('p','Активных кредитов в полном ГКБ: '+result.inspection.plan.activeLoans+'. Все они должны остаться в анкете.'));
  else if(result.reason)dialog.append(make('p',result.reason));
  if(result.rows.length){
-  const totals=make('div',null,'gkb-totals');totals.append(make('span','Краткий: '+amount(result.shortTotal)),make('span','Полный: '+amount(result.fullTotal)));dialog.append(totals);
+  const totals=make('div',null,'gkb-totals');totals.append(make('span','Краткий: '+amount(result.shortTotal)),make('span',result.inspection?'Полный: по '+result.inspection.plan.balances.length+' кредитам сумма не указана':'Полный: '+amount(result.fullTotal)));dialog.append(totals);
   for(const row of result.rows.filter(r=>r.status!=='matched'))dialog.append(renderRow(row,result));
   const matched=result.rows.filter(r=>r.status==='matched');if(matched.length){const fold=make('details');fold.append(make('summary','Совпадают · '+matched.length));for(const row of matched)fold.append(renderRow(row,result));dialog.append(fold);}
  }else for(const report of result.reports)dialog.append(button(report.kind==='gkbShort'?'Открыть краткий ГКБ':'Открыть полный ГКБ',()=>openSource({fileId:report.fileId,page:1})));
