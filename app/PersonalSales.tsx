@@ -43,7 +43,11 @@ export default function PersonalSales({ mode }: { mode: 'results' | 'earnings' }
   const current = earnings ? earningsMonths.find(p => p.ongoing) : periods.find(p => p.ongoing);
   const history = earnings ? earningsMonths.filter(p => !p.ongoing) : periods.filter(p => !p.ongoing);
   function result(p: Period) { return p.metric === 'count' ? number(p.count) + ' / ' + number(p.target!) + ' договоров' : money(p.volume) + ' / ' + money(p.target); }
-  function earningsDetails(p: EarningsMonth) { return <details className="ps-details"><summary>Подробнее</summary><div><p>Оклад: {p.baseSalary ? money(p.baseSalary) : 'в конце месяца'}</p><p>Комиссия: {money(p.commission)} · Бонус: {money(p.contractBonus)}</p>{p.periods.map(period => <p key={period.id}>{range(period)} · {period.rate === null ? '—' : period.rate + '%'} · {money(period.commission)}</p>)}{p.missing > 0 && <p>Неполные суммы: {p.missing}</p>}</div></details>; }
+  function earningsDetails(p: EarningsMonth) {
+    const included = [p.baseSalary ? 'Оклад ' + money(p.baseSalary) : '', p.contractBonus ? 'Бонус ' + money(p.contractBonus) : ''].filter(Boolean);
+    const rates = [...new Set(p.periods.map(period => period.rate).filter(rate => rate !== null))];
+    return <details className="ps-details"><summary>Подробнее</summary><div>{included.length > 0 && <p>{included.join(' + ')}</p>}<p>{p.count} договоров · {money(p.volume)}{rates.length > 0 && ' · ' + rates.join(' / ') + '%'}</p>{p.missing > 0 && <p>Неполные суммы: {p.missing}</p>}</div></details>;
+  }
   return <main className="personal-page"><div className="ps-wrap">
     <Link className="ps-back" href="/">← Назад</Link>
     <header className="ps-header"><div><h1>{report?.canChoosePerson ? 'Отдел продаж' : earnings ? 'Мой заработок' : 'Мои результаты'}</h1><p>{report?.canChoosePerson ? <>Ali <span className="rop-role">РОП</span></> : report?.name || 'Ваши показатели'}</p></div></header>
