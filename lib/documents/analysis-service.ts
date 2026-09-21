@@ -1,4 +1,4 @@
-import {readPdf}from'./read-pdf';import{extractNative}from'./extract-native';import{gkbFreshness}from'./policy';import{operatingDay}from'./request-context';import type{EvidenceRepository,CaseRow,DocumentRow,ExtractionRow}from'./repository';import type{ClientContext}from'../crm/bitrix';import {RepositoryError}from'./repository';
+import {readPdf}from'./read-pdf';import{extractNative,identityCardDates}from'./extract-native';import{gkbFreshness}from'./policy';import{operatingDay}from'./request-context';import type{EvidenceRepository,CaseRow,DocumentRow,ExtractionRow}from'./repository';import type{ClientContext}from'../crm/bitrix';import {RepositoryError}from'./repository';
 import type{Actor}from'../worker-session';
 import {requiresDocumentValidation,statementPeriod,salaryStatementPeriod,enpfPeriod,enpfAllHistory}from'./policy';
 import {checkPowerTemplate}from'./power-validation';
@@ -28,7 +28,8 @@ export async function analysisResponse(client:ClientContext,record:CaseRow,repos
   const saved=current.find(review=>review.fact_key===DOCUMENT_REVIEW_KEY);
   if(saved)try{const value=validateDocumentReview(JSON.parse(saved.value_json),stored.result as Analysis,record,today);documentReview={reviewId:saved.id,type:value.type,actorId:saved.actor_id,reviewedAt:saved.created_at};reviewedDates={issuedAt:value.issuedAt,expiresAt:value.expiresAt,from:value.from,to:value.to};}catch(error){if(!(error instanceof RepositoryError||error instanceof SyntaxError))throw error;}
  }
- const reviewContext={iin:extraction.identity.iin||client.iin||'',pages:read.totalPages,issuedAt:powerValidation?.issuedAt||extraction.issuedAt||'',expiresAt:powerValidation?.expiresAt||'',from:extraction.coverage?.from||extraction.bankStatement?.from||'',to:extraction.coverage?.to||extraction.bankStatement?.to||(allHistory?extraction.issuedAt:'')||'',allHistory,representative:extraction.power?.representative||null,...reviewedDates};
+ const identityDates=extraction.kind==='identity'?identityCardDates(read.pages):null;
+ const reviewContext={iin:extraction.identity.iin||client.iin||'',pages:read.totalPages,issuedAt:powerValidation?.issuedAt||identityDates?.issuedAt||extraction.issuedAt||'',expiresAt:powerValidation?.expiresAt||identityDates?.expiresAt||extraction.expiresAt||'',from:extraction.coverage?.from||extraction.bankStatement?.from||'',to:extraction.coverage?.to||extraction.bankStatement?.to||(allHistory?extraction.issuedAt:'')||'',allHistory,representative:extraction.power?.representative||null,...reviewedDates};
  return{reviews,documentReview,reviewContext,client,document:{...read,extraction},powerValidation,assessmentDay:today,findings:[...new Set(findings)],eligibleForAutofill:eligible,eligibleForDraftAutofill:draftEligible,reviewRequired:true,authenticity:'not_verified',persisted:true,caseId:record.id,identityRevision:record.identity_revision,documentId:stored.document.id,extractionId:stored.extraction.id,cacheHit};
 }
 export async function storedAnalysis(client:ClientContext,record:CaseRow,repository:EvidenceRepository,document:DocumentRow,actor:Actor,cacheOnly=false){

@@ -90,3 +90,11 @@ test('Kazakh legacy short report keeps its own layout when later guidance names 
  assert.equal(withGuidance.creditList.complete,true);
  assert.deepEqual(withGuidance,baseline,'Unrelated report descriptions must not change identity, date, loans or reconciliation');
 });
+test('bilingual digital ID dates come from its validity range, never birth date or an assumed ten-year term',()=>{
+ const card='ТЕСТОВА\nСЫНАҚ\nТЕСТОВНА\n11.07.1991\n991231300003\n123456789\nМИНИСТЕРСТВО ВНУТРЕННИХ ДЕЛ РК\n09.10.2017 - 08.10.2027\nTESTOVA<<SYNAQ<<<<<<<<<<<<';
+ const r=rules.extractNative(page(card));assert.equal(r.kind,'identity');assert.equal(r.issuedAt,'2017-10-09');assert.equal(r.expiresAt,'2027-10-08');
+ const kz=rules.extractNative(page(card.replace('МИНИСТЕРСТВО ВНУТРЕННИХ ДЕЛ РК','ҚР ІШКІ ІСТЕР МИНИСТРЛІГІ')));assert.equal(kz.kind,'identity');assert.equal(kz.issuedAt,r.issuedAt);assert.equal(kz.expiresAt,r.expiresAt);
+ const dates=rules.identityCardDates(page('ЖЕКЕ КУӘЛІК / УДОСТОВЕРЕНИЕ ЛИЧНОСТИ\nТуған күні / Дата рождения: 11.07.1991\nБерілген күні / Дата выдачи: 09.10.2017\nЖарамдылық мерзімі / Действителен до: 08.10.2027'));
+ assert.equal(dates.issuedAt,'2017-10-09');assert.equal(dates.expiresAt,'2027-10-08');
+ for(const t of ['Туған күні / Дата рождения: 11.07.1991','31.02.2020 - 01.03.2030','01.01.2030 - 01.01.2020','01.01.2020 - 01.01.2030\n02.02.2021 - 02.02.2031'])assert.equal(rules.identityCardDates(page(t)).expiresAt,null,t);
+});

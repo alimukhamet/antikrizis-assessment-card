@@ -55,7 +55,7 @@ try{
          Object.assign(result,{kind:a.document?.extraction?.kind,pages:a.document?.totalPages,issuedAt:a.reviewContext?.issuedAt,expiresAt:a.reviewContext?.expiresAt,allHistory:a.reviewContext?.allHistory,periodLabel:/Барлық\s+кезең\s*\/\s*Весь\s+период/i.test(text),periodBeforeLabel:/Весь\s+период\s*Период:/i.test(text),periodAfterLabel:/Период:\s*Барлық\s+кезең\s*\/\s*Весь\s+период/i.test(text),documentReview:a.documentReview,findings:a.findings});
          if(previewNative&&a.document?.pages){
           const preview=previewNative(a.document.pages),st=preview.bankStatement;
-          result.parserPreview={kind:preview.kind,identityMatches:!!preview.identity.iin&&preview.identity.iin===assessment.client.iin,findings:preview.findings,...(st?{statement:{from:st.from,to:st.to,rowsReadable:st.rowsReadable,reconciled:st.reconciled,topUpsVerified:st.topUpsVerified,transactions:st.transactions,reconciliation:st.reconciliation}}:{})};
+          result.parserPreview={kind:preview.kind,issuedAt:preview.issuedAt,expiresAt:preview.expiresAt,identityMatches:!!preview.identity.iin&&preview.identity.iin===assessment.client.iin,findings:preview.findings,...(st?{statement:{from:st.from,to:st.to,rowsReadable:st.rowsReadable,reconciled:st.reconciled,topUpsVerified:st.topUpsVerified,transactions:st.transactions,reconciliation:st.reconciliation}}:{})};
           if(st){
            const starts=new Map();let topUps=0n;
            for(const page of a.document.pages)for(const row of page.text.matchAll(/^\d{2}\.\d{2}\.(?:\d{4}|\d{2})\s+([+−-])\s*([\d \u00a0]+[,.]\d{2})\s*₸([^\n]*)/gm)){

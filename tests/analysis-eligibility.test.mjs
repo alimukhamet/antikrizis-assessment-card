@@ -51,3 +51,9 @@ test('valid employee inspection stays visible on reopen but never approves OCR f
  review.expiresAt='2026-09-09';r=await respond({iin:'test-client'},record,repository,stored,true);assert.equal(r.documentReview,null);
  review.expiresAt='2030-01-01';stored.result.extraction.identity.iin='other';r=await respond({iin:'test-client'},record,repository,stored,true);assert.equal(r.documentReview,null);assert.equal(r.eligibleForAutofill,false);
 });
+test('cached ID originals prefill issue and expiry without reprocessing or inventing an employee review',async()=>{
+ const native=load('lib/documents/extract-native.ts'),repo=load('lib/documents/repository.ts');
+ const {analysisResponse:respond}=load('lib/documents/analysis-service.ts',{'./extract-native':native,'./analysis-version':{analysisVersion:'test:test'},'./policy':policy,'./request-context':{operatingDay:()=> '2026-09-10'},'./repository':repo,'./document-review':{}});
+ const result=await respond({iin:'test-client'},{id:'case',client_iin:'test-client',identity_revision:1},{currentReviews:async()=>[]},{document:{id:'pdf'},extraction:{id:'unchanged-v18'},result:{read:{totalPages:1,pages:[{page:1,text:'11.07.1991\n09.10.2017 — 08.10.2027',needsOcr:false}]},extraction:{kind:'identity',identity:{iin:'test-client'},findings:[]}}},true);
+ assert.equal(result.extractionId,'unchanged-v18');assert.equal(result.reviewContext.issuedAt,'2017-10-09');assert.equal(result.reviewContext.expiresAt,'2027-10-08');assert.equal(result.documentReview,null);assert.equal(result.reviews.length,0);
+});
