@@ -85,6 +85,7 @@ jobs:
             'submission-flow.js'
             'hosted-assessment.js'
             'server-drafts.js'
+            'document-review.js'
             'server-answer-check.js'
             'money-input.js'
             'lawyer-handoff.js'

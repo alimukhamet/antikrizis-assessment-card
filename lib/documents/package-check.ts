@@ -28,21 +28,26 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
  const loaded=new Map<string,{document:Awaited<ReturnType<EvidenceRepository['document']>>;cached:Awaited<ReturnType<EvidenceRepository['cached']>>;review:Awaited<ReturnType<typeof currentDocumentReview>>}>();
  const ids=[...new Set(selectedDocuments.map(d=>d.documentId))];let nextDocument=0;
  await Promise.all(Array.from({length:Math.min(4,ids.length)},async()=>{while(nextDocument<ids.length){
-  const id=ids[nextDocument++],selected=selectedDocuments.find(d=>d.documentId===id)!,document=await repository.document(record.id,id);
+  const id=ids[nextDocument++],types=selectedDocuments.filter(d=>d.documentId===id&&d.person==='Клиент'&&MANUAL_DOCUMENT_TYPES[d.type]).map(d=>d.type),document=await repository.document(record.id,id);
   const cached=document?await repository.cached(record.id,document.original_sha256,analysisVersion):null;
-  const review=cached&&selected.person==='Клиент'&&MANUAL_DOCUMENT_TYPES[selected.type]?await currentDocumentReview(repository,record,id,cached.extraction.id,cached.result as Analysis,selected.type,day):null;
+  const review=cached&&types.length?await currentDocumentReview(repository,record,id,cached.extraction.id,cached.result as Analysis,types,day):null;
   loaded.set(id,{document,cached,review});
  }}));
  for(const selected of selectedDocuments){
   const issue=(code:string,message:string)=>issues.push({code,message,documentId:selected.documentId,type:selected.type});
-  if(seen.has(selected.documentId)){issue('DUPLICATE_DOCUMENT_SELECTION','Один файл выбран несколько раз.');continue;}seen.add(selected.documentId);
   const {document,cached,review}=loaded.get(selected.documentId)!;
+  const approved=selected.person==='Клиент'&&review?.value.type===selected.type;
+  if(seen.has(selected.documentId)){
+   issue('DUPLICATE_DOCUMENT_SELECTION','Один файл выбран несколько раз. Уберите лишнюю запись из списка файлов. Сохранённый оригинал и его проверка останутся.');
+   if(approved&&document){available.add(selected.type);manuallyReviewed.push({documentId:document.id,reviewId:review.id,type:selected.type,actorId:review.actorId,reviewedAt:review.reviewedAt});}
+   continue;
+  }seen.add(selected.documentId);
   if(!document){issue('DOCUMENT_NOT_IN_CASE','Файл не принадлежит этой оценке.');continue;}
   if(!cached){issue('DOCUMENT_PROCESSING_REQUIRED','Запустите обработку сохранённого файла.');continue;}
   const {extraction:parsed,read}=cached.result as Analysis;
   if(selected.person!=='Клиент'){issue('FAMILY_IDENTITY_VALIDATION_REQUIRED','Для документа родственника ещё нужна проверка владельца и родства.');continue;}
   if(MANUAL_DOCUMENT_TYPES[selected.type]){
-   if(review){available.add(selected.type);manuallyReviewed.push({documentId:document.id,reviewId:review.id,type:selected.type,actorId:review.actorId,reviewedAt:review.reviewedAt});continue;}
+   if(approved){available.add(selected.type);manuallyReviewed.push({documentId:document.id,reviewId:review.id,type:selected.type,actorId:review.actorId,reviewedAt:review.reviewedAt});continue;}
   }
   if(!record.client_iin||parsed.identity.iin!==record.client_iin){issue('DOCUMENT_CLIENT_UNVERIFIED','Владелец документа не подтверждён как клиент этой сделки.');continue;}
   if(!kinds[selected.type]||parsed.kind!==kinds[selected.type]){issue('DOCUMENT_TYPE_UNVERIFIED','Содержимое пока не подтверждает выбранный тип документа.');continue;}
@@ -75,8 +80,8 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
    else if(statementPeriod(parsed.bankStatement.from,parsed.bankStatement.to,day).length)issue('STATEMENT_PERIOD_NOT_ACCEPTABLE','Нужна выписка за последние 12 месяцев (полный год до даты выписки).');
    else available.add(selected.type);
   }else if(parsed.kind==='enpf'||parsed.kind==='salary'){
-   const problems=parsed.kind==='enpf'?enpfPeriod(parsed.coverage?.from||null,parsed.coverage?.to||null,parsed.issuedAt,day):salaryStatementPeriod(parsed.coverage?.from||null,parsed.coverage?.to||null,day);
-   if(problems.length)issue(problems[0].code,parsed.kind==='enpf'?'Нужна справка ЕНПФ за 12 месяцев до даты выдачи. Сверьте указанный период.':'Нужна зарплатная выписка, охватывающая последние 12 месяцев. Сверьте указанный период.');
+   const problems=parsed.kind==='enpf'?enpfPeriod(parsed.coverage?.from||null,parsed.coverage?.to||null,parsed.issuedAt,day,read.pages?.[0]?.text||''):salaryStatementPeriod(parsed.coverage?.from||null,parsed.coverage?.to||null,day);
+   if(problems.length)issue(problems[0].code,parsed.kind==='enpf'?(problems[0].code==='ENPF_PERIOD_UNVERIFIED'?'Не удалось прочитать период ЕНПФ. Сверьте его по оригиналу.':'Нужна справка ЕНПФ за последние 12 месяцев или за весь период. Сверьте даты по оригиналу.'):'Нужна зарплатная выписка, охватывающая последние 12 месяцев. Сверьте указанный период.');
    else available.add(selected.type);
   }else issue('DOCUMENT_RULES_PENDING','Сверьте владельца, даты и содержание документа по оригиналу.');
  }

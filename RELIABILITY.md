@@ -41,3 +41,9 @@ A bounded real Bitrix audit read 24 PDFs / 613 pages in six cases without modify
 Release checks assert the current launcher and all three retired methods using normal staff authentication, in addition to existing saved-case/API and public-asset checks. The signed intake test uses an explicitly disposed pinned Worker runtime; it no longer relies on a development server that could leave background processes running after its assertions finished.
 
 Automatic production asset and authenticated readback checks run inside the deployment job after publishing. The separate publication snapshot is manual-only: running it in parallel on every push could compare the previous release before deployment completed. This preserves the post-deployment gate and removes that ordering race.
+
+## Document review corrections — 21 September 2026
+
+ENPF coverage now recognizes the labelled “Весь период” value in the immutable first-page text. It uses the printed issue date, accepts the all-history coverage without inventing a start date, and retains missing-date, future-date, wrong-client and unreadable-page gates. This policy check also applies to existing cached analyses, preserving extraction receipts and employee inspections.
+
+Typed document-review fields are saved with the versioned assessment draft, keyed by document and type. They survive rechecking and reload; confirmation checkboxes and approval flags are excluded. Accepted document inspections return their saved dates. A duplicate file selected under a wrong type remains an actionable error but no longer hides a valid inspection of that same file under its correct type.

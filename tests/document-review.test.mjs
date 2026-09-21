@@ -6,6 +6,13 @@ const record={id:'case',client_iin:'test-client',identity_revision:2};
 const analysis={read:{totalPages:2,pages:[{needsOcr:true},{needsOcr:true}]},extraction:{kind:'unknown',identity:{iin:null}}};
 const input=()=>({type:'Удостоверение личности',iin:'test-client',pages:2,complete:true,contentMatches:true,periodChecked:true,reason:'Synthetic inspection of all pages',issuedAt:'2020-01-01',expiresAt:'2030-01-01',from:'',to:''});
 const check=v=>review.validateDocumentReview(v,analysis,record,'2026-09-10');
+test('all-history review uses the original label and date, never a caller-supplied all-history claim',()=>{
+ const original={read:{totalPages:1,pages:[{text:'Период: Барлық кезең / Весь период'}]},extraction:{kind:'enpf',identity:{iin:'test-client'},issuedAt:'2026-09-10',coverage:{from:null,to:null}}};
+ const v={...input(),type:'Справка ЕНПФ',pages:1,issuedAt:'2026-09-10',expiresAt:'',from:'',to:'2026-09-10'};
+ assert.equal(review.validateDocumentReview(v,original,record,'2026-09-10').from,'');
+ assert.throws(()=>review.validateDocumentReview({...v,issuedAt:'2026-09-09',to:'2026-09-09'},original,record,'2026-09-10'),/ENPF_PERIOD_NOT_ACCEPTABLE/);
+ assert.throws(()=>review.validateDocumentReview({...v,allHistory:true},{...original,read:{...original.read,pages:[{text:''}]}},record,'2026-09-10'),/ENPF_PERIOD_NOT_ACCEPTABLE/);
+});
 test('employee inspection can record unreadable extraction without approving extracted facts',()=>{const v=check(input());assert.equal(v.iin,'test-client');assert.equal(v.complete,true);assert.equal(v.authorityChecked,false);assert.equal(v.authenticity,undefined);});
 test('identity, content, completeness and expiry cannot be bypassed by a checkbox',()=>{for(const [change,error]of [[v=>v.iin='other','DOCUMENT_CLIENT_UNVERIFIED'],[v=>v.pages=1,'DOCUMENT_INSPECTION_INCOMPLETE'],[v=>v.complete=false,'DOCUMENT_INSPECTION_INCOMPLETE'],[v=>v.expiresAt='2026-09-09','DOCUMENT_DATE_NOT_ACCEPTABLE'],[v=>v.issuedAt='2026-09-11','DOCUMENT_DATE_NOT_ACCEPTABLE'],[v=>v.expiresAt='','DOCUMENT_EXPIRY_REQUIRED'],[v=>v.expiresAt='2026-02-30','DOCUMENT_DATE_NOT_ACCEPTABLE']]){const v=input();change(v);assert.throws(()=>check(v),new RegExp(error));}
  assert.throws(()=>review.validateDocumentReview(input(),{...analysis,extraction:{kind:'identity',identity:{iin:'other'}}},record,'2026-09-10'),/DOCUMENT_IDENTITY_CONFLICT/);
