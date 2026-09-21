@@ -5,6 +5,7 @@ export type Plan = { id: string; start: string; end: string; target: number | nu
 export const MONTHLY_BASE_SALARY = 100000;
 export const MONTHLY_CONTRACT_BONUS = 200000;
 export const MONTHLY_CONTRACT_BONUS_AT = 19;
+export const CONTRACT_BONUS_MONTH = '2026-06';
 export const COMPENSATION_START_MONTH = '2026-06';
 export function plansFor(person: Person): Plan[] {
   const p = (id: string, start: string, end: string, target: number | null, metric: Plan['metric'], tiers: Plan['tiers'], extra: Partial<Plan> = {}): Plan => ({ id, start: '2026-' + start, end: '2026-' + end, target, metric, tiers, ...extra });
@@ -50,7 +51,7 @@ export function monthlyEarnings(month: string, periods: CalculatedPeriod[], toda
   const [year, number] = month.split('-').map(Number);
   const monthEnd = new Date(Date.UTC(year, number, 0)).toISOString().slice(0, 10);
   const baseSalary = month >= COMPENSATION_START_MONTH && today >= monthEnd ? MONTHLY_BASE_SALARY : 0;
-  const contractBonus = month >= COMPENSATION_START_MONTH && count >= MONTHLY_CONTRACT_BONUS_AT ? MONTHLY_CONTRACT_BONUS : 0;
+  const contractBonus = month === CONTRACT_BONUS_MONTH && count >= MONTHLY_CONTRACT_BONUS_AT ? MONTHLY_CONTRACT_BONUS : 0;
   return {
     id: month,
     count,
