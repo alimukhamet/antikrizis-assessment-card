@@ -2,7 +2,7 @@ import {compareGkb,creditorKey} from './gkb-comparison.mjs';
 const make=(tag,text,cls)=>{const node=document.createElement(tag);if(text)node.textContent=text;if(cls)node.className=cls;return node;};
 const amount=value=>value===null?'сумма требует сверки':Number(value).toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₸';
 const captions={matched:'Кредиты сверены',reviewed:'Суммы подтверждены',mismatch:'ГКБ: расхождение',unavailable:'ГКБ: не сверены'};
-let inspectionKey='',inspection=null,inspectionError='',inspectionPending=null,attempt=null,busy=false;
+let inspectionKey='',inspection=null,inspectionError='',inspectionPending=null,attempt=null,busy=false,activeLoan=null;
 const rowDrafts=new Map();
 function pair(){
  const context=HostedAssessment.getContext(),reports=selectedFiles.filter(item=>item.person==='Клиент').map(item=>af.results.get(item.id)).filter(r=>r?.server?.dealId===context?.client.external.dealId);
@@ -53,28 +53,33 @@ function reconcileAttempt(){
  const draft=rowDrafts.get(editorKey(b)),saved=decisionFor(b);
  if(draft&&saved&&draft.decision===saved.decision&&((draft.decision==='reject')||(rowConfirmed(b)&&(draft.decision!=='correct'||sameAmount(normalized(draft.amount),saved.amount)&&draft.reason.trim()===saved.reason)))){rowDrafts.delete(editorKey(b));attempt=null;}
 }
+function editRow(b){const draft=editor(b);draft.decision='correct';activeLoan=b.fullIndex;render();dialog.querySelector(`[data-gkb-loan="${b.fullIndex}"] [data-gkb-amount]`)?.focus();}
 function renderEditor(b){
- const box=make('div',null,'gkb-loan-editor'),saved=decisionFor(b),key=editorKey(b);box.dataset.gkbLoan=String(b.fullIndex);
- if(rowConfirmed(b)&&!rowDrafts.has(key)){
-  box.append(make('p','✓ Сохранено: '+amount(saved.amount)+(saved.decision==='correct'?' · исправлено сотрудником':''),'gkb-saved'));
-  if(saved.decision==='correct')box.append(make('p',saved.reason));
-  box.append(button('Изменить',()=>{editor(b);render();}),button('Отменить подтверждение',()=>saveRow(b,'withdraw')));return box;
+ const box=make('div',null,'gkb-loan-editor'),saved=decisionFor(b),key=editorKey(b),draft=rowDrafts.get(key);box.dataset.gkbLoan=String(b.fullIndex);
+ if(draft?.decision==='correct'){
+  const save=button('Сохранить сумму',()=>saveRow(b,'confirm'));save.className='btn btn-main';save.disabled=!validEditor(draft);save.dataset.gkbSave='';
+  const fields=make('div',null,'gkb-edit-fields');
+  const amountLabel=make('label','Сумма долга, ₸'),input=make('input');input.type='text';input.inputMode='decimal';input.value=draft.amount;input.dataset.gkbAmount='';input.setAttribute('aria-label','Сумма долга, ₸');input.oninput=()=>{draft.amount=input.value;save.disabled=!validEditor(draft);};amountLabel.append(input);
+  const reasonLabel=make('label','Источник или причина'),reason=make('textarea');reason.rows=2;reason.maxLength=600;reason.value=draft.reason;reason.placeholder='Документ и страница';reason.dataset.gkbReason='';reason.setAttribute('aria-label','Источник или причина');reason.oninput=()=>{draft.reason=reason.value;save.disabled=!validEditor(draft);};reasonLabel.append(reason);fields.append(amountLabel,reasonLabel);box.append(fields,save,button('Отмена',()=>{rowDrafts.delete(key);render();}));return box;
  }
- if(saved?.decision==='reject'&&!rowDrafts.has(key)){box.append(make('p','Не подтверждено. Проверьте кредитора и полный номер договора или запросите правильный отчёт. Кредит остаётся в анкете.','gkb-unresolved'),button('Проверить заново',()=>{editor(b);render();}));return box;}
- const draft=editor(b),choices=make('div',null,'gkb-row-choices');choices.setAttribute('role','group');choices.setAttribute('aria-label','Решение по кредиту '+b.contractNumber);
- for(const [value,label] of [['confirm','Верно'],['correct','Исправить сумму'],['reject','Не этот договор']]){const control=button(label,()=>{draft.decision=value;render();if(value==='correct')dialog.querySelector(`[data-gkb-loan="${b.fullIndex}"] [data-gkb-amount]`)?.focus();});control.setAttribute('aria-pressed',String(draft.decision===value));choices.append(control);}box.append(choices);
- const save=button(draft.decision==='reject'?'Сохранить: не подтверждено':draft.decision==='correct'?'Сохранить исправление':'Подтвердить сумму',()=>saveRow(b,'confirm'));save.className='btn btn-main';save.disabled=!validEditor(draft);save.dataset.gkbSave='';
- if(draft.decision==='correct'){
-  const amountLabel=make('label','Верная сумма долга, ₸'),input=make('input');input.type='text';input.inputMode='decimal';input.value=draft.amount;input.dataset.gkbAmount='';input.setAttribute('aria-label','Верная сумма долга, ₸');input.oninput=()=>{draft.amount=input.value;save.disabled=!validEditor(draft);};amountLabel.append(input);
-  const reasonLabel=make('label','Почему исправлено / источник'),reason=make('textarea');reason.rows=2;reason.maxLength=600;reason.value=draft.reason;reason.placeholder='Что указано в документе и на какой странице';reason.dataset.gkbReason='';reason.setAttribute('aria-label','Почему исправлено / источник');reason.oninput=()=>{draft.reason=reason.value;save.disabled=!validEditor(draft);};reasonLabel.append(reason);box.append(amountLabel,reasonLabel);
- }else if(draft.decision==='reject')box.append(make('p','Кредит останется в анкете. Для завершения нужна повторная сверка или правильный отчёт.'));
- else if(draft.decision==='confirm')box.append(make('p','Кредитор и номер договора проверены. В анкету: '+amount(b.amount)+'.'));
- if(draft.decision)box.append(save);return box;
+ if(saved?.decision==='reject')box.append(make('p','Уточните кредитора и номер договора. Кредит остаётся в анкете.','gkb-unresolved'));
+ const confirm=button('Подтвердить сумму',()=>{editor(b).decision='confirm';saveRow(b,'confirm');});confirm.className='btn btn-main';confirm.dataset.gkbSave='';box.append(confirm,button('Изменить',()=>editRow(b)));
+ const other=make('details',null,'gkb-row-options');other.append(make('summary','Договор не совпадает?'),button('Отметить несовпадение',()=>{editor(b).decision='reject';saveRow(b,'confirm');}));box.append(other);return box;
 }
 function renderRow(row,result){
  const choice=result?.inspection?.plan.balances.find(b=>creditorKey(b.creditor)===creditorKey(row.name)&&b.aliases.some(id=>[row.full?.contractNumber,row.full?.contractCode].includes(id)));
  const box=make('article',null,'gkb-row '+row.status),head=make('div',null,'gkb-row-head');head.append(make('strong',row.name),make('span','№ '+(choice?.contractNumber||row.number)));box.append(head);
- if(!choice&&row.reason)box.append(make('p',row.reason));
+ if(choice){
+  box.dataset.gkbRow=String(choice.fullIndex);
+  const saved=decisionFor(choice),editing=rowDrafts.get(editorKey(choice))?.decision==='correct';
+  if(rowConfirmed(choice)&&!editing){
+   box.classList.add('gkb-row-compact');const line=make('div',null,'gkb-saved-line');line.append(make('span','✓ '+amount(saved.amount)+(saved.decision==='correct'?' · исправлено':' · подтверждено')));
+   const more=make('details');more.append(make('summary','Изменить'),button('Изменить сумму',()=>editRow(choice)),button('Отменить подтверждение',()=>{activeLoan=choice.fullIndex;saveRow(choice,'withdraw');}));if(saved.reason)more.append(make('p',saved.reason));line.append(more);box.append(line);return box;
+  }
+  if(activeLoan!==choice.fullIndex&&!editing){box.classList.add('gkb-row-compact');const line=make('div',null,'gkb-saved-line');line.append(make('span',saved?.decision==='reject'?'Нужно уточнить договор':'Ожидает проверки'),button('Открыть',()=>{activeLoan=choice.fullIndex;render();}));box.append(line);return box;}
+  box.classList.add('gkb-row-active');
+  if(!editing){box.append(make('span','Сумма из краткого ГКБ','gkb-amount-label'),make('div',amount(choice.amount),'gkb-main-amount'));}
+ }else if(row.reason)box.append(make('p',row.reason));
  const sources=make('div',null,'gkb-sources');
  for(const [key,title] of [['short','Краткий'],['full','Полный']]){
   const source=row[key];if(!source){sources.append(make('span',title+': договор не сопоставлен'));continue;}
@@ -83,12 +88,13 @@ function renderRow(row,result){
   if(!choice&&source.days!==null){const label='Просрочка: '+source.days+' дн.';block.append(source.daysPage!==source.page?button(label,()=>openSource({...source,page:source.daysPage,quote:'Количество дней просрочки'})):make('span',label));}
   sources.append(block);
  }
- box.append(sources);if(choice)box.append(renderEditor(choice));else {const field=loanField(row);if(field)box.append(button('К вопросу',()=>{dialog.close();afFocus(field);}));}return box;
+ if(choice){const details=make('details',null,'gkb-source-details');details.append(make('summary','Сравнить источники'),sources);box.append(details,renderEditor(choice));}else{box.append(sources);const field=loanField(row);if(field)box.append(button('К вопросу',()=>{dialog.close();afFocus(field);}));}return box;
 }
 function render(){
- const result=current(),editing=result.inspection?.plan.balances.some(b=>rowDrafts.has(editorKey(b))),head=make('div',null,'gkb-dialog-head'),title=make('h2','Сверка кредитов');title.id='gkbComparisonTitle';head.append(title,button('Закрыть',()=>dialog.close()));dialog.replaceChildren(head);
- dialog.append(make('p',result.confirmed?(editing?'Изменения ещё не сохранены. Сохраните решение по кредиту.':'Все решения сохранены.'):result.inspection?'Проверьте каждый отмеченный кредит: подтвердите сумму или исправьте её здесь.':result.status==='matched'?'Кредиты сопоставлены. Сокращённые номера не мешают продолжить.':result.status==='mismatch'?'Найдены различия между отчётами.':'Нужно проверить отмеченные кредиты.','gkb-verdict '+result.status));
- if(result.inspection)dialog.append(make('p','Активных кредитов: '+result.inspection.plan.activeLoans+'. Все остаются в анкете. В полном ГКБ не указаны суммы: '+result.inspection.plan.balances.length+'.'));
+ const result=current(),editing=result.inspection?.plan.balances.some(b=>rowDrafts.get(editorKey(b))?.decision==='correct'),head=make('div',null,'gkb-dialog-head'),title=make('h2',result.inspection?'Суммы кредитов':'Сверка кредитов');title.id='gkbComparisonTitle';head.append(title,button('Закрыть',()=>dialog.close()));dialog.replaceChildren(head);
+ if(result.inspection&&!result.inspection.plan.balances.some(b=>b.fullIndex===activeLoan&&!rowConfirmed(b)))activeLoan=result.inspection.plan.balances.find(b=>!rowConfirmed(b))?.fullIndex??null;
+ dialog.append(make('p',result.confirmed?(editing?'Изменения не сохранены.':'Все суммы подтверждены.'):result.inspection?'Подтвердите сумму или укажите правильную.':result.status==='matched'?'Кредиты сопоставлены. Сокращённые номера не мешают продолжить.':result.status==='mismatch'?'Найдены различия между отчётами.':'Нужно проверить отмеченные кредиты.','gkb-verdict '+result.status));
+ if(result.inspection)dialog.append(make('p','В анкете '+result.inspection.plan.activeLoans+' активных кредитов.'));
  else if(result.reason)dialog.append(make('p',result.reason));
  if(result.rows.length){
   if(!result.inspection){const totals=make('div',null,'gkb-totals');totals.append(make('span','Краткий: '+amount(result.shortTotal)),make('span','Полный: '+amount(result.fullTotal)));dialog.append(totals);}
@@ -96,7 +102,7 @@ function render(){
   const matched=result.rows.filter(r=>r.status==='matched');if(matched.length){const fold=make('details');fold.append(make('summary','Совпадают · '+matched.length));for(const row of matched)fold.append(renderRow(row,result));dialog.append(fold);}
  }else for(const report of result.reports)dialog.append(button(report.kind==='gkbShort'?'Открыть краткий ГКБ':'Открыть полный ГКБ',()=>openSource({fileId:report.fileId,page:1})));
  const actions=make('div',null,'gkb-review-actions'),status=make('p',inspectionError||(inspectionPending?'Загружаем сохранённые решения…':''));status.setAttribute('role','status');status.dataset.gkbReviewStatus='';
- if(result.inspection){const count=result.inspection.plan.balances.filter(b=>rowConfirmed(b)).length;actions.append(make('strong','Сохранено '+count+' из '+result.inspection.plan.balances.length),make('span',' · каждый кредит сохраняется отдельно'));}
+ if(result.inspection){const count=result.inspection.plan.balances.filter(b=>rowConfirmed(b)).length;actions.append(make('strong','Сохранено '+count+' из '+result.inspection.plan.balances.length),make('span',' · в полном ГКБ суммы не указаны'));}
  if(inspectionError)actions.append(button('Обновить сверку',()=>inspect(true)));
  actions.append(status);dialog.append(actions);if(busy)dialog.querySelectorAll('button,input,textarea').forEach(node=>node.disabled=true);
 }
@@ -119,10 +125,10 @@ async function saveRow(balance,action){
   if(pair()?.key!==p.key||field&&(!field.isConnected||!sameAmount(field.value,chosenAmount)))throw Error('Ответы или клиент изменились. Откройте сверку заново.');
   await request(p,{...body,requestId:attempt.requestId});
   if(pair()?.key!==p.key)return;
-  rowDrafts.delete(snapshot.planKey+':'+balance.fullIndex);attempt=null;busy=false;await inspect(true);await window.AssessmentCheck?.documents();refresh();
+  rowDrafts.delete(snapshot.planKey+':'+balance.fullIndex);attempt=null;busy=false;await inspect(true);activeLoan=inspection?.plan.balances.find(b=>!rowConfirmed(b))?.fullIndex??null;await window.AssessmentCheck?.documents();refresh();if(activeLoan!==null)dialog.querySelector(`[data-gkb-row="${activeLoan}"]`)?.scrollIntoView?.({block:'nearest'});
  }catch(error){if(pair()?.key===p.key){inspectionError=error.message;busy=false;render();}}finally{busy=false;}
 }
 function open(){inspect(Boolean(inspectionError));render();dialog.showModal();}
-document.addEventListener('assessment-case-opened',()=>{inspectionKey='';inspection=null;inspectionError='';inspectionPending=null;attempt=null;rowDrafts.clear();dialog.close();});
-window.GkbComparison={open,resolved(fileId){inspect();const result=current();return ['matched','reviewed'].includes(result.status)&&result.reports.some(r=>r.fileId===fileId&&r.kind==='gkbShort');},statusButton(){inspect();const status=current().status,b=button(captions[status],event=>{event.preventDefault();event.stopPropagation();open();});b.className='wf-gkb-status '+status;b.setAttribute('aria-haspopup','dialog');b.title='Сверить исходные отчёты по каждому договору';return b;}};
+document.addEventListener('assessment-case-opened',()=>{inspectionKey='';inspection=null;inspectionError='';inspectionPending=null;attempt=null;rowDrafts.clear();activeLoan=null;dialog.close();});
+window.GkbComparison={open,task(){inspect();const result=current();if(!result.inspection)return null;const pending=result.inspection.plan.balances.filter(b=>!rowConfirmed(b)).length;return {pending,activeLoans:result.inspection.plan.activeLoans,label:pending===1?'Проверьте сумму по 1 кредиту':'Проверьте суммы по '+pending+' кредитам'};},resolved(fileId){inspect();const result=current();return ['matched','reviewed'].includes(result.status)&&result.reports.some(r=>r.fileId===fileId&&r.kind==='gkbShort');},statusButton(){inspect();const status=current().status,b=button(captions[status],event=>{event.preventDefault();event.stopPropagation();open();});b.className='wf-gkb-status '+status;b.setAttribute('aria-haspopup','dialog');b.title='Сверить исходные отчёты по каждому договору';return b;}};
 window.AssessmentWorkflow?.refresh();

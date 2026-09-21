@@ -25,12 +25,12 @@ function choose(s,kind='Доверенность',stored=true){
  s.run(`selectedFiles.push({id:++fileSequence,type:${JSON.stringify(kind)},person:'Клиент',file:new File(['SYNTHETIC'],'wrong.pdf',{type:'application/pdf'}),${stored?"storedDocumentId:'stored-original'":''}});renderDocuments();afRenderResults();FileSelectionControls.refresh();`);
  return s.run('selectedFiles.at(-1)');
 }
-test('new assessment shows remove next to pending, failed and saved files without opening hidden assignments',async t=>{
+test('file actions are inside expandable pending, failed and saved file rows',async t=>{
  const s=await assessment(t);choose(s,'Доверенность',false);choose(s,'Справка ЕНПФ');choose(s,'Удостоверение личности');s.run("af.results.set(2,{error:'Unreadable'});afRenderResults();");
  const buttons=[...s.d.querySelectorAll('#afFileResults .file-selection-remove')];assert.equal(buttons.length,3);
- for(const button of buttons){assert.equal(button.closest('details.af-file'),null);assert.equal(button.disabled,false);}
- assert.equal(s.d.querySelectorAll('.af-file-filename').length,3);
- buttons[0].click();assert.equal(s.run('selectedFiles.length'),2);
+ for(const button of buttons){assert.ok(button.closest('details.af-file'));assert.equal(button.closest('details.af-file').open,false);assert.equal(button.disabled,false);}
+ assert.equal(s.d.querySelectorAll('.af-file .af-original-name').length,3);
+ buttons[0].closest('details.af-file').querySelector('summary').click();buttons[0].click();assert.equal(s.run('selectedFiles.length'),2);
  assert.equal(s.w.ServerDrafts.capture().pendingFiles.length,0);
 });
 test('removing an analyzed file excludes its original and invalidates sourced answers without erasing typed answers',async t=>{

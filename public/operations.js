@@ -21,7 +21,7 @@
  const refresh=make('button','Проверить состояние','btn btn-ghost');refresh.id='handoffRefresh';refresh.type='button';
  const cancel=make('button','Отменить подготовку','btn btn-ghost');cancel.id='handoffCancel';cancel.type='button';cancel.hidden=true;handoff.append(refresh,cancel);wrap.append(handoff);
  if(mode==='contract'){
-  const next=make('section',null,'ux-signing-next');next.append(make('h3','После скачивания договора'),make('p','Загрузите договор в TrustMe. После подписания скачайте PDF с QR и откройте «Передать юристам». ЭЦП и доверенность потребуются только там.'));
+  const next=make('details',null,'ux-signing-next');next.append(make('summary','После скачивания договора'),make('p','Подпишите договор в TrustMe, затем передайте подписанный PDF юристам.'));
   const link=make('a','Договор уже подписан → Передать юристам','btn btn-ghost');link.dataset.clientPath='/lawyer-handoff';link.href='/lawyer-handoff';link.target='_top';next.append(link);document.querySelector('.wf-final-actions').append(next);
  }
  ClientContextUI.sync();

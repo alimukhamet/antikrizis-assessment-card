@@ -257,3 +257,36 @@ body[data-assessment-workflow] .af-busy .af-file{opacity:.6}
 .money-native{position:absolute!important;width:1px!important;height:1px!important;min-width:1px!important;min-height:1px!important;padding:0!important;margin:0!important;opacity:0!important;pointer-events:none!important;clip-path:inset(50%)}
 
 .gkb-dialog .gkb-review-actions{font-size:13px;padding:10px 0}.gkb-loan-editor{margin:8px 0 2px}.gkb-row-choices{display:flex;flex-wrap:wrap;gap:8px}.gkb-row-choices [aria-pressed="true"]{background:#245d39;color:#fff;border-color:#245d39}.gkb-loan-editor label{display:block;font-size:13px;font-weight:600;margin:10px 0}.gkb-loan-editor input,.gkb-loan-editor textarea{display:block;width:100%;max-width:100%;box-sizing:border-box;margin-top:5px;padding:9px 10px;border:1px solid #b9cfbc;border-radius:8px;font:inherit;font-weight:400;background:#fff;color:#243c2c}.gkb-loan-editor input{max-width:260px;font-size:16px}.gkb-loan-editor .btn{margin-right:8px}.gkb-loan-editor .gkb-saved{color:#245d39;font-weight:600}.gkb-unresolved{color:#9b491e}.gkb-dialog .gkb-loan-editor .btn-main{font-size:14px;min-height:40px}
+
+/* Manager preview: one task, compact evidence list and one active loan. */
+body[data-assessment-workflow] .af-file-entry{display:block;border:0;border-bottom:1px solid #dbe3dc;border-radius:0;padding:4px 0;margin:0}
+body[data-assessment-workflow] .af-file-entry .af-file>summary{padding:10px 0;min-height:42px;gap:12px}
+body[data-assessment-workflow] .af-file-entry .af-file>summary>strong{flex:1;font-size:14px;font-weight:500}
+body[data-assessment-workflow] .af-file-entry .af-file-state{font-size:12px}
+body[data-assessment-workflow] .af-file-entry .file-selection-actions{margin:12px 0}
+body[data-assessment-workflow] .wf-collection-header{align-items:center}
+body[data-assessment-workflow] .wf-collection-header .btn-main{font-weight:600}
+.wf-intake-details{font-size:13px;color:#536e5c;margin-bottom:10px}
+.wf-intake-details>summary{cursor:pointer;padding:6px 0}
+.wf-intake-details[open]>.fields{margin-top:10px}
+.wf-contract-tools{font-size:14px}
+.wf-contract-tools>summary{cursor:pointer;padding:4px 0}
+.wf-contract-tools[open]>.btn{margin-top:12px}
+.ux-signing-next>summary{cursor:pointer;font-size:14px;color:#536e5c}
+.ux-signing-next[open]>p{margin-top:10px}
+.gkb-dialog .gkb-row-active{padding:16px 0 20px}
+.gkb-dialog .gkb-row-compact{padding:12px 0}
+.gkb-dialog .gkb-amount-label{display:block;font-size:12px;color:#66766b;margin:18px 0 3px}
+.gkb-dialog .gkb-main-amount{font-size:28px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+.gkb-source-details{font-size:13px;margin:12px 0 16px;color:#536e5c}
+.gkb-source-details>summary{cursor:pointer;color:#245c36}
+.gkb-saved-line{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:8px;font-size:13px;color:#536e5c}
+.gkb-saved-line>details>summary{cursor:pointer}
+.gkb-saved-line>details[open]{max-width:70%}
+.gkb-saved-line>details .btn{margin:4px 4px 4px 0}
+.gkb-row-options{margin-top:12px;font-size:12px;color:#66766b}
+.gkb-row-options>summary{cursor:pointer}
+.gkb-row-options[open]>.btn{margin-top:8px}
+.gkb-edit-fields{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+.gkb-edit-fields input{max-width:none}.gkb-edit-fields textarea{min-height:62px}
+@media(max-width:560px){.gkb-edit-fields{grid-template-columns:1fr;gap:0}.wf-collection-header .btn-main{width:100%;margin-top:8px}.gkb-dialog .gkb-main-amount{font-size:24px}.gkb-saved-line{flex-wrap:wrap}.gkb-saved-line>details[open]{max-width:100%}}

@@ -120,7 +120,7 @@ test('navigation and source shortcuts reveal their fields without mutating the d
 
 test('step changes preserve a checked snapshot; editing an answer invalidates it',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();
- const save=[...s.d.querySelectorAll('button')].find(node=>node.textContent==='Сохранить и скачать');
+ const save=[...s.d.querySelectorAll('button')].find(node=>node.textContent==='Скачать договор');
  assert.equal(save.disabled,false);
  await s.d.getElementById('checkQuestions').onclick();assert.equal(save.disabled,false);
  for(const name of ['documents','answers','contract']){s.w.AssessmentWorkflow.show(name,{focus:false});assert.equal(save.disabled,false);}
@@ -213,7 +213,7 @@ test('package status separates an unfinished upload from missing files and keeps
  s.run('af.busy=true');s.w.AssessmentWorkflow.refresh();assert.match(notice.textContent,/Получаем список документов/);assert.equal(notice.querySelectorAll('button').length,0);
  s.run(`af.busy=false;selectedFiles[0].storedDocumentId='uploaded-original';af.results.delete(selectedFiles[0].id);`);
  s.d.dispatchEvent(new s.w.Event('assessment-analysis-complete'));
- assert.equal(s.w.AssessmentWorkflow.collection().ready,true);assert.equal(notice.hidden,false);assert.match(notice.textContent,/Проверьте замечания · 1/);assert.match(notice.textContent,/8 из 8/);
+ assert.equal(s.w.AssessmentWorkflow.collection().ready,true);assert.equal(notice.hidden,false);assert.match(notice.textContent,/Нужно проверить · 1/);assert.match(notice.textContent,/8 из 8/);
 });
 
 test('the missing package list updates with benefit and salary answers and after draft restoration',async t=>{
@@ -349,8 +349,8 @@ test('replacement keeps typed answers and persists the retired source as a final
 test('an unreadable stored scan stays openable without document-condition answers',async t=>{
  const s=setup(t);await s.load();s.mount();
  s.run(`selectedFiles=[{id:1,type:'Удостоверение личности',person:'Клиент',storedDocumentId:'scan',file:{name:'scan.pdf'}}];af.results.set(1,{kind:'other',blocked:true,notes:['Тип документа не установлен по содержимому.']});afRenderResults();`);
- const row=s.d.querySelector('.af-file');assert.match(row.querySelector('summary').textContent,/Тип не определён.*Сверить вручную/);assert.ok(!row.querySelector('summary .needs-review'));assert.match(row.textContent,/Выбран как: Удостоверение личности/);
- assert.ok([...row.querySelectorAll('button')].some(b=>b.textContent==='Открыть документ'));const replacement=row.closest('.af-file-entry').querySelector('.af-replace-document');assert.ok(replacement);assert.equal(replacement.closest('details.af-file'),null);assert.equal(row.querySelector('.af-document-notes').open,false);
+ const row=s.d.querySelector('.af-file');assert.match(row.querySelector('summary').textContent,/Тип не определён.*Нужно проверить/);assert.ok(row.querySelector('summary .needs-review'));assert.match(row.textContent,/Выбран как: Удостоверение личности/);
+ assert.ok([...row.querySelectorAll('button')].some(b=>b.textContent==='Открыть документ'));const replacement=row.closest('.af-file-entry').querySelector('.af-replace-document');assert.ok(replacement);assert.equal(replacement.closest('details.af-file'),row);assert.equal(row.querySelector('.af-document-notes').open,false);
 });
 test('replacement actions become enabled when restored documents finish reading',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();
@@ -372,10 +372,10 @@ test('first intake requires the two context answers before any file analysis or 
 test('finished package offers the loan comparison directly for shortened IDs',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();
  s.run("af.results.set(1,{blocked:true,findings:['SHORT_CONTRACT_ID_TRUNCATED'],identity:{iin:'991231300003'},server:{dealId:'11665',documentId:'synthetic-0'}});afRenderResults();afRefresh();");
- let comparisons=0;s.w.GkbComparison={open(){comparisons++;},statusButton(){return s.d.createElement('button');}};const notice=s.d.getElementById('workflowCollection');assert.match(notice.textContent,/сопоставить кредиты/);
+ let comparisons=0;s.w.GkbComparison={open(){comparisons++;},statusButton(){return s.d.createElement('button');}};const notice=s.d.getElementById('workflowCollection');assert.match(notice.textContent,/Сверьте кредиты/);
  const compare=notice.querySelector('[data-package-attention="1"] button');assert.equal(compare.textContent,'Сверить кредиты');compare.click();assert.equal(comparisons,1);
  s.run("af.busy=true;afAnalysisProgress(2,7)");assert.match(notice.textContent,/Прочитано документов · 2 из 7/);assert.equal(notice.querySelector('[data-package-attention]'),null);
- s.run("af.busy=false;af.progress=null;document.dispatchEvent(new CustomEvent('assessment-analysis-complete',{detail:{showPackageSummary:true}}))");assert.equal(s.d.activeElement.id,'workflowCollection');assert.match(notice.textContent,/сопоставить кредиты/);
+ s.run("af.busy=false;af.progress=null;document.dispatchEvent(new CustomEvent('assessment-analysis-complete',{detail:{showPackageSummary:true}}))");assert.equal(s.d.activeElement.id,'workflowCollection');assert.match(notice.textContent,/Сверьте кредиты/);
 });
 test('an unreadable ENPF period offers direct manual review',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();let opened=null;s.w.DocumentReview.open=async id=>{opened=id;};
@@ -394,7 +394,7 @@ test('automatic analysis requests only the new document and retains the stored r
 });
 
 
-test('the document next action targets the missing EDS step and checks once before opening answers',async t=>{
+test('document navigation targets missing EDS steps but never confirms documents or submits data',async t=>{
  const s=setup(t);await s.load();const collected=s.w.CredentialUpload.collected;collect(s);s.w.CredentialUpload.collected=collected;
  s.run("selectedFiles.push({id:99,type:'ЭЦП файл',person:'Клиент',file:new File(['SYNTHETIC KEY'],'synthetic.p12')})");s.mount();
  const password=s.d.getElementById('previewEdsPassword'),owner=password.closest('.field').querySelector('input[type=checkbox]'),next=s.d.querySelector('.wf-bottom-nav .btn-main');
@@ -402,8 +402,8 @@ test('the document next action targets the missing EDS step and checks once befo
  password.value='SYNTHETIC-SECRET';password.dispatchEvent(new s.w.Event('input',{bubbles:true}));await Promise.resolve();
  assert.equal(next.textContent,'Подтвердить владельца ЭЦП');next.click();assert.equal(s.d.activeElement,owner);
  owner.checked=true;owner.dispatchEvent(new s.w.Event('change',{bubbles:true}));await Promise.resolve();
- assert.equal(next.textContent,'Проверить и продолжить →');next.click();next.click();await new Promise(resolve=>setTimeout(resolve,0));
- assert.equal(s.d.body.dataset.assessmentWorkflow,'answers');assert.equal(s.calls.filter(c=>c.path.endsWith('/check')).length,1);
+ assert.equal(next.textContent,'К ответам →');next.click();await new Promise(resolve=>setTimeout(resolve,0));
+ assert.equal(s.d.body.dataset.assessmentWorkflow,'answers');assert.equal(s.calls.filter(c=>c.path.endsWith('/check')).length,0);assert.equal(s.calls.some(c=>c.method==='POST'&&/document-reviews|gkb-reviews|submission/.test(c.path)),false);
  assert.equal(s.calls.filter(c=>c.method==='POST'&&c.path.endsWith('/credentials')).length,0);
  assert.doesNotMatch(JSON.stringify(s.capture()),/SYNTHETIC-SECRET|SYNTHETIC KEY/);
 });
@@ -416,19 +416,21 @@ test('loan status hides monthly payment for default and keeps identifiers visibl
  find('loanStatus').value='Платится по графику';find('loanStatus').dispatchEvent(new s.w.Event('change',{bubbles:true}));await Promise.resolve();assert.equal(find('n8041').required,true);assert.equal(find('n8041').closest('.field').classList.contains('hidden'),false);
 });
 
-test('a failed document check stays on documents and displays an actionable error',async t=>{
+test('explicit document checking still reports failure without approving documents',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();const fetch=s.w.fetch;
  s.w.fetch=async(path,options)=>path.endsWith('/check')?{ok:false,json:async()=>({})}:fetch(path,options);
- s.d.querySelector('.wf-bottom-nav .btn-main').click();await new Promise(resolve=>setTimeout(resolve,0));
+ s.d.querySelector('.wf-review-details').open=true;s.d.getElementById('checkDocuments').click();await new Promise(resolve=>setTimeout(resolve,0));
  assert.equal(s.d.body.dataset.assessmentWorkflow,'documents');assert.equal(s.d.querySelector('.wf-review-details').open,true);
- assert.match(s.d.getElementById('documentCheckStatus').textContent,/Не удалось/);assert.equal(s.d.querySelector('.wf-bottom-nav .btn-main').textContent,'Проверить и продолжить →');
+ assert.match(s.d.getElementById('documentCheckStatus').textContent,/Не удалось/);assert.equal(s.d.querySelector('.wf-bottom-nav .btn-main').textContent,'К ответам →');
 });
 
-test('check and continue opens unresolved document inspection before advancing to answers',async t=>{
+test('document navigation leaves issues unresolved and final download returns to their inspection',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();const fetch=s.w.fetch;
  const selected=s.capture().documents.find(item=>item.type==='Справка ЕНПФ');
  s.w.fetch=async(path,options)=>path.endsWith('/check')?{ok:true,json:async()=>({identityRevision:1,answersComplete:true,readyToSubmit:false,issues:[],evidence:{issues:[]},documents:{issues:[{code:'ENPF_PERIOD_UNVERIFIED',documentId:selected.documentId,message:'Сверьте период по оригиналу.'}],manuallyReviewed:[]}})}:fetch(path,options);
  s.d.querySelector('.wf-bottom-nav .btn-main').click();await new Promise(resolve=>setTimeout(resolve,0));
+ assert.equal(s.d.body.dataset.assessmentWorkflow,'answers');
+ const result=await s.w.AssessmentCheck.documents();s.d.dispatchEvent(new s.w.CustomEvent('assessment-submission-blocked',{detail:{reason:'documents',result}}));
  const review=s.d.querySelector(`[data-review-document-id="${selected.documentId}"]`);
  assert.equal(s.d.body.dataset.assessmentWorkflow,'documents');assert.equal(review.open,true);assert.equal(s.d.activeElement,review.querySelector('summary'));assert.match(review.textContent,/Сверьте период по оригиналу/);
  assert.equal(s.calls.some(call=>call.method==='POST'&&call.path.endsWith('/submission')),false);

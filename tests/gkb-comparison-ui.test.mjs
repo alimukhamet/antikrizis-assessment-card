@@ -30,26 +30,26 @@ async function reviewFixture(t,{saveOk=true,loseFirstResponse=false,count=1}={})
  return{w,d,calls,order,plan,choose(label,i=0){[...box(i).querySelectorAll('button')].find(b=>b.textContent===label).click();},input(selector,value,i=0){const el=box(i).querySelector(selector);el.value=value;el.dispatchEvent(new w.Event('input'));},save(i=0){box(i).querySelector('[data-gkb-save]').click();},async settled(){await new Promise(resolve=>setTimeout(resolve,0));}};
 }
 test('per-loan confirmation saves first and reuses a lost request without changing another answer',async t=>{
- const s=await reviewFixture(t,{loseFirstResponse:true});assert.match(s.d.body.textContent,/CONTRACT-0-123/);assert.match(s.d.body.textContent,/Страница 2/);assert.equal(s.d.querySelector('[data-gkb-save]'),null);
- s.choose('Верно');s.save();await s.settled();assert.match(s.d.body.textContent,/Ответ потерян/);assert.equal(s.d.getElementById('n8040_r0').value,'1250.25');assert.equal(s.d.getElementById('unrelated').value,'leave this answer');
- s.save();await s.settled();assert.match(s.d.body.textContent,/Все решения сохранены/);assert.equal(s.w.GkbComparison.resolved(1),true);
+ const s=await reviewFixture(t,{loseFirstResponse:true});assert.match(s.d.body.textContent,/CONTRACT-0-123/);assert.match(s.d.body.textContent,/Страница 2/);assert.equal(s.d.querySelector('[data-gkb-save]').textContent,'Подтвердить сумму');
+ s.save();await s.settled();assert.match(s.d.body.textContent,/Ответ потерян/);assert.equal(s.d.getElementById('n8040_r0').value,'1250.25');assert.equal(s.d.getElementById('unrelated').value,'leave this answer');
+ s.save();await s.settled();assert.match(s.d.body.textContent,/Все суммы подтверждены/);assert.equal(s.w.GkbComparison.resolved(1),true);
  const mutations=s.calls.filter(c=>c.action==='confirm');assert.equal(mutations.length,2);assert.equal(mutations[0].requestId,mutations[1].requestId);assert.deepEqual(s.order,['draft','review','draft','review','check']);
  s.d.getElementById('gkbComparisonDialog').close();s.w.GkbComparison.open();assert.match(s.d.body.textContent,/Сохранено 1 из 1/);
  s.d.getElementById('n8040_r0').value='1250.26';assert.equal(s.w.GkbComparison.resolved(1),false);
 });
 test('inline correction accepts localized amounts, requires a reason, and preserves the extracted source',async t=>{
- const s=await reviewFixture(t);s.choose('Исправить сумму');s.input('[data-gkb-amount]','1 100,50');assert.equal(s.d.querySelector('[data-gkb-save]').disabled,true);s.input('[data-gkb-reason]','Сумма в оригинале на странице 2');
+ const s=await reviewFixture(t);s.choose('Изменить');s.input('[data-gkb-amount]','1 100,50');assert.equal(s.d.querySelector('[data-gkb-save]').disabled,true);s.input('[data-gkb-reason]','Сумма в оригинале на странице 2');
  // Looking at the source and reopening must not discard typed corrections.
  [...s.d.querySelectorAll('button')].find(b=>b.textContent.startsWith('Краткий ·')).click();s.w.GkbComparison.open();assert.equal(s.d.querySelector('[data-gkb-amount]').value,'1 100,50');
- s.save();await s.settled();assert.equal(s.d.getElementById('n8040_r0').value,'1100.50');assert.match(s.d.body.textContent,/исправлено сотрудником/);assert.equal(s.w.GkbComparison.resolved(1),true);assert.match(s.d.body.textContent,/1.250,25/);
+ s.save();await s.settled();assert.equal(s.d.getElementById('n8040_r0').value,'1100.50');assert.match(s.d.body.textContent,/исправлено/);assert.equal(s.w.GkbComparison.resolved(1),true);assert.equal(s.w.af.results.get(1).creditEvidence.credits[0].facts.find(f=>f.key==='debtOutstanding').value,'1250.25');
 });
 test('one saved row does not confirm another, and rejecting a match preserves all loans and balances',async t=>{
- const s=await reviewFixture(t,{count:2});s.choose('Верно',0);s.save(0);await s.settled();assert.match(s.d.body.textContent,/Сохранено 1 из 2/);assert.equal(s.w.GkbComparison.resolved(1),false);assert.equal(s.d.getElementById('n8040_r1').value,'77.25');
- s.choose('Не этот договор',1);s.save(1);await s.settled();assert.equal(s.d.getElementById('n8040_r1').value,'77.25');assert.match(s.d.body.textContent,/Не подтверждено/);assert.match(s.d.body.textContent,/Сохранено 1 из 2/);assert.equal(s.d.querySelectorAll('#creditors .repeat-item').length,2);assert.equal(s.w.GkbComparison.resolved(1),false);
+ const s=await reviewFixture(t,{count:2});s.save(0);await s.settled();assert.match(s.d.body.textContent,/Сохранено 1 из 2/);assert.equal(s.w.GkbComparison.resolved(1),false);assert.equal(s.d.getElementById('n8040_r1').value,'77.25');
+ s.choose('Отметить несовпадение',1);await s.settled();assert.equal(s.d.getElementById('n8040_r1').value,'77.25');assert.match(s.d.body.textContent,/Уточните кредитора/);assert.match(s.d.body.textContent,/Сохранено 1 из 2/);assert.equal(s.d.querySelectorAll('#creditors .repeat-item').length,2);assert.equal(s.w.GkbComparison.resolved(1),false);
 });
 test('failed draft persistence cannot create a source confirmation',async t=>{
- const s=await reviewFixture(t,{saveOk:false});s.choose('Верно');s.save();await s.settled();assert.match(s.d.body.textContent,/Не удалось сохранить анкету/);assert.equal(s.calls.some(c=>c.action==='confirm'),false);assert.equal(s.w.GkbComparison.resolved(1),false);
+ const s=await reviewFixture(t,{saveOk:false});s.save();await s.settled();assert.match(s.d.body.textContent,/Не удалось сохранить анкету/);assert.equal(s.calls.some(c=>c.action==='confirm'),false);assert.equal(s.w.GkbComparison.resolved(1),false);
 });
 test('a stale row key cannot overwrite a different loan',async t=>{
- const s=await reviewFixture(t);s.d.getElementById('loanContractId_r0').value='ANOTHER-CONTRACT';s.choose('Верно');s.save();await s.settled();assert.equal(s.d.getElementById('n8040_r0').value,'77.25');assert.equal(s.calls.some(c=>c.action==='confirm'),false);assert.equal(s.order.length,0);
+ const s=await reviewFixture(t);s.d.getElementById('loanContractId_r0').value='ANOTHER-CONTRACT';s.save();await s.settled();assert.equal(s.d.getElementById('n8040_r0').value,'77.25');assert.equal(s.calls.some(c=>c.action==='confirm'),false);assert.equal(s.order.length,0);
 });
