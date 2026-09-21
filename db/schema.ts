@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
 import {sql} from 'drizzle-orm';
 export const assessmentCases = sqliteTable('assessment_cases', {
   id:text('id').primaryKey(), externalSystem:text('external_system').notNull(), externalId:text('external_id').notNull(),
@@ -68,3 +68,11 @@ export const lawyerHandoffs=sqliteTable('assessment_handoffs',{
  payloadJson:text('payload_json').notNull(),payloadHash:text('payload_hash').notNull(),
  state:text('state').notNull(),outcomeCode:text('outcome_code'),createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull(),
 },t=>[uniqueIndex('assessment_handoff_request').on(t.caseId,t.requestId),uniqueIndex('assessment_handoff_once').on(t.caseId).where(sql`${t.state} <> 'cancelled'`)]);
+export const salesPayments=sqliteTable('sales_payments',{
+ id:text('id').primaryKey(),requestId:text('request_id').notNull(),person:text('person').notNull(),month:text('month').notNull(),
+ amountTenge:integer('amount_tenge').notNull(),paidAt:text('paid_at').notNull(),note:text('note').notNull(),actorId:text('actor_id').notNull(),createdAt:text('created_at').notNull(),
+},t=>[uniqueIndex('sales_payment_request').on(t.actorId,t.requestId),index('sales_payment_person_month').on(t.person,t.month,t.paidAt)]);
+export const salesPlans=sqliteTable('sales_plans',{
+ id:text('id').primaryKey(),requestId:text('request_id').notNull(),person:text('person').notNull(),startDate:text('start_date').notNull(),endDate:text('end_date').notNull(),
+ metric:text('metric').notNull(),target:integer('target').notNull(),baseRate:real('base_rate').notNull(),targetRate:real('target_rate').notNull(),actorId:text('actor_id').notNull(),createdAt:text('created_at').notNull(),
+},t=>[uniqueIndex('sales_plan_request').on(t.actorId,t.requestId),index('sales_plan_person_dates').on(t.person,t.startDate,t.endDate)]);

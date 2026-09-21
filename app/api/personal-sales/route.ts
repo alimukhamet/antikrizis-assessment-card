@@ -1,6 +1,7 @@
 import { GET as salesMetrics } from '../sales-metrics/route';
 import { readSessionCookie, verifySession } from '../../../lib/worker-session';
-import { PEOPLE, Person, plansFor, calculate, monthlyEarnings, todayAlmaty, monthRange, Totals } from '../../../lib/personal-sales';
+import { PEOPLE, Person, plansFor, calculate, monthlyEarnings, todayAlmaty, monthRange, Totals, COMPENSATION_START_MONTH } from '../../../lib/personal-sales';
+import {compensationRepository,storedPlan} from '../../../lib/sales-compensation';
 export const dynamic = 'force-dynamic';
 const headers = { 'cache-control': 'private, no-store' };
 // Confirmed by the owner: full contract value on the date handed to lawyers.
@@ -24,7 +25,10 @@ export async function GET(request: Request) {
     return { count: data.handoffs, volume: data.contractTotal, missing: data.missingContractValues };
   }
   try {
-    const plans = plansFor(person).filter(p => (!params.has('month') || p.end.slice(0, 7) === month) && p.start <= today);
+    const repository=await compensationRepository();
+    const [paymentRows,storedRows]=await Promise.all([repository.payments(person),repository.plans(person)]);
+    const allPlans=[...plansFor(person),...storedRows.map(storedPlan)];
+    const plans = allPlans.filter(p => (!params.has('month') || p.end.slice(0, 7) === month) && p.start <= today);
     const [monthly, periods] = await Promise.all([
       totals(range.start, range.end),
       Promise.all(plans.map(async plan => {
@@ -43,9 +47,15 @@ export async function GET(request: Request) {
       const key = period.start.slice(0, 7);
       byMonth.set(key, [...(byMonth.get(key) || []), period]);
     }
-    const earningsMonths = [...byMonth].map(([key, values]) => monthlyEarnings(key, values, today));
+    const monthKeys:string[]=[];
+    if(params.has('month'))monthKeys.push(month);else for(let key=COMPENSATION_START_MONTH;key<=today.slice(0,7);){monthKeys.push(key);const [year,value]=key.split('-').map(Number),next=new Date(Date.UTC(year,value,1));key=next.toISOString().slice(0,7);}
+    const earningsMonths = monthKeys.map(key => {
+      const item=monthlyEarnings(key,byMonth.get(key)||[],today),rows=paymentRows.filter(row=>row.month===key),paid=rows.length?rows.reduce((sum,row)=>sum+row.amount,0):null;
+      return {...item,ongoing:key===today.slice(0,7),paid,owed:item.earned===null||paid===null?null:item.earned-paid};
+    });
     const earned = !EARNINGS_BASIS_CONFIRMED || !earningsMonths.length || earningsMonths.some(item => item.earned === null) ? null : earningsMonths.reduce((sum, item) => sum + item.earned!, 0);
-    return Response.json({ person, name: PEOPLE[person].name, canChoosePerson: actor.worker === 'ali', month, today, generatedAt: new Date().toISOString(), monthly, periods: visiblePeriods, earningsMonths, earned, paid: null, owed: null, uncoveredDays: uncovered, earningsBasisConfirmed: EARNINGS_BASIS_CONFIRMED }, { headers });
+    const paid=earningsMonths.some(item=>item.paid===null)?null:earningsMonths.reduce((sum,item)=>sum+item.paid!,0),owed=earned===null||paid===null?null:earned-paid;
+    return Response.json({ person, name: PEOPLE[person].name, canChoosePerson: actor.worker === 'ali', month, today, generatedAt: new Date().toISOString(), monthly, periods: visiblePeriods, futurePlans: allPlans.filter(p=>p.start>today), earningsMonths, payments: paymentRows, earned, paid, owed, uncoveredDays: uncovered, earningsBasisConfirmed: EARNINGS_BASIS_CONFIRMED }, { headers });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : 'Не удалось загрузить показатели.' }, { status: 502, headers });
   }
