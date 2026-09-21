@@ -2,6 +2,10 @@ name: Tools 03 and 04 audit
 on:
   workflow_dispatch:
     inputs:
+      deal_id:
+        description: 'Optional additional deal: read saved document diagnostics, with no draft or CRM writes'
+        type: string
+        default: ''
       refresh_saved_analysis:
         description: 'Refresh outdated analysis for saved deal 11749 originals; preserve answers and Bitrix'
         type: boolean
@@ -27,6 +31,7 @@ jobs:
         env:
           ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
           REFRESH_SAVED_ANALYSIS: ${{ inputs.refresh_saved_analysis }}
+          AUDIT_DEAL_ID: ${{ inputs.deal_id }}
         run: node scripts/audit-live-tools.mjs
       - uses: actions/upload-artifact@v4
         if: always()

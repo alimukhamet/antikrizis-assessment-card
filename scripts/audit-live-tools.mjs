@@ -5,6 +5,9 @@ import {writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {auditFailures} from './live-audit-result.mjs';
 const caseIds=['10479','11749','11877','11665'];
+const diagnosticId=process.env.AUDIT_DEAL_ID||'';
+if(diagnosticId&&!/^\d{1,12}$/.test(diagnosticId))throw Error('Invalid audit deal ID');
+if(diagnosticId&&!caseIds.includes(diagnosticId))caseIds.push(diagnosticId);
 const origin='https://assessment.anti-krizis.kz';
 let cookie='';
 const report={origin,authenticated:false,cases:[]};
@@ -42,6 +45,18 @@ try{
      const d=data.draft,p=d?.payload;
      item.draft={present:!!d,revision:d?.revision,identityRevision:d?.identityRevision,answers:p?.answers?.length,groups:p?.groups?.length,documents:p?.documents?.map(v=>({type:v.type,person:v.person})),pendingFiles:p?.pendingFiles?.length};
      if(p){
+      if(id===diagnosticId){
+       item.documentDiagnostics=[];const before=createHash('sha256').update(JSON.stringify(d)).digest('hex');
+       for(const doc of p.documents){
+        const result={documentId:doc.documentId,type:doc.type};item.documentDiagnostics.push(result);
+        try{
+         const a=await request(root+'/documents/'+encodeURIComponent(doc.documentId)+'/analyze',{cacheOnly:true}),text=a.document?.pages?.[0]?.text||'';
+         Object.assign(result,{kind:a.document?.extraction?.kind,pages:a.document?.totalPages,issuedAt:a.reviewContext?.issuedAt,expiresAt:a.reviewContext?.expiresAt,allHistory:a.reviewContext?.allHistory,periodLabel:/Барлық\s+кезең\s*\/\s*Весь\s+период/i.test(text),periodBeforeLabel:/Весь\s+период\s*Период:/i.test(text),periodAfterLabel:/Период:\s*Барлық\s+кезең\s*\/\s*Весь\s+период/i.test(text),documentReview:a.documentReview,findings:a.findings});
+        }catch(error){result.error=error.code||'REQUEST_FAILED';}
+       }
+       item.reviewDrafts=p.documentReviewDrafts?.map(v=>({documentId:v.documentId,type:v.type,issuedAt:v.values?.issuedAt,expiresAt:v.values?.expiresAt}))||[];
+       item.diagnosticDraftUnchanged=before===createHash('sha256').update(JSON.stringify((await request(root+'/draft')).draft)).digest('hex');
+      }
       if(process.env.REFRESH_SAVED_ANALYSIS==='true'&&id==='11749'){
        const before=createHash('sha256').update(JSON.stringify(d)).digest('hex');item.analysisRefresh=[];
        for(const doc of p.documents){
