@@ -43,7 +43,7 @@ export async function GET(request: Request) {
       const key = period.start.slice(0, 7);
       byMonth.set(key, [...(byMonth.get(key) || []), period]);
     }
-    const earningsMonths = [...byMonth].map(([key, values]) => monthlyEarnings(key, values));
+    const earningsMonths = [...byMonth].map(([key, values]) => monthlyEarnings(key, values, today));
     const earned = !EARNINGS_BASIS_CONFIRMED || !earningsMonths.length || earningsMonths.some(item => item.earned === null) ? null : earningsMonths.reduce((sum, item) => sum + item.earned!, 0);
     return Response.json({ person, name: PEOPLE[person].name, canChoosePerson: actor.worker === 'ali', month, today, generatedAt: new Date().toISOString(), monthly, periods: visiblePeriods, earningsMonths, earned, paid: null, owed: null, uncoveredDays: uncovered, earningsBasisConfirmed: EARNINGS_BASIS_CONFIRMED }, { headers });
   } catch (e) {

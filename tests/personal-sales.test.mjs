@@ -27,14 +27,20 @@ test('monthly salary and 19-contract bonus apply once to every employee',()=>{
  for(const person of ['darkhan','ramazan','nurdaulet']){
   const plan=rules.plansFor(person)[0];
   const calculated={...plan,count:19,volume:7600000,missing:0,...rules.calculate(plan,{count:19,volume:7600000,missing:0}),ongoing:false};
-  const month=rules.monthlyEarnings('2026-06',[calculated]);
+  const month=rules.monthlyEarnings('2026-06',[calculated],'2026-07-01');
   assert.equal(month.baseSalary,100000);assert.equal(month.contractBonus,200000);assert.equal(month.commission,152000);assert.equal(month.earned,452000);
  }
  const plan=rules.plansFor('ramazan')[1];
  const first={...plan,count:10,volume:1000000,missing:0,...rules.calculate(plan,{count:10,volume:1000000,missing:0}),ongoing:false};
  const second={...plan,id:'second',count:9,volume:900000,missing:0,...rules.calculate(plan,{count:9,volume:900000,missing:0}),ongoing:false};
- const july=rules.monthlyEarnings('2026-07',[first,second]);
+ const july=rules.monthlyEarnings('2026-07',[first,second],'2026-08-01');
  assert.equal(july.count,19);assert.equal(july.baseSalary,100000);assert.equal(july.contractBonus,200000);assert.equal(july.earned,338000);
+});
+test('monthly salary appears only when the month ends',()=>{
+ const plan=rules.plansFor('ramazan').at(-1);
+ const period={...plan,count:12,volume:6500000,missing:0,...rules.calculate(plan,{count:12,volume:6500000,missing:0}),ongoing:true};
+ assert.equal(rules.monthlyEarnings('2026-09',[period],'2026-09-29').baseSalary,0);
+ assert.equal(rules.monthlyEarnings('2026-09',[period],'2026-09-30').baseSalary,100000);
 });
 test('dates reject invalid and future months, honor leap years',()=>{assert.equal(rules.monthRange('2024-02','2026-09-10').end,'2024-02-29');for(const month of ['2026-13','2026-00','2026-10','2019-12','bad'])assert.throws(()=>rules.monthRange(month,'2026-09-10'));});
 test('personal route denies anonymous and cross-person requests without loading CRM',async()=>{for(const [worker,query,status]of [[null,'',401],['ramazan','person=darkhan',403],['ali','person=unknown',400]]){const {response,calls}=await api(worker,query);assert.equal(response.status,status);assert.equal(calls.length,0)}});

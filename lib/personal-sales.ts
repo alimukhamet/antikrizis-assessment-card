@@ -40,14 +40,16 @@ export type MonthlyEarnings = Totals & {
   ongoing: boolean;
   periods: CalculatedPeriod[];
 };
-export function monthlyEarnings(month: string, periods: CalculatedPeriod[]): MonthlyEarnings {
+export function monthlyEarnings(month: string, periods: CalculatedPeriod[], today: string): MonthlyEarnings {
   const count = periods.reduce((sum, period) => sum + period.count, 0);
   const volume = periods.reduce((sum, period) => sum + period.volume, 0);
   const missing = periods.reduce((sum, period) => sum + period.missing, 0);
   const commission = periods.some(period => period.commission === null)
     ? null
     : periods.reduce((sum, period) => sum + period.commission!, 0);
-  const baseSalary = month >= COMPENSATION_START_MONTH ? MONTHLY_BASE_SALARY : 0;
+  const [year, number] = month.split('-').map(Number);
+  const monthEnd = new Date(Date.UTC(year, number, 0)).toISOString().slice(0, 10);
+  const baseSalary = month >= COMPENSATION_START_MONTH && today >= monthEnd ? MONTHLY_BASE_SALARY : 0;
   const contractBonus = month >= COMPENSATION_START_MONTH && count >= MONTHLY_CONTRACT_BONUS_AT ? MONTHLY_CONTRACT_BONUS : 0;
   return {
     id: month,
