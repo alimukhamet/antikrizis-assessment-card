@@ -46,14 +46,20 @@ try{
      item.draft={present:!!d,revision:d?.revision,identityRevision:d?.identityRevision,answers:p?.answers?.length,groups:p?.groups?.length,documents:p?.documents?.map(v=>({type:v.type,person:v.person})),pendingFiles:p?.pendingFiles?.length};
      if(p){
       if(id===diagnosticId){
-       item.documentDiagnostics=[];const before=createHash('sha256').update(JSON.stringify(d)).digest('hex');
+       item.documentDiagnostics=[];const creditReports=[];const before=createHash('sha256').update(JSON.stringify(d)).digest('hex');
        for(const doc of p.documents){
         const result={documentId:doc.documentId,type:doc.type};item.documentDiagnostics.push(result);
         try{
          const a=await request(root+'/documents/'+encodeURIComponent(doc.documentId)+'/analyze',{cacheOnly:true}),text=a.document?.pages?.[0]?.text||'';
          Object.assign(result,{kind:a.document?.extraction?.kind,pages:a.document?.totalPages,issuedAt:a.reviewContext?.issuedAt,expiresAt:a.reviewContext?.expiresAt,allHistory:a.reviewContext?.allHistory,periodLabel:/Барлық\s+кезең\s*\/\s*Весь\s+период/i.test(text),periodBeforeLabel:/Весь\s+период\s*Период:/i.test(text),periodAfterLabel:/Период:\s*Барлық\s+кезең\s*\/\s*Весь\s+период/i.test(text),documentReview:a.documentReview,findings:a.findings});
+         if(a.document?.extraction?.kind?.startsWith('gkb_'))creditReports.push(a.document.extraction);
         }catch(error){result.error=error.code||'REQUEST_FAILED';}
        }
+       // Compare in memory: never export borrower identifiers, contract numbers or balances.
+       const compact=v=>(v||'').normalize('NFKC').toLocaleLowerCase('ru').replace(/\s+/g,''),facts=c=>Object.fromEntries(c.facts.map(f=>[f.key,f.value]));
+       item.creditDiagnostics=creditReports.map(r=>({kind:r.kind,list:r.creditList,count:r.credits.length,rows:r.credits.map(c=>({page:c.page,creditor:facts(c).creditor,keys:c.facts.map(f=>f.key),truncated:/\.\.|…/.test(c.contractNumber),comparisonDebtPresent:!!c.comparisonDebt}))}));
+       const short=creditReports.find(r=>r.kind==='gkb_short'),full=creditReports.find(r=>r.kind==='gkb_full');
+       if(short&&full)item.creditMatchDiagnostics=short.credits.map((s,shortIndex)=>({shortIndex,candidates:full.credits.map((f,fullIndex)=>{const sf=facts(s),ff=facts(f),parts=s.contractNumber.split(/\.{2,}|…/),numbers=[f.contractNumber,f.contractCode].filter(Boolean);return {fullIndex,creditorEqual:compact(sf.creditor)===compact(ff.creditor),literalCreditorEqual:sf.creditor===ff.creditor,numberEqual:numbers.includes(s.contractNumber),prefixMatches:numbers.some(n=>n.startsWith(parts[0])&&(parts.length===1||n.endsWith(parts[1]))),visibleNumberLength:parts.join('').length,debtEqual:Number(sf.debtOutstanding)===Number(ff.debtOutstanding),comparisonDebtEqual:!!f.comparisonDebt&&Number(sf.debtOutstanding)===Number(f.comparisonDebt.value),overdueEqual:Number(sf.overdueDays)===Number(ff.overdueDays)};})}));
        item.reviewDrafts=p.documentReviewDrafts?.map(v=>({documentId:v.documentId,type:v.type,issuedAt:v.values?.issuedAt,expiresAt:v.values?.expiresAt}))||[];
        item.diagnosticDraftUnchanged=before===createHash('sha256').update(JSON.stringify((await request(root+'/draft')).draft)).digest('hex');
       }
