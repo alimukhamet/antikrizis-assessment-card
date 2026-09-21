@@ -150,6 +150,7 @@ body[data-assessment-workflow] .card:has(>.wf-answer-section){padding:0}
 .wf-gkb-status:focus-visible{outline:2px solid #245c36;outline-offset:3px}
 .gkb-dialog{width:min(690px,calc(100vw - 28px));max-height:85vh;padding:22px;border:1px solid #d6e1d9;border-radius:14px;background:#fff;color:#243c2c;box-sizing:border-box;overflow:auto}
 .gkb-dialog::backdrop{background:#17332566}
+.gkb-review-actions{position:sticky;bottom:-22px;background:#fff;border-top:1px solid #d6e1d9;padding:14px 0;margin-top:14px}.gkb-review-actions label{display:flex;gap:8px;align-items:flex-start;font-size:14px}.gkb-review-actions input{flex:none;margin-top:3px}.gkb-review-actions .btn-main{min-height:42px;font-size:14px}.wf-gkb-status.reviewed{color:#245d39;background:#eaf3e8}
 .gkb-dialog-head,.gkb-row-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .gkb-dialog h2{font-size:18px;margin:0}.gkb-dialog p{font-size:14px;line-height:1.5;margin:10px 0}
 .gkb-dialog .btn{padding:6px 9px;font-size:12px;min-height:32px;margin:0}

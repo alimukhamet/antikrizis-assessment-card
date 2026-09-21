@@ -4,7 +4,9 @@ import {gkbFreshness,requiresDocumentValidation,statementPeriod,salaryStatementP
 import type {DraftPayload} from '../questionnaire/draft';
 import {currentDocumentReview,MANUAL_DOCUMENT_TYPES} from './document-review';
 import {checkPowerTemplate} from './power-validation';
-import {matchShortReport,shortReportMismatchReasons,type CreditMatch} from './credit-report-match';
+import {matchShortReport,shortReportMismatchReasons,shortBalanceReviewPlan,type CreditMatch} from './credit-report-match';
+import {inspectGkbBalanceReview,gkbBalanceRows,gkbBalanceEvidence} from './gkb-balance-review';
+import type {ApprovedAnswerEvidence} from '../questionnaire/review-bindings';
 import {creditorKey,loanRowKey} from './loan-identity';
 // Contract preparation and lawyer handoff have independent document requirements.
 export const REQUIRED_DOCUMENTS=['ГКБ — краткий отчёт','ГКБ — полный отчёт','Справка ЕНПФ','Ф6 об отсутствии имущества','Удостоверение личности','Выписка Kaspi Gold'];
@@ -21,6 +23,7 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
  const manuallyReviewed:Array<{documentId:string;reviewId:string;type:string;actorId:string;reviewedAt:string}>=[];
  const pendingShort:Array<{documentId:string;type:string;analysis:Analysis;message:string}>=[],fullReports:Array<{documentId:string;analysis:Analysis}>=[];
  const matchedShortReports:Array<{documentId:string;fullDocumentId:string;matches:CreditMatch[]}>=[];
+ const gkbReconciliations:Array<{documentId:string;fullDocumentId:string;reviewId:string;reviewedAt:string}>=[],gkbEvidence:ApprovedAnswerEvidence[]=[];
  const coverageReports:Array<{documentId:string;analysis:Analysis}>=[];
  const seen=new Set<string>(),available=new Set<string>();
  const credits=new Map<string,Array<{documentId:string;creditor:string;issuedAt:string|null;values:Record<string,string>;pages:Record<string,number>}>>();
@@ -91,6 +94,19 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
   const candidates=fullReports.flatMap(full=>{const matches=matchShortReport(short.analysis,full.analysis,record.client_iin,day);return matches?[{documentId:short.documentId,fullDocumentId:full.documentId,matches}]:[];});
   if(candidates.length===1){matchedShortReports.push(candidates[0]);available.add(short.type);}
   else {
+   if(fullReports.length===1&&pendingShort.length===1){
+    const full=fullReports[0];
+    if(shortBalanceReviewPlan(short.analysis,full.analysis,record.client_iin,day)){
+     const a=loaded.get(short.documentId)!,b=loaded.get(full.documentId)!;
+     const shortStored={...a.cached!,document:a.document!},fullStored={...b.cached!,document:b.document!};
+     const inspection=await inspectGkbBalanceReview(repository,record,shortStored,fullStored,day);
+     if(inspection?.review&&gkbBalanceRows(payload,inspection).every(r=>r.matches)){
+      available.add(short.type);gkbReconciliations.push({documentId:short.documentId,fullDocumentId:full.documentId,reviewId:inspection.review.reviewId,reviewedAt:inspection.review.reviewedAt});
+      gkbEvidence.push(...gkbBalanceEvidence(payload,inspection,shortStored));continue;
+     }
+     issues.push({code:'SHORT_CREDIT_REVIEW_REQUIRED',documentId:short.documentId,type:short.type,message:inspection?.review?'Подтверждённые суммы из краткого ГКБ отличаются от ответов в анкете. Откройте «Сверить кредиты» и внесите выбранные суммы заново.':'В полном ГКБ не указаны суммы по части сопоставленных кредитов. Откройте «Сверить кредиты», проверьте источники и нажмите «Внести и подтвердить суммы из краткого ГКБ».'});continue;
+    }
+   }
    const reasons=candidates.length>1?['Подходят несколько полных отчётов. Оставьте один актуальный полный ГКБ для сверки.']:fullReports.length?fullReports.flatMap(full=>shortReportMismatchReasons(short.analysis,full.analysis,day)):['Выберите и обработайте полный ГКБ этого клиента.'];
    issues.push({code:'SHORT_CREDIT_REVIEW_REQUIRED',documentId:short.documentId,type:short.type,message:short.message+' '+[...new Set(reasons)].join(' ')});
   }
@@ -131,5 +147,5 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
  // Credentials remain in the existing separate upload flow, never in extraction/drafts.
  const credentials=await repository.credentialStatus?.(record);
  // The handoff service separately verifies the saved key and signed contract.
- return {required,missing,matchedShortReports,loanCoverage,manuallyReviewed,credentials:credentials??null,structurallyChecked:[...available],issues,conflicts,packageReady:issues.length===0,authenticity:'not_verified'};
+ return {required,missing,matchedShortReports,gkbReconciliations,gkbEvidence,loanCoverage,manuallyReviewed,credentials:credentials??null,structurallyChecked:[...available],issues,conflicts,packageReady:issues.length===0,authenticity:'not_verified'};
 }

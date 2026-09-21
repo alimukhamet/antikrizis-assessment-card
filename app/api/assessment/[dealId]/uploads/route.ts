@@ -62,7 +62,7 @@ export async function POST(request:Request,context:{params:Promise<{dealId:strin
    const checked=await checkDocumentPackage(repository,record,payload,operatingDay());
    // Credentials are a separate upload action and never enter this PDF upload pipeline.
    if(checked.issues.some(i=>i.code!=='EDS_SEPARATE_UPLOAD_REQUIRED'))throw new RepositoryError('DOCUMENT_PACKAGE_NOT_READY');
-   const reviewIds=checked.manuallyReviewed.map(r=>r.reviewId);
+   const reviewIds=[...checked.manuallyReviewed.map(r=>r.reviewId),...checked.gkbReconciliations.map(r=>r.reviewId)];
    const old=prior?JSON.parse(prior.manifest_json) as UploadManifest:null;
    if(old&&JSON.stringify(old.reviewIds)!==JSON.stringify(reviewIds))throw new RepositoryError('UPLOAD_REVIEW_CHANGED');
    const adapter=createVerifiedDocumentUploadAdapter(process.env.BITRIX_WEBHOOK??'',dealId,record.client_iin);

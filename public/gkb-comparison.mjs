@@ -23,7 +23,7 @@ function total(report){
 }
 function side(report,credit){
  const balance=debt(credit),days=fact(credit,'overdueDays');
- return {fileId:report.fileId,page:balance?.page||credit.page,quote:balance?.source||'Сверьте остаток, просрочку и санкции по этому договору.',value:balance?.value??null,calculated:balance?.key==='debtComponentsTotal',days:days?.value??null,daysPage:days?.page||credit.page};
+ return {fileId:report.fileId,contractNumber:credit.contractNumber,contractCode:credit.contractCode||null,page:balance?.page||credit.page,quote:balance?.source||'Сверьте остаток, просрочку и санкции по этому договору.',value:balance?.value??null,calculated:balance?.key==='debtComponentsTotal',days:days?.value??null,daysPage:days?.page||credit.page};
 }
 function row(short,full,a,b,status,reason=''){
  const credit=a||b,aliases=[a,b].filter(Boolean).flatMap(c=>ids(c).map(id=>(fact(c,'creditor')?.value||'')+'|'+id));

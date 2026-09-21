@@ -29,6 +29,7 @@ jobs:
           package-manager-cache: false
       - run: npm ci --ignore-scripts
       - run: npx --no-install esbuild lib/documents/extract-native.ts --bundle --platform=node --format=esm --outfile=.audit-native-preview.mjs
+      - run: npx --no-install esbuild lib/documents/gkb-balance-review.ts --bundle --platform=node --format=esm --outfile=.audit-gkb-preview.mjs
       - name: Inspect existing cases and optionally refresh derived document analysis
         env:
           ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}

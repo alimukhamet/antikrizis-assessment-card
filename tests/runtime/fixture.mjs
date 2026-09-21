@@ -23,3 +23,13 @@ export async function seed(db,files){
  }
  return {payload,documents,record,today,from,iin};
 }
+
+export async function seedMissingBalance(db,files,fixture){
+ const repo=new EvidenceRepository(db,files),document=await repo.document(fixture.record.id,fixture.documents.find(d=>d.kind==='gkb_full').documentId);
+ const cached=await repo.cached(fixture.record.id,document.original_sha256,analysisVersion),result=structuredClone(cached.result);
+ result.extraction.findings=['TOTAL_DEBT_REQUIRES_RECONCILIATION'];
+ const loan=result.extraction.credits[0];loan.facts=loan.facts.filter(f=>f.key!=='debtOutstanding');loan.components={remaining:null,arrears:'0.00',penalty:'0.00',interest:null,fine:null};
+ const saved=await repo.store(fixture.record.id,new TextEncoder().encode('%PDF-1.4 SYNTHETIC MISSING BALANCE ONLY'), 'missing-balance.pdf',{id:'worker:ali',worker:'ali',displayName:'Synthetic',authentication:'shared-password-worker-selection'},analysisVersion,result);
+ const payload=structuredClone(fixture.payload);payload.documents.find(d=>d.type==='ГКБ — полный отчёт').documentId=saved.document.id;
+ return {payload,shortDocumentId:fixture.documents.find(d=>d.kind==='gkb_short').documentId,fullDocumentId:saved.document.id};
+}

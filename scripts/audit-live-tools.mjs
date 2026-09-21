@@ -1,3 +1,4 @@
+const previewGkb=process.env.PREVIEW_NATIVE_ANALYSIS==='1'?await import('../.audit-gkb-preview.mjs'):null;
 const previewNative=process.env.PREVIEW_NATIVE_ANALYSIS==='1'?(await import('../.audit-native-preview.mjs')).extractNative:null;
 // Normal sign-in, existing cases and validation. Optional refresh updates only
 // derived analysis for stored originals; it never saves answers or writes Bitrix.
@@ -47,7 +48,7 @@ try{
      item.draft={present:!!d,revision:d?.revision,identityRevision:d?.identityRevision,answers:p?.answers?.length,groups:p?.groups?.length,documents:p?.documents?.map(v=>({type:v.type,person:v.person})),pendingFiles:p?.pendingFiles?.length};
      if(p){
       if(id===diagnosticId){
-       item.documentDiagnostics=[];const creditReports=[];const before=createHash('sha256').update(JSON.stringify(d)).digest('hex');
+       item.documentDiagnostics=[];const creditReports=[],storedReports=[];const before=createHash('sha256').update(JSON.stringify(d)).digest('hex');
        for(const doc of p.documents){
         const result={documentId:doc.documentId,type:doc.type};item.documentDiagnostics.push(result);
         try{
@@ -67,7 +68,7 @@ try{
           }
 
          }
-         if(a.document?.extraction?.kind?.startsWith('gkb_'))creditReports.push(a.document.extraction);
+         if(a.document?.extraction?.kind?.startsWith('gkb_')){creditReports.push(a.document.extraction);storedReports.push({document:{id:doc.documentId},extraction:{id:a.extractionId},result:{read:{pages:a.document.pages},extraction:a.document.extraction}});}
         }catch(error){result.error=error.code||'REQUEST_FAILED';}
        }
        // Compare in memory: never export borrower identifiers, contract numbers or balances.
@@ -75,6 +76,14 @@ try{
        item.creditDiagnostics=creditReports.map(r=>({kind:r.kind,list:r.creditList,count:r.credits.length,rows:r.credits.map(c=>({page:c.page,creditor:facts(c).creditor,keys:c.facts.map(f=>f.key),truncated:/\.\.|…/.test(c.contractNumber),comparisonDebtPresent:!!c.comparisonDebt}))}));
        const short=creditReports.find(r=>r.kind==='gkb_short'),full=creditReports.find(r=>r.kind==='gkb_full');
        if(short&&full)item.creditMatchDiagnostics=short.credits.map((s,shortIndex)=>({shortIndex,candidates:full.credits.map((f,fullIndex)=>{const sf=facts(s),ff=facts(f),parts=s.contractNumber.split(/\.{2,}|…/),numbers=[f.contractNumber,f.contractCode].filter(Boolean);return {fullIndex,creditorEqual:compact(sf.creditor)===compact(ff.creditor),literalCreditorEqual:sf.creditor===ff.creditor,numberEqual:numbers.includes(s.contractNumber),prefixMatches:numbers.some(n=>n.startsWith(parts[0])&&(parts.length===1||n.endsWith(parts[1]))),visibleNumberLength:parts.join('').length,debtEqual:Number(sf.debtOutstanding)===Number(ff.debtOutstanding),comparisonDebtEqual:!!f.comparisonDebt&&Number(sf.debtOutstanding)===Number(f.comparisonDebt.value),overdueEqual:Number(sf.overdueDays)===Number(ff.overdueDays)};})}));
+       if(previewGkb){
+        const shortStored=storedReports.find(r=>r.result.extraction.kind==='gkb_short'),fullStored=storedReports.find(r=>r.result.extraction.kind==='gkb_full');
+        if(shortStored&&fullStored){
+         const inspection=await previewGkb.inspectGkbBalanceReview({currentReviews:async()=>[]},{id:assessment.caseId,client_iin:assessment.client.iin,identity_revision:assessment.identityRevision},shortStored,fullStored,assessment.assessmentDay);
+         item.balanceReviewPreview={eligible:!!inspection,missingBalances:inspection?.plan.balances.length,activeLoans:inspection?.plan.activeLoans,questionnaireAmountsMatch:inspection?previewGkb.gkbBalanceRows(p,inspection).every(r=>r.matches):null};
+         try{const live=await request(root+'/gkb-reviews',{action:'inspect',shortDocumentId:shortStored.document.id,fullDocumentId:fullStored.document.id,identityRevision:assessment.identityRevision});item.balanceReviewLive={eligible:!!live.inspection,missingBalances:live.inspection?.plan.balances.length,activeLoans:live.inspection?.plan.activeLoans,confirmed:!!live.inspection?.review};}catch(error){item.balanceReviewLive={error:error.code||'ROUTE_NOT_RELEASED'};}
+        }
+       }
        item.reviewDrafts=p.documentReviewDrafts?.map(v=>({documentId:v.documentId,type:v.type,issuedAt:v.values?.issuedAt,expiresAt:v.values?.expiresAt}))||[];
        item.diagnosticDraftUnchanged=before===createHash('sha256').update(JSON.stringify((await request(root+'/draft')).draft)).digest('hex');
       }

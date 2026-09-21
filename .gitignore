@@ -47,3 +47,5 @@ next-env.d.ts
 /public/pdf-assets/
 
 .audit-native-preview.mjs
+
+.audit-gkb-preview.mjs
