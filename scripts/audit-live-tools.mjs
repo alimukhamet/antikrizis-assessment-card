@@ -56,6 +56,16 @@ try{
          if(previewNative&&a.document?.pages){
           const preview=previewNative(a.document.pages),st=preview.bankStatement;
           result.parserPreview={kind:preview.kind,identityMatches:!!preview.identity.iin&&preview.identity.iin===assessment.client.iin,findings:preview.findings,...(st?{statement:{from:st.from,to:st.to,rowsReadable:st.rowsReadable,reconciled:st.reconciled,topUpsVerified:st.topUpsVerified,transactions:st.transactions,reconciliation:st.reconciliation}}:{})};
+          if(st){
+           const starts=new Map();let topUps=0n;
+           for(const page of a.document.pages)for(const row of page.text.matchAll(/^\d{2}\.\d{2}\.(?:\d{4}|\d{2})\s+([+−-])\s*([\d \u00a0]+[,.]\d{2})\s*₸([^\n]*)/gm)){
+            const label=row[3].trim().split(/\s+/)[0];starts.set(label,(starts.get(label)||0)+1);
+            if(/^Толықтыру(?:\s|$)/u.test(row[3].trim()))topUps+=BigInt(row[2].replace(/[\s,.]/g,''))*(row[1]==='+'?1n:-1n);
+           }
+           const summaries=a.document.pages.flatMap(p=>[...p.text.matchAll(/(?:^|\n)Толықтыру[ \t]+([+−-])\s*([\d \u00a0]+[,.]\d{2})\s*₸/gu)]);
+           result.parserPreview.kazakhLabels={operationTokens:[...starts],summaryCount:summaries.length,topUpsMatch:summaries.length===1&&topUps===BigInt(summaries[0][2].replace(/[\s,.]/g,''))};
+          }
+
          }
          if(a.document?.extraction?.kind?.startsWith('gkb_'))creditReports.push(a.document.extraction);
         }catch(error){result.error=error.code||'REQUEST_FAILED';}

@@ -22,7 +22,7 @@ function setup(t){
   throw Error('Unexpected test request: '+path);
  };
  for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))run(match[1]);
- for(const name of ['loan-status','money-input','hosted-assessment','assessment-review','server-drafts','document-review','document-upload','credential-upload','submission-flow','server-answer-check','client-confirmed-amount','required-answers','document-replacement'])run(fs.readFileSync('public/'+name+'.js','utf8'));
+ for(const name of ['loan-status','money-input','hosted-assessment','assessment-review','intake-data','enforcement-editor','server-drafts','document-review','document-upload','credential-upload','submission-flow','server-answer-check','client-confirmed-amount','required-answers','document-replacement'])run(fs.readFileSync('public/'+name+'.js','utf8'));
  t.after(async()=>{await new Promise(resolve=>setTimeout(resolve,0));dom.window.close();});
  const capture=()=>JSON.parse(JSON.stringify(w.ServerDrafts.capture()));
  return{w,d,run,calls,capture,mount(){run(fs.readFileSync('public/assessment-workflow.js','utf8'));},async load(){d.getElementById('hostDealId').value='11665';await d.getElementById('hostLoadDeal').onclick();await new Promise(resolve=>setTimeout(resolve,0));}};
