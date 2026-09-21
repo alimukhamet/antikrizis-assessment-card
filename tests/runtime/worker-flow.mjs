@@ -99,7 +99,7 @@ test('built Worker persists a complete contract and recovers a handoff without d
  const missing=await seedMissingBalance(await mf.getD1Database('DB'),await mf.getR2Bucket('FILES'),fixture);
  await api(root+'/draft',{requestId:crypto.randomUUID(),identityRevision:1,expectedRevision:1,payload:missing.payload});
  const reviewInput={shortDocumentId:missing.shortDocumentId,fullDocumentId:missing.fullDocumentId,identityRevision:1};
- const blocked=await api(root+'/check',{payload:missing.payload,bindings:[]});assert.equal(blocked.readyToSubmit,false);assert.ok(blocked.issues.some(i=>i.code==='SHORT_CREDIT_REVIEW_REQUIRED'));
+ const blocked=await api(root+'/check',{payload:missing.payload,bindings:[]});assert.equal(blocked.readyToSubmit,false);assert.ok(blocked.documents.issues.some(i=>i.code==='SHORT_CREDIT_REVIEW_REQUIRED'));
  const {inspection}=await api(root+'/gkb-reviews',{action:'inspect',...reviewInput});assert.equal(inspection.plan.balances.length,1);assert.equal(inspection.review,null);
  const confirm={action:'confirm',...reviewInput,planKey:inspection.planKey,requestId:crypto.randomUUID()};
  await api(root+'/gkb-reviews',{...confirm,planKey:'stale'},409);
