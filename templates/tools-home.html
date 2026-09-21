@@ -272,7 +272,7 @@
   .personal-shortcuts a:focus-visible{outline:3px solid var(--green-mid);outline-offset:3px}
   @media(max-width:360px){.personal-shortcuts{grid-template-columns:1fr}}
 </style>
-<link rel="stylesheet" href="/operations.css"><link rel="stylesheet" href="/file-selection-controls.css"><style>.home-hero{max-width:1040px;margin:24px auto 0}.home-hero h1{font-size:30px;letter-spacing:-.7px}.task-grid{grid-template-columns:repeat(2,minmax(0,1fr));margin:24px 0 30px}.task-card{min-height:185px;border-radius:14px;padding:22px;box-shadow:none}.task-card h2{font-size:22px}.task-number{font-size:12px}.competition{margin-top:12px}.home-hero>.payment-shortcut{display:inline-flex;margin:16px 24px 0 0}.personal-shortcuts{margin:20px 0}@media(max-width:600px){.task-grid{grid-template-columns:1fr;gap:12px}.task-card{min-height:160px}.home-hero h1{font-size:26px}.home-hero>.payment-shortcut{display:flex;margin:12px 0}}</style></head><body data-view="home"><div class="wrap"><main id="homeView">
+<link rel="stylesheet" href="/operations.css"><link rel="stylesheet" href="/file-selection-controls.css"><style>.home-hero{max-width:1040px;margin:24px auto 0}.home-hero h1{font-size:30px;letter-spacing:-.7px}body[data-view=home] .task-grid{grid-template-columns:repeat(3,minmax(0,1fr));margin:24px 0 30px}body[data-view=home] .task-card{min-height:185px;border-radius:14px;padding:22px;box-shadow:none}.task-card h2{font-size:22px}.task-number{font-size:12px}.competition{margin-top:12px}.home-hero>.payment-shortcut{display:inline-flex;margin:16px 24px 0 0}.personal-shortcuts{margin:20px 0}@media(min-width:621px) and (max-width:850px){body[data-view=home] .task-grid{grid-template-columns:repeat(2,minmax(0,1fr))}body[data-view=home] .task-grid>.task-card:last-child{grid-column:1/-1;min-height:160px}}@media(max-width:620px){body[data-view=home] .task-grid{grid-template-columns:1fr;gap:12px}body[data-view=home] .task-card{min-height:160px}.home-hero h1{font-size:26px}.home-hero>.payment-shortcut{display:flex;margin:12px 0}}</style></head><body data-view="home"><div class="wrap"><main id="homeView">
     <div class="home-brand"><button id="signOut" type="button" style="order:3;margin-left:auto;border:0;background:none;color:var(--text-muted);cursor:pointer;font-size:12px">Выйти</button>
       <div class="brand-mark">A+</div>
       <div class="brand-copy"><strong>Антикризис</strong><span>Инструменты отдела продаж</span></div>
@@ -296,7 +296,7 @@
           <p>Подписанный договор, доверенность и ЭЦП.</p>
           <span class="task-link"><span>Открыть передачу</span><span>→</span></span>
         </a>
-      </div><section class="competition" aria-labelledby="competition-title">
+      <a class="task-card" href="https://gkb-credit-analyzer-kz.mukhamet-ali-ma.chatgpt.site" target="_blank" rel="noopener" data-main-action="gkb"><span class="task-number">05</span><h2 class="">Проверить кредитный отчёт</h2><p class="">Загрузите ГКБ и проверьте кредиты клиента.</p><span class="task-link">Открыть проверку ↗</span></a></div><section class="competition" aria-labelledby="competition-title">
 <div class="competition-head"><div><h2 id="competition-title">Результаты продаж</h2><p>Сделки, переданные юристам</p></div><div class="period-switch" aria-label="Период отчёта"><button data-sales-period="today" aria-pressed="false">Сегодня</button><button data-sales-period="current_week" aria-pressed="false">Неделя</button><button data-sales-period="current_month" aria-pressed="true">Месяц</button><button data-sales-period="custom" aria-pressed="false">Даты</button></div></div>
 <div class="payment-switch" aria-label="Вид оплаты"><button data-sales-payment="all" aria-pressed="true">Все</button><button data-sales-payment="423" aria-pressed="false">50/50</button><button data-sales-payment="261" aria-pressed="false">После определения</button><button data-sales-payment="263" aria-pressed="false">До определения</button></div>
 <form class="sales-date-range" id="salesDateRange" aria-label="Произвольный период" hidden="">
@@ -313,7 +313,6 @@
         <a href="/my-earnings" target="_top"><span>Мой заработок</span><span aria-hidden="true">→</span></a>
       </nav>
       
-      <a class="payment-shortcut" href="https://gkb-credit-analyzer-kz.mukhamet-ali-ma.chatgpt.site" target="_blank" rel="noopener" data-main-action="gkb"><span>Проверить кредитный отчёт</span><span aria-hidden="true">↗</span></a>
       <a class="payment-shortcut" href="https://antikrizis-payment-control.mukhamet-ali-ma.chatgpt.site/" target="_blank" rel="noopener"><span>Контроль оплат</span><span aria-hidden="true">↗</span></a>
     </div>
   </main></div><script src="/tools-home.js"></script></body></html>

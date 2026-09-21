@@ -84,20 +84,22 @@ test("captures every fact needed to build the later document checklist", async (
   assert.match(card, /marital:\s*\{bx:"UF_CRM_AI_MARITAL"\}/);
 });
 
-test("both protected launcher URLs publish only tools 03 and 04 and retain the sales dashboard", async () => {
+test("both protected launcher URLs expose three current tools and retain the sales dashboard", async () => {
   for (const path of ['/assessment-card', '/assessment-card.html']) {
     const response=await fetchBuilt(path);
     assert.equal(response.status,200);
     assert.match(response.headers.get('cache-control'),/no-store/);
     const dom=new JSDOM(await response.text());
     const cards=[...dom.window.document.querySelectorAll('.task-grid > .task-card')];
-    assert.equal(cards.length,2);
-    assert.deepEqual(cards.map(card=>card.getAttribute('href')),['/assessment-review','/lawyer-handoff']);
-    assert.deepEqual(cards.map(card=>card.querySelector('.task-number').textContent),['03','04']);
+    assert.equal(cards.length,3);
+    assert.deepEqual(cards.map(card=>card.getAttribute('href')),['/assessment-review','/lawyer-handoff','https://gkb-credit-analyzer-kz.mukhamet-ali-ma.chatgpt.site']);
+    assert.deepEqual(cards.map(card=>card.querySelector('.task-number').textContent),['03','04','05']);
     assert.equal(dom.window.document.querySelector('[data-open-view],#contractBtn,#docsBtn,#dealLookup'),null);
     assert.ok(dom.window.document.querySelector('script[src="/tools-home.js"]'));
     assert.ok(dom.window.document.querySelector('.competition'));
-    assert.ok(dom.window.document.querySelector('a[data-main-action="gkb"]'));
+    assert.equal(dom.window.document.querySelectorAll('a[data-main-action="gkb"]').length,1);
+    assert.equal(cards[2].getAttribute('target'),'_blank');
+    assert.equal(cards[2].getAttribute('rel'),'noopener');
     dom.window.close();
   }
 });

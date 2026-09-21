@@ -9,7 +9,7 @@ export type PlanInput={kind:'plan';requestId:string;person:Person;start:string;e
 export type PaymentRow={id:string;person:Person;month:string;amount:number;paidAt:string;note:string;createdAt:string};
 export type PlanRow={id:string;person:Person;start:string;end:string;metric:'count'|'volume';target:number;baseRate:number;targetRate:number;createdAt:string};
 const uuid=(value:unknown)=>typeof value==='string'&&/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value);
-const day=(value:unknown)=>typeof value==='string'&&/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(value)&&!Number.isNaN(Date.parse(value+'T00:00:00Z'));
+const day=(value:unknown):value is string=>typeof value==='string'&&/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(value)&&!Number.isNaN(Date.parse(value+'T00:00:00Z'));
 const person=(value:unknown):value is Person=>typeof value==='string'&&Object.hasOwn(PEOPLE,value);
 const rate=(value:unknown)=>typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<=100&&Math.round(value*100)===value*100;
 export function validateCompensation(raw:Record<string,unknown>,today:string):PaymentInput|PlanInput{

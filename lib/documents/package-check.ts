@@ -100,11 +100,11 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
      const a=loaded.get(short.documentId)!,b=loaded.get(full.documentId)!;
      const shortStored={...a.cached!,document:a.document!},fullStored={...b.cached!,document:b.document!};
      const inspection=await inspectGkbBalanceReview(repository,record,shortStored,fullStored,day);
-     if(inspection?.review&&gkbBalanceRows(payload,inspection).every(r=>r.matches)){
-      available.add(short.type);gkbReconciliations.push({documentId:short.documentId,fullDocumentId:full.documentId,reviewId:inspection.review.reviewId,reviewedAt:inspection.review.reviewedAt});
+     if(inspection?.review&&gkbBalanceRows(payload,inspection).every(r=>r.approved&&r.matches)){
+      available.add(short.type);for(const decision of inspection.decisions)if(!gkbReconciliations.some(r=>r.reviewId===decision.reviewId))gkbReconciliations.push({documentId:short.documentId,fullDocumentId:full.documentId,reviewId:decision.reviewId,reviewedAt:decision.reviewedAt});
       gkbEvidence.push(...gkbBalanceEvidence(payload,inspection,shortStored));continue;
      }
-     issues.push({code:'SHORT_CREDIT_REVIEW_REQUIRED',documentId:short.documentId,type:short.type,message:inspection?.review?'Подтверждённые суммы из краткого ГКБ отличаются от ответов в анкете. Откройте «Сверить кредиты» и внесите выбранные суммы заново.':'В полном ГКБ не указаны суммы по части сопоставленных кредитов. Откройте «Сверить кредиты», проверьте источники и нажмите «Внести и подтвердить суммы из краткого ГКБ».'});continue;
+     issues.push({code:'SHORT_CREDIT_REVIEW_REQUIRED',documentId:short.documentId,type:short.type,message:inspection?.review?'Подтверждённые суммы отличаются от ответов в анкете. Откройте «Сверить кредиты» и сохраните нужную сумму в каждом отмеченном кредите.':'Откройте «Сверить кредиты»: по каждому отмеченному кредиту выберите «Верно» или «Исправить сумму» и сохраните решение. Все активные кредиты должны остаться в анкете.'});continue;
     }
    }
    const reasons=candidates.length>1?['Подходят несколько полных отчётов. Оставьте один актуальный полный ГКБ для сверки.']:fullReports.length?fullReports.flatMap(full=>shortReportMismatchReasons(short.analysis,full.analysis,day)):['Выберите и обработайте полный ГКБ этого клиента.'];

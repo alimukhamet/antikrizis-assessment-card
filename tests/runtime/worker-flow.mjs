@@ -111,5 +111,16 @@ test('built Worker persists a complete contract and recovers a handoff without d
  const invalidated=await api(root+'/check',{payload:changed,bindings:[]});assert.equal(invalidated.readyToSubmit,false);assert.equal(invalidated.documents.gkbEvidence.length,0);
  await api(root+'/gkb-reviews',{action:'withdraw',...reviewInput,planKey:inspection.planKey,reviewId:receipt.reviewId,requestId:crypto.randomUUID()});
  assert.equal((await api(root+'/check',{payload:missing.payload,bindings:[]})).readyToSubmit,false);assert.equal(crm.counts.assessmentWrites,1);assert.equal(crm.counts.historyWrites,1);assert.equal(crm.counts.stageWrites,1);
- console.log('Verified: durable draft, contract, handoff recovery and explicit GKB source confirmation; retries, restart, changed amounts and withdrawal; no duplicate CRM writes.');
+ await api(root+'/draft',{requestId:crypto.randomUUID(),identityRevision:1,expectedRevision:2,payload:changed});
+ const correctionDraft=(await api(root+'/draft')).draft;
+ const correction={action:'confirm',...reviewInput,planKey:inspection.planKey,fullIndex:0,expectedReviewId:null,decision:'correct',amount:'100.26',reason:'SYNTHETIC correction from page 1',requestId:crypto.randomUUID()};
+ const corrected=await api(root+'/gkb-reviews',correction);assert.deepEqual(await api(root+'/gkb-reviews',correction),corrected);
+ const correctedCheck=await api(root+'/check',{payload:changed,bindings:[]});assert.equal(correctedCheck.readyToSubmit,true);assert.equal(correctedCheck.documents.gkbEvidence[0].disposition,'corrected');assert.equal(correctedCheck.documents.gkbEvidence[0].value,'100.26');
+ await mf.dispose();mf=new Miniflare(options);
+ const restored=await api(root+'/gkb-reviews',{action:'inspect',...reviewInput});assert.equal(restored.inspection.decisions[0].amount,'100.26');assert.equal(restored.inspection.plan.balances[0].amount,'100.25');
+ await api(root+'/gkb-reviews',{...correction,requestId:crypto.randomUUID(),decision:'reject'},409);
+ await api(root+'/gkb-reviews',{...correction,expectedReviewId:corrected.reviewId,requestId:crypto.randomUUID(),decision:'reject'});
+ const rejected=await api(root+'/check',{payload:changed,bindings:[]});assert.equal(rejected.readyToSubmit,false);assert.equal(rejected.documents.loanCoverage.complete,true);assert.deepEqual((await api(root+'/draft')).draft,correctionDraft);
+ assert.equal(crm.counts.assessmentWrites,1);assert.equal(crm.counts.historyWrites,1);assert.equal(crm.counts.stageWrites,1);
+ console.log('Verified: durable draft, contract and handoff recovery; GKB batch compatibility, per-loan correction, restart, stale-edit rejection and unresolved loans; no duplicate CRM writes.');
 });
