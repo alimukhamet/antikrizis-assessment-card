@@ -97,6 +97,7 @@ jobs:
             'operations.css'
             'assessment-review.js'
             'assessment-workflow.js'
+            'benefit-evidence.js'
             'credential-upload.js'
             'document-replacement.js'
             'file-selection-controls.js'

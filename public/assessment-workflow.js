@@ -281,6 +281,7 @@ window.AssessmentWorkflow=(()=>{
   if(active!=='documents'&&!state.ready)show('documents',{focus:false,remember:false});
  }
  function refresh(snapshot){
+  window.BenefitEvidence?.refresh();
   const legacy=$('legacyLoanParticipants');legacy.hidden=!$('guarantors').value&&!legacy.querySelector('[data-legacy-unknown]').checked;legacy.querySelector('[data-legacy-unknown]').disabled=true;
   compactLoans();
   for(const hint of root.querySelectorAll('.field > .hint')){
