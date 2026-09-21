@@ -288,7 +288,7 @@ export function parseKaspiStatement(pages:PageText[]):BankStatement{
  const gamblingMatches:Array<{date:string;amount:string;description:string;page:number}>=[];let gamblingTotal=BigInt(0);
  let credits=BigInt(0),topUps=BigInt(0),debits=BigInt(0),transactions=0,rowsReadable=!!from&&!!to&&from<=to,sourcePage=1,knownCreditRows=true,knownOperationRows=true;
  const operationTotals=Array<bigint>(7).fill(BigInt(0));
- const operationKinds=[/^(?:Пополнение|Толықтыру)(?:\s|$)/iu,/^(?:Поступление со|Өз шоттарыңыздан түскені)(?:\s|$)/iu,/^(?:Зачисление|Кредиттер сомасын шотқа түсіру)(?:\s|$)/iu,/^(?:Перевод|Аударым|Өз шоттарыңызға аудару)(?:\s|$)/iu,/^(?:Покупка|Зат сатып алу)(?:\s|$)/iu,/^(?:Снятие|Ақша алу)(?:\s|$)/iu,/^(?:Разное|[ӘƏ]ртүрлі)(?:\s|$)/iu];
+ const operationKinds=[/^(?:Пополнение|Толықтыру)(?:\s|$)/iu,/^(?:Поступление со|Өз шоттарыңыздан түскені)(?:\s|$)/iu,/^(?:Зачисление|Кредиттер сомасын шотқа түсіру|Кредит)(?:\s|$)/iu,/^(?:Перевод|Аударым|Өз шоттарыңызға аудару)(?:\s|$)/iu,/^(?:Покупка|Зат сатып алу)(?:\s|$)/iu,/^(?:Снятие|Ақша алу)(?:\s|$)/iu,/^(?:Разное|[ӘƏ]ртүрлі)(?:\s|$)/iu];
  for(const page of pages){
   const candidates=[...page.text.matchAll(/^\d{2}\.\d{2}\.(?:\d{4}|\d{2})\s+[+−-]/gm)].length;
   const rows=[...page.text.matchAll(/^(\d{2}\.\d{2}\.(?:\d{4}|\d{2}))\s+([+−-])\s*([\d \u00a0]+[,.]\d{2})\s*₸[^\n]*/gm)];

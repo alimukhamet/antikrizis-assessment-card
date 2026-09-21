@@ -25,3 +25,8 @@ test('Kazakh Kaspi certificate and statement preserve period, owner and cents wi
  assert.equal(r.kind,'kaspi');assert.equal(r.identity.iin,'000000000010');assert.equal(r.identity.name,'СЫНАҚ КЛИЕНТ');assert.equal(r.credits.length,0);assert.equal(r.bankStatement.from,'2025-09-18');assert.equal(r.bankStatement.to,'2026-09-18');assert.equal(r.bankStatement.rowsReadable,true);assert.equal(r.bankStatement.reconciled,true);assert.equal(r.bankStatement.topUpsVerified,true);assert.equal(r.facts.find(f=>f.key==='statement.topUps').value,'100.03');assert.equal(JSON.stringify(original),before);
  const wrong=extractNative(original.map(p=>({...p,text:p.text.replace('Толықтыру + 100,03','Толықтыру + 101,03')})));assert.ok(wrong.findings.includes('STATEMENT_RECONCILIATION_REQUIRED'));assert.ok(!wrong.facts.some(f=>f.key==='statement.topUps'));
 });
+
+test('Kazakh loan disbursement is a recognized incoming category and never a top-up',()=>{
+ const t='Kaspi ҮЗІНДІ КӨШІРМЕ\n18.09.25ж. бастап 18.09.26ж. дейінгі кезеңге\n18.09.25ж. қолжетімді: + 0,00 ₸\n18.09.26ж. қолжетімді: + 300,00 ₸\nТолықтыру + 100,00 ₸\n17.09.26 + 100,00 ₸ Толықтыру СЫНАҚ\n17.09.26 + 200,00 ₸ Кредит';
+ const r=extractNative(pages(t));assert.equal(r.bankStatement.topUpsVerified,true);assert.equal(r.bankStatement.credits,'300.00');assert.equal(r.facts.find(f=>f.key==='statement.topUps').value,'100.00');
+});
