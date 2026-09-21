@@ -1,6 +1,6 @@
 import { GET as salesMetrics } from '../sales-metrics/route';
 import { readSessionCookie, verifySession } from '../../../lib/worker-session';
-import { PEOPLE, Person, plansFor, calculate, todayAlmaty, monthRange, Totals } from '../../../lib/personal-sales';
+import { PEOPLE, Person, plansFor, calculate, monthlyEarnings, todayAlmaty, monthRange, Totals } from '../../../lib/personal-sales';
 export const dynamic = 'force-dynamic';
 const headers = { 'cache-control': 'private, no-store' };
 // Confirmed by the owner: full contract value on the date handed to lawyers.
@@ -37,8 +37,15 @@ export async function GET(request: Request) {
       const days = []; for (let d = p.start; d <= (p.end < today ? p.end : today);) { days.push(d); const date = new Date(d + 'T00:00:00Z'); date.setUTCDate(date.getUTCDate() + 1); d = date.toISOString().slice(0, 10); } return days;
     }));
     const uncovered = Math.round((Date.parse(range.end) - Date.parse(range.start)) / 86400000) + 1 - [...coveredDays].filter(day => day >= range.start && day <= range.end).length;
-    const earned = !EARNINGS_BASIS_CONFIRMED || !periods.length || periods.some(p => p.earned === null) ? null : periods.reduce((sum, p) => sum + p.earned!, 0);
-    return Response.json({ person, name: PEOPLE[person].name, canChoosePerson: actor.worker === 'ali', month, today, generatedAt: new Date().toISOString(), monthly, periods: periods.map(p => ({ ...p, earned: EARNINGS_BASIS_CONFIRMED ? p.earned : null, commission: EARNINGS_BASIS_CONFIRMED ? p.commission : null })), earned, paid: null, owed: null, uncoveredDays: uncovered, earningsBasisConfirmed: EARNINGS_BASIS_CONFIRMED }, { headers });
+    const visiblePeriods = periods.map(p => ({ ...p, earned: EARNINGS_BASIS_CONFIRMED ? p.earned : null, commission: EARNINGS_BASIS_CONFIRMED ? p.commission : null }));
+    const byMonth = new Map<string, typeof visiblePeriods>();
+    for (const period of visiblePeriods) {
+      const key = period.start.slice(0, 7);
+      byMonth.set(key, [...(byMonth.get(key) || []), period]);
+    }
+    const earningsMonths = [...byMonth].map(([key, values]) => monthlyEarnings(key, values));
+    const earned = !EARNINGS_BASIS_CONFIRMED || !earningsMonths.length || earningsMonths.some(item => item.earned === null) ? null : earningsMonths.reduce((sum, item) => sum + item.earned!, 0);
+    return Response.json({ person, name: PEOPLE[person].name, canChoosePerson: actor.worker === 'ali', month, today, generatedAt: new Date().toISOString(), monthly, periods: visiblePeriods, earningsMonths, earned, paid: null, owed: null, uncoveredDays: uncovered, earningsBasisConfirmed: EARNINGS_BASIS_CONFIRMED }, { headers });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : 'Не удалось загрузить показатели.' }, { status: 502, headers });
   }
