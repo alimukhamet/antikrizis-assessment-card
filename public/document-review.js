@@ -7,6 +7,18 @@ document.addEventListener('assessment-draft-save-error',event=>{
  for(const note of document.querySelectorAll('[data-review-draft-status]'))note.textContent=event.detail?.message||'Не удалось сохранить введённые данные. Повторите сохранение черновика.';
 });
 window.DocumentReview={render(container,result,dealId,selection,onSaved){
+ const coverage=result.documents?.loanCoverage;
+ if(coverage){
+  const section=document.createElement('section'),title=document.createElement('strong');section.className='af-loan-coverage';
+  title.textContent=`Активные кредиты: ${coverage.present} из ${coverage.expected} в анкете`;section.append(title);
+  const note=document.createElement('p');note.textContent=coverage.complete?'Все кредиты полного ГКБ учтены по одному, включая активные договоры с нулевым долгом.':`Нужно добавить: ${coverage.missing}. Проверить повторы: ${coverage.duplicates}.`;section.append(note);
+  for(const loan of coverage.rows.filter(r=>r.status!=='present')){
+   const row=document.createElement('p'),source=document.createElement('a');row.append(document.createTextNode(`${loan.creditor} · № ${loan.contractNumber} — ${loan.status==='missing'?'добавьте в разделе «Долги»':'проверьте повторные записи в разделе «Долги»'}. `));
+   source.textContent='Полный ГКБ · стр. '+loan.page;source.href=`/document-viewer.html?dealId=${encodeURIComponent(dealId)}&documentId=${encodeURIComponent(loan.documentId)}&page=${loan.page}`;source.target='_blank';source.rel='noopener';row.append(source);section.append(row);
+  }
+  const open=document.createElement('button');open.type='button';open.className='btn btn-ghost';open.textContent='К кредитам в анкете';open.onclick=()=>{const target=document.getElementById('creditors');window.AssessmentWorkflow?.reveal(target);};section.append(open);container.append(section);
+ }
+ if(result.documents?.issues?.some(issue=>issue.code==='SHORT_CREDIT_REVIEW_REQUIRED')){const compare=document.createElement('button');compare.type='button';compare.className='btn btn-main';compare.textContent='Сверить кредиты';compare.onclick=()=>window.GkbComparison?.open?.();container.append(compare);}
  for(const report of result.documents?.matchedShortReports||[]){
   const section=document.createElement('details'),title=document.createElement('summary');title.textContent='Краткий ГКБ сверён с полным отчётом';section.append(title);
   const note=document.createElement('p');note.textContent='Сокращённые номера сопоставлены однозначно. Ответы берём из полного отчёта; их нужно проверить.';section.append(note);

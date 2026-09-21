@@ -1,7 +1,8 @@
 /* Compare independent report facts, never the merged questionnaire answers. */
 const fact=(credit,key)=>credit.facts?.find(f=>f.key===key);
 const debt=credit=>fact(credit,'debtOutstanding')||credit.comparisonDebt;
-const bank=credit=>String(fact(credit,'creditor')?.value||'').normalize('NFKC').toLocaleLowerCase('ru-RU').replace(/\s+/g,'');
+export const creditorKey=value=>value.normalize('NFKC').toLocaleLowerCase('ru-RU').trim().replace(/^акционерное\s+общество(?=\s|[«"“])/u,'ао').replace(/[«»“”„]/g,'"').replace(/\s+/g,'');
+const bank=credit=>creditorKey(String(fact(credit,'creditor')?.value||''));
 const ids=credit=>[credit.contractNumber,credit.contractCode].filter(Boolean).map(s=>s.trim());
 const truncated=credit=>ids(credit).some(s=>/\.\.|…/.test(s));
 function numberMatches(a,b){
@@ -40,7 +41,7 @@ export function compareGkb(reports,{iin,day}={}){
  if(!Number.isFinite(elapsed)||elapsed<0||elapsed>30)return unavailable('Для сверки нужны ГКБ не старше 30 дней.');
  if(list.some(r=>r.error||r.blocked&&!shortenedOnly(r)||!r.creditEvidence?.readable||r.creditEvidence.findings?.some(f=>['PAGE_COMPLETENESS_UNVERIFIED','OCR_OR_PAGE_REVIEW_REQUIRED'].includes(f))))return unavailable('Есть непрочитанные страницы или отчёт ещё не прошёл проверку.');
  const a=short.creditEvidence.credits,b=full.creditEvidence.credits,rows=[],used=new Set();
- const complete=short.creditEvidence.creditList?.complete===true&&full.creditEvidence.creditList?.complete===true;
+ const complete=listRead(short)&&full.creditEvidence.creditList?.complete===true;
  for(const credit of a){
   const matches=b.filter(c=>sameLoan(credit,c));
   if(matches.length!==1||a.filter(c=>sameLoan(c,matches[0])).length!==1){
@@ -54,7 +55,7 @@ export function compareGkb(reports,{iin,day}={}){
   const status=differences.length?'mismatch':av===null||bv===null||!daysKnown?'unavailable':'matched';
   rows.push(row(short,full,credit,other,status,differences.length?'Различаются: '+differences.join(', ')+'.':status==='unavailable'?'Нужно сверить остаток, просрочку и санкции.':''));
  }
- for(const credit of b.filter(c=>!used.has(c))){const uncertain=!complete||truncated(credit)||a.some(truncated)||a.some(c=>sameLoan(c,credit));rows.push(row(short,full,null,credit,uncertain?'unavailable':'mismatch',uncertain?'Договор нельзя однозначно сопоставить.':'Договор не найден в кратком ГКБ.'));}
+ for(const credit of b.filter(c=>!used.has(c))){if(complete&&cents(debt(credit)?.value)===0n&&/^0+$/.test(fact(credit,'overdueDays')?.value||'')&&!a.some(c=>sameLoan(c,credit))){rows.push(row(short,full,null,credit,'matched','Активный договор без долга и просрочки: краткий ГКБ может его не показывать. Он остаётся в анкете по полному отчёту.'));continue;}const uncertain=!complete||truncated(credit)||a.some(truncated)||a.some(c=>sameLoan(c,credit));rows.push(row(short,full,null,credit,uncertain?'unavailable':'mismatch',uncertain?'Договор нельзя однозначно сопоставить.':'Договор не найден в кратком ГКБ.'));}
  const status=rows.some(r=>r.status==='mismatch')?'mismatch':!complete||rows.some(r=>r.status==='unavailable')?'unavailable':'matched';
  return {status,reason:!complete?'Полнота списка договоров ещё не подтверждена.':status==='unavailable'?'Часть сумм требует проверки по полному отчёту.':'',rows,shortTotal:total(short),fullTotal:total(full),reports:list};
 }

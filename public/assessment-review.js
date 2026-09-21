@@ -113,7 +113,7 @@ function afPut(e,value,src){
  const source={...src,pending:!src.priorReview,value:String(src.originalValue??value),reviewId:src.priorReview?.id,edited:src.priorReview?.disposition==='corrected',correctionReason:src.priorReview?.reason||''};af.sources.set(e.id,source);afBadge(e,source);return true;
 }
 // Same identity rule as lib/documents/loan-identity.ts, covered by a parity test.
-const afCreditorKey=value=>String(value).normalize('NFKC').toLocaleLowerCase('ru-RU').replace(/\s+/g,'');
+const afCreditorKey=value=>String(value).normalize('NFKC').toLocaleLowerCase('ru-RU').trim().replace(/^акционерное\s+общество(?=\s|[«"“])/u,'ао').replace(/[«»“”„]/g,'"').replace(/\s+/g,'');
 function afLoanRowKey(key){const parts=key.split('|');if(parts[0]==='creditors'&&parts.length===4){parts[2]=afCreditorKey(parts[2]);parts[3]=parts[3].trim();}return parts.join('|');}
 function afRow(group,key,loan=null){
  const g=$af(group);if(!g)return null;
@@ -259,11 +259,12 @@ function afDocumentAttention(item){
  if(r.error)return {kind:'error',message:r.error};
  if(r.documentReview?.type===item.type)return null;
  const findings=r.findings||[];
+ if(item.type==='ГКБ — краткий отчёт'&&window.GkbComparison?.resolved?.(item.id))return null;
  const powerReason=['POWER_DATES_UNVERIFIED','POWER_DATE_NOT_ACCEPTABLE','POWER_SCOPE_REVIEW_REQUIRED','REPRESENTATIVE_NOT_APPROVED','REPRESENTATIVE_IDENTITY_UNVERIFIED'].find(code=>findings.includes(code));
  if(powerReason)return {kind:'manual',message:HostedAssessment.error(powerReason)};
  if(findings.includes('ENPF_PERIOD_UNVERIFIED'))return {kind:'manual',message:HostedAssessment.error('ENPF_PERIOD_UNVERIFIED')};
  const reason=['ENPF_PERIOD_NOT_ACCEPTABLE','SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED','GKB_TOO_OLD','GKB_DATE_NOT_ACCEPTABLE','FUTURE_DOCUMENT_DATE','STATEMENT_PERIOD_NOT_ACCEPTABLE','STATEMENT_RECONCILIATION_REQUIRED'].find(code=>findings.includes(code));
- if(reason)return {kind:'error',message:HostedAssessment.error(reason)};
+ if(reason)return {kind:reason.startsWith('SHORT_')?'credits':'error',message:reason.startsWith('SHORT_')?'Нужно сопоставить кредиты двух ГКБ. Откройте сверку: там показаны конкретные договоры и страницы.':HostedAssessment.error(reason)};
  if(!HostedAssessment.getContext()?.client.iin)return null; // The missing deal identity is shown once, with its next action.
  if(r.blocked)return {kind:'manual',message:item.type==='Доверенность'?'Сверьте владельца, срок и полномочия по оригиналу.':findings.includes('DOCUMENT_TYPE_UNVERIFIED')?'Не удалось определить тип. Откройте файл и укажите тип документа.':findings.includes('OCR_OR_PAGE_REVIEW_REQUIRED')?'Часть страниц не прочитана. Проверьте их по оригиналу.':'Сверьте владельца и срок по оригиналу.'};
  return null;
@@ -278,10 +279,11 @@ function afRenderResults(){
   const displayType=item.type&&item.type!=='Другой документ'?shortType[item.type]||item.type:r.type&&r.kind!=='other'?shortType[r.type]||r.type:item.file.name;
   const box=afEl('details',undefined,'af-file'),summary=afEl('summary'),name=afEl('strong',afExcluded(item)?'Ключ ЭЦП':displayType);summary.title=item.file.name;box.dataset.fileId=String(item.id);
   const wrongOwner=Boolean(r.identity?.iin&&HostedAssessment.getContext()?.client.iin&&r.identity.iin!==HostedAssessment.getContext().client.iin&&item.person==='Клиент');
-  const state=r.pending?'Выбран':r.sourceOnly?'Сохранён':r.error?'Не прочитан':wrongOwner?'Другой клиент':r.documentReview?.type===item.type?'Проверено сотрудником':r.draftOnly?'Прочитан · для черновика':r.blocked?'Сверить вручную':r.excluded?'Отдельно':r.duplicate?'Повтор':'Прочитан';
+  const state=r.pending?'Выбран':r.sourceOnly?'Сохранён':r.error?'Не прочитан':wrongOwner?'Другой клиент':r.documentReview?.type===item.type?'Проверено сотрудником':r.draftOnly?'Прочитан · для черновика':item.type==='ГКБ — краткий отчёт'&&window.GkbComparison?.resolved?.(item.id)?'Сверён с полным':r.blocked?'Сверить вручную':r.excluded?'Отдельно':r.duplicate?'Повтор':'Прочитан';
   summary.append(name,afEl('span',item.file.name,'af-file-filename'),afEl('span',state,'af-file-state'+(r.error||wrongOwner?' needs-review':'')));box.append(summary);
   box.append(afEl('p',afExcluded(item)?'Ключ ЭЦП':item.file.name,'af-original-name'));box.append(afEl('p',(r.pages||0)+' стр.'+(item.person?' · '+item.person:''),'hint'));
   const attention=afDocumentAttention(item);if(attention)box.append(afEl('p',attention.message,'af-document-attention'+(attention.kind==='error'?' error':'')));
+  if(attention?.kind==='credits'){const compare=afEl('button','Сверить кредиты','btn btn-ghost');compare.type='button';compare.onclick=()=>window.GkbComparison?.open?.();box.append(compare);}
   if(r.error&&item.storedDocumentId){const retry=afEl('button','Повторить чтение','btn btn-ghost');retry.type='button';retry.onclick=()=>afAnalyze({onlyPending:true});box.append(retry);}
   if(r.statement){const st=r.statement;box.append(afEl('p','Период: '+st.period+' · операций: '+st.transactions+' · поступления: '+Number(st.credits).toLocaleString('ru-RU')+' ₸. '+(st.reconciled?'Операции сверены.':'Нужна сверка операций.'),'hint'));}
   if(r.coverage?.from&&r.coverage?.to)box.append(afEl('p','Период: '+r.coverage.from+' — '+r.coverage.to,'hint'));

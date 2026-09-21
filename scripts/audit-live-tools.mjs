@@ -79,6 +79,7 @@ try{
        if(!item.draftUnchanged)throw Error('Draft changed during analysis refresh; investigate concurrent changes.');
       }
       const check=await request(root+'/check',{payload:p,bindings:[]});
+      item.loanCoverage=check.documents?.loanCoverage?{expected:check.documents.loanCoverage.expected,present:check.documents.loanCoverage.present,missing:check.documents.loanCoverage.missing,duplicates:check.documents.loanCoverage.duplicates,complete:check.documents.loanCoverage.complete}:null;
       item.check={readyToSubmit:check.readyToSubmit,answersComplete:check.answersComplete,remainingGates:check.remainingGates,missing:check.missing,issues:check.issues,documentIssues:check.documents?.issues?.map(v=>({code:v.code,message:v.message})),evidenceIssues:check.evidence?.issues};
      }
     }else if(route==='submission'){

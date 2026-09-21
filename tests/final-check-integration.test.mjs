@@ -15,7 +15,7 @@ const powerValidation=load('lib/documents/power-validation.ts',{'./power-of-atto
 const reviewService=load('lib/documents/review-service.ts',{'./power-validation':powerValidation,'./repository':repoTypes,'./policy':policy,'./analysis-service':{analysisVersion:'audit-current'}});
 const {checkReviewBindings,parseReviewBindings}=load('lib/questionnaire/review-bindings.ts',{'../documents/loan-identity':load('lib/documents/loan-identity.ts'),'../documents/repository':repoTypes,'../documents/review-service':reviewService});
 const manual={'Удостоверение личности':'identity','Доверенность':'power_of_attorney','Справка ЕНПФ':'enpf','Ф6 об отсутствии имущества':'property'};
-const {checkDocumentPackage}=load('lib/documents/package-check.ts',{'./loan-identity':load('lib/documents/loan-identity.ts'),'./analysis-service':{analysisVersion:'audit-current'},'./policy':policy,'./credit-report-match':load('lib/documents/credit-report-match.ts',{'./policy':policy}),'./document-review':{MANUAL_DOCUMENT_TYPES:manual,currentDocumentReview:async(_repo,_record,id,_extraction,_analysis,type)=>({id:'audit-review-'+id,value:{type:Array.isArray(type)?type[0]:type},actorId:'synthetic',reviewedAt:'2026-09-14'})},'./power-validation':powerValidation});
+const {checkDocumentPackage}=load('lib/documents/package-check.ts',{'./loan-identity':load('lib/documents/loan-identity.ts'),'./analysis-service':{analysisVersion:'audit-current'},'./policy':policy,'./credit-report-match':load('lib/documents/credit-report-match.ts',{'./policy':policy,'./loan-identity':load('lib/documents/loan-identity.ts')}),'./document-review':{MANUAL_DOCUMENT_TYPES:manual,currentDocumentReview:async(_repo,_record,id,_extraction,_analysis,type)=>({id:'audit-review-'+id,value:{type:Array.isArray(type)?type[0]:type},actorId:'synthetic',reviewedAt:'2026-09-14'})},'./power-validation':powerValidation});
 const iin='000000000010',day='2026-09-14';
 function fixture(){
  const values={fio:'SYNTHETIC AUDIT',enforcementDetails:'Нет',iin,dognum:'AUDIT',marital:'Холост / не замужем',dependents:'0',childrenTotal:'0',procedure:'199','count-clientjobs':'0','count-clientunofficial':'0',clientBenefitsCount:'0',c8037:'0',hardshipReason:'Платежи вношу, трудностей нет',kaspiAnnual:'0',gamblingTransfers:'no',lawyerNotesStatus:'no',n8044:'0',summa:'500000',contractDate:day,months:'5',payDay:'7',grafType:'423'};
@@ -56,4 +56,18 @@ test('future loan month cannot generate contract data through final readiness',a
  const p=fixture(),s=repositoryFor(p);assert.equal((await check(p,s)).readyToSubmit,true);
  p.groups.find(g=>g.id==='creditors').rows[0].find(a=>a.key==='n8038Start').value='2099-01';
  const r=await check(p,s);assert.equal(r.documents.packageReady,true);assert.equal(r.answersComplete,false);assert.equal(r.preview,null);assert.equal(r.readyToSubmit,false);assert.ok(r.issues.some(i=>i.code==='FUTURE_LOAN_MONTH'));
+});
+test('final gate checks every active source loan against actual saved answers, including zero balances',async()=>{
+ for(const failure of ['none','missing','duplicate','wrong-number','wrong-bank','stale-key']){
+  const p=fixture(),s=repositoryFor(p),full=s.sources.get('full').extraction;full.creditList={complete:true,declared:2};
+  const extra=structuredClone(full.credits[0]);extra.contractNumber='ZERO-CARD';extra.page=4;extra.facts.find(f=>f.key==='debtOutstanding').value='0.00';full.credits.push(extra);
+  const group=p.groups.find(g=>g.id==='creditors'),row=structuredClone(group.rows[0]);row.find(a=>a.key==='loanContractId').value='ZERO-CARD';row.find(a=>a.key==='n8040').value='0.00';group.rows.push(row);group.rowKeys.push(`creditors|${iin}|TEST BANK|ZERO-CARD`);
+  if(failure==='missing'){group.rows.pop();group.rowKeys.pop();}
+  if(failure==='duplicate'){group.rows.push(structuredClone(row));group.rowKeys.push(null);}
+  if(failure==='wrong-number')row.find(a=>a.key==='loanContractId').value='WRONG';
+  if(failure==='wrong-bank')row.find(a=>a.key==='n8038').value='OTHER BANK';
+  if(failure==='stale-key')group.rowKeys[1]='creditors|old-row-key';
+  const r=await check(p,s),ok=['none','stale-key'].includes(failure);assert.equal(r.readyToSubmit,ok,failure);assert.equal(r.documents.loanCoverage.expected,2);assert.equal(r.documents.loanCoverage.complete,ok,failure);assert.equal(r.documents.packageReady,true,'missing answers do not masquerade as broken documents');
+  if(!ok){assert.equal(r.preview,null);assert.ok(r.issues.some(i=>['ACTIVE_LOAN_MISSING','ACTIVE_LOAN_DUPLICATE'].includes(i.code)),failure);}
+ }
 });

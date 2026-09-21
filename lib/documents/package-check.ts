@@ -21,6 +21,7 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
  const manuallyReviewed:Array<{documentId:string;reviewId:string;type:string;actorId:string;reviewedAt:string}>=[];
  const pendingShort:Array<{documentId:string;type:string;analysis:Analysis;message:string}>=[],fullReports:Array<{documentId:string;analysis:Analysis}>=[];
  const matchedShortReports:Array<{documentId:string;fullDocumentId:string;matches:CreditMatch[]}>=[];
+ const coverageReports:Array<{documentId:string;analysis:Analysis}>=[];
  const seen=new Set<string>(),available=new Set<string>();
  const credits=new Map<string,Array<{documentId:string;creditor:string;issuedAt:string|null;values:Record<string,string>;pages:Record<string,number>}>>();
  const selectedDocuments=payload.documents.filter(document=>scope==='handoff'?document.type==='Доверенность':!['Доверенность','Подписанный договор'].includes(document.type));
@@ -66,6 +67,7 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
   if(parsed.kind.startsWith('gkb_')){
    if(gkbFreshness(parsed.issuedAt||'',day).length){issue('GKB_DATE_NOT_ACCEPTABLE','ГКБ должен быть выдан не более 30 дней назад и не иметь будущую дату.');continue;}
    if(parsed.findings.includes('CONTRACT_LIST_INCOMPLETE_OR_OTHER_ROLES'))issue('CREDIT_LIST_REVIEW_REQUIRED','Нужно сверить полноту обязательств и роль клиента.');
+   if(parsed.kind==='gkb_full'&&parsed.creditList?.complete)coverageReports.push({documentId:document.id,analysis:cached.result as Analysis});
    for(const credit of parsed.credits){
     const creditor=credit.facts.find(f=>f.key==='creditor')?.value;
     if(!creditor||!credit.contractNumber){issue('CREDIT_IDENTITY_UNVERIFIED','Не удалось однозначно определить кредитора и номер обязательства.');continue;}
@@ -100,6 +102,21 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
   for(const field of fields){const found=sources.filter(s=>s.values[field]!==undefined);const values=[...new Set(found.map(s=>s.values[field]))];if(values.length>1)conflicts.push({documentIds:found.map(s=>s.documentId),field,values,issuedAt:found.map(s=>s.issuedAt),creditor,contractNumber,sources:found.map(s=>({documentId:s.documentId,issuedAt:s.issuedAt,value:s.values[field],page:Number.isInteger(s.pages[field])&&s.pages[field]>0?s.pages[field]:null}))});}
  }
  const creditGroup=payload.groups?.find(g=>g.id==='creditors');
+ // Check actual saved answers, not stale row keys or an editable total/count.
+ // Every active borrower obligation remains required, including explicit zero balances.
+ const expectedLoans=new Map<string,{creditor:string;contractNumber:string;aliases:string[];documentId:string;page:number}>();
+ for(const report of coverageReports)for(const credit of report.analysis.extraction.credits){
+  const creditor=credit.facts.find(f=>f.key==='creditor')?.value||'',aliases=[credit.contractCode,credit.contractNumber].filter((v):v is string=>!!v).map(v=>v.trim());
+  const key=JSON.stringify([creditorKey(creditor),aliases[0]]);
+  if(!expectedLoans.has(key))expectedLoans.set(key,{creditor,contractNumber:aliases[0],aliases,documentId:report.documentId,page:credit.page});
+ }
+ const coverageRows=[...expectedLoans.values()].map(loan=>{
+  const rows=(creditGroup?.rows||[]).flatMap((row,index)=>{const values=Object.fromEntries(row.map(a=>[a.key,a.value]));return creditorKey(values.n8038||'')===creditorKey(loan.creditor)&&loan.aliases.includes((values.loanContractId||'').trim())?[index]:[];});
+  return {...loan,rows,status:rows.length===1?'present':rows.length?'duplicate':'missing'};
+ });
+ // One questionnaire row cannot account for two different source obligations.
+ for(const loan of coverageRows)if(loan.rows.some(row=>coverageRows.filter(other=>other.rows.includes(row)).length>1))loan.status='duplicate';
+ const loanCoverage=coverageReports.length?{expected:coverageRows.length,present:coverageRows.filter(r=>r.status==='present').length,missing:coverageRows.filter(r=>r.status==='missing').length,duplicates:coverageRows.filter(r=>r.status==='duplicate').length,rows:coverageRows,complete:coverageRows.every(r=>r.status==='present')}:null;
  for(const conflict of conflicts){
   if(conflict.field!=='debtOutstanding'||!creditGroup)continue;
   const expected=loanRowKey(`creditors|${record.client_iin}|${conflict.creditor}|${conflict.contractNumber}`);
@@ -114,5 +131,5 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
  // Credentials remain in the existing separate upload flow, never in extraction/drafts.
  const credentials=await repository.credentialStatus?.(record);
  // The handoff service separately verifies the saved key and signed contract.
- return {required,missing,matchedShortReports,manuallyReviewed,credentials:credentials??null,structurallyChecked:[...available],issues,conflicts,packageReady:issues.length===0,authenticity:'not_verified'};
+ return {required,missing,matchedShortReports,loanCoverage,manuallyReviewed,credentials:credentials??null,structurallyChecked:[...available],issues,conflicts,packageReady:issues.length===0,authenticity:'not_verified'};
 }

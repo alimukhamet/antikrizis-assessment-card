@@ -63,6 +63,10 @@ test('built Worker persists a complete contract and recovers a handoff without d
  const saved=await api(root+'/draft');assert.equal(saved.draft.revision,1);assert.equal(saved.draft.payload.documents.length,6);
  const checked=await api(root+'/check',{payload:fixture.payload,bindings:[]});
  assert.equal(checked.readyToSubmit,true,JSON.stringify(checked));
+ assert.equal(checked.documents.matchedShortReports.length,1);assert.equal(checked.documents.loanCoverage.present,1);
+ const missingLoan=structuredClone(fixture.payload);missingLoan.groups.find(g=>g.id==='creditors').rows[0].find(a=>a.key==='loanContractId').value='WRONG';
+ const missingCheck=await api(root+'/check',{payload:missingLoan,bindings:[]});assert.equal(missingCheck.readyToSubmit,false);assert.equal(missingCheck.documents.packageReady,true);assert.ok(missingCheck.issues.some(i=>i.code==='ACTIVE_LOAN_MISSING'));
+ assert.equal((await api(root+'/draft')).draft.revision,1,'read-only coverage checks preserve the draft');
  const destination={dealId:'900001',iin:fixture.iin,identityRevision:1},requestId=crypto.randomUUID();
  await api(root+'/submission',{action:'prepare',requestId,identityRevision:1,payload:fixture.payload,bindings:[],destination});
  const complete=await api(root+'/submission',{action:'complete',requestId,destination});

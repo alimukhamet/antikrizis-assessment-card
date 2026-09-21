@@ -55,5 +55,5 @@ test('normalized duplicate aliases are rejected without conflating client or con
 test('form and server loan identity rules stay in parity',()=>{
  const {loanRowKey}=load('lib/documents/loan-identity.ts'),script=fs.readFileSync(new URL('../public/assessment-review.js',import.meta.url),'utf8');
  const start=script.indexOf('const afCreditorKey='),end=script.indexOf('\nfunction afRow(',start);assert.ok(start>=0&&end>start);
- for(const key of ['creditors|123|TEST  BANK|Code1','creditors|123|ＴＥＳＴ\u00a0ＢＡＮＫ|Code1','creditors|123|АО "Банк Центр Кредит"|12-A','creditors|123|АО "Банк ЦентрКредит"| 12-A ','creditors|OTHER|testbank|code1','manual-row'])assert.equal(vm.runInNewContext(script.slice(start,end)+`;afLoanRowKey(${JSON.stringify(key)})`),loanRowKey(key));
+ for(const key of ['creditors|123|TEST  BANK|Code1','creditors|123|ＴＥＳＴ\u00a0ＢＡＮＫ|Code1','creditors|123|АО "Банк Центр Кредит"|12-A','creditors|123|АО "Банк ЦентрКредит"| 12-A ','creditors|OTHER|testbank|code1','creditors|123|Акционерное общество «Example Bank»|Code1','creditors|123|АО “Example Bank”|Code1','manual-row'])assert.equal(vm.runInNewContext(script.slice(start,end)+`;afLoanRowKey(${JSON.stringify(key)})`),loanRowKey(key));
 });

@@ -86,6 +86,8 @@ jobs:
             'hosted-assessment.js'
             'server-drafts.js'
             'document-review.js'
+            'gkb-comparison.mjs'
+            'gkb-comparison-ui.mjs'
             'server-answer-check.js'
             'money-input.js'
             'lawyer-handoff.js'

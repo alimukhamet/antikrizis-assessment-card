@@ -369,13 +369,13 @@ test('first intake requires the two context answers before any file analysis or 
  s.d.getElementById('needsSocialDoc').value='0';s.w.AssessmentWorkflow.refresh();assert.equal(choose.disabled,true);
  s.d.getElementById('needsSalaryDoc').value='none';s.w.AssessmentWorkflow.refresh();assert.equal(choose.disabled,false);assert.equal(s.d.getElementById('importCrmDocuments').disabled,false);
 });
-test('finished package exposes the exact attention message and jumps to the affected document',async t=>{
+test('finished package offers the loan comparison directly for shortened IDs',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();
  s.run("af.results.set(1,{blocked:true,findings:['SHORT_CONTRACT_ID_TRUNCATED'],identity:{iin:'991231300003'},server:{dealId:'11665',documentId:'synthetic-0'}});afRenderResults();afRefresh();");
- const notice=s.d.getElementById('workflowCollection');assert.match(notice.textContent,/сокращён номер договора/);
- notice.querySelector('[data-package-attention="1"] button').click();assert.equal(s.d.querySelector('.af-file[data-file-id="1"]').open,true);
+ let comparisons=0;s.w.GkbComparison={open(){comparisons++;},statusButton(){return s.d.createElement('button');}};const notice=s.d.getElementById('workflowCollection');assert.match(notice.textContent,/сопоставить кредиты/);
+ const compare=notice.querySelector('[data-package-attention="1"] button');assert.equal(compare.textContent,'Сверить кредиты');compare.click();assert.equal(comparisons,1);
  s.run("af.busy=true;afAnalysisProgress(2,7)");assert.match(notice.textContent,/Прочитано документов · 2 из 7/);assert.equal(notice.querySelector('[data-package-attention]'),null);
- s.run("af.busy=false;af.progress=null;document.dispatchEvent(new CustomEvent('assessment-analysis-complete',{detail:{showPackageSummary:true}}))");assert.equal(s.d.activeElement.id,'workflowCollection');assert.match(notice.textContent,/сокращён номер договора/);
+ s.run("af.busy=false;af.progress=null;document.dispatchEvent(new CustomEvent('assessment-analysis-complete',{detail:{showPackageSummary:true}}))");assert.equal(s.d.activeElement.id,'workflowCollection');assert.match(notice.textContent,/сопоставить кредиты/);
 });
 test('an unreadable ENPF period offers direct manual review',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();let opened=null;s.w.DocumentReview.open=async id=>{opened=id;};
