@@ -14,6 +14,11 @@ function setup(blocked=false,replayed=false){const dom=new JSDOM(html,{url:'http
  const blocked=setup(true);await blocked.load();assert.equal(blocked.w.document.getElementById('fio').value,'');assert.equal(blocked.run('af.sources.size'),0);assert.ok(blocked.run('missingDocuments().includes("ГКБ — полный отчёт")'));
  const replay=setup(false,true);await replay.load();const rp=replay.w.document.querySelector('#creditors input[id^=n8041]');assert.equal(rp.value,'25.00');assert.equal(replay.run('af.sources.get("'+rp.id+'").pending'),false);assert.equal(replay.run('af.sources.get("'+rp.id+'").value'),'20.00');
  assert.equal(replay.run('[...af.results.values()][0].creditEvidence.credits[0].facts.find(f=>f.key==="monthlyPayment").value'),'20.00','report comparison must retain original evidence despite a saved correction');
+ // Restoring repeated IIN facts from different documents keeps an existing employee review.
+ replay.run('af.restoringEvidence=true');const originalSource=replay.run('af.sources.get("'+rp.id+'")');
+ replay.w.afPut(rp,'25.00',{value:'25.00',fileId:999,page:1,server:{...originalSource.server,documentId:'other-document'},serverFactKey:'credits.0.monthlyPayment'});
+ assert.equal(replay.run('af.sources.get("'+rp.id+'").reviewId'),'prior-review');assert.equal(replay.run('af.sources.get("'+rp.id+'").pending'),false);
+ replay.run('af.restoringEvidence=false');
  const update=setup();await update.load();const up=update.w.document.querySelector('#creditors input[id^=n8041]');up.value='25.00';up.dispatchEvent(new update.w.Event('input',{bubbles:true}));const ur=up.closest('.field').querySelector('.af-source textarea');ur.value='Preserve employee correction';ur.dispatchEvent(new update.w.Event('input',{bubbles:true}));
  update.setFail('EXTRACTION_VERSION_CHANGED');await assert.rejects(update.run('HostedAssessment.reviewMany([[document.getElementById("'+up.id+'"),af.sources.get("'+up.id+'")]])'),/Обновите документы/);
  assert.equal(update.w.document.querySelectorAll('#recognitionUpdateNotice').length,1);const baseFetch=update.w.fetch;

@@ -95,6 +95,9 @@ function afPut(e,value,src){
  value=String(value);let retainedCorrection=null;
  if(af.restoringEvidence){
   // Reopening a draft restores evidence badges, not deleted answers or older document values.
+  const accepted=af.sources.get(e.id);
+  // Another document repeating an identical answer must not downgrade its saved review.
+  if(e.type!=='checkbox'&&e.value===value&&accepted?.reviewId&&!accepted.pending&&!accepted.stale&&!src.priorReview)return false;
   if(e.type==='checkbox'?!e.checked:e.value!==value){
    const previous=af.sources.get(e.id);
    if(e.type==='checkbox'||!previous?.stale||!previous.correctionReason?.trim()||previous.server?.documentId!==src.server?.documentId||String(previous.value)!==String(src.originalValue??value))return false;
