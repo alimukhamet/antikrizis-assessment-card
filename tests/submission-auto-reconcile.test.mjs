@@ -30,7 +30,8 @@ test('browser renders the completed server result without orchestrating individu
     const body = JSON.parse(options.body);
     calls.push(body);
     if (body.action === 'prepare') row = {requestId: body.requestId, state: 'prepared', assessmentSaved: false, historySaved: false, contractNumber: 'TEST'};
-    if (body.action === 'complete') row = {...row,state:'verified',assessmentSaved:true,historySaved:true,contract:{rendererVersion:'a'.repeat(64),data:{client_name:'SYNTHETIC CLIENT'}}};
+    if (body.action === 'complete') row = {...row,state:'verified',assessmentSaved:true,historySaved:true,assessmentIntakeSync:{status:'pending'},contract:{rendererVersion:'a'.repeat(64),data:{client_name:'SYNTHETIC CLIENT'}}};
+    if (body.action === 'sync-intake') row = {...row, assessmentIntakeSync:{status:'synced'}};
     return {ok: true, json: async () => row};
   };
 
@@ -46,5 +47,12 @@ test('browser renders the completed server result without orchestrating individu
   assert.equal(calls.filter(call => call.action === 'complete').length, 1, 'Browser must make only one continuation request');
   assert.equal(downloads, 1);
   assert.match(w.document.getElementById('status').textContent, /Договор готов/);
+  assert.match(w.document.getElementById('status').textContent, /пока не подтверждена/);
+  const retry = w.document.getElementById('retryAssessmentIntake');
+  assert.equal(retry.hidden,false);
+  await retry.onclick();
+  assert.deepEqual(calls.map(call => call.action), ['prepare','complete','sync-intake']);
+  assert.equal(retry.hidden,true);
+  assert.match(w.document.getElementById('status').textContent, /передача в юридическую CRM подтверждена/i);
   dom.window.close();
 });
