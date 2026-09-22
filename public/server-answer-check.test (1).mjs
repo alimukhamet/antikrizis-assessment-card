@@ -1,0 +1,50 @@
+import{test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import{JSDOM}from'jsdom';
+const script=fs.readFileSync(new URL('../public/server-answer-check.js',import.meta.url),'utf8');
+function setup(send){const dom=new JSDOM('<section id="documentStep"></section><div id="questionnaireStep"><button id="checkQuestions">Check</button><div id="checkStatus"></div><input id="fio"></div>',{runScripts:'outside-only',url:'https://assessment.example'});const w=dom.window;let payload={answers:[],documents:[]};w.eval(fs.readFileSync(new URL("../public/hosted-assessment.js",import.meta.url),"utf8"));w.HostedAssessment={...w.HostedAssessment,ready:()=>true,getContext:()=>({client:{external:{dealId:'11665'}}})};w.ServerDrafts={capture:()=>payload,reviewBindings:()=>[]};w.afConfirmPending=async()=>true;w.fetch=send;w.eval(fs.readFileSync(new URL('../public/document-review.js',import.meta.url),'utf8'));w.eval(fs.readFileSync(new URL('../public/document-upload.js',import.meta.url),'utf8'));w.eval(fs.readFileSync(new URL('../public/submission-flow.js',import.meta.url),'utf8'));w.eval(script);return{w,button:w.document.getElementById('checkQuestions'),preview:[...w.document.querySelectorAll('details')].find(d=>d.querySelector('summary')?.textContent==='Предпросмотр карточки для юриста'),edit:()=>{payload={answers:[{value:'changed'}]};w.document.getElementById('fio').dispatchEvent(new w.Event('input',{bubbles:true}));}};}
+test('lawyer preview is plain text and disappears when an answer changes',async()=>{const s=setup(async()=>({ok:true,json:async()=>({answersComplete:true,preview:{lawyerCard:'TEST <img src=x onerror=alert(1)>'}})}));await s.button.onclick();assert.equal(s.preview.hidden,false);assert.equal(s.preview.querySelector('pre').textContent,'TEST <img src=x onerror=alert(1)>');assert.equal(s.preview.querySelector('img'),null);s.edit();assert.equal(s.preview.hidden,true);});
+test('response for an older answer snapshot cannot display a card',async()=>{let resolve;const response=new Promise(r=>{resolve=r});const s=setup(()=>response);const checking=s.button.onclick();s.edit();resolve({ok:true,json:async()=>({answersComplete:true,preview:{lawyerCard:'STALE'}})});await checking;assert.equal(s.preview.hidden,true);assert.match(s.w.document.getElementById('checkStatus').textContent,/изменились/);});
+
+test('editing document review keeps the inspection form visible and saves scoped evidence',async()=>{
+ const calls=[];const s=setup(async(path,options)=>{calls.push({path,body:JSON.parse(options.body)});return{ok:true,json:async()=>path.endsWith('/document-reviews')?{ok:true,reviewId:'review'}:{answersComplete:true,identityRevision:7,documents:{issues:[],manuallyReviewed:[]},preview:{lawyerCard:'TEST'}}};});
+ s.w.selectedFiles=[{id:1,storedDocumentId:'doc'}];s.w.af={results:new Map([[1,{server:{documentId:'doc'},reviewContext:{pages:2,issuedAt:'2026-09-10',from:'2025-09-10',to:'2026-09-10'}}]])};s.w.ServerDrafts.capture=()=>({answers:[],documents:[{documentId:'doc',type:'Справка ЕНПФ',person:'Клиент'}]});await s.button.onclick();
+ const form=s.w.document.querySelector('[data-document-review]');assert.ok(form);const fields=form.querySelectorAll('input');fields[0].value='TEST-IIN';fields[0].dispatchEvent(new s.w.Event('input',{bubbles:true}));assert.equal(form.isConnected,true);assert.equal(form.querySelector('input[type=number]'),null);form.querySelectorAll('input[type=checkbox]').forEach(f=>f.checked=true);fields[fields.length-1].value='SYNTHETIC inspection';
+ await form.querySelector('button').onclick();const saved=calls.find(c=>c.path.endsWith('/document-reviews'));assert.equal(saved.body.documentId,'doc');assert.equal(saved.body.identityRevision,7);assert.equal(saved.body.review.iin,'TEST-IIN');assert.equal(saved.body.review.pages,2);assert.ok(saved.body.requestId);
+});
+test('withdrawal UI targets the displayed approval and reuses request ID after a lost response',async()=>{
+ const calls=[];let fail=true;const s=setup(async(path,options)=>{const body=JSON.parse(options.body);if(body.action==='withdraw'){calls.push(body);if(fail){fail=false;throw Error('Synthetic lost response');}return{ok:true,json:async()=>({ok:true,reviewId:'withdrawn'})};}return{ok:true,json:async()=>({answersComplete:true,identityRevision:7,documents:{issues:[],manuallyReviewed:[{documentId:'doc',type:'Справка ЕНПФ',reviewId:'approved'}]},preview:{lawyerCard:'TEST'}})};});
+ s.w.selectedFiles=[{id:1,storedDocumentId:'doc'}];s.w.af={results:new Map([[1,{server:{documentId:'doc'},reviewContext:{pages:2,issuedAt:'2026-09-10',from:'2025-09-10',to:'2026-09-10'}}]])};s.w.ServerDrafts.capture=()=>({answers:[],documents:[{documentId:'doc',type:'Справка ЕНПФ',person:'Клиент'}]});await s.button.onclick();const form=s.w.document.querySelector('[data-document-review]');const reason=form.querySelector('input[aria-label="Причина отмены проверки"]');reason.value='SYNTHETIC mistaken approval';const button=[...form.querySelectorAll('button')].find(b=>b.textContent==='Отменить проверку');await button.onclick();assert.equal(button.disabled,false);await button.onclick();assert.equal(calls.length,2);assert.equal(calls[0].reviewId,'approved');assert.equal(calls[0].requestId,calls[1].requestId);assert.equal(calls[0].identityRevision,7);
+});
+test('document checks stay before the questionnaire and do not jump to unanswered fields',async()=>{
+ const s=setup(async()=>({ok:true,json:async()=>({identityRevision:1,answersComplete:false,issues:[{key:'fio',label:'ФИО'}],documents:{issues:[{code:'EDS_SEPARATE_UPLOAD_REQUIRED',message:'ЭЦП отдельно'}],manuallyReviewed:[]}})}));
+ const d=s.w.document,section=d.getElementById('documentReviewStep');assert.equal(d.getElementById('documentStep').nextElementSibling,section);assert.equal(section.nextElementSibling.id,'questionnaireStep');
+ await d.getElementById('checkDocuments').onclick();assert.notEqual(d.activeElement.id,'fio');assert.equal(s.preview.hidden,true);assert.equal(d.getElementById('documentCheckStatus').textContent,'Проверка обновлена · замечаний: 1.');assert.equal(d.querySelector('#documentReviewResults > details').open,false);assert.match(d.querySelector('#documentReviewResults li').textContent,/ЭЦП отдельно/);
+ assert.ok([...section.querySelectorAll('button')].some(b=>b.textContent==='Загрузить проверенные документы в Bitrix'));assert.equal(d.getElementById('checkStatus').textContent,'');
+});
+
+test('client search leaves the current review and lawyer preview intact',async()=>{
+ const s=setup(async()=>({ok:true,json:async()=>({answersComplete:true,preview:{lawyerCard:'SYNTHETIC PREVIEW'},documents:{issues:[],manuallyReviewed:[]}})}));
+ await s.button.onclick();assert.equal(s.preview.hidden,false);
+ const search=s.w.document.createElement('input');search.type='search';s.w.document.body.append(search);search.value='11749';search.dispatchEvent(new s.w.Event('input',{bubbles:true}));
+ assert.equal(s.preview.hidden,false);assert.equal(s.preview.querySelector('pre').textContent,'SYNTHETIC PREVIEW');
+ s.edit();assert.equal(s.preview.hidden,true);s.w.close();
+});
+
+test('предварительный договор скачивается под ФИО клиента из анкеты',async()=>{
+ const answer=contractData=>async()=>({ok:true,json:async()=>({identityRevision:1,answersComplete:true,preview:{lawyerCard:'SYNTHETIC PREVIEW',contractData},documents:{issues:[],manuallyReviewed:[]}})});
+ async function download(contractData){
+  const s=setup(answer(contractData)),w=s.w,names=[];
+  w.URL.createObjectURL=()=>'blob:test';w.URL.revokeObjectURL=()=>{};
+  w.HTMLAnchorElement.prototype.click=function(){if(this.download)names.push(this.download);};
+  w.ContractRenderer={render:async()=>new w.Blob(['SYNTHETIC'])};
+  await s.button.onclick();
+  const contract=[...s.preview.querySelectorAll('button')].find(b=>b.textContent==='Скачать предварительный договор');
+  assert.equal(contract.hidden,false);
+  await contract.onclick();
+  w.close();return names;
+ }
+ assert.deepEqual(await download({client_name:'СИНТЕТИЧЕСКИЙ ТЕСТ КЛИЕНТ'}),['СИНТЕТИЧЕСКИЙ ТЕСТ КЛИЕНТ.docx']);
+ // Запрещённые в Windows символы заменяются, лишние пробелы схлопываются.
+ assert.deepEqual(await download({client_name:'  ТЕСТ/КЛИЕНТ:  СИНТЕТИЧЕСКИЙ  '}),['ТЕСТ_КЛИЕНТ_ СИНТЕТИЧЕСКИЙ.docx']);
+ // Без ФИО остаётся прежнее нейтральное имя, а не пустое.
+ assert.deepEqual(await download({}),['Предварительный договор.docx']);
+});
