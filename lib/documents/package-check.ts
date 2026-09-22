@@ -128,7 +128,16 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
  }
  const coverageRows=[...expectedLoans.values()].map(loan=>{
   const rows=(creditGroup?.rows||[]).flatMap((row,index)=>{const values=Object.fromEntries(row.map(a=>[a.key,a.value]));return creditorKey(values.n8038||'')===creditorKey(loan.creditor)&&loan.aliases.includes((values.loanContractId||'').trim())?[index]:[];});
-  return {...loan,rows,status:rows.length===1?'present':rows.length?'duplicate':'missing'};
+  // A saved source key can locate an edited number for the employee, but can
+  // never satisfy coverage in place of the actual answer above.
+  const expectedKeys=loan.aliases.map(number=>loanRowKey(`creditors|${record.client_iin}|${loan.creditor}|${number}`));
+  const numberReviewRows=(creditGroup?.rows||[]).flatMap((row,index)=>!rows.includes(index)&&creditorKey(row.find(a=>a.key==='n8038')?.value||'')===creditorKey(loan.creditor)&&expectedKeys.includes(loanRowKey(creditGroup?.rowKeys[index]))?[index]:[]);
+  // An old sourced row without a number must not silently double the balance
+  // alongside the identified row. A different valid number still wins over a
+  // stale source key, and no source key alone establishes loan coverage.
+  const unidentifiedRows=numberReviewRows.filter(index=>/^(?:нету?|н\/д|-)?$/iu.test((creditGroup?.rows[index].find(a=>a.key==='loanContractId')?.value||'').trim()));
+  const duplicateRows=[...rows,...unidentifiedRows].sort((a,b)=>a-b);
+  return {...loan,rows,numberReviewRows,duplicateRows,status:rows.length===1&&!unidentifiedRows.length?'present':rows.length?'duplicate':'missing'};
  });
  // One questionnaire row cannot account for two different source obligations.
  for(const loan of coverageRows)if(loan.rows.some(row=>coverageRows.filter(other=>other.rows.includes(row)).length>1))loan.status='duplicate';

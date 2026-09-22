@@ -13,7 +13,8 @@ window.DocumentReview={render(container,result,dealId,selection,onSaved){
   title.textContent=`Активные кредиты: ${coverage.present} из ${coverage.expected} в анкете`;section.append(title);
   const note=document.createElement('p');note.textContent=coverage.complete?'Все кредиты полного ГКБ учтены по одному, включая активные договоры с нулевым долгом.':`Нужно добавить: ${coverage.missing}. Проверить повторы: ${coverage.duplicates}.`;section.append(note);
   for(const loan of coverage.rows.filter(r=>r.status!=='present')){
-   const row=document.createElement('p'),source=document.createElement('a');row.append(document.createTextNode(`${loan.creditor} · № ${loan.contractNumber} — ${loan.status==='missing'?'добавьте в разделе «Долги»':'повтор в кредитах '+loan.rows.map(row=>row+1).join(', ')+'. Сверьте и оставьте одну запись'}. `));
+   const action=loan.status==='missing'?(loan.numberReviewRows?.length?'проверьте номер договора в кредитах '+loan.numberReviewRows.map(row=>row+1).join(', '):'добавьте в разделе «Долги»'):'повтор в кредитах '+(loan.duplicateRows||loan.rows).map(row=>row+1).join(', ')+'. Сверьте и оставьте одну запись';
+   const row=document.createElement('p'),source=document.createElement('a');row.append(document.createTextNode(`${loan.creditor} · № ${loan.contractNumber} — ${action}. `));
    source.textContent='Полный ГКБ · стр. '+loan.page;source.href=`/document-viewer.html?dealId=${encodeURIComponent(dealId)}&documentId=${encodeURIComponent(loan.documentId)}&page=${loan.page}`;source.target='_blank';source.rel='noopener';row.append(source);section.append(row);
   }
   const open=document.createElement('button');open.type='button';open.className='btn btn-ghost';open.textContent='К кредитам в анкете';open.onclick=()=>{const target=document.getElementById('creditors');window.AssessmentWorkflow?.reveal(target);};section.append(open);container.append(section);

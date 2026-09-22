@@ -72,6 +72,8 @@ test('final gate checks every active source loan against actual saved answers, i
   if(failure==='stale-key')group.rowKeys[1]='creditors|old-row-key';
   const r=await check(p,s),ok=['none','stale-key'].includes(failure);assert.equal(r.readyToSubmit,ok,failure);assert.equal(r.documents.loanCoverage.expected,2);assert.equal(r.documents.loanCoverage.complete,ok,failure);assert.equal(r.documents.packageReady,true,'missing answers do not masquerade as broken documents');
   if(!ok){assert.equal(r.preview,null);assert.ok(r.issues.some(i=>['ACTIVE_LOAN_MISSING','ACTIVE_LOAN_DUPLICATE'].includes(i.code)),failure);}
+  if(failure==='wrong-number'){const issue=r.issues.find(i=>i.code==='ACTIVE_LOAN_MISSING');assert.equal(issue.row,1);assert.match(issue.label,/проверьте номер договора в кредитах 2/);assert.doesNotMatch(issue.label,/добавьте/);assert.equal(row.find(a=>a.key==='loanContractId').value,'WRONG');}
+  if(failure==='missing')assert.match(r.issues.find(i=>i.code==='ACTIVE_LOAN_MISSING').label,/добавьте/);
  }
 });
 
@@ -84,4 +86,12 @@ test('final gate accepts MFO spelling variants and catches duplicate bank aliase
   const duplicate=structuredClone(group.rows[0]);duplicate.find(a=>a.key==='n8038').value=fullName;group.rows.push(duplicate);group.rowKeys.push(null);
   const duplicated=JSON.stringify(p);r=await check(p,s);assert.equal(r.readyToSubmit,false);assert.equal(r.documents.loanCoverage.missing,0);assert.equal(r.documents.loanCoverage.duplicates,1);assert.match(r.issues.find(i=>i.code==='ACTIVE_LOAN_DUPLICATE').label,/кредитах 1, 2/);assert.equal(JSON.stringify(p),duplicated);
  }
+});
+
+test('an unidentified old sourced alias cannot double a loan, but stale keys cannot override valid different numbers',async()=>{
+ const p=fixture(),s=repositoryFor(p),group=p.groups.find(g=>g.id==='creditors');s.sources.get('full').extraction.creditList={complete:true,declared:1};
+ const alias=structuredClone(group.rows[0]);alias.find(a=>a.key==='loanContractId').value='';group.rows.push(alias);group.rowKeys.push(`creditors|${iin}|test  bank|LOAN1`);
+ let r=await check(p,s);assert.equal(r.readyToSubmit,false);assert.equal(r.documents.loanCoverage.duplicates,1);assert.match(r.issues.find(i=>i.code==='ACTIVE_LOAN_DUPLICATE').label,/кредитах 1, 2/);assert.equal(alias.find(a=>a.key==='loanContractId').value,'');
+ alias.find(a=>a.key==='loanContractId').value='OTHER-LOAN';r=await check(p,s);assert.equal(r.documents.loanCoverage.complete,true,'a stale key never overrides a different actual contract identifier');
+ group.rows.shift();group.rowKeys.shift();alias.find(a=>a.key==='loanContractId').value='';r=await check(p,s);assert.equal(r.readyToSubmit,false);assert.equal(r.documents.loanCoverage.missing,1,'a source key alone never counts as an included loan');assert.match(r.issues.find(i=>i.code==='ACTIVE_LOAN_MISSING').label,/проверьте номер/);
 });
