@@ -52,7 +52,7 @@ test('knowledge is staff-only, uncached and returns the exact imported snapshot'
  }
  const denied=await request('/api/knowledge',false);assert.equal(denied.status,401);
  const allowed=await request('/api/knowledge');assert.equal(allowed.status,200);assert.match(allowed.headers.get('cache-control'),/private, no-store/);assert.deepEqual(await allowed.json(),data);
- const page=await request('/knowledge');assert.equal(page.status,200);assert.match(await page.text(),/База знаний/);
+ const page=await request('/knowledge');assert.equal(page.status,200);assert.match(await page.text(),/Практика судов/);
  const launcher=await request('/assessment-card.html');assert.match(await launcher.text(),/href="\/knowledge" target="_top"/);
 });
 test('source aggregates are absent from public client assets',async()=>{

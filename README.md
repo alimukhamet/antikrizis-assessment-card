@@ -60,9 +60,9 @@ Scanned financial GKB/Kaspi processing still requires an OCR service integration
 
 The authenticated case export retains original references, extraction/review history, identity revisions and submission/upload receipts. The offline validator and restore command preserve records without replaying Bitrix writes. [EXPORT_FORMAT.md](EXPORT_FORMAT.md) specifies commands, credential handling and limitations.
 
-### Sales knowledge area
+### Court trends for sales
 
-`/knowledge` is the staff-protected ВПС reference and short learning area, linked from the existing launcher. `/api/knowledge` serves aggregate data with `private, no-store`; the dataset is never bundled into public browser assets. It does not read or write client cases, assessments or CRM records.
+`/knowledge` is the staff-protected ВПС court-trend finder, linked as «Практика судов» from the existing launcher. One search finds a region or court and opens its trend immediately. The sidebar shows regions or the selected region’s courts; the main view shows half-year/monthly trends, decision counts and the exact 2026 percentage-point change. There are no lessons, quizzes or sales scripts. `/api/knowledge` serves aggregate data with `private, no-store`; the dataset is never bundled into public browser assets. It does not read or write client cases, assessments or CRM records.
 
 The read-only import in `data/vps-sheet-snapshot.json` preserves five named sheet ranges from spreadsheet `1vQg24SZsKQ2IPoPvdNs6PtWRQjPHKZtbJENt3rbeI44`, imported 22 September 2026, with the source cutoff of 17 September 2026. It contains 20 regions and 222 courts with displayed outcomes. Period and monthly rates are preserved as displayed; percentage-point changes use the source values (not subtraction of already-rounded rates). All-time rates use the original counts. The source is a manual snapshot, not a live Sheets connection.
 
