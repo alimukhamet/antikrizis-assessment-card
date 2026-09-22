@@ -109,6 +109,16 @@ test('hidden workflow steps retain missing answers and pending sources while con
  assert.equal(s.run('afLogicalVisible(document.getElementById("partnerKaspiAnnual"))'),false);
 });
 
+test('new report imports reuse MFO and bank spelling aliases while restored manual duplicates stay intact',async t=>{
+ for(const [shortName,fullName] of [['ТОО Микрофинансовая организация «Synthetic Finance»','ТОО «МФО «Synthetic Finance»'],['АО "Народный банк Казахстана"','"Народный банк Казахстана"']]){
+  const s=setup(t);await s.load();
+  s.run(`af.client='991231300003';var shortName=${JSON.stringify(shortName)},fullName=${JSON.stringify(fullName)};var first=afRow('creditors',af.client+'|'+shortName+'|TEST-1');afRowFields(first,{n8038:shortName,n8040:'100'},{fileId:'short'});var loan={aliases:[fullName+'|TEST-1'],fields:{n8038:fullName,loanContractId:'TEST-1',n8040:'100',n8041:'10'}};var merged=afRow('creditors',af.client+'|'+fullName+'|TEST-1',loan);afRowFields(merged,loan.fields,{fileId:'full'});`);
+  assert.equal(s.run('first===merged'),true);assert.equal(s.d.querySelectorAll('#creditors > .repeat-rows > .repeat-item').length,1);assert.equal(s.run('af.conflicts.length'),0);
+  s.run(`var extra=add(document.getElementById('creditors'));extra.id='manual-alias';afRowFields(extra,{n8038:fullName,loanContractId:'TEST-1',n8040:'100',n8041:'20'},{fileId:'full'});af.rowKeys.set('creditors|'+af.client+'|'+fullName+'|TEST-1',extra.id);af.restoringEvidence=true;`);
+  const before=s.capture();assert.equal(s.run(`afRow('creditors',af.client+'|'+fullName+'|TEST-1',loan)`),null);assert.deepEqual(s.capture(),before);assert.equal(s.d.querySelectorAll('#creditors > .repeat-rows > .repeat-item').length,2);
+ }
+});
+
 test('navigation and source shortcuts reveal their fields without mutating the draft or authorizing writes',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();const before=s.capture();let edits=0;
  s.d.addEventListener('input',()=>edits++);s.d.addEventListener('change',()=>edits++);

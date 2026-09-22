@@ -5,14 +5,14 @@ import {compileAssessment} from './compile-assessment';
 import {parseReviewBindings,checkReviewBindings} from './review-bindings';
 import {checkDocumentPackage} from '../documents/package-check';
 import {contractData} from './contract-data';
-export const FINAL_VALIDATION_VERSION='assessment-final-11';
+export const FINAL_VALIDATION_VERSION='assessment-final-12';
 /** Shared by preview, preparation and commit; none trusts a client readiness flag. */
 export async function finalCheck(repository:EvidenceRepository,record:CaseRow,raw:unknown,rawBindings:unknown,day:string){
  const payload=validateDraft(raw),bindings=parseReviewBindings(rawBindings);
  const checked=checkAnswers(payload,record.client_iin,day);
  const [documents,evidence]=await Promise.all([checkDocumentPackage(repository,record,payload,day),checkReviewBindings(repository,record,payload,checked.displayAnswers,bindings,day)]);
  evidence.approved.push(...documents.gkbEvidence||[]);
- for(const loan of documents.loanCoverage?.rows||[])if(loan.status!=='present')checked.issues.push({key:'loanContractId',group:'creditors',row:loan.rows[0]??0,code:loan.status==='missing'?'ACTIVE_LOAN_MISSING':'ACTIVE_LOAN_DUPLICATE',label:`${loan.creditor} · № ${loan.contractNumber}: ${loan.status==='missing'?'добавьте активный кредит из полного ГКБ, стр. '+loan.page:'в анкете несколько записей; оставьте одну после сверки'}`});
+ for(const loan of documents.loanCoverage?.rows||[])if(loan.status!=='present')checked.issues.push({key:'loanContractId',group:'creditors',row:loan.rows[0]??0,code:loan.status==='missing'?'ACTIVE_LOAN_MISSING':'ACTIVE_LOAN_DUPLICATE',label:`${loan.creditor} · № ${loan.contractNumber}: ${loan.status==='missing'?'добавьте активный кредит из полного ГКБ, стр. '+loan.page:'повтор в кредитах '+loan.rows.map(row=>row+1).join(', ')+'. Сверьте записи и оставьте одну, чтобы не считать долг дважды'}`});
  checked.answersComplete=checked.issues.length===0;
  const compiled=checked.answersComplete?compileAssessment(payload,record.client_iin,evidence.approved,day):null;
  const contract=compiled?contractData(payload,record.client_iin,evidence.approved,day):null;

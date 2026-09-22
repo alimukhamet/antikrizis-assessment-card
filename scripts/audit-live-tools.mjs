@@ -6,6 +6,7 @@ const previewNative=process.env.PREVIEW_NATIVE_ANALYSIS==='1'?(await import('../
 import {writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {auditFailures} from './live-audit-result.mjs';
+import {creditorKey} from '../public/gkb-comparison.mjs';
 const caseIds=['10479','11749','11877','11665'];
 const diagnosticId=process.env.AUDIT_DEAL_ID||'';
 if(diagnosticId&&!/^\d{1,12}$/.test(diagnosticId))throw Error('Invalid audit deal ID');
@@ -71,13 +72,12 @@ try{
          // Recheck existing employee reviews without approving or changing anything.
          const direct={'identity.iin':'iin','identity.name':'fio','statement.topUps':'kaspiAnnual','employment.payersCount':'count-clientjobs','benefits.count':'clientBenefitsCount','statement.gambling':'n8044'};
          const loanKeys={creditor:'n8038',contractIdentifier:'loanContractId',loanStatus:'loanStatus',startedAtMonth:'n8038Start',monthlyPayment:'n8041',overdueDays:'n8042',debtOutstanding:'n8040',creditType:'n8039',purpose:'n8043',relatedParties:'loanParticipants'};
-         const creditorKey=v=>String(v).normalize('NFKC').toLocaleLowerCase('ru-RU').trim().replace(/^акционерное\s+общество(?=\s|[«"“])/u,'ао').replace(/[«»“”„]/g,'"').replace(/\s+/g,'');
          for(const review of a.reviews||[]){
           const loan=/^credits\.(\d+)\.([A-Za-z]+)$/.exec(review.fact_key);let key=direct[review.fact_key],group,row,answer;
           if(loan){
            key=loanKeys[loan[2]];if(!key)continue;const credit=a.document.extraction.credits[Number(loan[1])];if(!credit)continue;
            const lender=creditorKey(credit.facts.find(f=>f.key==='creditor')?.value||''),numbers=[credit.contractNumber,credit.contractCode].filter(Boolean),rows=p.groups.find(g=>g.id==='creditors');
-           row=rows?.rowKeys.findIndex(k=>{const parts=k.split('|');return parts[1]===assessment.client.iin&&creditorKey(parts[2])===lender&&numbers.includes(parts[3]?.trim());});
+           row=rows?.rowKeys.findIndex(k=>{const parts=(k||'').split('|');return parts[1]===assessment.client.iin&&creditorKey(parts[2]||'')===lender&&numbers.includes(parts[3]?.trim());});
            if(row===undefined||row<0)continue;group='creditors';answer=rows.rows[row].find(v=>v.key===key);
           }else{if(!key)continue;answer=p.answers.find(v=>v.key===key);}
           let value;try{value=JSON.parse(review.value_json);}catch{continue;}

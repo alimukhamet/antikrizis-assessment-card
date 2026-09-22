@@ -74,3 +74,14 @@ test('final gate checks every active source loan against actual saved answers, i
   if(!ok){assert.equal(r.preview,null);assert.ok(r.issues.some(i=>['ACTIVE_LOAN_MISSING','ACTIVE_LOAN_DUPLICATE'].includes(i.code)),failure);}
  }
 });
+
+test('final gate accepts MFO spelling variants and catches duplicate bank aliases without changing answers',async()=>{
+ for(const [shortName,fullName] of [['ТОО Микрофинансовая организация «Synthetic Finance»','ТОО «МФО «Synthetic Finance»'],['АО "Народный банк Казахстана"','"Народный банк Казахстана"']]){
+  const p=fixture(),s=repositoryFor(p),group=p.groups.find(g=>g.id==='creditors');
+  group.rows[0].find(a=>a.key==='n8038').value=shortName;group.rowKeys[0]=`creditors|${iin}|${shortName}|LOAN1`;
+  for(const [id,name] of [['short',shortName],['full',fullName]]){const report=s.sources.get(id).extraction;report.creditList={complete:true,declared:1};report.credits[0].facts.find(f=>f.key==='creditor').value=name;}
+  const before=JSON.stringify(p);let r=await check(p,s);assert.equal(r.readyToSubmit,true,JSON.stringify(r.issues));assert.equal(r.documents.loanCoverage.present,1);assert.equal(JSON.stringify(p),before);
+  const duplicate=structuredClone(group.rows[0]);duplicate.find(a=>a.key==='n8038').value=fullName;group.rows.push(duplicate);group.rowKeys.push(null);
+  const duplicated=JSON.stringify(p);r=await check(p,s);assert.equal(r.readyToSubmit,false);assert.equal(r.documents.loanCoverage.missing,0);assert.equal(r.documents.loanCoverage.duplicates,1);assert.match(r.issues.find(i=>i.code==='ACTIVE_LOAN_DUPLICATE').label,/кредитах 1, 2/);assert.equal(JSON.stringify(p),duplicated);
+ }
+});

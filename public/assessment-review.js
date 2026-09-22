@@ -120,7 +120,7 @@ function afPut(e,value,src){
  const source={...src,pending:!src.priorReview,value:String(src.originalValue??value),reviewId:src.priorReview?.id,edited:src.priorReview?.disposition==='corrected',correctionReason:src.priorReview?.reason||''};if(retainedCorrection){source.pending=true;source.reviewId=null;source.edited=true;source.correctionReason=retainedCorrection;}af.sources.set(e.id,source);afBadge(e,source);return true;
 }
 // Same identity rule as lib/documents/loan-identity.ts, covered by a parity test.
-const afCreditorKey=value=>String(value).normalize('NFKC').toLocaleLowerCase('ru-RU').trim().replace(/^акционерное\s+общество(?=\s|[«"“])/u,'ао').replace(/[«»“”„]/g,'"').replace(/\s+/g,'');
+const afCreditorKey=value=>String(value).normalize('NFKC').toLocaleLowerCase('ru-RU').replace(/[\s«»“”„"]/g,'').replace(/^акционерноеобщество(?=.)/u,'ао').replace(/^товариществосограниченнойответственностью(?=.)/u,'тоо').replace(/^тоомикрофинансоваяорганизация(?=.)/u,'тоомфо').replace(/^народныйбанкказахстана$/u,'аонародныйбанкказахстана');
 function afLoanRowKey(key){const parts=key.split('|');if(parts[0]==='creditors'&&parts.length===4){parts[2]=afCreditorKey(parts[2]);parts[3]=parts[3].trim();}return parts.join('|');}
 function afRow(group,key,loan=null){
  const g=$af(group);if(!g)return null;

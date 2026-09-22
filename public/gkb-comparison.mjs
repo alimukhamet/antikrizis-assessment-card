@@ -1,7 +1,7 @@
 /* Compare independent report facts, never the merged questionnaire answers. */
 const fact=(credit,key)=>credit.facts?.find(f=>f.key===key);
 const debt=credit=>fact(credit,'debtOutstanding')||credit.comparisonDebt;
-export const creditorKey=value=>value.normalize('NFKC').toLocaleLowerCase('ru-RU').trim().replace(/^акционерное\s+общество(?=\s|[«"“])/u,'ао').replace(/[«»“”„]/g,'"').replace(/\s+/g,'');
+export const creditorKey=value=>value.normalize('NFKC').toLocaleLowerCase('ru-RU').replace(/[\s«»“”„"]/g,'').replace(/^акционерноеобщество(?=.)/u,'ао').replace(/^товариществосограниченнойответственностью(?=.)/u,'тоо').replace(/^тоомикрофинансоваяорганизация(?=.)/u,'тоомфо').replace(/^народныйбанкказахстана$/u,'аонародныйбанкказахстана');
 const bank=credit=>creditorKey(String(fact(credit,'creditor')?.value||''));
 const ids=credit=>[credit.contractNumber,credit.contractCode].filter(Boolean).map(s=>s.trim());
 const truncated=credit=>ids(credit).some(s=>/\.\.|…/.test(s));
