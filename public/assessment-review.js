@@ -92,10 +92,14 @@ async function afConfirmPending(){
 function afDispatchChange(e){const previous=af.applying;af.applying=true;try{e.dispatchEvent(new Event('change',{bubbles:true}));}finally{af.applying=previous;}}
 function afPut(e,value,src){
  if(!e||value===null||value===undefined)return false;
- value=String(value);
+ value=String(value);let retainedCorrection=null;
  if(af.restoringEvidence){
   // Reopening a draft restores evidence badges, not deleted answers or older document values.
-  if(e.type==='checkbox'?!e.checked:e.value!==value)return false;
+  if(e.type==='checkbox'?!e.checked:e.value!==value){
+   const previous=af.sources.get(e.id);
+   if(e.type==='checkbox'||!previous?.stale||!previous.correctionReason?.trim()||previous.server?.documentId!==src.server?.documentId||String(previous.value)!==String(src.originalValue??value))return false;
+   retainedCorrection=previous.correctionReason;
+  }
  }else if(e.type==='checkbox'){
   if(!e.checked){e.checked=true;afDispatchChange(e);}
  }else{
@@ -110,7 +114,7 @@ function afPut(e,value,src){
   e.value=value;afDispatchChange(e);
  }
  delete e.dataset.sourceReplaced;e.setCustomValidity('');
- const source={...src,pending:!src.priorReview,value:String(src.originalValue??value),reviewId:src.priorReview?.id,edited:src.priorReview?.disposition==='corrected',correctionReason:src.priorReview?.reason||''};af.sources.set(e.id,source);afBadge(e,source);return true;
+ const source={...src,pending:!src.priorReview,value:String(src.originalValue??value),reviewId:src.priorReview?.id,edited:src.priorReview?.disposition==='corrected',correctionReason:src.priorReview?.reason||''};if(retainedCorrection){source.pending=true;source.reviewId=null;source.edited=true;source.correctionReason=retainedCorrection;}af.sources.set(e.id,source);afBadge(e,source);return true;
 }
 // Same identity rule as lib/documents/loan-identity.ts, covered by a parity test.
 const afCreditorKey=value=>String(value).normalize('NFKC').toLocaleLowerCase('ru-RU').trim().replace(/^акционерное\s+общество(?=\s|[«"“])/u,'ао').replace(/[«»“”„]/g,'"').replace(/\s+/g,'');
@@ -344,7 +348,7 @@ async function afAnalyze(preferences={}){
     }
     if(r.hash&&hashes.has(r.hash)){r.duplicate=true;r.notes=[...(r.notes||[]).filter(t=>!t.startsWith('Повтор файла:')),'Повтор файла: '+hashes.get(r.hash)+'. Повторно не учитывается.'];}else if(r.hash)hashes.set(r.hash,item.file.name);
     for(const [fieldId,source]of af.sources)if(source.server?.documentId===r.server?.documentId&&source.server?.extractionId!==r.server?.extractionId){source.stale=true;source.pending=true;if($af(fieldId))afBadge($af(fieldId),source);}
-    af.results.set(item.id,r);if(!preferences.restoreOnly){if(!item.person&&r.identity?.iin===HostedAssessment.getContext().client.iin)item.person='Клиент';if(r.type&&r.kind!=='other')item.type=r.type;}
+    af.results.set(item.id,r);if(!preferences.restoreOnly||r.kind==='salary'&&item.type==='Выписка Kaspi Gold'&&!r.blocked&&r.identity?.iin===HostedAssessment.getContext().client.iin){if(!item.person&&r.identity?.iin===HostedAssessment.getContext().client.iin)item.person='Клиент';if(r.type&&r.kind!=='other')item.type=r.type;}
    }catch(e){fail++;af.results.set(item.id,{error:e.message,notes:['Файл не заполнен автоматически. Проверьте вручную.']});}
    afRenderResults();afAnalysisProgress(done,files.length);
   }

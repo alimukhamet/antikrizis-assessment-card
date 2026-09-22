@@ -12,7 +12,7 @@ export async function confirmDocumentIdentity(repository:EvidenceRepository,reco
  if(!document)throw new RepositoryError('DOCUMENT_NOT_IN_CASE',404);
  const extraction=await repository.extraction(record.id,document.id,input.extractionId);
  if(!extraction)throw new RepositoryError('EXTRACTION_NOT_IN_DOCUMENT',404);
- if(extraction.version!==analysisVersion)throw new RepositoryError('EXTRACTION_VERSION_CHANGED');
+ if(extraction.version!==analysisVersion){const cached=await repository.cached(record.id,document.original_sha256,analysisVersion);if(cached?.extraction.id!==extraction.id)throw new RepositoryError('EXTRACTION_VERSION_CHANGED');}
  const result=await repository.readResult(extraction) as Analysis,parsed=result.extraction;
  const iin=parsed.identity.iin;
  if(!validIin(iin)||!iin||!parsed.identity.name||!['gkb_full','gkb_short'].includes(parsed.kind))throw new RepositoryError('DOCUMENT_IDENTITY_UNVERIFIED');

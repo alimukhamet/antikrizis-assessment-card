@@ -1,3 +1,7 @@
+## Production source rule
+
+Publish the combined application only through the `deploy/anti-krizis` branch and its GitHub release workflow. Direct local Wrangler publication is blocked: an older checkout previously replaced newer intake screens while publishing earnings changes. Preserve and merge both areas before release. Do not remove the guard to publish a feature from an old checkout.
+
 # Release and recovery
 
 Checked on **12 September 2026**. Publication and pushing the canonical repository await user approval. This procedure is not proof of a hosted rollback.

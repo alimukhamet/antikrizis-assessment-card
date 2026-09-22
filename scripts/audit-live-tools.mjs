@@ -48,12 +48,12 @@ try{
      item.draft={present:!!d,revision:d?.revision,identityRevision:d?.identityRevision,answers:p?.answers?.length,groups:p?.groups?.length,documents:p?.documents?.map(v=>({type:v.type,person:v.person})),pendingFiles:p?.pendingFiles?.length};
      if(p){
       if(id===diagnosticId){
-       item.documentDiagnostics=[];const creditReports=[],storedReports=[];const before=createHash('sha256').update(JSON.stringify(d)).digest('hex');
+       item.documentDiagnostics=[];const creditReports=[],storedReports=[],reviewBindings=new Map();const before=createHash('sha256').update(JSON.stringify(d)).digest('hex');
        for(const doc of p.documents){
         const result={documentId:doc.documentId,type:doc.type};item.documentDiagnostics.push(result);
         try{
          const a=await request(root+'/documents/'+encodeURIComponent(doc.documentId)+'/analyze',{cacheOnly:true}),text=a.document?.pages?.[0]?.text||'';
-         Object.assign(result,{kind:a.document?.extraction?.kind,pages:a.document?.totalPages,issuedAt:a.reviewContext?.issuedAt,expiresAt:a.reviewContext?.expiresAt,allHistory:a.reviewContext?.allHistory,periodLabel:/Барлық\s+кезең\s*\/\s*Весь\s+период/i.test(text),periodBeforeLabel:/Весь\s+период\s*Период:/i.test(text),periodAfterLabel:/Период:\s*Барлық\s+кезең\s*\/\s*Весь\s+период/i.test(text),documentReview:a.documentReview,findings:a.findings});
+         Object.assign(result,{kind:a.document?.extraction?.kind,recognitionVersion:a.document?.extraction?.version,savedReviews:a.reviews?.length,pages:a.document?.totalPages,issuedAt:a.reviewContext?.issuedAt,expiresAt:a.reviewContext?.expiresAt,allHistory:a.reviewContext?.allHistory,periodLabel:/Барлық\s+кезең\s*\/\s*Весь\s+период/i.test(text),periodBeforeLabel:/Весь\s+период\s*Период:/i.test(text),periodAfterLabel:/Период:\s*Барлық\s+кезең\s*\/\s*Весь\s+период/i.test(text),documentReview:a.documentReview,findings:a.findings});
          if(previewNative&&a.document?.pages){
           const preview=previewNative(a.document.pages),st=preview.bankStatement;
           result.parserPreview={kind:preview.kind,issuedAt:preview.issuedAt,expiresAt:preview.expiresAt,identityMatches:!!preview.identity.iin&&preview.identity.iin===assessment.client.iin,findings:preview.findings,...(st?{statement:{from:st.from,to:st.to,rowsReadable:st.rowsReadable,reconciled:st.reconciled,topUpsVerified:st.topUpsVerified,transactions:st.transactions,reconciliation:st.reconciliation}}:{})};
@@ -67,6 +67,22 @@ try{
            result.parserPreview.kazakhLabels={operationTokens:[...starts],summaryCount:summaries.length,topUpsMatch:summaries.length===1&&topUps===BigInt(summaries[0][2].replace(/[\s,.]/g,''))};
           }
 
+         }
+         // Recheck existing employee reviews without approving or changing anything.
+         const direct={'identity.iin':'iin','identity.name':'fio','statement.topUps':'kaspiAnnual','employment.payersCount':'count-clientjobs','benefits.count':'clientBenefitsCount','statement.gambling':'n8044'};
+         const loanKeys={creditor:'n8038',contractIdentifier:'loanContractId',loanStatus:'loanStatus',startedAtMonth:'n8038Start',monthlyPayment:'n8041',overdueDays:'n8042',debtOutstanding:'n8040',creditType:'n8039',purpose:'n8043',relatedParties:'loanParticipants'};
+         const creditorKey=v=>String(v).normalize('NFKC').toLocaleLowerCase('ru-RU').trim().replace(/^акционерное\s+общество(?=\s|[«"“])/u,'ао').replace(/[«»“”„]/g,'"').replace(/\s+/g,'');
+         for(const review of a.reviews||[]){
+          const loan=/^credits\.(\d+)\.([A-Za-z]+)$/.exec(review.fact_key);let key=direct[review.fact_key],group,row,answer;
+          if(loan){
+           key=loanKeys[loan[2]];if(!key)continue;const credit=a.document.extraction.credits[Number(loan[1])];if(!credit)continue;
+           const lender=creditorKey(credit.facts.find(f=>f.key==='creditor')?.value||''),numbers=[credit.contractNumber,credit.contractCode].filter(Boolean),rows=p.groups.find(g=>g.id==='creditors');
+           row=rows?.rowKeys.findIndex(k=>{const parts=k.split('|');return parts[1]===assessment.client.iin&&creditorKey(parts[2])===lender&&numbers.includes(parts[3]?.trim());});
+           if(row===undefined||row<0)continue;group='creditors';answer=rows.rows[row].find(v=>v.key===key);
+          }else{if(!key)continue;answer=p.answers.find(v=>v.key===key);}
+          let value;try{value=JSON.parse(review.value_json);}catch{continue;}
+          if(answer?.value!==value)continue;
+          reviewBindings.set(JSON.stringify([group,row,key]),{key,...(group?{group,row}:{}),documentId:doc.documentId,extractionId:a.extractionId,factKey:review.fact_key,reviewId:review.id});
          }
          if(a.document?.extraction?.kind?.startsWith('gkb_')){creditReports.push(a.document.extraction);storedReports.push({document:{id:doc.documentId},extraction:{id:a.extractionId},result:{read:{pages:a.document.pages},extraction:a.document.extraction}});}
         }catch(error){result.error=error.code||'REQUEST_FAILED';}
@@ -84,6 +100,7 @@ try{
          try{const live=await request(root+'/gkb-reviews',{action:'inspect',shortDocumentId:shortStored.document.id,fullDocumentId:fullStored.document.id,identityRevision:assessment.identityRevision});item.balanceReviewLive={eligible:!!live.inspection,missingBalances:live.inspection?.plan.balances.length,activeLoans:live.inspection?.plan.activeLoans,confirmed:!!live.inspection?.review};}catch(error){item.balanceReviewLive={error:error.code||'ROUTE_NOT_RELEASED'};}
         }
        }
+       if(reviewBindings.size){const checked=await request(root+'/check',{payload:p,bindings:[...reviewBindings.values()]});item.savedReviewCheck={bindings:reviewBindings.size,issues:checked.evidence?.issues,readyToSubmit:checked.readyToSubmit};}
        item.reviewDrafts=p.documentReviewDrafts?.map(v=>({documentId:v.documentId,type:v.type,issuedAt:v.values?.issuedAt,expiresAt:v.values?.expiresAt}))||[];
        item.diagnosticDraftUnchanged=before===createHash('sha256').update(JSON.stringify((await request(root+'/draft')).draft)).digest('hex');
       }

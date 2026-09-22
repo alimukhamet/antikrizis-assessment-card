@@ -1,7 +1,7 @@
 import labels from './kz-labels.json';
 import type { PageText } from './read-pdf';
 import {extractPowerParties,type PowerParties} from './power-of-attorney';
-export const EXTRACTION_VERSION = 'rules-native-20';
+export const EXTRACTION_VERSION = 'rules-native-21';
 export type Fact = { key: string; value: string; page: number; source: string };
 export type Credit = { contractNumber: string; contractCode?: string; page: number; facts: Fact[]; components: Record<string, string | null>; comparisonDebt?:Fact; relatedPartiesNotice?: {page:number;source:string} };
 export type BankStatement={from:string|null;to:string|null;credits:string;topUps:string;topUpsVerified:boolean;debits:string;transactions:number;reconciled:boolean;rowsReadable:boolean;sourcePage:number;reconciliation?:string;gambling?:{total:string;matches:Array<{date:string;amount:string;description:string;page:number}>}};
@@ -69,9 +69,14 @@ export function extractNative(pages: PageText[]): NativeExtraction {
   const reportTitle=/(?:дербес\s+кредиттік есеп|персональный кредитный отчет|жеке кредиттік есеп)/u.exec(head)?.[0];
   const modernShort=Boolean(reportTitle?.startsWith('дербес')&&/қысқаша нысан/.test(head.slice(0,1500)));
   const credit = modernShort || /персональный кредитный отчет|жеке кредиттік есеп/.test(head);
+  // Identify the issuing bank before transaction counterparties. A transfer to
+  // Kaspi must not turn a Eurasian account statement into a Kaspi statement.
+  const statementFront=(pages[0]?.text||'').toLowerCase().replace(/ё/g,'е');
+  const eurasian=/^\s*ао\s*[«"“]?евразийский банк[»"”]?/u.test(statementFront)&&/выписка по сч[её]ту/u.test(statementFront)&&/eubank\.kz|eurikzka/u.test(statementFront);
+  const halyk=/выписка по счету/.test(head)&&/тип счета\s*:[^\n]*зарплата/.test(head)&&/народный банк казахстана|halykbank\.kz/.test(head);
   const kind = credit ? /краткая форма|қысқаша/.test(head) ? 'gkb_short' : 'gkb_full'
+    : eurasian||halyk ? 'salary'
     : /kaspi/.test(head) && /выписка|үзінді\s+көшірме/u.test(head) ? 'kaspi'
-    : /выписка по счету/.test(head) && /тип счета:[^\n]*зарплата/.test(head) && /народный банк казахстана|halykbank\.kz/.test(head) ? 'salary'
     : /об отсутствии \(наличии\) недвижимого имущества/.test(head) ? 'property'
     : /информация о пенсионных выплатах и пособиях/.test(head) ? 'benefits'
     : /выдача\s+информации\s+о\s+поступлении\s+и\s+движении\s+средств\s+вкладчика\s+единого\s+накопительного\s+пенсионного\s+фонда/.test(head) ? 'enpf'
@@ -110,9 +115,9 @@ export function extractNative(pages: PageText[]): NativeExtraction {
   }
   if(kind==='salary'){
     const front=pages[0]?.text||'';
-    output.identity.name=value(/ФИО:\s*([^\n]+?)(?=\s+Дата формирования выписки:|\n|$)/,front);
-    output.issuedAt=day(value(/Дата формирования выписки:\s*(\d{2}\.\d{2}\.\d{4})/,front));
-    const period=/Период выписки:\s*с\s*(\d{2}\.\d{2}\.\d{4})\s+по\s+(\d{2}\.\d{2}\.\d{4})/.exec(front);
+    output.identity.name=value(/ФИО\s*:\s*([^\n]+?)(?=\s+Дата формирования(?: выписки)?\s*:|\n|$)/,front);
+    output.issuedAt=day(value(/Дата формирования(?: выписки)?\s*:\s*(\d{2}\.\d{2}\.\d{4})/,front));
+    const period=/Период(?: выписки)?\s*:\s*(?:с\s*)?(\d{2}\.\d{2}\.\d{4})\s*(?:по|[-–—])\s*(\d{2}\.\d{2}\.\d{4})/.exec(front);
     output.coverage={from:day(period?.[1]||null),to:day(period?.[2]||null)};
     // A salary account statement includes transfers as well as wages. Its totals are not income facts.
   }

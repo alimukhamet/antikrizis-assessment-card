@@ -64,8 +64,8 @@ export class EvidenceRepository {
   if(extraction)return {document,extraction,result:await this.readResult(extraction)};
   // Preserve compatible evidence and its review identity through the bilingual
   // reader updates. Only affected, unreviewed originals need another analysis.
-  if(!/:rules-native-(?:19|20)$/.test(version))return null;
-  const previous=version.endsWith(':rules-native-20')?[19,18]:[18];
+  if(!/:rules-native-(?:19|20|21)$/.test(version))return null;
+  const previous=version.endsWith(':rules-native-21')?[20,19,18]:version.endsWith(':rules-native-20')?[19,18]:[18];
   for(const revision of previous){
    extraction=await this.db.prepare('SELECT * FROM assessment_extractions WHERE document_id=? AND version=?').bind(document.id,version.replace(/:rules-native-\d+$/,':rules-native-'+revision)).first<ExtractionRow>();
    if(extraction)break;
@@ -73,7 +73,10 @@ export class EvidenceRepository {
   if(!extraction)return null;
   const result=await this.readResult(extraction) as {extraction?:{kind?:string};read?:{pages?:Array<{text:string}>}};
   const head=result.read?.pages?.map(p=>p.text).join('\n').slice(0,14000).toLowerCase()||'';
-  const newlyRecognizedId=result.extraction?.kind==='unknown'&&(/(?:қазақстан республикасының|қр)\s+ішкі істер министрлігі/iu.test(head)||version.endsWith(':rules-native-20')&&/^[a-z]+<<[a-z<]+\s*$/m.test(head)&&/^\d{12}\s*$/m.test(head));
+  // v21 changes only salary-bank recognition and period labels. Preserve all
+  // other compatible evidence IDs, including already reviewed GKB facts.
+  if(version.endsWith(':rules-native-21')&&result.extraction?.kind!=='salary'&&((/^\s*ао\s*[«"“]?евразийский банк[»"”]?/u.test(head)&&/выписка по сч[её]ту/u.test(head)&&/eubank\.kz|eurikzka/u.test(head))||(/выписка по счету/.test(head)&&/тип счета\s*:[^\n]*зарплата/.test(head)&&/народный банк казахстана|halykbank\.kz/.test(head))))return null;
+  const newlyRecognizedId=result.extraction?.kind==='unknown'&&(/(?:қазақстан республикасының|қр)\s+ішкі істер министрлігі/iu.test(head)||/:rules-native-(?:20|21)$/.test(version)&&/^[a-z]+<<[a-z<]+\s*$/m.test(head)&&/^\d{12}\s*$/m.test(head));
   if(newlyRecognizedId){
    // Keeping the old extraction does not approve it: document-review validation
    // still checks this employee inspection against today's owner and dates.

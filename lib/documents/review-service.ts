@@ -10,8 +10,8 @@ export function extractFactMap(extraction:NativeExtraction){
  extraction.credits.forEach((credit,index)=>credit.facts.forEach(f=>facts.set(`credits.${index}.${f.key}`,f)));
  return facts;
 }
-export function assertReviewAllowed(record:CaseRow,document:DocumentRow,extraction:ExtractionRow,result:StoredResult,input:{factKey:string;value:unknown;disposition:string;reason:string;identityRevision:number},assessmentDay:string){
- if(extraction.version!==analysisVersion)throw new RepositoryError('EXTRACTION_VERSION_CHANGED');
+export function assertReviewAllowed(record:CaseRow,document:DocumentRow,extraction:ExtractionRow,result:StoredResult,input:{factKey:string;value:unknown;disposition:string;reason:string;identityRevision:number},assessmentDay:string,compatibleExtractionId?:string){
+ if(extraction.version!==analysisVersion&&compatibleExtractionId!==extraction.id)throw new RepositoryError('EXTRACTION_VERSION_CHANGED');
  if(document.case_id!==record.id||extraction.document_id!==document.id)throw new RepositoryError('DOCUMENT_NOT_IN_CASE');
  if(record.identity_revision!==input.identityRevision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
  const parsed=result.extraction;
@@ -34,8 +34,16 @@ export function assertReviewAllowed(record:CaseRow,document:DocumentRow,extracti
  }
  if(input.disposition==='unresolved'&&(!input.reason.trim()||input.value!==null))throw new RepositoryError('UNRESOLVED_REQUIRES_REASON',400);
 }
-export async function reviewFact(repository:EvidenceRepository,record:CaseRow,document:DocumentRow,extraction:ExtractionRow,result:StoredResult,input:{requestId:string;factKey:string;value:unknown;disposition:'confirmed'|'corrected'|'unresolved';reason:string;identityRevision:number},actor:Actor,assessmentDay:string){
+/** Use the same server-owned compatibility decision as document reopening. */
+export async function compatibleReviewExtraction(repository:EvidenceRepository,record:CaseRow,document:DocumentRow,extraction:ExtractionRow){
+ if(extraction.version===analysisVersion)return extraction.id;
+ const cached=await repository.cached(record.id,document.original_sha256,analysisVersion);
+ if(!cached||cached.extraction.id!==extraction.id)throw new RepositoryError('EXTRACTION_VERSION_CHANGED');
+ return cached.extraction.id;
+}
+export async function reviewFact(repository:EvidenceRepository,record:CaseRow,document:DocumentRow,extraction:ExtractionRow,result:StoredResult,input:{requestId:string;factKey:string;value:unknown;disposition:'confirmed'|'corrected'|'unresolved';reason:string;identityRevision:number},actor:Actor,assessmentDay:string,compatibleExtractionId?:string){
  if(!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(input.requestId))throw new RepositoryError('INVALID_REQUEST_ID',400);
- assertReviewAllowed(record,document,extraction,result,input,assessmentDay);
+ const accepted=compatibleExtractionId||await compatibleReviewExtraction(repository,record,document,extraction);
+ assertReviewAllowed(record,document,extraction,result,input,assessmentDay,accepted);
  return repository.appendReview({...input,caseId:record.id,documentId:document.id,extractionId:extraction.id},actor);
 }

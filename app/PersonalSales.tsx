@@ -3,7 +3,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import type { Plan, Totals, calculate, MonthlyEarnings } from '../lib/personal-sales';
 type Period = Plan & Totals & ReturnType<typeof calculate> & { ongoing: boolean };
-type EarningsMonth = Omit<MonthlyEarnings, 'periods'> & { periods: Period[]; paid: number | null; owed: number | null };
+type CommissionLine = { id:string; title:string; date:string; paymentType:string; formula:string; amount:number|null };
+type EarningsMonth = Omit<MonthlyEarnings, 'periods'> & { periods: Period[]; commissionDeals:CommissionLine[]; paid: number | null; owed: number | null };
 type Payment = { id: string; month: string; amount: number; paidAt: string; note: string };
 type FuturePlan = Plan;
 type Report = { person: string; canChoosePerson: boolean; name: string; periods: Period[]; futurePlans: FuturePlan[]; earningsMonths: EarningsMonth[]; payments: Payment[]; earned: number | null; paid: number | null; owed: number | null; today: string; noPlan?: boolean; generatedAt: string };
@@ -25,6 +26,7 @@ export default function PersonalSales({ mode }: { mode: 'results' | 'earnings' }
   const [person, setPerson] = useState('');
   const [busy, setBusy] = useState(false);
   const [activeMode, setActiveMode] = useState(mode);
+  const [earningsView, setEarningsView] = useState<'earned'|'paid'|'owed'>('earned');
   const [panel, setPanel] = useState<'payment'|'plan'|''>('');
   const [actionError, setActionError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -48,8 +50,10 @@ export default function PersonalSales({ mode }: { mode: 'results' | 'earnings' }
   }, [retry, person]);
   const periods = [...(report?.periods || [])].sort((a, b) => b.end.localeCompare(a.end));
   const earningsMonths = [...(report?.earningsMonths || [])].sort((a, b) => b.id.localeCompare(a.id));
-  const current = earnings ? earningsMonths.find(p => p.ongoing) : periods.find(p => p.ongoing);
+  const current = periods.find(p => p.ongoing);
+  const currentMonth = earningsMonths.find(p => p.ongoing);
   const history = earnings ? earningsMonths.filter(p => !p.ongoing) : periods.filter(p => !p.ongoing);
+  const payments = [...(report?.payments || [])].filter(payment=>payment.amount>0).sort((a,b)=>b.paidAt.localeCompare(a.paidAt)||b.id.localeCompare(a.id));
   const selectedPerson=person||report?.person||'';
   const openPanel=(kind:'payment'|'plan')=>{setPanel(kind);setActionError('');setRequestId(crypto.randomUUID());};
   async function saveCompensation(event:FormEvent<HTMLFormElement>,kind:'payment'|'plan'){
@@ -62,9 +66,16 @@ export default function PersonalSales({ mode }: { mode: 'results' | 'earnings' }
   }
   function result(p: Period) { return p.metric === 'count' ? number(p.count) + ' / ' + number(p.target!) + ' договоров' : money(p.volume) + ' / ' + money(p.target); }
   function earningsDetails(p: EarningsMonth,settlement=true) {
-    const included = [p.baseSalary ? 'Оклад ' + money(p.baseSalary) : '', p.contractBonus ? 'Бонус ' + money(p.contractBonus) : ''].filter(Boolean);
-    const rates = [...new Set(p.periods.map(period => period.rate).filter(rate => rate !== null))];
-    return <details className="ps-details"><summary>Подробнее</summary><div>{included.length > 0 && <p>{included.join(' + ')}</p>}<p>{p.count} договоров · {money(p.volume)}{rates.length > 0 && ' · ' + rates.join(' / ') + '%'}</p>{settlement&&<p>Выплачено {paidMoney(p.paid)} · Остаток {money(p.owed)}</p>}{p.missing > 0 && <p>Неполные суммы: {p.missing}</p>}</div></details>;
+    const displayedCommission=settlement?p.commission:p.performanceCommission;
+    return <details className="ps-details"><summary>Подробнее</summary><div className="ps-breakdown">
+      <div className="ps-sum-row"><span>Оклад</span><strong>{money(p.baseSalary)}</strong></div>
+      <div className="ps-sum-row"><span>Бонус</span><strong>{money(p.contractBonus)}</strong></div>
+      <div className="ps-sum-row"><span>{settlement?'Комиссия':'Комиссия сейчас'}</span><strong>{money(displayedCommission)}</strong></div>
+      <div className="ps-sum-row ps-sum-total"><span>{settlement?'Итого':'К начислению'}</span><strong>{money(settlement?p.earned:displayedCommission)}</strong></div>
+      <p className="ps-deal-heading">Комиссия по договорам</p>
+      <div className="ps-deal-list">{p.commissionDeals.map(item=><div className="ps-deal" key={item.id}><div><strong>{item.title}</strong><span>{date(item.date)} · {item.paymentType}</span><span>{item.formula}</span></div><b>{money(item.amount)}</b></div>)}</div>
+      <p>{p.count} договоров в плане · {money(p.volume)}</p>{settlement&&<p>Выплачено {paidMoney(p.paid)} · Остаток {money(p.owed)}</p>}{p.missing > 0 && <p>Неполные суммы: {p.missing}</p>}
+    </div></details>;
   }
   return <main className="personal-page"><div className="ps-wrap">
     <Link className="ps-back" href="/">← Назад</Link>
@@ -76,13 +87,19 @@ export default function PersonalSales({ mode }: { mode: 'results' | 'earnings' }
         {report.canChoosePerson && <div className="rop-selected-row"><h2 className="rop-selected">{report.name}</h2><button className="ps-action" onClick={()=>openPanel(earnings?'payment':'plan')}>{earnings?'+ Выплата':'+ План'}</button></div>}
         {panel==='payment'&&<form className="ps-entry" onSubmit={event=>saveCompensation(event,'payment')}><h3>Выплата · {report.name}</h3><div className="ps-entry-grid"><label>Месяц<input name="month" type="month" min="2026-06" max={report.today.slice(0,7)} defaultValue={report.today.slice(0,7)} required/></label><label>Сумма<input name="amount" type="number" min="0" max="100000000" step="1" inputMode="numeric" required/></label><label>Дата<input name="paidAt" type="date" max={report.today} defaultValue={report.today} required/></label><label>Заметка<input name="note" maxLength={200}/></label></div><div className="ps-entry-actions"><button type="button" onClick={()=>setPanel('')}>Отмена</button><button disabled={saving}>{saving?'Сохраняем…':'Сохранить'}</button></div>{actionError&&<p role="alert">{actionError}</p>}</form>}
         {panel==='plan'&&<form className="ps-entry" onSubmit={event=>saveCompensation(event,'plan')}><h3>Новый план · {report.name}</h3><div className="ps-entry-grid"><label>Начало<input name="start" type="date" min={nextDay(report.today)} required/></label><label>Конец<input name="end" type="date" min={nextDay(report.today)} required/></label><label>Цель<select name="metric"><option value="volume">Сумма</option><option value="count">Договоры</option></select></label><label>Значение<input name="target" type="number" min="1" max="1000000000" step="1" required/></label><label>Ставка, %<input name="baseRate" type="number" min="0" max="100" step="0.01" required/></label><label>При цели, %<input name="targetRate" type="number" min="0" max="100" step="0.01" required/></label></div><div className="ps-entry-actions"><button type="button" onClick={()=>setPanel('')}>Отмена</button><button disabled={saving}>{saving?'Сохраняем…':'Сохранить'}</button></div>{actionError&&<p role="alert">{actionError}</p>}</form>}
-        {earnings&&<div className="ps-overall"><div>Начислено<strong>{money(report.earned)}</strong></div><div>Выплачено<strong>{paidMoney(report.paid)}</strong></div><div>Остаток<strong>{money(report.owed)}</strong></div></div>}
+        {earnings&&currentMonth&&<article className="ps-current-earnings"><div className="ps-current-summary"><div><h2>{monthName(currentMonth.id)}</h2><p>Комиссия за текущий месяц</p></div><strong>{money(currentMonth.performanceCommission)}</strong></div><p className="ps-accrual-note">Будет начислена в конце месяца</p>{earningsDetails(currentMonth,false)}</article>}
+        {earnings&&<div className="ps-overall" role="group" aria-label="История заработка">{([
+          ['earned','Начислено',money(report.earned)],['paid','Выплачено',paidMoney(report.paid)],['owed','Остаток',money(report.owed)],
+        ] as const).map(([view,label,value])=><button key={view} type="button" aria-pressed={earningsView===view} aria-controls="ps-earnings-history" onClick={()=>setEarningsView(view)}><span>{label}</span><strong>{value}</strong></button>)}</div>}
+        {earnings&&earningsView==='paid'&&<div id="ps-earnings-history"><div className="ps-history-heading"><h2>История выплат</h2></div>{payments.length?<div className="ps-payment-history">{payments.map(payment=><div className="ps-payment-row" key={payment.id}><div><strong>{date(payment.paidAt)}</strong>{payment.note&&<small>{payment.note}</small>}</div><b>{money(payment.amount)}</b></div>)}</div>:<p className="ps-empty">{report.paid===null?'Выплаты не подтверждены.':'Выплат пока нет.'}</p>}</div>}
+        {earnings&&earningsView==='owed'&&<div id="ps-earnings-history"><div className="ps-history-heading"><h2>Остаток по месяцам</h2></div><p className="ps-allocation-note">Платежи зачтены от старых месяцев.</p><div className="ps-history">{earningsMonths.map(month=><article className="ps-row" key={month.id}><div className="ps-row-top"><h3>{monthName(month.id)}</h3><span className="ps-status">{money(month.owed)}</span></div><p className="ps-row-sub">Начислено {money(month.earned)} · Зачтено {paidMoney(month.paid)}</p></article>)}</div></div>}
         {!earnings&&report.futurePlans.length>0&&<div className="ps-future"><h3>Будущие планы</h3>{report.futurePlans.map(plan=><p key={plan.id}><strong>{range(plan)}</strong><span>{plan.metric==='count'?number(plan.target!)+' договоров':money(plan.target)}</span></p>)}</div>}
-        {current && <article className="ps-current"><div className="ps-period"><h2>{'periods' in current ? monthName(current.id) : range(current)}</h2><span>Текущий период</span></div>
-          {'periods' in current ? <><div className="ps-amount">{money(current.earned)}</div><p className="ps-sub">{current.baseSalary?'За месяц':'Комиссия'}</p>{earningsDetails(current as EarningsMonth,false)}<div className="rop-payments"><div>Выплачено<strong>{paidMoney(current.paid)}</strong></div><div>Остаток<strong>{money(current.owed)}</strong></div></div></> : <><div className="ps-result"><strong>{current.metric === 'count' ? number(current.count) : money(current.volume)}</strong><span>из {current.metric === 'count' ? number(current.target!) + ' договоров' : money(current.target)}</span><b>{current.progress === null ? '—' : Math.round(current.progress) + '%'}</b></div>{current.progress !== null && <progress max={100} value={Math.min(100,current.progress)} aria-label="Выполнение текущего плана" />}<p className="ps-sub">{current.remaining === 0 ? 'План выполнен' : current.remaining === null ? 'Не хватает данных для расчёта' : 'Осталось ' + (current.metric === 'count' ? number(current.remaining) + ' договоров' : money(current.remaining))}{current.metric === 'volume' ? ' · ' + current.count + ' договоров' : ''}</p></>}
+        {!earnings && current && <article className="ps-current"><div className="ps-period"><h2>{range(current)}</h2><span>Текущий период</span></div>
+          <div className="ps-result"><strong>{current.metric === 'count' ? number(current.count) : money(current.volume)}</strong><span>из {current.metric === 'count' ? number(current.target!) + ' договоров' : money(current.target)}</span><b>{current.progress === null ? '—' : Math.round(current.progress) + '%'}</b></div>{current.progress !== null && <progress max={100} value={Math.min(100,current.progress)} aria-label="Выполнение текущего плана" />}<p className="ps-sub">{current.remaining === 0 ? 'План выполнен' : current.remaining === null ? 'Не хватает данных для расчёта' : 'Осталось ' + (current.metric === 'count' ? number(current.remaining) + ' договоров' : money(current.remaining))}{current.metric === 'volume' ? ' · ' + current.count + ' договоров' : ''}</p>
         </article>}
-        <div className="ps-history-heading"><h2>{earnings ? 'История заработка' : 'История планов'}</h2><span>2026</span></div>
-        {!history.length ? <p className="ps-empty">Завершённых периодов пока нет.</p> : <div className="ps-history">{history.map(p => <article className="ps-row" key={p.id}><div className="ps-row-top"><h3>{'periods' in p ? monthName(p.id) : range(p)}</h3><span className={'progress' in p && p.progress !== null && p.progress >= 100 ? 'ps-done' : 'ps-status'}>{'periods' in p ? money(p.earned) : outcome(p)}</span></div>{'periods' in p ? <><p className="ps-row-sub">{p.count} договоров</p>{earningsDetails(p)}</> : <><div className="ps-row-result"><span>{p.target === null ? p.count + ' договоров · ' + money(p.volume) : result(p)}</span>{p.progress !== null && <strong>{Math.round(p.progress)}%</strong>}</div>{p.progress !== null && <progress max={100} value={Math.min(100,p.progress)} aria-label={'Выполнение плана ' + range(p)} />}{p.note && <p className="ps-row-sub">{p.note}</p>}{p.missing > 0 && <p className="ps-row-sub">Суммы указаны не у всех договоров.</p>}</>}</article>)}</div>}
+        {(!earnings||earningsView==='earned')&&<div id={earnings?'ps-earnings-history':undefined}><div className="ps-history-heading"><h2>{earnings ? 'История начислений' : 'История планов'}</h2></div>
+        {!history.length ? <p className="ps-empty">Завершённых периодов пока нет.</p> : <div className="ps-history">{history.map(p => <article className="ps-row" key={p.id}><div className="ps-row-top"><h3>{'metric' in p ? range(p) : monthName(p.id)}</h3><span className={'metric' in p && p.progress !== null && p.progress >= 100 ? 'ps-done' : 'ps-status'}>{'metric' in p ? outcome(p) : money(p.earned)}</span></div>{'metric' in p ? <><div className="ps-row-result"><span>{p.target === null ? p.count + ' договоров · ' + money(p.volume) : result(p)}</span>{p.progress !== null && <strong>{Math.round(p.progress)}%</strong>}</div>{p.progress !== null && <progress max={100} value={Math.min(100,p.progress)} aria-label={'Выполнение плана ' + range(p)} />}{p.note && <p className="ps-row-sub">{p.note}</p>}{p.missing > 0 && <p className="ps-row-sub">Суммы указаны не у всех договоров.</p>}</> : <><p className="ps-row-sub">{p.count} договоров</p>{earningsDetails(p)}</>}</article>)}</div>}
+        </div>}
         <details className="ps-source"><summary>Источник</summary><p>Договоры по передаче юристам · обновлено {new Intl.DateTimeFormat('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}).format(new Date(report.generatedAt))}</p></details>
       </>}
     </section>

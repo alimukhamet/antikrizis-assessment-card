@@ -24,6 +24,11 @@
   .brand-mark{width:42px;height:42px;border-radius:13px;background:var(--green);color:#fff;display:grid;place-items:center;font-weight:800;letter-spacing:-.04em;box-shadow:0 8px 20px rgba(36,92,54,.2)}
   .brand-copy strong{display:block;color:var(--green-dark);font-size:1rem}
   .brand-copy span{display:block;color:var(--text-muted);font-size:.76rem;margin-top:1px}
+  .home-account{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .profile-link{display:inline-flex;align-items:center;gap:7px;padding:9px 13px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--green-dark);text-decoration:none;font-size:.78rem;font-weight:750}
+  .profile-link:hover{background:var(--green-pale);border-color:#abc5b3}
+  .profile-link:focus-visible{outline:3px solid #b9d8c3;outline-offset:2px}
+  .home-signout{border:0;background:none;color:var(--text-muted);cursor:pointer;font-size:.75rem;padding:9px 4px}
   .home-hero{max-width:720px;margin:0 auto;text-align:center}
   .eyebrow{font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.11em;color:var(--green-mid);margin-bottom:12px}
   .home-hero h1{font-size:clamp(2rem,5vw,3.35rem);line-height:1.08;letter-spacing:-.045em;margin:0;color:var(--green-dark)}
@@ -268,11 +273,7 @@
 @media(max-width:600px){.ranking-labels{grid-template-columns:minmax(82px,1fr) 48px 96px 135px;gap:8px;min-width:421px}.person summary{grid-template-columns:18px minmax(82px,1fr) 48px 96px 135px;gap:8px;min-width:421px}.person-average{font-size:12px}.ranking-labels{font-size:9px}.rank-move{font-size:9px}.rank-scroll{overflow-x:auto;overscroll-behavior-x:contain}.person-name{font-size:12px}.person-value{font-size:14px}}
 .rank-scroll{margin-top:20px}.leader-crown{width:18px;height:18px;color:var(--green);display:block}
 .payment-shortcut{display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding:13px 17px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--green-dark);font-size:14px;font-weight:600;text-decoration:none}.payment-shortcut:hover{border-color:var(--green);background:var(--green-pale)}.payment-shortcut:focus-visible{outline:3px solid #b9d8c3;outline-offset:3px}
-  .personal-shortcuts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 18px}
-  .personal-shortcuts a{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 16px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--green-dark);text-decoration:none;font-size:14px;font-weight:650;text-align:left}
-  .personal-shortcuts a:hover{background:var(--green-pale);border-color:var(--green-mid)}
-  .personal-shortcuts a:focus-visible{outline:3px solid var(--green-mid);outline-offset:3px}
-  @media(max-width:360px){.personal-shortcuts{grid-template-columns:1fr}}
+  @media(max-width:480px){.home-account{gap:3px}.profile-link{padding:8px 10px}.profile-link span[aria-hidden="true"]{display:none}.home-signout{font-size:.7rem}}
 </style>
 <link rel="stylesheet" href="/operations.css"><link rel="stylesheet" href="/file-selection-controls.css"></head>
 <body data-view="home">
@@ -316,9 +317,13 @@
 </div>
 <div class="wrap">
   <main id="homeView">
-    <div class="home-brand"><button id="signOut" type="button" style="order:3;margin-left:auto;border:0;background:none;color:var(--text-muted);cursor:pointer;font-size:12px">Выйти</button>
+    <div class="home-brand">
       <div class="brand-mark">A+</div>
       <div class="brand-copy"><strong>Антикризис</strong><span>Инструменты отдела продаж</span></div>
+      <div class="home-account">
+        <a class="profile-link" href="/my-results" target="_top" aria-label="Открыть личный профиль">Профиль <span aria-hidden="true">→</span></a>
+        <button class="home-signout" id="signOut" type="button">Выйти</button>
+      </div>
     </div>
     <div class="home-hero">
       <div class="eyebrow">Работа со сделкой</div>
@@ -336,10 +341,6 @@
 <div class="rank-scroll" role="region" aria-label="Рейтинг менеджеров" tabindex="0"><div class="ranking-labels"><span>Менеджер</span><span>Договоры</span><span>Средний договор</span><span>Сумма договоров</span></div><div id="rows" aria-busy="true" aria-live="polite"></div></div>
 <div id="salesSummaryStatus" class="sales-summary-status" role="status">Загружаем результаты…</div><div class="competition-foot"><span>Рейтинг по сумме договоров · не по оплатам</span><span></span></div>
 </section>
-      <nav class="personal-shortcuts" aria-label="Мои показатели">
-        <a href="/my-results" target="_top"><span>Мои результаты</span><span aria-hidden="true">→</span></a>
-        <a href="/my-earnings" target="_top"><span>Мой заработок</span><span aria-hidden="true">→</span></a>
-      </nav>
       <div class="task-grid">
         <button class="task-card" type="button" data-open-view="contract" data-main-action="contract">
           <span class="task-number">01</span>

@@ -103,3 +103,12 @@ test('digital ID with graphical issuer is recognized only from complete card str
  const r=rules.extractNative(page(card));assert.equal(r.kind,'identity');assert.equal(r.identity.iin,'991231300003');assert.equal(r.identity.name,'ТЕСТОВ СЫНАҚ ТЕСТОВИЧ');assert.equal(r.issuedAt,'2024-12-17');assert.equal(r.expiresAt,'2034-12-16');
  for(const [from,to] of [['991231300003','991231300004'],['123456789','12345'],['TESTOV<<SYNAQ<<<<<<<<<<<<',''],['17.12.2024 - 16.12.2034','17.12.2024'],['ТЕСТОВ\nСЫНАҚ\nТЕСТОВИЧ','ТЕСТОВ СЫНАҚ ТЕСТОВИЧ']])assert.equal(rules.extractNative(page(card.replace(from,to))).kind,'unknown',from);
 });
+
+test('Eurasian salary-bank statement is identified by its issuer despite Kaspi transfers',()=>{
+ const header='АО "Евразийский Банк"\nwww.eubank.kz БИК: EURIKZKA\nВыписка по счёту: Дата формирования : 22.09.2026 10:41:44\nПериод : 22.09.2025 - 22.09.2026\nФИО : СЫНАҚ КЛИЕНТ\nИИН : 991231300003\nПеревод в Kaspi Bank';
+ const r=rules.extractNative(page(header));assert.equal(r.kind,'salary');assert.equal(r.identity.iin,'991231300003');assert.equal(r.identity.name,'СЫНАҚ КЛИЕНТ');assert.equal(r.issuedAt,'2026-09-22');assert.equal(r.coverage.from,'2025-09-22');assert.equal(r.coverage.to,'2026-09-22');assert.equal(r.bankStatement,undefined);assert.ok(r.facts.every(f=>f.key.startsWith('identity.')),'statement totals must not become wages');
+ assert.equal(rules.extractNative(page(header.replace('22.09.2025','31.02.2025'))).coverage.from,null);
+ assert.notEqual(rules.extractNative(page(header.replace('АО "Евразийский Банк"','АО "Другой Банк"'))).kind,'salary','a transaction mentioning a bank cannot identify the issuer');
+ const halyk=rules.extractNative(page('Народный банк Казахстана\nВыписка по счету\nТип счета: Зарплата\nФИО: СЫНАҚ КЛИЕНТ\nИИН: 991231300003\nДата формирования выписки: 22.09.2026\nПериод выписки: с 22.09.2025 по 22.09.2026\nПеревод Kaspi'));
+ assert.equal(halyk.kind,'salary');assert.equal(halyk.coverage.from,r.coverage.from);assert.equal(halyk.coverage.to,r.coverage.to);
+});
