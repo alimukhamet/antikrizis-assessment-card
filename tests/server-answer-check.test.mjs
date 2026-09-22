@@ -28,3 +28,23 @@ test('client search leaves the current review and lawyer preview intact',async()
  assert.equal(s.preview.hidden,false);assert.equal(s.preview.querySelector('pre').textContent,'SYNTHETIC PREVIEW');
  s.edit();assert.equal(s.preview.hidden,true);s.w.close();
 });
+
+test('предварительный договор скачивается под ФИО клиента из анкеты',async()=>{
+ const answer=contractData=>async()=>({ok:true,json:async()=>({identityRevision:1,answersComplete:true,preview:{lawyerCard:'SYNTHETIC PREVIEW',contractData},documents:{issues:[],manuallyReviewed:[]}})});
+ async function download(contractData){
+  const s=setup(answer(contractData)),w=s.w,names=[];
+  w.URL.createObjectURL=()=>'blob:test';w.URL.revokeObjectURL=()=>{};
+  w.HTMLAnchorElement.prototype.click=function(){if(this.download)names.push(this.download);};
+  w.ContractRenderer={render:async()=>new w.Blob(['SYNTHETIC'])};
+  await s.button.onclick();
+  const contract=[...s.preview.querySelectorAll('button')].find(b=>b.textContent==='Скачать предварительный договор');
+  assert.equal(contract.hidden,false);
+  await contract.onclick();
+  w.close();return names;
+ }
+ assert.deepEqual(await download({client_name:'СИНТЕТИЧЕСКИЙ ТЕСТ КЛИЕНТ'}),['СИНТЕТИЧЕСКИЙ ТЕСТ КЛИЕНТ.docx']);
+ // Запрещённые в Windows символы заменяются, лишние пробелы схлопываются.
+ assert.deepEqual(await download({client_name:'  ТЕСТ/КЛИЕНТ:  СИНТЕТИЧЕСКИЙ  '}),['ТЕСТ_КЛИЕНТ_ СИНТЕТИЧЕСКИЙ.docx']);
+ // Без ФИО остаётся прежнее нейтральное имя, а не пустое.
+ assert.deepEqual(await download({}),['Предварительный договор.docx']);
+});

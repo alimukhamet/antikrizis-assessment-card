@@ -17,8 +17,11 @@
  const upload=DocumentUpload.mount(documentButton,documentStatus);window.AssessmentDocumentUpload=upload;let lastResult=null;
  const submission=SubmissionFlow.mount(button,document.getElementById('checkStatus'));
  const contract=document.createElement('button');contract.type='button';contract.className='btn btn-ghost';contract.textContent='Скачать предварительный договор';contract.hidden=true;preview.append(contract);let contractValues=null;
+ // Имя файла — ФИО клиента из анкеты, без служебных слов. Символы, запрещённые
+ // в именах файлов Windows, заменяются; пустое ФИО оставляет прежнее название.
+ const previewFileName=values=>(String(values?.client_name||'').replace(/[\\/:*?"<>|]/g,'_').replace(/\s+/g,' ').trim()||'Предварительный договор')+'.docx';
  for(const event of ['input','change','assessment-case-opened'])document.addEventListener(event,event=>{if(event.target.closest?.('[data-document-review]'))return;if(event.type!=='assessment-case-opened'&&!event.target.closest?.('#questionnaireStep,#documentStep')&&event.target.id!=='afDate')return;upload.invalidate();submission.invalidate();preview.hidden=true;documents.textContent='';contract.hidden=true;contractValues=null;});
- contract.onclick=async()=>{if(!contractValues)return;contract.disabled=true;try{const selected=contractValues,blob=await ContractRenderer.render(selected);if(contractValues!==selected)throw Error('Ответы изменились. Проверьте анкету заново.');const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='Предварительный договор.docx';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(error){document.getElementById('checkStatus').textContent=error.message;}finally{contract.disabled=false;}};
+ contract.onclick=async()=>{if(!contractValues)return;contract.disabled=true;try{const selected=contractValues,blob=await ContractRenderer.render(selected);if(contractValues!==selected)throw Error('Ответы изменились. Проверьте анкету заново.');const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=previewFileName(selected);link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(error){document.getElementById('checkStatus').textContent=error.message;}finally{contract.disabled=false;}};
  window.AssessmentCheck={run:()=>check('answers'),documents:()=>check('documents'),result:()=>lastResult};
  button.onclick=()=>check('answers');
  documentButton.onclick=()=>check('documents');
