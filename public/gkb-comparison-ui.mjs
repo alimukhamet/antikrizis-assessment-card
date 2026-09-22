@@ -32,7 +32,7 @@ function current(){
 }
 const dialog=make('dialog',null,'gkb-dialog');dialog.id='gkbComparisonDialog';dialog.setAttribute('aria-labelledby','gkbComparisonTitle');document.body.append(dialog);
 const button=(label,handler)=>{const b=make('button',label,'btn btn-ghost');b.type='button';b.onclick=handler;return b;};
-function openSource(source){dialog.close();afSource(source);}
+function openSource(source){afSource({...source,returnLabel:'← К сверке'});}
 function loanField(row,strict=false){
  const normalize=s=>s.split('|').map((part,i)=>i===0?creditorKey(part):part.trim()).join('|');
  const aliases=new Set(row.aliases.map(normalize)),iin=HostedAssessment.getContext()?.client.iin;

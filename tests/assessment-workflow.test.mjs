@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import {JSDOM} from 'jsdom';
 
 const html=fs.readFileSync('public/questionnaire.html','utf8');
-function setup(t){
+function setup(t,viewer=null){
  const dom=new JSDOM(html,{url:'https://assessment.example/questionnaire.html',runScripts:'outside-only',pretendToBeVisual:true});
  const w=dom.window,d=w.document,run=code=>vm.runInContext(code,dom.getInternalVMContext());
  w.HTMLElement.prototype.getClientRects=function(){return this.isConnected&&!this.closest('.hidden,[data-step-current="false"]')?[{}]:[];};
@@ -23,7 +23,8 @@ function setup(t){
   throw Error('Unexpected test request: '+path);
  };
  for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))run(match[1]);
- for(const name of ['loan-status','money-input','hosted-assessment','assessment-review','intake-data','enforcement-editor','server-drafts','loan-duplicates','document-review','document-upload','credential-upload','submission-flow','server-answer-check','client-confirmed-amount','required-answers','document-replacement','benefit-evidence'])run(fs.readFileSync('public/'+name+'.js','utf8'));
+ w.TestPdfViewer=viewer;
+ for(const name of ['loan-status','money-input','hosted-assessment','assessment-review','intake-data','enforcement-editor','server-drafts','loan-duplicates','document-review','document-upload','credential-upload','submission-flow','server-answer-check','client-confirmed-amount','required-answers','document-replacement','benefit-evidence']){let code=fs.readFileSync('public/'+name+'.js','utf8');if(name==='assessment-review'&&viewer)code=code.replace("import('/pdf-preview.mjs')",'Promise.resolve(window.TestPdfViewer)');run(code);}
  t.after(async()=>{await new Promise(resolve=>setTimeout(resolve,0));dom.window.close();});
  const capture=()=>JSON.parse(JSON.stringify(w.ServerDrafts.capture()));
  return{w,d,run,calls,capture,mount(){run(fs.readFileSync('public/assessment-workflow.js','utf8'));},async load(){d.getElementById('hostDealId').value='11665';await d.getElementById('hostLoadDeal').onclick();await new Promise(resolve=>setTimeout(resolve,0));}};
@@ -476,4 +477,24 @@ test('duplicate PDF selections merge only after their types agree and answer sou
  assert.equal(s.run('selectedFiles.length'),2);
  s.run(`selectedFiles[0].type='Выписка Kaspi Gold';afMergeDuplicateSelections();`);
  assert.equal(s.run('selectedFiles.length'),1);assert.equal(s.run("af.sources.get('kaspiAnnual').fileId"),1);assert.equal(s.run('selectedFiles[0].storedDocumentId'),'same');
+});
+
+test('source close and Escape preserve answers, cancel loading, and ignore a late close after reopening',async t=>{
+ let disposed=0;const pending=[];
+ const viewer={mount:async(preview,options)=>{preview.textContent='Loading synthetic PDF';preview.pdfDispose=()=>{disposed++;};await new Promise(resolve=>pending.push(()=>{options.onPage(1);resolve();}));}};
+ const s=setup(t,viewer);await s.load();collect(s);const before=s.capture();
+ const opener=s.d.createElement('button');opener.textContent='Open synthetic source';s.d.body.append(opener);opener.focus();assert.equal(s.d.activeElement,opener);
+ const first=s.run('afSource({fileId:1,page:1})');await new Promise(r=>setTimeout(r,0));
+ const dialog=s.d.getElementById('afSourceDialog'),preview=s.d.getElementById('afPreview');
+ s.d.getElementById('afSourceClose').click();assert.equal(dialog.open,false);assert.equal(disposed,1);assert.equal(preview.childNodes.length,0);assert.equal(s.d.activeElement,opener);assert.deepEqual(s.capture(),before);
+ const second=s.run('afSource({fileId:2,page:2,returnLabel:"← К сверке"})');await new Promise(r=>setTimeout(r,0));
+ dialog.dispatchEvent(new s.w.Event('close'));assert.equal(dialog.open,true);assert.equal(disposed,1);assert.match(preview.textContent,/Loading/);
+ const currentText=s.d.getElementById('afSourceText').textContent;pending[0]();await first;assert.equal(s.d.getElementById('afSourceText').textContent,currentText);
+ dialog.dispatchEvent(new s.w.Event('cancel',{cancelable:true}));assert.equal(dialog.open,false);assert.equal(disposed,2);pending[1]();await second;assert.deepEqual(s.capture(),before);
+});
+test('a failed PDF cleanup cannot prevent closing or leave an old client document open',async t=>{
+ const viewer={async mount(preview){preview.pdfDispose=()=>{throw Error('Interrupted PDF worker');};preview.textContent='Synthetic PDF';}};
+ const s=setup(t,viewer);await s.load();collect(s);const before=s.capture();
+ await s.run('afSource({fileId:1,page:1})');s.d.getElementById('afSourceClose').click();assert.equal(s.d.getElementById('afSourceDialog').open,false);assert.equal(s.d.getElementById('afPreview').textContent,'');
+ await s.run('afSource({fileId:1,page:1})');s.d.dispatchEvent(new s.w.Event('assessment-case-opened'));assert.equal(s.d.getElementById('afSourceDialog').open,false);assert.equal(s.d.getElementById('afPreview').textContent,'');assert.deepEqual(s.capture(),before);
 });

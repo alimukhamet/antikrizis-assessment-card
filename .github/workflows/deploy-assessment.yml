@@ -96,6 +96,8 @@ jobs:
             'lawyer-handoff.js'
             'operations.js'
             'operations.css'
+            'pdf-preview.css'
+            'document-viewer.html'
             'assessment-review.js'
             'assessment-workflow.js'
             'benefit-evidence.js'

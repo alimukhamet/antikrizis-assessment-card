@@ -53,3 +53,13 @@ test('failed draft persistence cannot create a source confirmation',async t=>{
 test('a stale row key cannot overwrite a different loan',async t=>{
  const s=await reviewFixture(t);s.d.getElementById('loanContractId_r0').value='ANOTHER-CONTRACT';s.save();await s.settled();assert.equal(s.d.getElementById('n8040_r0').value,'77.25');assert.equal(s.calls.some(c=>c.action==='confirm'),false);assert.equal(s.order.length,0);
 });
+
+test('source viewing keeps the exact reconciliation editor open with its unsaved amount and reason',async t=>{
+ const s=await reviewFixture(t);s.choose('Изменить');s.input('[data-gkb-amount]','1 100,50');s.input('[data-gkb-reason]','Page 2 of the original report');
+ const comparison=s.d.getElementById('gkbComparisonDialog'),amount=s.d.querySelector('[data-gkb-amount]'),reason=s.d.querySelector('[data-gkb-reason]');comparison.scrollTop=180;
+ const source=s.d.createElement('dialog');s.d.body.append(source);let opened;
+ s.w.afSource=src=>{opened=src;source.showModal();};
+ [...comparison.querySelectorAll('button')].find(b=>b.textContent.startsWith('Краткий ·')).click();
+ assert.equal(comparison.open,true);assert.equal(source.open,true);assert.equal(opened.returnLabel,'← К сверке');assert.equal(opened.page,2);
+ source.close();assert.equal(comparison.open,true);assert.equal(comparison.scrollTop,180);assert.equal(s.d.querySelector('[data-gkb-amount]'),amount);assert.equal(s.d.querySelector('[data-gkb-reason]'),reason);assert.equal(amount.value,'1 100,50');assert.equal(reason.value,'Page 2 of the original report');assert.equal(s.calls.some(c=>c.action==='confirm'),false);assert.equal(s.d.getElementById('n8040_r0').value,'77.25');
+});

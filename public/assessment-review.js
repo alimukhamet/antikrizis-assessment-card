@@ -9,8 +9,19 @@ const afPanel=afEl('section',undefined,'af-workspace');afPanel.id='afWorkspace';
 afPanel.innerHTML=`<h2>Заполнить из документов</h2><div class="af-actions"><label>ID сделки <input id="hostDealId" inputmode="numeric" data-optional></label><button id="hostLoadDeal" type="button" class="btn btn-main">Открыть сделку</button><a href="/" target="_top">К задачам</a></div><p id="hostDealName" class="af-note">Сначала выберите сделку. ИИН клиента будет прочитан из его документа.</p><p class="af-disclaimer">Выберите скачанные документы клиента. Мы заполним распознанные ответы; вам останется проверить их и ответить на остальные вопросы.</p><div class="af-actions"><button class="btn btn-ghost" id="afChoose" type="button">Выбрать документы</button><button class="btn btn-main" id="afAnalyze" type="button">Распознать и заполнить</button><label class="af-small">Дата оценки <input type="date" id="afDate" data-optional></label></div><p class="af-status" id="afStatus" role="status">Цифровые PDF · до 35 МБ на файл · цифровые PDF обрабатываются на сервере</p><progress class="af-progress" id="afProgress" value="0" max="1" hidden></progress><div class="af-identity" id="afIdentity" hidden><div><label for="afClient">Для кого заполняем анкету?</label><select id="afClient" data-optional></select></div><button class="btn btn-main" id="afApply" type="button">Заполнить для этого клиента</button></div><div class="af-metrics" aria-live="polite"><span><b id="afFilled">0</b> из документов</span><span><b id="afReview">0</b> проверить</span><span><b id="afMissing">—</b> ответить</span></div><div class="af-actions"><button class="btn btn-ghost" id="afNext" type="button">Следующий пустой ответ ↓</button><button class="btn btn-ghost" id="afNextReview" type="button">Проверить заполненное ↓</button><button class="btn btn-ghost" id="afExport" type="button">Скачать заполненную анкету</button></div><details id="afQuestions"><summary>Что ещё заполнить</summary><div class="af-review-list" id="afTodo"></div></details><details id="afFiles"><summary>Результаты по документам</summary><div id="afFileResults"></div></details><div id="afConflicts"></div>`;
 $af('documentStep').before(afPanel);
 $af('afDate').value=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
-const dialog=afEl('dialog');dialog.id='afSourceDialog';dialog.innerHTML='<div class="af-actions"><strong id="afSourceTitle"></strong><button id="afSourceClose" type="button" class="btn btn-ghost">Закрыть</button></div><p id="afQuote"></p><div id="afPreview"></div><details><summary>Распознанный текст страницы</summary><pre id="afSourceText"></pre></details>';document.body.append(dialog);
-$af('afSourceClose').onclick=()=>dialog.close();dialog.addEventListener('close',()=>{if(af.sourceUrl)URL.revokeObjectURL(af.sourceUrl);af.sourceUrl=null;$af('afPreview').pdfDispose?.();$af('afPreview').replaceChildren();});
+const dialog=afEl('dialog');dialog.id='afSourceDialog';dialog.setAttribute('aria-labelledby','afSourceTitle');dialog.innerHTML='<div class="af-actions af-source-header"><strong id="afSourceTitle"></strong><button id="afSourceClose" type="button" class="btn btn-ghost">Закрыть</button></div><p id="afQuote"></p><div id="afPreview"></div><details><summary>Распознанный текст страницы</summary><pre id="afSourceText"></pre></details>';document.body.append(dialog);
+let afSourceOpener=null;
+function afCloseSource(restoreFocus=true){
+ const preview=$af('afPreview'),opener=afSourceOpener,dispose=preview.pdfDispose;afSourceOpener=null;preview.dataset.request='';preview.pdfDispose=null;
+ if(af.sourceUrl)URL.revokeObjectURL(af.sourceUrl);af.sourceUrl=null;
+ try{dispose?.();}catch{/* A failed PDF cleanup must never trap the manager. */}
+ preview.replaceChildren();if(dialog.open)dialog.close();if(restoreFocus&&opener?.isConnected)opener.focus({preventScroll:true});
+}
+$af('afSourceClose').onclick=()=>afCloseSource();
+dialog.addEventListener('cancel',event=>{event.preventDefault();afCloseSource();});
+// A native close event is queued: it must not dispose a newly reopened PDF.
+dialog.addEventListener('close',()=>{if(!dialog.open)afCloseSource(false);});
+document.addEventListener('assessment-case-opened',()=>afCloseSource(false));
 $af('afChoose').onclick=()=>$af('previewDocuments').click();
 function afStatus(text,error=false){$af('afStatus').textContent=text;$af('afStatus').classList.toggle('error',error);}
 // In-page confirmation works inside the portal iframe and never depends on a
@@ -29,14 +40,16 @@ function afConfirmDialog({title,message,action='Подтвердить',agreemen
 }
 async function afSource(src){
  const item=selectedFiles.find(x=>x.id===src.fileId),r=af.results.get(src.fileId),preview=$af('afPreview');
- preview.pdfDispose?.();preview.replaceChildren();
+ if(!dialog.open)afSourceOpener=document.activeElement;
+ try{preview.pdfDispose?.();}catch{/* Replace an interrupted viewer without blocking navigation. */}preview.pdfDispose=null;preview.replaceChildren();
  const token=crypto.randomUUID();preview.dataset.request=token;
  $af('afSourceTitle').textContent=item?.file.name||'Документ';$af('afQuote').textContent=src.quote||'';
- const update=page=>{$af('afSourceText').textContent=r?.pageText?.[page-1]||'Текст страницы недоступен.';};update(src.page||1);dialog.showModal();
+ $af('afSourceClose').textContent=src.returnLabel||'Закрыть';dialog.querySelector('details').open=false;dialog.showModal();dialog.scrollTop=0;
+ const update=page=>{if(dialog.open&&preview.dataset.request===token)$af('afSourceText').textContent=r?.pageText?.[page-1]||'Текст страницы недоступен.';};update(src.page||1);
  const sourceUrl=r?.sourcePreview||(item?.storedDocumentId?'/api/assessment/'+HostedAssessment.getContext().client.external.dealId+'/documents/'+item.storedDocumentId+'?view=pdf':null);
  if(!sourceUrl){preview.textContent='Сначала распознайте файл, чтобы сохранить и открыть исходный PDF.';return;}
  preview.textContent='Открываем PDF…';
- try{const viewer=await import('/pdf-preview.mjs');if(!dialog.open||preview.dataset.request!==token)return;await viewer.mount(preview,{url:sourceUrl,page:src.page||1,onPage:update});}catch{preview.textContent='Не удалось открыть просмотр. Обновите страницу и повторите.';}
+ try{const viewer=await import('/pdf-preview.mjs');if(!dialog.open||preview.dataset.request!==token)return;await viewer.mount(preview,{url:sourceUrl,page:src.page||1,onPage:update});}catch{if(dialog.open&&preview.dataset.request===token)preview.textContent='Не удалось открыть просмотр. Закройте документ и попробуйте ещё раз.';}
 }
 function afLogicalVisible(e,styles){
  if(!e||!e.isConnected||e.disabled||e.closest('.hidden,[hidden],[data-legacy-answer]'))return false;
