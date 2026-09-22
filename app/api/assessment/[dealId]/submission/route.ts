@@ -14,7 +14,7 @@ export async function POST(request:Request,context:{params:Promise<{dealId:strin
  const denied=await requireStaffRequest(request);if(denied)return denied;
  try{
   const body=await boundedJson(request,256000);
-  if(typeof body.requestId!=='string'||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.requestId)||!['prepare','complete','commit','reconcile','cancel','history','contract'].includes(String(body.action)))throw new RepositoryError('INVALID_SUBMISSION_REQUEST',400);
+  if(typeof body.requestId!=='string'||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.requestId)||!['prepare','complete','commit','reconcile','cancel','history','contract','sync-intake'].includes(String(body.action)))throw new RepositoryError('INVALID_SUBMISSION_REQUEST',400);
   const {dealId}=await context.params,{record,repository,actor}=await evidenceContext(request,dealId);
   const {env}=await import('cloudflare:workers');
   const runtime=env as typeof env & {DB?:D1Database};
@@ -22,6 +22,14 @@ export async function POST(request:Request,context:{params:Promise<{dealId:strin
   if(['prepare','complete','commit','history'].includes(String(body.action)))assertSubmissionDestination(record,body.destination);
   const submissions=new SubmissionRepository(runtime.DB),adapter=createAssessmentAdapter(process.env.BITRIX_WEBHOOK??'');
   if(body.action==='contract')return Response.json({contract:await savedContract(submissions,record,actor,body.requestId)},{headers:{'cache-control':'no-store'}});
+  if(body.action==='sync-intake'){
+   const row=await submissions.get(record.id,body.requestId);
+   if(!row||row.actor_id!==actor.id)throw new RepositoryError('SUBMISSION_NOT_FOUND',404);
+   if(row.identity_revision!==record.identity_revision)throw new RepositoryError('CASE_IDENTITY_CHANGED',409);
+   if(row.state!=='verified'||row.history_state!=='verified')throw new RepositoryError('ASSESSMENT_NOT_READY',409);
+   const assessmentIntakeSync=await boundedVerifiedAssessmentIntakeSync(repository,dealId,row);
+   return Response.json(present(row,assessmentIntakeSync),{headers:{'cache-control':'no-store'}});
+  }
   if(body.action==='complete'){
    const signal=AbortSignal.timeout(90_000);
    const result=await completeContractOperation({repository,submissions,record,actor,requestId:body.requestId,day:operatingDay(),signal,
