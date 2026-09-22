@@ -144,13 +144,17 @@ jobs:
       - name: Verify authenticated production read paths
         env:
           ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
-        run: node scripts/audit-live-tools.mjs
+        run: |
+          node scripts/audit-live-tools.mjs
+          node scripts/audit-live-knowledge.mjs
 
       - name: Preserve live audit result
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: release-live-tools-audit
-          path: live-tools-audit.json
+          path: |
+            live-tools-audit.json
+            live-knowledge-audit.json
           if-no-files-found: ignore
           retention-days: 1
