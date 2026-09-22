@@ -4,18 +4,18 @@ function setup(send){const dom=new JSDOM('<section id="documentStep"></section><
 test('lawyer preview is plain text and disappears when an answer changes',async()=>{const s=setup(async()=>({ok:true,json:async()=>({answersComplete:true,preview:{lawyerCard:'TEST <img src=x onerror=alert(1)>'}})}));await s.button.onclick();assert.equal(s.preview.hidden,false);assert.equal(s.preview.querySelector('pre').textContent,'TEST <img src=x onerror=alert(1)>');assert.equal(s.preview.querySelector('img'),null);s.edit();assert.equal(s.preview.hidden,true);});
 test('response for an older answer snapshot cannot display a card',async()=>{let resolve;const response=new Promise(r=>{resolve=r});const s=setup(()=>response);const checking=s.button.onclick();s.edit();resolve({ok:true,json:async()=>({answersComplete:true,preview:{lawyerCard:'STALE'}})});await checking;assert.equal(s.preview.hidden,true);assert.match(s.w.document.getElementById('checkStatus').textContent,/изменились/);});
 
-test('preliminary contract keeps the legacy full-name, contract-number and deal filename',async()=>{
+test('review contract uses the full name, contract number and deal filename',async()=>{
  const contractData={client_name:'  Тестова   Әсел Қанатқызы  ',contract_number:' 22/А:*?"<>| '};
  const s=setup(async()=>({ok:true,json:async()=>({answersComplete:true,preview:{contractData}})}));let filename,rendered;
  s.w.ContractRenderer={render:async data=>{rendered=data;return new s.w.Blob(['SYNTHETIC']);}};
  s.w.URL.createObjectURL=()=> 'blob:test';s.w.URL.revokeObjectURL=()=>{};
  s.w.HTMLAnchorElement.prototype.click=function(){filename=this.download;};
- await s.button.onclick();await s.preview.querySelector('button').onclick();
+ await s.button.onclick();assert.equal(s.preview.querySelector('button').textContent,'Скачать договор для проверки');await s.preview.querySelector('button').onclick();
  assert.equal(rendered,contractData);
  assert.equal(filename,'Тестова Әсел Қанатқызы - Договор 22А - ID 11665.docx');s.w.close();
 });
 
-test('preliminary contract cannot receive another client deal ID while rendering',async()=>{
+test('review contract cannot receive another client deal ID while rendering',async()=>{
  for(const change of [s=>s.edit(),s=>{s.w.HostedAssessment.getContext=()=>({client:{external:{dealId:'other'}}});}]){
   const s=setup(async()=>({ok:true,json:async()=>({answersComplete:true,preview:{contractData:{client_name:'SYNTHETIC',contract_number:'22'}}})}));let finish,downloads=0;
   s.w.ContractRenderer={render:()=>new Promise(resolve=>{finish=resolve;})};
