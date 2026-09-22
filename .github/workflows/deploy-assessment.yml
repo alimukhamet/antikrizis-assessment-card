@@ -88,6 +88,7 @@ jobs:
             'intake-data.js'
             'enforcement-editor.js'
             'document-review.js'
+            'loan-duplicates.js'
             'gkb-comparison.mjs'
             'gkb-comparison-ui.mjs'
             'server-answer-check.js'

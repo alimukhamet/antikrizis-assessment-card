@@ -92,6 +92,8 @@ test('an unidentified old sourced alias cannot double a loan, but stale keys can
  const p=fixture(),s=repositoryFor(p),group=p.groups.find(g=>g.id==='creditors');s.sources.get('full').extraction.creditList={complete:true,declared:1};
  const alias=structuredClone(group.rows[0]);alias.find(a=>a.key==='loanContractId').value='';group.rows.push(alias);group.rowKeys.push(`creditors|${iin}|test  bank|LOAN1`);
  let r=await check(p,s);assert.equal(r.readyToSubmit,false);assert.equal(r.documents.loanCoverage.duplicates,1);assert.match(r.issues.find(i=>i.code==='ACTIVE_LOAN_DUPLICATE').label,/кредитах 1, 2/);assert.equal(alias.find(a=>a.key==='loanContractId').value,'');
- alias.find(a=>a.key==='loanContractId').value='OTHER-LOAN';r=await check(p,s);assert.equal(r.documents.loanCoverage.complete,true,'a stale key never overrides a different actual contract identifier');
+ alias.find(a=>a.key==='loanContractId').value='OTHER-LOAN';r=await check(p,s);assert.equal(r.documents.loanCoverage.duplicates,1,'an arbitrary replacement number cannot hide an old sourced duplicate');
+ const otherLoan=structuredClone(s.sources.get('full').extraction.credits[0]);otherLoan.contractNumber='OTHER-LOAN';s.sources.get('full').extraction.credits.push(otherLoan);s.sources.get('full').extraction.creditList.declared=2;
+ r=await check(p,s);assert.equal(r.documents.loanCoverage.complete,true,'a stale key never overrides a different actual loan in the report');s.sources.get('full').extraction.credits.pop();s.sources.get('full').extraction.creditList.declared=1;
  group.rows.shift();group.rowKeys.shift();alias.find(a=>a.key==='loanContractId').value='';r=await check(p,s);assert.equal(r.readyToSubmit,false);assert.equal(r.documents.loanCoverage.missing,1,'a source key alone never counts as an included loan');assert.match(r.issues.find(i=>i.code==='ACTIVE_LOAN_MISSING').label,/проверьте номер/);
 });

@@ -14,7 +14,13 @@
   const row=document.getElementById(issue.group)?.querySelector('.repeat-rows')?.children[issue.row??0];
   return [...row?.querySelectorAll('input,select,textarea')||[]].find(e=>e.id.replace(/_r\d+$/,'')===issue.key);
  }
- function focusAnswer(issue){const target=answerTarget(issue);if(target){window.AssessmentWorkflow?.reveal(target);target.focus();}}
+ function focusAnswer(issue,result){
+  if(issue.code==='ACTIVE_LOAN_DUPLICATE'){
+   const matches=result?.documents?.loanCoverage?.rows.filter(loan=>loan.status==='duplicate'&&(loan.duplicateRows||loan.rows).includes(issue.row))||[];
+   if(matches.length===1&&window.LoanDuplicates?.open(matches[0]))return;
+  }
+  const target=answerTarget(issue);if(target){window.AssessmentWorkflow?.reveal(target);target.focus();}
+ }
  const documentActions=document.createElement('section');documentActions.className='af-workspace';documentActions.id='documentReviewStep';
  const documentHeading=document.createElement('h2');documentHeading.textContent='Проверка документов';
  const documentButton=document.createElement('button');documentButton.type='button';documentButton.className='btn btn-main';documentButton.id='checkDocuments';documentButton.textContent='Проверить документы';
@@ -65,16 +71,17 @@
     status.textContent=visible.length?'Проверка обновлена · замечаний: '+visible.length+'.':'Документы проверены. Можно перейти к ответам.';
     return result;
    }
-   if(result.evidence?.issues.length){status.textContent=`Нужна повторная проверка ответов из документов: ${result.evidence.issues.length}. Откройте источники и подтвердите актуальные значения.`;return;}
+   if(result.evidence?.issues.length&&!result.issues?.length){status.textContent=`Нужна повторная проверка ответов из документов: ${result.evidence.issues.length}. Откройте источники и подтвердите актуальные значения.`;return;}
    if(result.answersComplete){text.textContent=result.preview?.lawyerCard||'';preview.hidden=!text.textContent;contractValues=result.preview?.contractData||null;contract.hidden=!contractValues;status.textContent=result.readyToSubmit?'Ответы и документы проверены. Можно сохранить карточку и скачать договор.':'Обязательные ответы заполнены. Можно скачать предварительный договор для проверки. Перед сохранением завершите проверку документов.';return;}
    status.textContent=`Нужно проверить ответы: ${result.issues.length}. Нажмите на пункт, чтобы перейти к полю.`;
    for(const issue of result.issues){
     const row=document.createElement('li'),link=document.createElement('button');link.type='button';link.className='btn btn-ghost';
     const group=issue.group?document.getElementById(issue.group)?.querySelector('h2,h3,h4')?.textContent?.trim():'';
-    link.textContent=(issue.group?(group|| (issue.group==='creditors'?'Кредит':'Запись'))+' · '+((issue.row??0)+1)+' — ':'')+issue.label;
-    link.onclick=()=>focusAnswer(issue);row.append(link);answerIssues.append(row);
+    link.textContent=(issue.group?(issue.group==='creditors'?'Кредит':group||'Запись')+' '+((issue.row??0)+1)+' — ':'')+issue.label;
+    if(issue.code==='ACTIVE_LOAN_DUPLICATE')link.textContent+=' · Сравнить записи';
+    link.onclick=()=>focusAnswer(issue,result);row.append(link);answerIssues.append(row);
    }
-   answerIssues.hidden=false;if(result.issues[0])focusAnswer(result.issues[0]);
+   answerIssues.hidden=false;if(result.issues[0])focusAnswer(result.issues[0],result);
   }catch(error){status.textContent=error.message;}finally{button.disabled=false;documentButton.disabled=false;}
  }
 })();

@@ -10,6 +10,7 @@ function setup(t){
  const w=dom.window,d=w.document,run=code=>vm.runInContext(code,dom.getInternalVMContext());
  w.HTMLElement.prototype.getClientRects=function(){return this.isConnected&&!this.closest('.hidden,[data-step-current="false"]')?[{}]:[];};
  w.HTMLElement.prototype.scrollIntoView=function(){};
+ w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};w.HTMLDialogElement.prototype.close=function(){this.open=false;};
  const calls=[];
  w.fetch=async(path,options={})=>{
   calls.push({path,method:options.method||'GET'});
@@ -22,7 +23,7 @@ function setup(t){
   throw Error('Unexpected test request: '+path);
  };
  for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))run(match[1]);
- for(const name of ['loan-status','money-input','hosted-assessment','assessment-review','intake-data','enforcement-editor','server-drafts','document-review','document-upload','credential-upload','submission-flow','server-answer-check','client-confirmed-amount','required-answers','document-replacement','benefit-evidence'])run(fs.readFileSync('public/'+name+'.js','utf8'));
+ for(const name of ['loan-status','money-input','hosted-assessment','assessment-review','intake-data','enforcement-editor','server-drafts','loan-duplicates','document-review','document-upload','credential-upload','submission-flow','server-answer-check','client-confirmed-amount','required-answers','document-replacement','benefit-evidence'])run(fs.readFileSync('public/'+name+'.js','utf8'));
  t.after(async()=>{await new Promise(resolve=>setTimeout(resolve,0));dom.window.close();});
  const capture=()=>JSON.parse(JSON.stringify(w.ServerDrafts.capture()));
  return{w,d,run,calls,capture,mount(){run(fs.readFileSync('public/assessment-workflow.js','utf8'));},async load(){d.getElementById('hostDealId').value='11665';await d.getElementById('hostLoadDeal').onclick();await new Promise(resolve=>setTimeout(resolve,0));}};
@@ -117,6 +118,15 @@ test('new report imports reuse MFO and bank spelling aliases while restored manu
   s.run(`var extra=add(document.getElementById('creditors'));extra.id='manual-alias';afRowFields(extra,{n8038:fullName,loanContractId:'TEST-1',n8040:'100',n8041:'20'},{fileId:'full'});af.rowKeys.set('creditors|'+af.client+'|'+fullName+'|TEST-1',extra.id);af.restoringEvidence=true;`);
   const before=s.capture();assert.equal(s.run(`afRow('creditors',af.client+'|'+fullName+'|TEST-1',loan)`),null);assert.deepEqual(s.capture(),before);assert.equal(s.d.querySelectorAll('#creditors > .repeat-rows > .repeat-item').length,2);
  }
+});
+
+test('a duplicate warning opens both records instead of an already-filled number, even with duplicate evidence issues',async t=>{
+ const s=setup(t);await s.load();collect(s);s.mount();
+ s.run(`var g=document.getElementById('creditors');g.querySelector('.repeat-rows').replaceChildren();for(var i=0;i<2;i++){var row=add(g);row.id='duplicate-'+i;row.querySelector('[id^="n8038_"]').value='SYNTHETIC BANK';row.querySelector('[id^="loanContractId_"]').value='LOAN-A';row.querySelector('[id^="n8040_"]').value='100';row.querySelector('[id^="n8041_"]').value=i?'20':'10';}`);
+ s.w.afEnsureIdentity=async()=>true;s.w.afConfirmPending=async()=>true;
+ const loan={creditor:'SYNTHETIC BANK',contractNumber:'LOAN-A',aliases:['LOAN-A'],rows:[0,1],duplicateRows:[0,1],documentId:'synthetic',page:3,status:'duplicate'};
+ s.w.fetch=async()=>({ok:true,json:async()=>({answersComplete:false,readyToSubmit:false,issues:[{group:'creditors',row:0,key:'loanContractId',code:'ACTIVE_LOAN_DUPLICATE',label:'SYNTHETIC BANK — повтор'}],documents:{issues:[],manuallyReviewed:[],loanCoverage:{expected:1,present:0,missing:0,duplicates:1,rows:[loan],complete:false}},evidence:{issues:[{code:'REVIEW_LOAN_DUPLICATE'}]}})});
+ const before=s.capture();await s.w.AssessmentCheck.run();assert.equal(s.d.querySelectorAll('.loan-duplicate-card').length,2);assert.match(s.d.querySelector('#answerCheckIssues').textContent,/Кредит 1 —.*Сравнить записи/);assert.doesNotMatch(s.d.querySelector('#answerCheckIssues').textContent,/обязательство 1/);assert.deepEqual(s.capture(),before);
 });
 
 test('navigation and source shortcuts reveal their fields without mutating the draft or authorizing writes',async t=>{
