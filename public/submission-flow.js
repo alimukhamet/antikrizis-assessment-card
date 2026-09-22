@@ -1,4 +1,8 @@
-window.SubmissionFlow={mount(anchor,status){
+window.SubmissionFlow={contractFilename(data,dealId){
+ // Keep the legacy download format, using the same snapshot as the DOCX.
+ const sanitize=(value,fallback='contract')=>(String(value||'').trim()||fallback).replace(/[^\p{L}\p{N}\- ]/gu,'').replace(/\s+/g,' ').trim()||fallback;
+ return `${sanitize(data.client_name,'client')} - Договор ${sanitize(data.contract_number,'number')} - ID ${sanitize(dealId)}.docx`;
+},mount(anchor,status){
  const save=document.createElement('button');save.type='button';save.id='saveAssessment';save.className='btn btn-main';save.textContent='Скачать договор';save.disabled=false;anchor.after(save);
  const fileLink=document.createElement('a');fileLink.id='downloadContractFile';fileLink.className='btn btn-ghost';fileLink.textContent='Скачать готовый файл договора';fileLink.hidden=true;save.after(fileLink);let fileUrl=null;
  function clearFile(){if(fileUrl)URL.revokeObjectURL(fileUrl);fileUrl=null;fileLink.hidden=true;fileLink.removeAttribute('href');}
@@ -46,7 +50,7 @@ window.SubmissionFlow={mount(anchor,status){
   try{blob=await Promise.race([renderer.render(contract.data,version),renderTimeout]);}finally{clearTimeout(renderTimer);}
   guardDownload();
   if(!(blob instanceof Blob)||!blob.size)throw Error('Модуль договора вернул пустой файл. Повторите скачивание из сохранённой версии.');
-  clearFile();fileUrl=URL.createObjectURL(blob);fileLink.href=fileUrl;fileLink.download=(HostedAssessment.getContext().client.title+` — договор — сделка ${dealId}.docx`).replace(/[\\/:*?"<>|]/g,'_');fileLink.hidden=false;
+  clearFile();fileUrl=URL.createObjectURL(blob);fileLink.href=fileUrl;fileLink.download=SubmissionFlow.contractFilename(contract.data,dealId);fileLink.hidden=false;
   fileLink.onclick=event=>{if(currentDeal()!==dealId||signature()!==savedSignature){event.preventDefault();clearFile();report('Клиент или ответы изменились. Скачайте договор заново для текущей версии.');}};fileLink.click();
   // A visible, persistent link gives Safari/in-app browsers a fresh user gesture.
   fileLink.focus({preventScroll:true});fileLink.scrollIntoView?.({block:'nearest'});
