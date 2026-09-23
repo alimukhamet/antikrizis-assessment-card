@@ -1,0 +1,33 @@
+name: Production monitoring
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: assessment-production-monitor
+  cancel-in-progress: false
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: deploy/anti-krizis
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Check live service, automatic incidents and saved cases
+        env:
+          ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
+        run: node scripts/monitor-production.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-monitor
+          path: production-monitor.json
+          retention-days: 7
