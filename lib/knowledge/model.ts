@@ -17,12 +17,12 @@ export function periodFor(row: KnowledgeRow, period: number): Period {
 export function normalizeSearch(value: string) {
   return value.normalize('NFKC').toLocaleLowerCase('ru').replace(/ё/g, 'е').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
-export function sortByLatestRateAscending(rows: KnowledgeRow[]) {
+export function sortByLatestRate(rows: KnowledgeRow[], direction: 'asc' | 'desc' = 'asc') {
   return rows.slice().sort((a, b) => {
     const ar = a.periods[3].rate, br = b.periods[3].rate;
     if (ar === null && br !== null) return 1;
     if (br === null && ar !== null) return -1;
-    return (ar ?? 0) - (br ?? 0) || a.name.localeCompare(b.name, 'ru') || a.region.localeCompare(b.region, 'ru');
+    return ((ar ?? 0) - (br ?? 0)) * (direction === 'asc' ? 1 : -1) || a.name.localeCompare(b.name, 'ru') || a.region.localeCompare(b.region, 'ru');
   });
 }
 export function filterRows(rows: KnowledgeRow[], region: string, query: string, period: number, minCount: number, sort: string) {

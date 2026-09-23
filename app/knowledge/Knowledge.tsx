@@ -1,7 +1,7 @@
 'use client';
 import {useEffect, useRef, useState} from 'react';
 import Link from 'next/link';
-import {MONTHS, normalizeSearch, sortByLatestRateAscending} from '../../lib/knowledge/model';
+import {MONTHS, normalizeSearch, sortByLatestRate} from '../../lib/knowledge/model';
 import type {KnowledgeData, KnowledgeRow} from '../../lib/knowledge/model';
 import './knowledge.css';
 
@@ -32,15 +32,16 @@ function Trend({row, monthly}: {row: KnowledgeRow; monthly: boolean}) {
 export default function Knowledge(){
   const [data,setData]=useState<KnowledgeData|null>(null), [error,setError]=useState(''), [attempt,setAttempt]=useState(0);
   const [selectedId,setSelectedId]=useState('total'),[query,setQuery]=useState(''),[mode,setMode]=useState<'overview'|'months'>('overview');
+  const [sortDirection,setSortDirection]=useState<'asc'|'desc'>('asc');
   const heading=useRef<HTMLHeadingElement>(null);
   useEffect(()=>{let active=true;const controller=new AbortController();fetch('/api/knowledge',{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(15000)])}).then(async r=>{if(r.status===401){window.location.replace('/login?returnTo=%2Fknowledge');return null;}if(!r.ok)throw Error();return await r.json() as KnowledgeData;}).then(value=>{if(active&&value)setData(value);}).catch(e=>{if(active&&e.name!=='AbortError')setError('Не удалось загрузить данные. Попробуйте ещё раз.');});return()=>{active=false;controller.abort();};},[attempt]);
   const all=data?[data.total,...data.regions,...data.courts]:[];
   const selected=all.find(r=>r.id===selectedId)??data?.total;
   const region=selected?.kind==='court'?data?.regions.find(r=>r.name===selected.region):selected?.kind==='region'?selected:undefined;
   const terms=normalizeSearch(query).split(' ').filter(Boolean);
-  const matches=terms.length?sortByLatestRateAscending(all.filter(r=>r.kind!=='total'&&terms.every(word=>normalizeSearch(r.name+' '+r.region).includes(word)))):[];
-  const courts=data&&region?sortByLatestRateAscending(data.courts.filter(r=>r.region===region.name)):[];
-  const browsing=region?courts:sortByLatestRateAscending(data?.regions??[]);
+  const matches=terms.length?sortByLatestRate(all.filter(r=>r.kind!=='total'&&terms.every(word=>normalizeSearch(r.name+' '+r.region).includes(word))),sortDirection):[];
+  const courts=data&&region?sortByLatestRate(data.courts.filter(r=>r.region===region.name),sortDirection):[];
+  const browsing=region?courts:sortByLatestRate(data?.regions??[],sortDirection);
   const searching=query.trim().length>0;
   const listed=searching?matches:browsing;
   function choose(id:string){setSelectedId(id);setQuery('');setMode('overview');if(all.find(r=>r.id===id)?.kind!=='region')requestAnimationFrame(()=>heading.current?.focus());}
@@ -50,7 +51,7 @@ export default function Knowledge(){
     <div className="learn-layout"><aside className="learn-sidebar"><div className="learn-sidebar-title"><strong>Судебная практика</strong><span>Регион → районный суд → динамика</span></div><label className="learn-search"><span className="learn-search-icon" aria-hidden="true">⌕</span><input type="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Регион или районный суд" aria-label="Найти регион или суд"/>{query&&<button type="button" aria-label="Очистить поиск" onClick={()=>setQuery('')}>×</button>}</label>
       <nav className="learn-region-list" aria-label="Регионы и районные суды">
         {!searching&&(region?<div className="learn-nav-context"><button className="learn-nav-back" onClick={()=>choose('total')}>← Все регионы</button><button onClick={()=>choose(region.id)} aria-current={selectedId===region.id?'page':undefined}><span>{region.name}</span><span>{percent(latest(region).rate)}</span></button></div>:<button onClick={()=>choose('total')} aria-current={selectedId==='total'?'page':undefined}><span>Все регионы</span><span>{data?percent(latest(data.total).rate):'—'}</span></button>)}
-        <div className="learn-list-caption"><strong>{searching?`Найдено: ${matches.length}`:region?'Суды региона':'Регионы'}</strong><span>% по возрастанию ↑</span><small>1 июля–17 сентября 2026</small></div>
+        <div className="learn-list-caption"><strong>{searching?`Найдено: ${matches.length}`:region?'Суды региона':'Регионы'}</strong><div className="learn-sort" role="group" aria-label="Порядок сортировки"><button type="button" aria-label="По возрастанию процента" title="Сначала меньший процент" aria-pressed={sortDirection==='asc'} onClick={()=>setSortDirection('asc')}>% ↑</button><button type="button" aria-label="По убыванию процента" title="Сначала больший процент" aria-pressed={sortDirection==='desc'} onClick={()=>setSortDirection('desc')}>% ↓</button></div><small>1 июля–17 сентября 2026</small></div>
         <div className="learn-nav-items" key={searching?'search':region?.id??'regions'}>
           {listed.map(r=><button key={r.id} onClick={()=>choose(r.id)} aria-current={selectedId===r.id?'page':undefined}><span><strong>{r.name}</strong>{searching&&<small>{r.kind==='region'?'Регион':r.region}</small>}</span><span>{latest(r).rate===null?'—':percent(latest(r).rate)}</span></button>)}
           {searching&&!matches.length&&<p className="learn-empty">Ничего не найдено. Попробуйте часть названия.</p>}

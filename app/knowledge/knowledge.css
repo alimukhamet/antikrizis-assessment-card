@@ -29,3 +29,5 @@
 .learn-nav-items small{font-size:10px;color:#829079}
 .learn-empty{font-size:12px;color:#77866e;padding:12px 9px}
 @media(max-width:760px){.learn-region-list{display:flex;flex:none}.learn-nav-items{max-height:180px}.learn-region-list button{font-size:13px;min-height:40px}.learn-region-list button>span:last-child{font-size:12px}.learn-list-caption{padding-top:10px}.learn-nav-items small{font-size:11px}}
+
+.learn-list-caption{align-items:center}.learn-sort{display:flex;gap:2px;padding:2px;border:1px solid #dbe2d8;border-radius:6px;background:#eef2e9}.learn-region-list .learn-sort button{min-height:28px;padding:4px 8px;border:0;border-radius:4px;font-size:11px;line-height:1;white-space:nowrap}.learn-region-list .learn-sort button[aria-pressed=true]{background:#fff;color:#315941;font-weight:650;box-shadow:0 1px 3px #26371918}@media(max-width:760px){.learn-region-list .learn-sort button{min-height:36px;min-width:42px;font-size:13px}}
