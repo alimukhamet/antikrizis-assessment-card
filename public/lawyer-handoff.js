@@ -33,12 +33,12 @@
   send.textContent=busy?'Передаём…':statusBusy?'Проверяем…':pending?.state==='verified'?'Стадия изменена':pending?.state==='writing'||pending?.state==='uncertain'?'Проверить результат':pending?'Продолжить передачу':'Передать юристам →';
   const reconcileOnly=pending?.state==='writing'||pending?.state==='uncertain';
   send.disabled=busy||af.busy||statusBusy||!ui.ready()||!statusLoaded||pending?.state==='verified'||(!reconcileOnly&&delivery?.ready!==true)||(!pending&&(!stage||count!==3));
-  $('handoffDelivery').textContent=!ui.ready()?'':statusBusy?'Проверяем анкету и документы в Bitrix…':delivery?.ready?'Анкета и документы сохранены в Bitrix.':delivery?explanation(delivery.code):'Сохранение анкеты ещё не проверено.';
+  $('handoffDelivery').textContent=!ui.ready()?'':statusBusy?'Проверяем анкету и документы в Bitrix…':delivery?.ready?'Анкета и документы сохранены в Bitrix.':delivery?.recoveredDraft?'Черновик анкеты и оригиналы восстановлены в Bitrix. Сверка кредитов и финальная оценка ещё не завершены.':delivery?explanation(delivery.code):'Сохранение анкеты ещё не проверено.';
   $('handoffDelivery').dataset.ready=String(delivery?.ready===true);$('handoffAssessmentLink').hidden=!ui.ready()||!delivery||delivery.ready===true;
   $('handoffCancel').hidden=pending?.state!=='prepared';$('handoffCancel').disabled=busy||statusBusy;
   $('handoffRefresh').disabled=busy||statusBusy||!ui.ready();
   const next=!ui.ready()?'Выберите клиента.':statusBusy?'Проверяем состояние…':!statusLoaded?'Нажмите «Проверить состояние».':pending?.state==='verified'?'Передано.':pending?'Можно продолжить сохранённую передачу.':delivery?.ready!==true?'Сначала завершите сохранение анкеты и документов.':!key?'Добавьте ЭЦП и подтвердите владельца.':!powerReady?'Проверьте доверенность.':!contract?'Добавьте подписанный PDF и подтвердите подпись.':'Готово к передаче.';
-  $('handoffReason').textContent=pending?.state==='verified'&&delivery?.ready===false?'Стадия уже изменена, но данные переданы не полностью.':message||next;
+  $('handoffReason').textContent=pending?.state==='verified'&&delivery?.ready===false?(delivery.recoveredDraft?'Данные восстановлены как черновик. Повторно передавать сделку не нужно.':'Стадия уже изменена, но данные переданы не полностью.'):message||next;
   window.FileSelectionControls?.refresh();
  }
  async function request(body){

@@ -1,7 +1,7 @@
 import {RepositoryError,sha256,type CaseRow} from './repository';
 import type {Actor} from '../worker-session';
 import type {CrmFileRef,ReusedUpload} from '../crm/document-upload';
-export type UploadManifest={version:1;scope?:'credentials';origin?:'bitrix-existing';credentialOwnerConfirmed?:true;reused?:ReusedUpload[];planHash?:string;rootRequestId?:string;batchIndex?:number;reviewIds?:string[];baseline:CrmFileRef[];files:Array<{documentId:string;sha256:string;name:string;byteSize:number}>};
+export type UploadManifest={version:1;supersedesRequestId?:string;repairReason?:'BITRIX_CHUNKED_TRANSPORT_TIMEOUT';scope?:'credentials';origin?:'bitrix-existing';credentialOwnerConfirmed?:true;reused?:ReusedUpload[];planHash?:string;rootRequestId?:string;batchIndex?:number;reviewIds?:string[];baseline:CrmFileRef[];files:Array<{documentId:string;sha256:string;name:string;byteSize:number}>};
 export type UploadReceipt={files:Array<{id:string;sha256:string;name:string}>;preserved:CrmFileRef[];verified:true};
 export type UploadRow={id:string;case_id:string;request_id:string;identity_revision:number;manifest_json:string;payload_hash:string;actor_id:string;authentication:string;state:string;receipt_json:string|null;outcome_code:string|null;created_at:string;updated_at:string};
 export class UploadManifestRepository{

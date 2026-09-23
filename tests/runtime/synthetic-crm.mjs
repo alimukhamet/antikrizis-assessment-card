@@ -12,7 +12,9 @@ export function syntheticCrm(){
    assert.equal(request.method,'GET');const file=files.get(u.searchParams.get('id'));assert.ok(file,'Unknown synthetic file');
    return new Response(file.bytes,{headers:{'content-length':String(file.bytes.length),'content-disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(file.name)}});
   }
-  assert.equal(request.method,'POST');const body=await request.json();
+  assert.equal(request.method,'POST');
+  if(method==='crm.item.update.json'){assert.ok(Number(request.headers.get('content-length'))>0,'Bitrix uploads require fixed-length framing');assert.equal(request.headers.get('transfer-encoding'),null);}
+  const body=await request.json();
   if(blocked)return lost();
   switch(method){
    case 'crm.deal.get.json': assert.equal(String(body.id),deal.ID);return Response.json({result:deal});
