@@ -14,11 +14,11 @@ const {UploadManifestRepository}=load('lib/documents/upload-manifest.ts',{'./rep
 const service=load('lib/questionnaire/handoff-service.ts',{'../documents/repository':evidence,'../documents/analysis-service':{analysisVersion:'test'},'../documents/package-check':{checkDocumentPackage:async()=>({packageReady:true,manuallyReviewed:[]})},'../documents/upload-service':load('lib/documents/upload-service.ts',{'./repository':evidence,'../crm/document-upload':upload}),'../documents/upload-plan':load('lib/documents/upload-plan.ts',{'./repository':evidence}),'../crm/lawyer-handoff':crm});
 const record={id:'case',identity_revision:1,client_iin:'000000000010',external_id:'900001'},actor={id:'staff',authentication:'test'};
 const destination={categoryId:'13',fromStageId:'C13:FINAL_INVOICE',fromStageName:'Договор',stageId:'C13:WON',stageName:'Сделка завершена'};
-function transport(){const state={deal:{ID:'900001',CATEGORY_ID:'13',STAGE_ID:'C13:FINAL_INVOICE',STAGE_SEMANTIC_ID:'P',UF_CRM_AI_IIN:'000000000010'},writes:[],history:[],timeout:false,robot:false,name:'Сделка завершена',semantic:'S'};
+function transport(){const state={deal:{ID:'900001',CATEGORY_ID:'13',STAGE_ID:'C13:FINAL_INVOICE',STAGE_SEMANTIC_ID:'P',UF_CRM_AI_IIN:'000000000010',TITLE:'SYNTHETIC ONLY',UF_CRM_1773669702495:'SYNTHETIC ONLY',UF_CRM_1773655613972:'199'},writes:[],history:[],timeout:false,robot:false,name:'Сделка завершена',semantic:'S'};
  state.send=async(url,options)=>{const method=url.split('/').at(-1),body=JSON.parse(options.body);let result;
   if(method==='crm.deal.get.json')result=state.deal;
   else if(method==='crm.status.list.json'){assert.equal(body.filter.ENTITY_ID,'DEAL_STAGE_13');result=[{STATUS_ID:'C13:FINAL_INVOICE',NAME:'Договор'},{STATUS_ID:'C13:WON',NAME:state.name,SEMANTICS:state.semantic,ENTITY_ID:'DEAL_STAGE_13'}];}
-  else if(method==='crm.deal.update.json'){state.writes.push(body);if(state.timeout)throw Error('network lost');state.deal={...state.deal,CATEGORY_ID:state.robot?'1':'13',STAGE_ID:state.robot?'C1:NEW':'C13:WON'};result=true;}
+  else if(method==='crm.deal.update.json'){state.writes.push(body);if(state.timeout)throw Error('network lost');state.deal={...state.deal,...body.fields,...(state.dropTitle?{TITLE:state.deal.TITLE}:{}),CATEGORY_ID:state.robot?'1':'13',STAGE_ID:state.robot?'C1:NEW':'C13:WON'};result=true;}
   else if(method==='crm.stagehistory.list.json')result={items:state.history};else throw Error(method);
   return{ok:true,json:async()=>({result})};};return state;
 }
@@ -53,7 +53,7 @@ test('durable handoff claim is unique across retries and employees, including af
   await assert.rejects(s.handoffs.prepare(record,webcrypto.randomUUID(),payload,actor),/HANDOFF_ALREADY_PENDING/);
  }finally{s.sql.close();}
 });
-async function deliveredHandoff(){
+async function deliveredHandoff(options={}){
  const s=database(),keyId=webcrypto.randomUUID(),id=webcrypto.randomUUID(),contents={power:new Uint8Array([1,2]),signed:new Uint8Array([3,4]),key:new Uint8Array([5,6]),original:new Uint8Array([7,8])};
  const docs={};for(const [name,bytes]of Object.entries(contents))docs[name]={id:name,case_id:record.id,original_name:name+'.pdf',original_sha256:await evidence.sha256(bytes),byte_size:bytes.length};
  const crmFiles=new Map([['11',contents.key],['12',contents.original]]),counts={uploads:0,moves:0,reads:0,assessments:0};
@@ -63,10 +63,11 @@ async function deliveredHandoff(){
  const originalId=webcrypto.randomUUID(),originalManifest={version:1,baseline:[],files:[{documentId:'original',name:'original.pdf',sha256:docs.original.original_sha256,byteSize:2}]};
  await s.manifests.prepare(record,originalId,originalManifest,actor);await s.manifests.claim(record,originalId);await s.manifests.finish(record.id,originalId,{verified:true,preserved:[],files:[{id:'12',name:'original.pdf',sha256:docs.original.original_sha256}]},'VERIFIED');
  const repository={document:async(caseId,id)=>caseId===record.id?docs[id]:null,original:async doc=>contents[doc.id],cached:async()=>({result:{read:{totalPages:1},extraction:{identity:{iin:record.client_iin}}}}),credentialStatus:async()=>({verified:true,passwordStored:true,requestId:keyId})};
- const row=await s.handoffs.prepare(record,id,{destination,powerId:'power',signedId:'signed',credentialRequestId:keyId,reviewIds:[],signedConfirmed:true,confirmedAt:new Date().toISOString()},actor);
- const payload={values:{iin:record.client_iin},draft:{documents:[{documentId:'original',type:'Удостоверение личности'},{documentId:'original',type:'Удостоверение личности'},{documentId:'power',type:'Доверенность'},{documentId:'signed',type:'Подписанный договор'}]}},submission={case_id:record.id,identity_revision:record.identity_revision,state:'verified',history_state:'verified',history_comment_id:'41',request_id:webcrypto.randomUUID(),payload_hash:'saved-hash',payload_json:JSON.stringify(payload)};
- const deps={...s,repository,submissions:{latestForCase:async()=>submission},assessment:{reconcile:async(deal,iin,values)=>{counts.assessments++;assert.equal(deal,record.external_id);assert.equal(iin,record.client_iin);assert.deepEqual(JSON.parse(JSON.stringify(values)),payload.values);return{verified:true};}},upload:adapter,readFile:async file=>{counts.reads++;return crmFiles.get(file.id);},stages:{move:async()=>{counts.moves++;return true;},reconcile:async()=>true}};
- return {...s,deps,row,submission,contents,docs,crmFiles,counts,originalId};
+ const handoffPayload={destination,powerId:'power',signedId:'signed',credentialRequestId:keyId,reviewIds:[],signedConfirmed:true,confirmedAt:new Date().toISOString()};
+ const row=options.prepare===false?null:await s.handoffs.prepare(record,id,handoffPayload,actor);
+ const payload={values:{iin:record.client_iin,fio:'SYNTHETIC ONLY',procedure:'199'},draft:{documents:[{documentId:'original',type:'Удостоверение личности'},{documentId:'original',type:'Удостоверение личности'},{documentId:'power',type:'Доверенность'},{documentId:'signed',type:'Подписанный договор'}]}},submission={case_id:record.id,identity_revision:record.identity_revision,state:'verified',history_state:'verified',history_comment_id:'41',request_id:webcrypto.randomUUID(),payload_hash:'a'.repeat(64),payload_json:JSON.stringify(payload)};
+ const deps={...s,repository,submissions:{latestForCase:async()=>submission},assessment:{reconcile:async(deal,iin,values)=>{counts.assessments++;assert.equal(deal,record.external_id);assert.equal(iin,record.client_iin);assert.deepEqual(JSON.parse(JSON.stringify(values)),payload.values);return{verified:true};}},upload:adapter,readFile:async file=>{counts.reads++;return crmFiles.get(file.id);},stages:{validateTitle:async()=>{},move:async()=>{counts.moves++;return true;},reconcile:async()=>true}};
+ return {...s,deps,row,submission,contents,docs,crmFiles,counts,originalId,handoffPayload};
 }
 test('saved intake originals are verified first; unsent handoff docs in the snapshot are uploaded and verified before the stage move',async()=>{
  const s=await deliveredHandoff();
@@ -193,4 +194,85 @@ test('duplicate, foreign-directory or explicitly unsuccessful destinations remai
   await assert.rejects(a.move(record.external_id,record.client_iin,destination,'2026-09-16T08:00:00Z'),e=>e.notStarted===true);
   assert.equal(s.writes.length,0);
  }
+});
+
+async function plannedHandoff(){
+ const s=await deliveredHandoff({prepare:false}),remote=transport();remote.deal.TITLE='SYNTHETIC ONLY - [whatcrm] line #21';
+ s.deps.stages=crm.createHandoffAdapter('https://synthetic.invalid/rest/',remote.send);
+ const naming=await service.prepareHandoffTitle(s.deps,record);
+ const row=await s.handoffs.prepare(record,webcrypto.randomUUID(),{...s.handoffPayload,...naming},actor);
+ return {...s,row,remote,plan:naming.titlePlan};
+}
+test('preparation freezes verified submission title intent and one claimed update sends both stage and VP title',async()=>{
+ const s=await plannedHandoff();try{
+  const frozen=JSON.parse(s.row.payload_json);
+  assert.equal(frozen.titlePlan.policy,'VP_FIO_1');assert.equal(frozen.titlePlan.source.requestId,s.submission.request_id);assert.equal(frozen.titlePlan.source.payloadHash,s.submission.payload_hash);
+  assert.equal(frozen.titlePlan.beforeTitle,s.remote.deal.TITLE);assert.equal(frozen.titlePlan.desiredTitle,'ВП SYNTHETIC ONLY');
+  const originalPayload=s.submission.payload_json;
+  const done=await service.runHandoff(s.deps,record,actor,s.row,'2026-09-16');
+  assert.equal(done.state,'verified');assert.equal(done.outcome_code,'STAGE_AND_TITLE_READBACK_VERIFIED');
+  assert.deepEqual(s.remote.writes,[{id:record.external_id,fields:{STAGE_ID:'C13:WON',TITLE:'ВП SYNTHETIC ONLY'}}]);
+  assert.equal(s.submission.payload_json,originalPayload);assert.equal(done.payload_json,s.row.payload_json);
+  await service.runHandoff(s.deps,record,actor,done,'2026-09-16');assert.equal(s.remote.writes.length,1);
+ }finally{s.sql.close();}
+});
+test('only exact VP intake titles receive a policy; custom titles and unsupported procedures remain untouched',async()=>{
+ for(const [title,procedure]of [['Manager custom title','199'],['SYNTHETIC ONLY [whatcrm] note','199'],['SYNTHETIC ONLY - [whatcrm] line #21','201'],['SYNTHETIC ONLY - [whatcrm] line #21','203'],['SYNTHETIC ONLY - [whatcrm] line #21','205']]){
+  const s=transport();s.deal.TITLE=title;s.deal.UF_CRM_1773655613972=procedure;
+  const a=crm.createHandoffAdapter('https://synthetic.invalid/rest/',s.send),plan=await a.planTitle(record.external_id,record.client_iin,{requestId:webcrypto.randomUUID(),payloadHash:'a'.repeat(64),fio:s.deal.UF_CRM_1773669702495,procedure});
+  assert.equal(plan,null);assert.equal(await a.move(record.external_id,record.client_iin,destination,'2026-09-16T08:00:00Z'),true);
+  assert.deepEqual(s.writes,[{id:record.external_id,fields:{STAGE_ID:'C13:WON'}}]);assert.equal(s.deal.TITLE,title);
+ }
+ const s=transport();s.deal.TITLE='SYNTHETIC ONLY - [whatcrm] line #21';s.deal.UF_CRM_1773669702495='  SYNTHETIC   ONLY  ';
+ const a=crm.createHandoffAdapter('https://synthetic.invalid/rest/',s.send),plan=await a.planTitle(record.external_id,record.client_iin,{requestId:webcrypto.randomUUID(),payloadHash:'a'.repeat(64),fio:s.deal.UF_CRM_1773669702495,procedure:'199'});
+ assert.equal(plan.desiredTitle,'ВП SYNTHETIC ONLY');assert.equal(plan.source.fio,'  SYNTHETIC   ONLY  ');
+});
+test('frozen submission and title guards reject new source, custom title, FIO, procedure or stage before handoff uploads',async()=>{
+ for(const [change,code]of [
+  [s=>s.submission.request_id=webcrypto.randomUUID(),'HANDOFF_ASSESSMENT_CHANGED'],
+  [s=>s.submission.payload_hash='b'.repeat(64),'HANDOFF_ASSESSMENT_CHANGED'],
+  [s=>s.remote.deal.TITLE='Manager corrected title','HANDOFF_TITLE_CHANGED'],
+  [s=>s.remote.deal.UF_CRM_1773669702495='OTHER SYNTHETIC','HANDOFF_ASSESSMENT_CHANGED'],
+  [s=>s.remote.deal.UF_CRM_1773655613972='201','HANDOFF_ASSESSMENT_CHANGED'],
+  [s=>s.remote.deal.CATEGORY_ID='1','HANDOFF_STAGE_CHANGED'],
+  [s=>s.remote.deal.STAGE_ID='C13:NEW','HANDOFF_STAGE_CHANGED'],
+ ]){
+  const s=await plannedHandoff();try{change(s);await assert.rejects(service.runHandoff(s.deps,record,actor,s.row,'2026-09-16'),new RegExp(code));assert.equal(s.counts.uploads,0);assert.equal(s.remote.writes.length,0);assert.equal((await s.handoffs.get(record.id,s.row.request_id)).state,'prepared');}finally{s.sql.close();}
+ }
+});
+test('a title changed during uploads is checked again before the claimed CRM update',async()=>{
+ const s=await plannedHandoff();try{
+  const append=s.deps.upload.append;s.deps.upload.append=async(...args)=>{const receipt=await append(...args);s.remote.deal.TITLE='Manager edited during upload';return receipt;};
+  const done=await service.runHandoff(s.deps,record,actor,s.row,'2026-09-16');
+  assert.equal(done.state,'prepared');assert.equal(done.outcome_code,'HANDOFF_TITLE_CHANGED');assert.equal(s.remote.writes.length,0);assert.equal(s.counts.uploads,2);
+ }finally{s.sql.close();}
+});
+test('legacy prepared VP intake handoff stops before uploads; cancel and reprepare preserve all saved file receipts',async()=>{
+ const s=await deliveredHandoff(),remote=transport();remote.deal.TITLE='SYNTHETIC ONLY - [whatcrm] line #21';s.deps.stages=crm.createHandoffAdapter('https://synthetic.invalid/rest/',remote.send);
+ try{
+  const before=s.sql.prepare('SELECT * FROM assessment_upload_manifests ORDER BY rowid').all(),files=[...s.crmFiles];
+  await assert.rejects(service.runHandoff(s.deps,record,actor,s.row,'2026-09-16'),/HANDOFF_TITLE_PLAN_REQUIRED/);
+  assert.equal(s.counts.uploads,0);assert.equal(remote.writes.length,0);assert.deepEqual([...s.crmFiles],files);assert.deepEqual(s.sql.prepare('SELECT * FROM assessment_upload_manifests ORDER BY rowid').all(),before);
+  await s.handoffs.cancel(record,s.row,actor);assert.deepEqual([...s.crmFiles],files);assert.deepEqual(s.sql.prepare('SELECT * FROM assessment_upload_manifests ORDER BY rowid').all(),before);
+  const naming=await service.prepareHandoffTitle(s.deps,record),row=await s.handoffs.prepare(record,webcrypto.randomUUID(),{...s.handoffPayload,...naming},actor);
+  const done=await service.runHandoff(s.deps,record,actor,row,'2026-09-16');assert.equal(done.state,'verified');assert.equal(remote.writes.length,1);assert.deepEqual(s.crmFiles.get('11'),s.contents.key);assert.deepEqual(s.crmFiles.get('12'),s.contents.original);
+ }finally{s.sql.close();}
+});
+test('stage proof with an unchanged intake title stays uncertain and all resume attempts are read-only',async()=>{
+ const s=await plannedHandoff();try{
+  s.remote.robot=true;s.remote.dropTitle=true;s.remote.history=[{OWNER_ID:record.external_id,CATEGORY_ID:13,STAGE_ID:'C13:WON',CREATED_TIME:new Date().toISOString()}];
+  const done=await service.runHandoff(s.deps,record,actor,s.row,'2026-09-16');assert.equal(done.state,'uncertain');assert.equal(done.outcome_code,'HANDOFF_TITLE_UNVERIFIED');
+  s.deps.submissions.latestForCase=async()=>{throw Error('No new submission read after attempted stage write');};
+  const resumed=await service.runHandoff(s.deps,record,actor,done,'2026-09-16');assert.equal(resumed.state,'uncertain');assert.equal(resumed.outcome_code,'HANDOFF_TITLE_UNVERIFIED');assert.equal(s.remote.writes.length,1);
+  s.remote.deal.TITLE=s.plan.desiredTitle;
+  assert.equal((await service.runHandoff(s.deps,record,actor,resumed,'2026-09-16')).state,'verified');assert.equal(s.remote.writes.length,1);
+ }finally{s.sql.close();}
+});
+test('legacy claimed handoffs retain stage-only recovery even when their current title is intake-style',async()=>{
+ const s=await deliveredHandoff(),remote=transport();remote.deal.TITLE='SYNTHETIC ONLY - [whatcrm] line #21';remote.deal.STAGE_ID='C13:WON';s.deps.stages=crm.createHandoffAdapter('https://synthetic.invalid/rest/',remote.send);
+ try{
+  await s.handoffs.claim(record,s.row);const row=await s.handoffs.get(record.id,s.row.request_id);
+  s.deps.submissions.latestForCase=async()=>{throw Error('Legacy claimed operation must reconcile without new delivery obligations');};
+  const done=await service.runHandoff(s.deps,record,actor,row,'2026-09-16');assert.equal(done.state,'verified');assert.equal(done.outcome_code,'STAGE_READBACK_VERIFIED');assert.equal(remote.writes.length,0);assert.equal(s.counts.uploads,0);
+ }finally{s.sql.close();}
 });

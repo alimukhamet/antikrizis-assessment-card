@@ -5,7 +5,7 @@ import {UploadManifestRepository,type UploadManifest} from '../documents/upload-
 import {uploadStoredDocuments} from '../documents/upload-service';
 import {uploadBatchId} from '../documents/upload-plan';
 import {HandoffRepository,type HandoffPayload,type HandoffRow} from './handoff-repository';
-import {HandoffMoveError,type createHandoffAdapter} from '../crm/lawyer-handoff';
+import {HandoffMoveError,type createHandoffAdapter,type HandoffTitleSource} from '../crm/lawyer-handoff';
 import type {createDocumentUploadAdapter,CrmFileRef} from '../crm/document-upload';
 import type {createAssessmentAdapter} from '../crm/assessment-write';
 import type {SubmissionRepository,SubmissionPayload} from './submission-repository';
@@ -33,7 +33,7 @@ type DeliveryDependencies={repository:Pick<EvidenceRepository,'document'>;submis
 /** Read-only delivery proof. A historical stage receipt is not evidence that the
  * assessment or its originals reached Bitrix. Use the immutable saved submission,
  * never the current editable draft, to determine which originals are required. */
-export async function verifyHandoffDelivery(deps:DeliveryDependencies,record:CaseRow,options:{verifyBytes?:boolean}={}){
+async function verifiedDelivery(deps:DeliveryDependencies,record:CaseRow,options:{verifyBytes?:boolean}={}){
  const submission=await deps.submissions.latestForCase(record.id);
  if(!submission)throw new RepositoryError('HANDOFF_ASSESSMENT_REQUIRED');
  if(submission.case_id!==record.id||submission.identity_revision!==record.identity_revision||!record.client_iin)throw new RepositoryError('HANDOFF_ASSESSMENT_CHANGED');
@@ -78,7 +78,21 @@ export async function verifyHandoffDelivery(deps:DeliveryDependencies,record:Cas
    if(bytes.byteLength!==file.byteSize||await sha256(bytes)!==file.sha256)throw new RepositoryError('HANDOFF_ORIGINAL_CHANGED');
   }
  }
- return {requestId:submission.request_id,payloadHash:submission.payload_hash,originals:seen.size};
+ return {requestId:submission.request_id,payloadHash:submission.payload_hash,originals:seen.size,titleSource:{requestId:submission.request_id,payloadHash:submission.payload_hash,fio:payload.values.fio,procedure:payload.values.procedure} satisfies HandoffTitleSource};
+}
+export async function verifyHandoffDelivery(deps:DeliveryDependencies,record:CaseRow,options:{verifyBytes?:boolean}={}){
+ const {requestId,payloadHash,originals}=await verifiedDelivery(deps,record,options);
+ return {requestId,payloadHash,originals};
+}
+/** Freeze title intent from the verified submission, never from request/draft fields. */
+export async function prepareHandoffTitle(deps:DeliveryDependencies&{stages:Pick<ReturnType<typeof createHandoffAdapter>,'planTitle'>},record:CaseRow){
+ const delivered=await verifiedDelivery(deps,record,{verifyBytes:false});
+ const titlePlan=await deps.stages.planTitle(record.external_id,record.client_iin!,delivered.titleSource);
+ return titlePlan?{titlePlan}:{};
+}
+function assertTitleSource(payload:HandoffPayload,source:HandoffTitleSource){
+ const frozen=payload.titlePlan?.source;
+ if(payload.titlePlan&&(!frozen||frozen.requestId!==source.requestId||frozen.payloadHash!==source.payloadHash||frozen.fio!==source.fio||frozen.procedure!==source.procedure))throw new RepositoryError('HANDOFF_ASSESSMENT_CHANGED');
 }
 type Dependencies=DeliveryDependencies&{repository:EvidenceRepository;handoffs:HandoffRepository;manifests:UploadManifestRepository;upload:ReturnType<typeof createDocumentUploadAdapter>;stages:ReturnType<typeof createHandoffAdapter>};
 /** A timeout never authorizes a second stage update. All recovery after claim is read-only. */
@@ -88,11 +102,16 @@ export async function runHandoff(deps:Dependencies,record:CaseRow,actor:Actor,ro
  if(row.state==='verified')return row;
  if(row.actor_id!==actor.id)throw new RepositoryError('HANDOFF_OWNED_BY_ANOTHER_WORKER');
  if(row.state==='writing'||row.state==='uncertain'){
-  let verified=false;try{verified=await stages.reconcile(record.external_id,record.client_iin!,payload.destination,row.created_at);}catch{/* Preserve uncertain state. */}
-  return handoffs.finish(record,row,verified?'verified':'uncertain',verified?'STAGE_READBACK_VERIFIED':'HANDOFF_OUTCOME_UNCERTAIN');
+  let verified=false,code='HANDOFF_OUTCOME_UNCERTAIN';
+  try{verified=await stages.reconcile(record.external_id,record.client_iin!,payload.destination,row.created_at,payload.titlePlan);}catch(error){if(error instanceof HandoffMoveError)code=error.code;}
+  return handoffs.finish(record,row,verified?'verified':'uncertain',verified?(payload.titlePlan?'STAGE_AND_TITLE_READBACK_VERIFIED':'STAGE_READBACK_VERIFIED'):code);
  }
  if(row.state!=='prepared')throw new RepositoryError('HANDOFF_CANCELLED');
- const delivered=await verifyHandoffDelivery(deps,record);
+ const delivered=await verifiedDelivery(deps,record);
+ assertTitleSource(payload,delivered.titleSource);
+ // A legacy prepared VP intake handoff has no frozen title intent. Stop before
+ // uploads; cancelling/repreparing preserves all existing file receipts.
+ await stages.validateTitle(record.external_id,record.client_iin!,payload.destination,payload.titlePlan);
  const verify=async()=>{
   const current=await validateHandoffDocuments(repository,record,payload.powerId,payload.signedId,day);
   if(current.credentialRequestId!==payload.credentialRequestId||JSON.stringify(current.reviewIds)!==JSON.stringify(payload.reviewIds))throw new RepositoryError('HANDOFF_DOCUMENTS_CHANGED');
@@ -130,11 +149,12 @@ export async function runHandoff(deps:Dependencies,record:CaseRow,actor:Actor,ro
   const bytes=await deps.readFile(file);if(bytes.byteLength!==file.byteSize||await sha256(bytes)!==file.sha256)throw new RepositoryError('HANDOFF_FILE_CHANGED');
  }
  await verify();
- const currentDelivery=await verifyHandoffDelivery(deps,record);
+ const currentDelivery=await verifiedDelivery(deps,record);
+ assertTitleSource(payload,currentDelivery.titleSource);
  if(currentDelivery.requestId!==delivered.requestId||currentDelivery.payloadHash!==delivered.payloadHash)throw new RepositoryError('HANDOFF_ASSESSMENT_CHANGED');
  if(!await handoffs.claim(record,row))return handoffs.get(record.id,row.request_id);
- let verified=false;
- try{verified=await stages.move(record.external_id,record.client_iin!,payload.destination,row.created_at);}
- catch(error){if(error instanceof HandoffMoveError&&error.notStarted)return handoffs.finish(record,row,'prepared',error.code);}
- return handoffs.finish(record,row,verified?'verified':'uncertain',verified?'STAGE_READBACK_VERIFIED':'HANDOFF_OUTCOME_UNCERTAIN');
+ let verified=false,code='HANDOFF_OUTCOME_UNCERTAIN';
+ try{verified=await stages.move(record.external_id,record.client_iin!,payload.destination,row.created_at,payload.titlePlan);}
+ catch(error){if(error instanceof HandoffMoveError){if(error.notStarted)return handoffs.finish(record,row,'prepared',error.code);code=error.code;}}
+ return handoffs.finish(record,row,verified?'verified':'uncertain',verified?(payload.titlePlan?'STAGE_AND_TITLE_READBACK_VERIFIED':'STAGE_READBACK_VERIFIED'):code);
 }

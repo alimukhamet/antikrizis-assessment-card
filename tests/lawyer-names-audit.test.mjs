@@ -123,7 +123,7 @@ test("optional workflow naming mode skips normal audit and recovery and retains 
   const workflow = fs.readFileSync(".github/workflows/audit-live-tools.yml", "utf8");
   assert.match(workflow, /audit_lawyer_names:\n\s+description:[^\n]+\n\s+type: boolean\n\s+default: false/);
   assert.match(workflow, /if: inputs\.audit_lawyer_names == true[\s\S]*?run: node scripts\/audit-lawyer-names\.mjs/);
-  assert.match(workflow, /name: Recover an explicitly selected saved submission\n\s+if: inputs\.audit_lawyer_names != true && inputs\.recover_request_id != ''/);
+  assert.match(workflow, /name: Recover an explicitly selected saved submission\n\s+if: inputs\.audit_lawyer_names != true && inputs\.repair_title_deal_id == '' && inputs\.recover_request_id != ''/);
   assert.match(workflow, /name: Inspect existing cases and optionally refresh derived document analysis\n\s+if: inputs\.audit_lawyer_names != true/);
   assert.match(workflow, /name: lawyer-names-audit\n\s+path: lawyer-names-audit\.json\n\s+retention-days: 1/);
 });

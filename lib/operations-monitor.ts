@@ -12,6 +12,7 @@ export const operationsActions = [
   "upload",
   "credentials",
   "handoff",
+  "title_repair",
   "intake",
 ] as const;
 export const clientCodes = [
@@ -107,6 +108,7 @@ export function operationRoute(
     uploads: "upload",
     credentials: "credentials",
     handoff: "handoff",
+    "title-repair": "title_repair",
     "crm-intake": "intake",
     "crm-documents": "upload",
   };
@@ -193,6 +195,15 @@ export class OperationsRepository {
         .all();
       stuck.push(...rows.results.map((row) => ({ ...row, action })));
     }
+    // Maintenance receipts have their own clock; never alter the original
+    // submission receipt merely to make a title repair visible to monitoring.
+    const titleRepairs = await this.db.prepare(`SELECT c.external_id AS deal_id,
+      s.id AS operation_id,s.title_repair_state AS state,s.title_repair_updated_at AS updated_at,
+      'TITLE_REPAIR_PENDING' AS outcome_code
+      FROM assessment_submissions s JOIN assessment_cases c ON c.id=s.case_id
+      WHERE s.title_repair_state IN ('prepared','writing','uncertain') AND s.title_repair_updated_at<?
+      ORDER BY s.title_repair_updated_at LIMIT 100`).bind(stuckBefore).all();
+    stuck.push(...titleRepairs.results.map((row) => ({ ...row, action: 'title_repair' })));
     // A verified stage change proves only the handoff itself. Missing assessment
     // delivery remains actionable until both receipts exist for the current
     // identity, even when nobody has opened the case in the last 24 hours.

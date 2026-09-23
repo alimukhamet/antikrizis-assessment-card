@@ -80,7 +80,7 @@ test('built Worker persists a complete contract and recovers a handoff without d
  const prematureId=crypto.randomUUID(),beforeBlocked={...crm.counts};
  const premature=await api(root+'/handoff',{action:'send',requestId:prematureId,destination,stage:beforeDelivery.destination,powerId:fixture.documents.find(d=>d.kind==='power_of_attorney').documentId,signedId:fixture.documents.find(d=>d.kind==='unknown').documentId,signedConfirmed:true},409);
  assert.equal(premature.error,'HANDOFF_ASSESSMENT_REQUIRED');assert.deepEqual(crm.counts,beforeBlocked,'No uploads or stage writes without a saved assessment');
- await api(root+'/handoff',{action:'cancel',requestId:prematureId,destination});
+ assert.equal((await api(root+'/handoff')).handoff,null,'Failed preparation must not leave an operation without verified delivery/title intent');
  await api(root+'/submission',{action:'prepare',requestId,identityRevision:1,payload:fixture.payload,bindings:[],destination});
  const complete=await api(root+'/submission',{action:'complete',requestId,destination});
  assert.equal(complete.assessmentSaved,true,JSON.stringify(complete));assert.equal(complete.historySaved,true,JSON.stringify(complete));assert.ok(complete.contract?.data);
@@ -93,12 +93,14 @@ test('built Worker persists a complete contract and recovers a handoff without d
  const delivered=await api(root+'/handoff');assert.equal(delivered.delivery.ready,true);const stage=delivered.destination;assert.ok(stage);
  const handoffRequest=crypto.randomUUID();
  const handoff=await api(root+'/handoff',{action:'send',requestId:handoffRequest,destination,stage,powerId:fixture.documents.find(d=>d.kind==='power_of_attorney').documentId,signedId:fixture.documents.find(d=>d.kind==='unknown').documentId,signedConfirmed:true});
- assert.equal(handoff.handoff.state,'uncertain',JSON.stringify(handoff));assert.equal(crm.counts.stageWrites,1);
+ assert.equal(handoff.handoff.state,'uncertain',JSON.stringify(handoff));assert.equal(crm.counts.stageWrites,1);assert.equal(crm.deal.TITLE,'ВП SYNTHETIC ONLY');
+ const preparedHandoff=await (await mf.getD1Database('DB')).prepare('SELECT payload_json FROM assessment_handoffs WHERE request_id=?').bind(handoffRequest).first();
+ const titlePlan=JSON.parse(preparedHandoff.payload_json).titlePlan;assert.equal(titlePlan.policy,'VP_FIO_1');assert.equal(titlePlan.source.requestId,requestId);assert.equal(titlePlan.beforeTitle,'SYNTHETIC ONLY - [whatcrm] line #21');assert.equal(titlePlan.desiredTitle,'ВП SYNTHETIC ONLY');
  // Destroy the process, preserving only D1/R2 and the remote CRM state.
  await mf.dispose();crm.restore();mf=new Miniflare(options);
  assert.equal((await api('/api/operations-monitor')).events[0].occurrences,1,'automatic diagnostics survive a Worker restart');
  const resumed=await api(root+'/handoff',{action:'resume',requestId:handoffRequest,destination});
- assert.equal(resumed.handoff.state,'verified',JSON.stringify(resumed));
+ assert.equal(resumed.handoff.state,'verified',JSON.stringify(resumed));assert.equal(resumed.handoff.outcomeCode,'STAGE_AND_TITLE_READBACK_VERIFIED');assert.equal(crm.deal.TITLE,'ВП SYNTHETIC ONLY');
  const counts={...crm.counts};
  await api(root+'/handoff',{action:'resume',requestId:handoffRequest,destination});
  assert.deepEqual(crm.counts,counts);assert.equal(crm.counts.stageWrites,1);

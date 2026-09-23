@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 export function syntheticCrm(){
- const deal={ID:'900001',TITLE:'SYNTHETIC ONLY',UF_CRM_AI_IIN:'000000000010',CATEGORY_ID:'13',STAGE_ID:'C13:FINAL_INVOICE',STAGE_SEMANTIC_ID:'P'};
+ const deal={ID:'900001',TITLE:'SYNTHETIC ONLY - [whatcrm] line #21',UF_CRM_AI_IIN:'000000000010',CATEGORY_ID:'13',STAGE_ID:'C13:FINAL_INVOICE',STAGE_SEMANTIC_ID:'P'};
  const counts={assessmentWrites:0,historyWrites:0,fileWrites:0,stageWrites:0},files=new Map(),comments=[],history=[];
  let refs=[],blocked=false;
  const lost=()=>Response.json({error:'SYNTHETIC_LOST_RESPONSE'},{status:503});
@@ -19,11 +19,11 @@ export function syntheticCrm(){
    case 'crm.deal.update.json':{
     assert.equal(String(body.id),deal.ID);
     if(body.fields.STAGE_ID){
-     assert.deepEqual(body.fields,{STAGE_ID:'C13:WON'});counts.stageWrites++;
+     assert.deepEqual(body.fields,{STAGE_ID:'C13:WON',TITLE:'ВП SYNTHETIC ONLY'});counts.stageWrites++;
      history.push({ID:'1',OWNER_ID:deal.ID,CATEGORY_ID:13,STAGE_ID:'C13:WON',CREATED_TIME:new Date().toISOString()});
      // Existing CRM automation has already moved the case onward. The write
      // response and immediate readback are lost; recovery must use history.
-     Object.assign(deal,{CATEGORY_ID:'1',STAGE_ID:'C1:NEW',STAGE_SEMANTIC_ID:'P'});blocked=true;
+     Object.assign(deal,{TITLE:body.fields.TITLE,CATEGORY_ID:'1',STAGE_ID:'C1:NEW',STAGE_SEMANTIC_ID:'P'});blocked=true;
     }else{counts.assessmentWrites++;Object.assign(deal,body.fields);}
     return lost();
    }

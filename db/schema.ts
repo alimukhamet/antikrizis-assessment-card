@@ -47,6 +47,7 @@ export const assessmentSubmissions = sqliteTable('assessment_submissions', {
  actorId:text('actor_id').notNull(),authentication:text('authentication').notNull(),
  state:text('state').notNull(),outcomeCode:text('outcome_code'),
  historyState:text('history_state').notNull().default('pending'),historyCommentId:text('history_comment_id'),historyOutcomeCode:text('history_outcome_code'),
+ titleRepairJson:text('title_repair_json'),titleRepairState:text('title_repair_state'),titleRepairUpdatedAt:text('title_repair_updated_at'),
  createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull(),
 },t=>[uniqueIndex('assessment_submission_request').on(t.caseId,t.requestId),
  uniqueIndex('assessment_submission_active').on(t.caseId).where(sql`${t.state} NOT IN ('verified', 'cancelled')`)]);

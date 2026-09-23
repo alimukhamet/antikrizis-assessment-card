@@ -11,6 +11,7 @@ type Health = {
     last_seen: string;
   }[];
   staleClients: unknown[];
+  deliveryGaps: { deal_id: string; operation_id: string }[];
   stuck: {
     deal_id: string;
     action: string;
@@ -29,6 +30,7 @@ const actions: Record<string, string> = {
   upload: "Загрузка файлов",
   credentials: "Передача ЭЦП",
   handoff: "Передача юристам",
+  title_repair: "Название сделки",
   intake: "Передача в CRM",
 };
 export function AutomaticIncidents() {
@@ -47,6 +49,7 @@ export function AutomaticIncidents() {
         if (
           !Array.isArray(next.events) ||
           !Array.isArray(next.stuck) ||
+          !Array.isArray(next.deliveryGaps) ||
           !Array.isArray(next.staleClients)
         )
           throw Error();
@@ -93,6 +96,17 @@ export function AutomaticIncidents() {
               timeZone: "Asia/Almaty",
             })}
           </p>
+          {data.deliveryGaps.length ? (
+            <div role="status">
+              <p>Неполная передача юристам — {data.deliveryGaps.length}.</p>
+              {data.deliveryGaps.map((row) => (
+                <p key={row.operation_id}>
+                  <a href={"/assessment-review?dealId=" + row.deal_id}>Сделка {row.deal_id}</a>
+                  {" "}· стадия изменена, сохранение анкеты не подтверждено.
+                </p>
+              ))}
+            </div>
+          ) : null}
           {data.stuck.map((row) => (
             <p key={row.operation_id}>
               <a href={"/assessment-review?dealId=" + row.deal_id}>

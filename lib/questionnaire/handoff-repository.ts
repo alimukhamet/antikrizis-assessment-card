@@ -1,7 +1,7 @@
 import {RepositoryError,sha256,type CaseRow} from '../documents/repository';
 import type {Actor} from '../worker-session';
-import type {HandoffDestination} from '../crm/lawyer-handoff';
-export type HandoffPayload={destination:HandoffDestination;powerId:string;signedId:string;credentialRequestId:string;reviewIds:string[];signedConfirmed:true;confirmedAt:string};
+import type {HandoffDestination,HandoffTitlePlan} from '../crm/lawyer-handoff';
+export type HandoffPayload={destination:HandoffDestination;titlePlan?:HandoffTitlePlan;powerId:string;signedId:string;credentialRequestId:string;reviewIds:string[];signedConfirmed:true;confirmedAt:string};
 export type HandoffRow={id:string;case_id:string;request_id:string;identity_revision:number;actor_id:string;payload_json:string;state:'prepared'|'writing'|'uncertain'|'verified'|'cancelled';outcome_code:string|null;created_at:string;updated_at:string};
 export class HandoffRepository{
  constructor(private db:D1Database){}

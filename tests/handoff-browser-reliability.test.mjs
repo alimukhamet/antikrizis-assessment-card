@@ -130,3 +130,29 @@ test('restored signed PDF is read and identity checked before any handoff side e
  wrong=true;await s.d.getElementById('handoffSend').onclick();assert.equal(order.includes('credentials'),false);assert.equal(order.includes('send'),false);assert.match(s.d.getElementById('handoffReason').textContent,/другой клиент/);
  wrong=false;await s.d.getElementById('handoffSend').onclick();assert.deepEqual(order.slice(-3),['read-signed','credentials','send']);assert.equal(s.w.ServerDrafts.capture().answers[0].value,'KEEP');
 });
+
+test('legacy prepared naming block gives a working cancel/reprepare action and preserves selected files',async t=>{
+ let state={...saved,state:'prepared'};
+ const s=await setup(t,(path,options)=>{
+  if(options.method==='POST'){
+   const action=JSON.parse(options.body).action;
+   if(action==='resume')return response({error:'HANDOFF_TITLE_PLAN_REQUIRED'},409);
+   assert.equal(action,'cancel');const cancelled={...state,state:'cancelled'};state=null;return response({handoff:cancelled});
+  }
+  return response({handoff:state,destination:state?null:stage,stageError:null,delivery:{ready:true}});
+ });
+ s.w.selectedFiles=[{id:2,type:'Подписанный договор',person:'Клиент',file:{name:'saved.pdf'},storedDocumentId:'signed'}];
+ await s.d.getElementById('handoffSend').onclick();
+ assert.match(s.d.getElementById('handoffReason').textContent,/Отменить подготовку/);assert.match(s.d.getElementById('handoffReason').textContent,/файлы останутся/);
+ assert.doesNotMatch(s.d.getElementById('handoffReason').textContent,/HANDOFF_/);assert.equal(s.d.getElementById('handoffCancel').hidden,false);
+ await s.d.getElementById('handoffCancel').onclick();
+ assert.equal(s.w.selectedFiles.length,1);assert.equal(s.w.selectedFiles[0].storedDocumentId,'signed');assert.equal(s.w.ServerDrafts.capture().answers[0].value,'KEEP');
+ assert.equal(s.d.getElementById('handoffCancel').hidden,true);assert.equal(s.d.getElementById('handoffSignedFile').disabled,false);
+ assert.deepEqual(s.calls.filter(c=>c.method==='POST').map(c=>JSON.parse(c.body).action),['resume','cancel']);
+});
+test('an uncertain title readback explains the remaining gap after page reload without replaying writes',async t=>{
+ const s=await setup(t,()=>response({handoff:{...saved,outcomeCode:'HANDOFF_TITLE_UNVERIFIED'},destination:null,stageError:null,delivery:{ready:true}}));
+ assert.match(s.d.getElementById('handoffReason').textContent,/название сделки не подтверждено/);
+ assert.match(s.d.getElementById('handoffReason').textContent,/Проверить результат/);assert.equal(s.d.getElementById('handoffSend').textContent,'Проверить результат');assert.equal(s.d.getElementById('handoffCancel').hidden,true);
+ assert.equal(s.calls.filter(c=>c.method==='POST').length,0);
+});

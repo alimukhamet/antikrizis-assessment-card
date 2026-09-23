@@ -640,3 +640,17 @@ test('opening a fresh release preserves the lawyer-handoff destination and unsav
  assert.equal(s.w.document.querySelector('#assessmentUpdateNotice a').getAttribute('href'),'/lawyer-handoff?dealId=900001');
  assert.equal(s.w.document.querySelector('input').value,'private-answer');
 });
+
+test('unfinished title repairs use their separate receipt clock and never expose names or suppress contract receipts',async(t)=>{
+ const {sql,repo}=setup(t),now='2026-09-23T12:00:00.000Z',old='2026-08-01T10:00:00.000Z';
+ for(const [i,state,stamp]of [[1,'prepared',old],[2,'writing',old],[3,'uncertain',old],[4,'verified',old],[5,'uncertain',now],[6,'cancelled',old]]){
+  sql.prepare("INSERT INTO assessment_cases(id,external_system,external_id,title,created_at,updated_at) VALUES (?,?,?,?,?,?)").run('title-c'+i,'bitrix',String(900010+i),'private-name',old,old);
+  sql.prepare("INSERT INTO assessment_submissions(id,case_id,request_id,identity_revision,payload_json,payload_hash,actor_id,authentication,state,history_state,created_at,updated_at,title_repair_json,title_repair_state,title_repair_updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run('title-s'+i,'title-c'+i,'title-r'+i,1,'{}','hash','worker:ali','test','verified','verified',old,old,'{"name":"private-name"}',state,stamp);
+ }
+ const result=await repo.summary(now),pending=result.stuck.filter(row=>row.action==='title_repair');
+ assert.deepEqual(Array.from(pending,row=>row.operation_id),['title-s1','title-s2','title-s3']);
+ assert.ok(pending.every(row=>row.updated_at===old&&row.outcome_code==='TITLE_REPAIR_PENDING'));
+ assert.equal(JSON.stringify(result).includes('private-'),false);
+ sql.prepare("UPDATE assessment_submissions SET title_repair_state='verified' WHERE id='title-s3'").run();
+ assert.equal((await repo.summary(now)).stuck.filter(row=>row.action==='title_repair').length,2);
+});
