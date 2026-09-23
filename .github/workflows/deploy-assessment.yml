@@ -69,10 +69,9 @@ jobs:
         run: npm run test:runtime
 
       - name: Deploy existing Worker configuration
-        # Apply only this additive, idempotent telemetry schema; no customer tables change.
-        run: |
-          npx --no-install wrangler d1 execute DB --remote --config wrangler.anti-krizis.jsonc --file drizzle/0012_operations_events.sql
-          npx --no-install wrangler deploy --keep-vars --config wrangler.anti-krizis.jsonc
+        # D1 management uses the separately authorized Cloudflare connector.
+        # The diagnostics schema is provisioned; the live probe verifies storage.
+        run: npx --no-install wrangler deploy --keep-vars --config wrangler.anti-krizis.jsonc
 
       - name: Verify live contract assets
         run: |
