@@ -63,7 +63,7 @@
     link.target = "_blank";
     link.rel = "noopener";
     link.href =
-      "/assessment-review" +
+      (new URLSearchParams(location.search).get('mode') === 'handoff' ? '/lawyer-handoff' : '/assessment-review') +
       (deal() ? "?dealId=" + encodeURIComponent(deal()) : "");
     notice.append(text, link);
     document.body.prepend(notice);

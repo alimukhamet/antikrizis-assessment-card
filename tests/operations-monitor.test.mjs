@@ -293,11 +293,11 @@ test("API requires staff and same-origin writes, restricts owner reads/probes an
   assert.equal((await failed.json()).error, "MONITOR_UNAVAILABLE");
 });
 
-function ui(t) {
+function ui(t, mode = "contract") {
   const dom = new JSDOM(
     `<body data-assessment-version="${release.version}"><input value="private-answer"><input type="password" value="private-key"></body>`,
     {
-      url: "https://synthetic.invalid/questionnaire.html?dealId=900001",
+      url: "https://synthetic.invalid/questionnaire.html?dealId=900001"+(mode === "handoff" ? "&mode=handoff" : ""),
       runScripts: "outside-only",
     },
   );
@@ -544,4 +544,12 @@ test("scheduled retention removes only expired diagnostics and preserves recent 
     (await repo.summary("2026-09-23T12:00:00.000Z")).events.length,
     1,
   );
+});
+
+
+test('opening a fresh release preserves the lawyer-handoff destination and unsaved input',async t=>{
+ const s=ui(t,'handoff');await tick();s.setVersion('assessment-next');
+ s.w.OperationsMonitor.record('JS_ERROR');await tick();
+ assert.equal(s.w.document.querySelector('#assessmentUpdateNotice a').getAttribute('href'),'/lawyer-handoff?dealId=900001');
+ assert.equal(s.w.document.querySelector('input').value,'private-answer');
 });
