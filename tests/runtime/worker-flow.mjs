@@ -62,6 +62,12 @@ test('built Worker persists a complete contract and recovers a handoff without d
  assert.equal(context.identityRevision,1);
  const fixture=await seed(db,await mf.getR2Bucket('FILES'));
  const root='/api/assessment/900001';
+ // Incident recovery cannot become a generic bypass, even for the owner.
+ const deniedRecovery=await api(root+'/draft-recovery',{action:'inspect'},409);
+ assert.equal(deniedRecovery.error,'RECOVERY_SOURCE_CHANGED');
+ await api('/api/session',{worker:'ramazan',password:'synthetic-password'});
+ assert.equal((await api(root+'/draft-recovery',{action:'inspect'},403)).error,'OWNER_REQUIRED');
+ await api('/api/session',{worker:'ali',password:'synthetic-password'});
  for(const doc of fixture.documents.filter(d=>!['gkb_short','gkb_full','unknown'].includes(d.kind))){
   await api(root+'/document-reviews',{requestId:crypto.randomUUID(),documentId:doc.documentId,identityRevision:1,review:{type:doc.type,iin:fixture.iin,pages:1,complete:true,contentMatches:true,periodChecked:true,reason:'SYNTHETIC ONLY fixture inspection',issuedAt:fixture.today,expiresAt:'2099-12-31',from:fixture.from,to:fixture.today,representative:doc.kind==='power_of_attorney'?{kind:'organization',legalName:'ТОО «Aplus Corporation»',identifier:'251040012303'}:null,authorityChecked:doc.kind==='power_of_attorney'}});
  }

@@ -6,6 +6,10 @@ on:
         description: 'Optional additional deal: read saved document diagnostics, with no draft or CRM writes'
         type: string
         default: ''
+      recover_draft_delivery:
+        description: 'Owner-authorized recovery of the pinned existing draft and originals; no final approval'
+        type: boolean
+        default: false
       refresh_saved_analysis:
         description: 'Refresh outdated analysis for saved deal 11749 originals; preserve answers and Bitrix'
         type: boolean
@@ -37,6 +41,7 @@ permissions:
   contents: read
 jobs:
   audit:
+    if: inputs.recover_draft_delivery != true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -100,4 +105,31 @@ jobs:
         with:
           name: lawyer-title-repair
           path: lawyer-title-repair.json
+          retention-days: 1
+
+  recover-draft:
+    if: inputs.recover_draft_delivery == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    concurrency:
+      group: saved-draft-recovery-${{ inputs.deal_id }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Recover only the pinned employee draft and original files
+        env:
+          ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
+          RECOVERY_DEAL_ID: ${{ inputs.deal_id }}
+        run: node scripts/recover-draft-delivery.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: draft-delivery-recovery-${{ inputs.deal_id }}
+          path: draft-delivery-recovery.json
           retention-days: 1
