@@ -19,7 +19,55 @@ const report = {
   lawyerWaiting: null,
   cases: [],
   failure: null,
+  failures: [],
 };
+// Only this bounded vocabulary may leave the owner endpoint. Never export raw
+// response bodies, exception messages, URLs or arbitrary diagnostic properties.
+async function auditFailure(response) {
+  const reader = response.body?.getReader();
+  if (!reader) return {};
+  try {
+    let text = "", bytes = 0;
+    const decoder = new TextDecoder();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.length;
+      if (bytes > 4096) return {};
+      text += decoder.decode(value, { stream: true });
+    }
+    const data = JSON.parse(text + decoder.decode());
+    const codes = ["BITRIX_NOT_CONFIGURED", "LAWYER_AUDIT_UNAVAILABLE", "LAWYER_AUDIT_CRM_UNAVAILABLE",
+      "LAWYER_AUDIT_RESPONSE_UNVERIFIED", "LAWYER_AUDIT_RESPONSE_TOO_LARGE", "LAWYER_AUDIT_STAGE_UNVERIFIED",
+      "LAWYER_AUDIT_PAGINATION_UNVERIFIED", "LAWYER_AUDIT_COHORT_LIMIT_EXCEEDED", "LAWYER_AUDIT_COHORT_CHANGED",
+      "LAWYER_AUDIT_FILE_COUNT_UNVERIFIED", "LAWYER_AUDIT_COHORT_INCOMPLETE"];
+    if (!codes.includes(data?.error)) return {};
+    const detail = { cause: data.error }, upstream = data.upstream;
+    if (["crm.status.list", "crm.deal.list"].includes(upstream?.method) &&
+        ["timeout", "transport", "http", "invalid_response"].includes(upstream?.reason)) {
+      detail.upstream = { method: upstream.method, reason: upstream.reason };
+      if (Number.isInteger(upstream.status) && upstream.status >= 100 && upstream.status <= 599)
+        detail.upstream.status = upstream.status;
+    }
+    return detail;
+  } catch { return {}; }
+  finally { await reader.cancel().catch(() => {}); }
+}
+function recordFailure(error) {
+  const failure = {
+    code: ["MONITOR_CREDENTIAL_UNAVAILABLE", "MONITOR_WRITE_FAILED", "SERVICE_UNCONFIGURED",
+      "MONITOR_RESPONSE_INVALID", "QUESTIONNAIRE_UNAVAILABLE", "CLIENT_RELEASE_MISMATCH",
+      "HTTP_FAILURE", "LAWYER_WAITING_MONITOR_FAILED"].includes(error.message)
+      ? error.message : "MONITOR_REQUEST_FAILED",
+    status: error.status || null,
+    route: error.path || null,
+    ...(error.scope === "monitoring" ? { scope: "monitoring" } : {}),
+    ...(error.auditDetail || {}),
+  };
+  report.failures.push(failure);
+  report.failure ??= failure;
+  process.exitCode = 1;
+}
 async function request(path, body, timeoutMs = 20000) {
   const response = await fetch(origin + path, {
     method: body ? "POST" : "GET",
@@ -37,6 +85,7 @@ async function request(path, body, timeoutMs = 20000) {
     throw Object.assign(Error("HTTP_FAILURE"), {
       status: response.status,
       path: path.replace(/\/\d+(?=\/|$)/g, "/:deal"),
+      ...(path === "/api/lawyer-delivery-audit" ? { auditDetail: await auditFailure(response) } : {}),
     });
   return response.json();
 }
@@ -112,9 +161,10 @@ try {
     };
     report.checks.push("lawyer_waiting_cohort");
   } catch (error) {
-    throw Object.assign(Error("LAWYER_WAITING_MONITOR_FAILED"), {
+    recordFailure(Object.assign(Error("LAWYER_WAITING_MONITOR_FAILED"), {
       scope: "monitoring", status: error.status || null, path: "/api/lawyer-delivery-audit",
-    });
+      auditDetail: error.auditDetail,
+    }));
   }
   // Keep a stable canary and rotate affected/recently opened cases so old incidents
   // cannot starve new employee work of checks.
@@ -122,7 +172,7 @@ try {
     ...new Set(
       [
         ...health.deliveryGaps.map((v) => v.deal_id),
-        ...report.lawyerWaiting.cases.map((v) => v.dealId),
+        ...(report.lawyerWaiting?.cases || []).map((v) => v.dealId),
         ...health.stuck.map((v) => v.deal_id),
         ...health.events.map((v) => v.deal_id),
         ...(health.activeCases || []).map((v) => v.deal_id),
@@ -186,26 +236,9 @@ try {
   report.checks.push("bitrix_and_saved_cases");
   // Availability and unfinished delivery are separate. Delivery gaps remain in
   // incidents even outside the bounded sample; business readiness is not uptime.
-  report.healthy = true;
+  report.healthy = report.failures.length === 0;
 } catch (error) {
-  report.failure = {
-    code: [
-      "MONITOR_CREDENTIAL_UNAVAILABLE",
-      "MONITOR_WRITE_FAILED",
-      "SERVICE_UNCONFIGURED",
-      "MONITOR_RESPONSE_INVALID",
-      "QUESTIONNAIRE_UNAVAILABLE",
-      "CLIENT_RELEASE_MISMATCH",
-      "HTTP_FAILURE",
-      "LAWYER_WAITING_MONITOR_FAILED",
-    ].includes(error.message)
-      ? error.message
-      : "MONITOR_REQUEST_FAILED",
-    status: error.status || null,
-    route: error.path || null,
-    ...(error.scope === "monitoring" ? { scope: "monitoring" } : {}),
-  };
-  process.exitCode = 1;
+  recordFailure(error);
 }
 await writeFile("production-monitor.json", JSON.stringify(report, null, 2));
 console.log(

@@ -167,8 +167,36 @@ test("owner cohort endpoint rejects unauthenticated, cross-origin and non-owner 
   response = await route.GET(request());
   assert.equal(response.status, 503);
   assert.equal((await response.json()).error, "LAWYER_AUDIT_COHORT_INCOMPLETE");
+  failure = new audit.LawyerDeliveryAuditError("LAWYER_AUDIT_CRM_UNAVAILABLE", 503, { method: "crm.deal.list", reason: "timeout" });
+  response = await route.GET(request());
+  assert.deepEqual(await response.json(), { error: "LAWYER_AUDIT_CRM_UNAVAILABLE", upstream: { method: "crm.deal.list", reason: "timeout" } });
   failure = Error("private-webhook");
   response = await route.GET(request());
   assert.equal((await response.json()).error, "LAWYER_AUDIT_UNAVAILABLE");
   assert.equal(route.POST, undefined);
+});
+
+
+test("audit diagnostics distinguish failed reads without retrying or exposing source data", async () => {
+  for (const method of ["crm.status.list", "crm.deal.list"]) {
+    for (const reason of ["timeout", "transport", "http", "invalid_response"]) {
+      let attempts = 0;
+      const scoped = load("lib/crm/lawyer-delivery-audit.ts", {
+        "./http-headers": httpHeaders, "./document-upload": upload,
+      }, { AbortSignal: { timeout: () => ({ aborted: reason === "timeout" }) } });
+      const send = async url => {
+        if (!url.endsWith(method + ".json")) return Response.json({ result: stages });
+        attempts++;
+        if (reason === "http") return new Response("private-error", { status: 429 });
+        if (reason === "invalid_response") return new Response("private-invalid-json");
+        throw Error("private-webhook-path");
+      };
+      await assert.rejects(scoped.auditLawyerDelivery("https://synthetic.invalid/rest/private/", send), error => {
+        assert.deepEqual(JSON.parse(JSON.stringify(error.upstream)), { method, reason, ...(reason === "http" ? { status: 429 } : {}) });
+        assert.equal(JSON.stringify(error).includes("private"), false);
+        return true;
+      });
+      assert.equal(attempts, 1, "diagnosis introduces no extra CRM requests");
+    }
+  }
 });

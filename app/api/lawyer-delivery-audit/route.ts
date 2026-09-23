@@ -22,6 +22,7 @@ export async function GET(request: Request) {
   } catch (error) {
     return Response.json({
       error: error instanceof LawyerDeliveryAuditError ? error.code : "LAWYER_AUDIT_UNAVAILABLE",
+      ...(error instanceof LawyerDeliveryAuditError && error.upstream ? { upstream: error.upstream } : {}),
     }, { status: error instanceof LawyerDeliveryAuditError ? error.status : 503, headers });
   }
 }

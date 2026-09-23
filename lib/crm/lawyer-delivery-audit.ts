@@ -1,8 +1,13 @@
 import { bitrixHeaders } from "./http-headers";
 import { readFileField } from "./document-upload";
 
+type AuditReadFailure = {
+  method: "crm.status.list" | "crm.deal.list";
+  reason: "timeout" | "transport" | "http" | "invalid_response";
+  status?: number;
+};
 export class LawyerDeliveryAuditError extends Error {
-  constructor(public code: string, public status = 503) {
+  constructor(public code: string, public status = 503, public upstream?: AuditReadFailure) {
     super(code);
   }
 }
@@ -43,14 +48,17 @@ function scalar(value: unknown): string {
 export async function auditLawyerDelivery(webhook: string, send: typeof fetch = fetch) {
   if (!webhook) throw new LawyerDeliveryAuditError("BITRIX_NOT_CONFIGURED");
   async function call(method: "crm.status.list" | "crm.deal.list", body: unknown) {
+    const signal = AbortSignal.timeout(20000);
     try {
       const response = await send(webhook.replace(/\/?$/, "/") + method + ".json", {
         method: "POST", headers: bitrixHeaders(webhook), body: JSON.stringify(body),
-        redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(20000),
+        redirect: "manual", cache: "no-store", signal,
       });
       if (!response.ok || !response.body) {
         await response.body?.cancel();
-        throw new LawyerDeliveryAuditError("LAWYER_AUDIT_CRM_UNAVAILABLE");
+        throw new LawyerDeliveryAuditError("LAWYER_AUDIT_CRM_UNAVAILABLE", 503, {
+          method, reason: response.ok ? "invalid_response" : "http", status: response.status,
+        });
       }
       // Cards are selected for presence only, but may be large. Bound the CRM
       // response and never include raw response contents in errors or output.
@@ -67,13 +75,18 @@ export async function auditLawyerDelivery(webhook: string, send: typeof fetch = 
         text += decoder.decode(value, { stream: true });
       }
       text += decoder.decode();
-      const json: unknown = JSON.parse(text);
+      let json: unknown;
+      try { json = JSON.parse(text); } catch {
+        throw new LawyerDeliveryAuditError("LAWYER_AUDIT_RESPONSE_UNVERIFIED", 503, { method, reason: "invalid_response" });
+      }
       if (!isRecord(json) || json.error || !Array.isArray(json.result))
-        throw new LawyerDeliveryAuditError("LAWYER_AUDIT_RESPONSE_UNVERIFIED");
+        throw new LawyerDeliveryAuditError("LAWYER_AUDIT_RESPONSE_UNVERIFIED", 503, { method, reason: "invalid_response" });
       return json as Record<string, unknown> & { result: unknown[] };
     } catch (error) {
       if (error instanceof LawyerDeliveryAuditError) throw error;
-      throw new LawyerDeliveryAuditError("LAWYER_AUDIT_CRM_UNAVAILABLE");
+      throw new LawyerDeliveryAuditError("LAWYER_AUDIT_CRM_UNAVAILABLE", 503, {
+        method, reason: signal.aborted ? "timeout" : "transport",
+      });
     }
   }
   const stages = await call("crm.status.list", { filter: { ENTITY_ID: entityId } });

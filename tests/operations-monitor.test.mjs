@@ -481,7 +481,7 @@ test("production probe checks saved cases without modifying answers and never ex
       "import.meta.url",
       "'file:///synthetic/scripts/monitor-production.mjs'",
     );
-  for (const mode of ["healthy", "broken", "delivery_gaps", "cohort_signals", "cohort_failed", "cohort_incomplete", "cohort_count", "cohort_private_field", "cohort_duplicate", "cohort_badflag", "cohort_outside"]) {
+  for (const mode of ["healthy", "broken", "delivery_gaps", "cohort_signals", "cohort_failed", "cohort_incomplete", "cohort_count", "cohort_private_field", "cohort_duplicate", "cohort_badflag", "cohort_outside", "cohort_timeout", "cohort_and_case_failed", "cohort_large_error", "cohort_bad_detail"]) {
     const broken = mode === "broken";
     const cohortFailure = mode.startsWith("cohort_") && mode !== "cohort_signals";
     const output = {},
@@ -523,7 +523,13 @@ test("production probe checks saved cases without modifying answers and never ex
         );
       if (path === "/api/lawyer-delivery-audit") {
         assert.equal(options.method, "GET");
-        if (mode === "cohort_failed") return Response.json({ error: "private-upstream" }, { status: 503 });
+        if (mode === "cohort_failed" || mode === "cohort_and_case_failed") return Response.json({ error: "private-upstream" }, { status: 503 });
+        if (mode === "cohort_large_error") return new Response("private-".repeat(1024), { status: 503 });
+        if (mode === "cohort_timeout" || mode === "cohort_bad_detail") return Response.json({
+          error: "LAWYER_AUDIT_CRM_UNAVAILABLE",
+          upstream: { method: mode === "cohort_timeout" ? "crm.deal.list" : "private-method", reason: "timeout", secret: "private-secret" },
+          raw: "private-error",
+        }, { status: 503 });
         const cohort = {
           checkedAt: "2026-09-23T12:00:00.000Z", categoryId: "1", stageId: "C1:NEW", complete: true,
           count: mode.startsWith("cohort_") ? 3 : 0,
@@ -541,6 +547,8 @@ test("production probe checks saved cases without modifying answers and never ex
         if (mode === "cohort_outside") cohort.stageId = "C13:NEW";
         return Response.json(cohort);
       }
+      if (/^\/api\/assessment\/\d+$/.test(path) && mode === "cohort_and_case_failed")
+        return Response.json({ error: "private-case-error" }, { status: 503 });
       if (/^\/api\/assessment\/\d+$/.test(path))
         return Response.json({ client: { name: "private-name" } });
       if (path.endsWith("/draft"))
@@ -563,6 +571,7 @@ test("production probe checks saved cases without modifying answers and never ex
     await vm.runInNewContext("(async()=>{" + source + "})()", {
       URL,
       AbortSignal,
+      TextDecoder,
       process,
       fetch,
       console: { log: (line) => logs.push(line) },
@@ -583,6 +592,17 @@ test("production probe checks saved cases without modifying answers and never ex
       assert.equal(report.failure.scope, "monitoring", "failed discovery is a monitoring failure, not a site outage classification");
       assert.equal(report.failure.route, "/api/lawyer-delivery-audit");
       assert.equal(report.lawyerWaiting, null, "unvalidated or incomplete cohort data is never exported");
+      assert.ok(calls.some(c => c.path === "/api/assessment/12103"), "cohort failure must not suppress independent customer checks");
+      if (mode === "cohort_and_case_failed") {
+        assert.deepEqual(report.failures.map(f => f.code), ["LAWYER_WAITING_MONITOR_FAILED", "HTTP_FAILURE"]);
+      } else {
+        assert.equal(report.cases[0].revision, 4, "saved draft readback still happens after failed discovery");
+        assert.ok(report.checks.includes("bitrix_and_saved_cases"));
+      }
+      if (mode === "cohort_timeout") {
+        assert.equal(report.failure.cause, "LAWYER_AUDIT_CRM_UNAVAILABLE");
+        assert.deepEqual(report.failure.upstream, { method: "crm.deal.list", reason: "timeout" });
+      } else assert.equal(report.failure.upstream, undefined);
     } else {
       assert.equal(report.cases[0].ready, false);
       assert.equal(report.cases[0].missingLoans, null);
