@@ -6,7 +6,7 @@ import {TEST_SECRET,testCookie} from './session-helper.mjs';
 const built=await build({entryPoints:['lib/knowledge/source.ts'],bundle:true,write:false,platform:'node',format:'esm'});
 const {buildKnowledgeData}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'));
 const model=await build({entryPoints:['lib/knowledge/model.ts'],bundle:true,write:false,platform:'node',format:'esm'});
-const {filterRows,periodFor}=await import('data:text/javascript;base64,'+Buffer.from(model.outputFiles[0].text).toString('base64'));
+const {filterRows,periodFor,sortByLatestRateAscending}=await import('data:text/javascript;base64,'+Buffer.from(model.outputFiles[0].text).toString('base64'));
 const data=buildKnowledgeData();
 test('import preserves the full source hierarchy and exact outcome totals',()=>{
  assert.equal(data.regions.length,20);assert.equal(data.courts.length,222);
@@ -42,6 +42,17 @@ test('search and filters preserve court-region pairing, keep missing data distin
  assert.equal(periodFor(data.total,0).rate,4850/8513*100);
 });
 process.env.SITE_SESSION_TOKEN=TEST_SECRET;
+test('ascending navigation preserves zero rates and keeps missing data last without changing the source order',()=>{
+ const fixture=(name,rate)=>({...data.courts[0],name,periods:[...data.courts[0].periods.slice(0,3),{rate,count:rate===null?0:10}]});
+ const rows=[fixture('Без данных',null),fixture('Высокий',100),fixture('Б',50),fixture('Нулевой',0),fixture('А',50)];
+ const original=rows.slice();
+ assert.deepEqual(sortByLatestRateAscending(rows).map(r=>r.name),['Нулевой','А','Б','Высокий','Без данных']);
+ assert.deepEqual(rows,original);
+ for(const group of [data.regions,data.courts,...data.regions.map(r=>data.courts.filter(c=>c.region===r.name))]){
+  const sorted=sortByLatestRateAscending(group).map(r=>r.periods[3].rate??Infinity);
+  assert.ok(sorted.every((rate,i)=>!i||sorted[i-1]<=rate));
+ }
+});
 async function request(path,authenticated=true){
  const {default:worker}=await import('../dist/server/index.js');
  return worker.fetch(new Request('https://synthetic.invalid'+path,{headers:{cookie:authenticated?await testCookie():''}}),{SITE_SESSION_TOKEN:TEST_SECRET,ASSETS:{fetch:async()=>new Response('Missing',{status:404})}},{waitUntil(){},passThroughOnException(){}});
