@@ -145,7 +145,9 @@ export async function repairIncidentTransport(manifests:UploadManifestRepository
   const current=await adapter.read(record.external_id);
   if(current.iin!==record.client_iin||!equal(current.refs,m.baseline))throw new RepositoryError('DOCUMENTS_CHANGED_IN_CRM');
   const diagnostic=await probe();
-  if(diagnostic.results.find(r=>r.kind==='fixed')?.matched!==true||diagnostic.results.find(r=>r.kind==='stream')?.failed!==true)throw new RepositoryError('RECOVERY_TRANSPORT_NOT_REPRODUCED');
+  // A recovered connection must not have to fail again to permit repair.
+  // Historical timeout evidence is pinned above; freshness is a positive read.
+  if(diagnostic.results.find(r=>r.kind==='fixed')?.matched!==true)throw new RepositoryError('RECOVERY_TRANSPORT_UNAVAILABLE');
   // adapter.append repeats the baseline check immediately before its sole send.
   replacement=await uploadStoredDocuments(evidence,manifests,adapter,record,id,m.baseline,m.files,actor,{planHash:'fixed-transport:'+old.payload_hash,rootRequestId:id,batchIndex:0,reviewIds:[],reused:m.reused,supersedesRequestId:old.request_id,repairReason:'BITRIX_CHUNKED_TRANSPORT_TIMEOUT'});
  }
@@ -191,7 +193,7 @@ export async function runDraftRecovery(store:DraftRecoveryRepository,evidence:Ev
    catch{
     if(action==='repair-transport'){
      try{upload=await repairIncidentTransport(manifests,evidence,record,actor,attempted,adapter,()=>probeRecoveryTransport(webhook,record.external_id));}
-     catch{await store.finish(record.id,false);return {state:'files_uncertain',batch:index,finalAssessment:false};}
+     catch(error){await store.finish(record.id,false);return {state:'files_uncertain',batch:index,code:error instanceof RepositoryError?error.code:'RECOVERY_REPAIR_UNCERTAIN',finalAssessment:false};}
     }else{await store.finish(record.id,false);return {state:'files_uncertain',batch:index,finalAssessment:false};}
    }
   }

@@ -74,10 +74,10 @@ test('diagnosed incident repair keeps old intent, makes one corrective transfer,
  repo.finish=async(caseId,id,receipt,code)=>{finished.push({id,code});if(id===old.request_id)return{...old,state:'verified'};return finish(caseId,id,receipt,code);};
  const receipt={verified:true,preserved:[{id:'10'}],files:[{id:'11',name:'original.pdf',sha256:sha}]};
  const adapter={read:async()=>({iin:f.record.client_iin,refs:[{id:'10'}]}),append:async()=>{writes++;throw Error('lost');},reconcile:async()=>{if(!available)throw Error('offline');return receipt;}};
- const probe=async()=>{probes++;return{readOnly:true,results:[{kind:'fixed',matched:true},{kind:'stream',matched:false,failed:true}]};};
+ const probe=async()=>{probes++;return{readOnly:true,results:[{kind:'fixed',matched:true},{kind:'stream',matched:true}]};};
  await assert.rejects(mod.repairIncidentTransport(repo,evidence,f.record,owner,old,adapter,probe,Date.parse(old.created_at)+1000),/SCOPE_CHANGED/);assert.equal(writes,0);
  await assert.rejects(mod.repairIncidentTransport(repo,evidence,f.record,owner,old,{...adapter,read:async()=>({iin:f.record.client_iin,refs:[{id:'10'},{id:'99'}]})},probe),/DOCUMENTS_CHANGED/);assert.equal(writes,0);
- await assert.rejects(mod.repairIncidentTransport(repo,evidence,f.record,owner,old,adapter,async()=>({results:[{kind:'fixed',matched:true},{kind:'stream',matched:true}]})),/NOT_REPRODUCED/);assert.equal(writes,0);
+ await assert.rejects(mod.repairIncidentTransport(repo,evidence,f.record,owner,old,adapter,async()=>({results:[{kind:'fixed',matched:false},{kind:'stream',matched:true}]})),/TRANSPORT_UNAVAILABLE/);assert.equal(writes,0);
  await assert.rejects(mod.repairIncidentTransport(repo,evidence,f.record,owner,old,adapter,probe),/offline/);assert.equal(writes,1);
  available=true;const result=await mod.repairIncidentTransport(repo,evidence,f.record,owner,old,adapter,probe);assert.equal(result.state,'verified');assert.equal(writes,1);assert.equal(probes,1);
  const m=JSON.parse(f.sql.prepare('SELECT manifest_json FROM assessment_upload_manifests').get().manifest_json);assert.equal(m.supersedesRequestId,old.request_id);assert.equal(m.repairReason,'BITRIX_CHUNKED_TRANSPORT_TIMEOUT');assert.deepEqual(m.reviewIds,[]);assert.equal(finished.at(-1).code,'RECONCILED_AFTER_FIXED_LENGTH_REPAIR');
