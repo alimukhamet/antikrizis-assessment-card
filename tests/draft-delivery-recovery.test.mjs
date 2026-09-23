@@ -61,3 +61,24 @@ test('transport diagnostic uses read-only method, hides client fields and contin
  const methods=[];const result=await mod.probeRecoveryTransport('https://synthetic.invalid/rest/','11727',async(url,init)=>{methods.push(url);if(init.body instanceof ReadableStream)throw Error('timeout');return {status:200,json:async()=>({result:{item:{id:11727,secret:'must not export'}}})};});
  assert.equal(result.readOnly,true);assert.equal(result.results[0].matched,true);assert.equal(result.results[1].failed,true);assert.ok(methods.every(u=>u.endsWith('/crm.item.get.json')));assert.equal(JSON.stringify(result).includes('secret'),false);
 });
+test('diagnosed incident repair keeps old intent, makes one corrective transfer, and reconciles after restart',async t=>{
+ const f=await fixture(t),bytes=new TextEncoder().encode('saved original'),sha=await hash('saved original');
+ const savedPin={...mod.TRANSPORT_INCIDENT};t.after(()=>Object.assign(mod.TRANSPORT_INCIDENT,savedPin));
+ const document={id:'doc',case_id:f.record.id,original_sha256:sha,byte_size:bytes.length};
+ const evidence={document:async()=>document,original:async()=>bytes};
+ const old={case_id:f.record.id,request_id:webcrypto.randomUUID(),payload_hash:'b'.repeat(64),state:'uncertain',outcome_code:'UPLOAD_REFERENCE_COUNT_MISMATCH',created_at:'2026-09-23T00:00:00Z',manifest_json:JSON.stringify({version:1,baseline:[{id:'10'}],files:[{documentId:'doc',name:'original.pdf',sha256:sha,byteSize:bytes.length}]})};
+ Object.assign(mod.TRANSPORT_INCIDENT,{requestId:old.request_id,payloadHash:old.payload_hash});
+ let writes=0,probes=0,available=false;const finished=[];
+ const {UploadManifestRepository}=await import(await (async()=>{await build({entryPoints:['lib/documents/upload-manifest.ts'],bundle:true,platform:'node',format:'esm',outfile:join(directory,'manifests.mjs'),logLevel:'silent'});return pathToFileURL(join(directory,'manifests.mjs'));})());
+ const repo=new UploadManifestRepository(f.store.db),finish=repo.finish.bind(repo);
+ repo.finish=async(caseId,id,receipt,code)=>{finished.push({id,code});if(id===old.request_id)return{...old,state:'verified'};return finish(caseId,id,receipt,code);};
+ const receipt={verified:true,preserved:[{id:'10'}],files:[{id:'11',name:'original.pdf',sha256:sha}]};
+ const adapter={read:async()=>({iin:f.record.client_iin,refs:[{id:'10'}]}),append:async()=>{writes++;throw Error('lost');},reconcile:async()=>{if(!available)throw Error('offline');return receipt;}};
+ const probe=async()=>{probes++;return{readOnly:true,results:[{kind:'fixed',matched:true},{kind:'stream',matched:false,failed:true}]};};
+ await assert.rejects(mod.repairIncidentTransport(repo,evidence,f.record,owner,old,adapter,probe,Date.parse(old.created_at)+1000),/SCOPE_CHANGED/);assert.equal(writes,0);
+ await assert.rejects(mod.repairIncidentTransport(repo,evidence,f.record,owner,old,{...adapter,read:async()=>({iin:f.record.client_iin,refs:[{id:'10'},{id:'99'}]})},probe),/DOCUMENTS_CHANGED/);assert.equal(writes,0);
+ await assert.rejects(mod.repairIncidentTransport(repo,evidence,f.record,owner,old,adapter,async()=>({results:[{kind:'fixed',matched:true},{kind:'stream',matched:true}]})),/NOT_REPRODUCED/);assert.equal(writes,0);
+ await assert.rejects(mod.repairIncidentTransport(repo,evidence,f.record,owner,old,adapter,probe),/offline/);assert.equal(writes,1);
+ available=true;const result=await mod.repairIncidentTransport(repo,evidence,f.record,owner,old,adapter,probe);assert.equal(result.state,'verified');assert.equal(writes,1);assert.equal(probes,1);
+ const m=JSON.parse(f.sql.prepare('SELECT manifest_json FROM assessment_upload_manifests').get().manifest_json);assert.equal(m.supersedesRequestId,old.request_id);assert.equal(m.repairReason,'BITRIX_CHUNKED_TRANSPORT_TIMEOUT');assert.deepEqual(m.reviewIds,[]);assert.equal(finished.at(-1).code,'RECONCILED_AFTER_FIXED_LENGTH_REPAIR');
+});

@@ -4,7 +4,7 @@ import {validateDraft} from './draft';
 import {compileAssessment} from './compile-assessment';
 import {finalCheck} from './final-check';
 import {documentUploadPlan,uploadBatchId} from '../documents/upload-plan';
-import {UploadManifestRepository,type UploadManifest} from '../documents/upload-manifest';
+import {UploadManifestRepository,type UploadManifest,type UploadRow} from '../documents/upload-manifest';
 import {uploadStoredDocuments} from '../documents/upload-service';
 import {createVerifiedDocumentUploadAdapter} from '../crm/document-download';
 import {ASSESSMENT_FIELDS} from '../crm/assessment-write';
@@ -134,6 +134,27 @@ export async function inspectDraftRecovery(store:DraftRecoveryRepository,evidenc
  const plan:RecoveryPlan={version:1,policy:'RECOVER_DRAFT_NOT_APPROVAL',dealId:record.external_id,iin:record.client_iin!,identityRevision:record.identity_revision,sourceHash:source.payload_hash,sourceRevision:source.revision,sourceActor:source.actor_id,sourceTime:source.created_at,before,fields:recoveryFields(checked.compiled.values,before,source,gates,record.external_id),files,remainingGates:gates};
  return {plan,planHash:await sha256(JSON.stringify(plan))};
 }
+// One separately recorded corrective transfer for the diagnosed incident. The
+// original uncertain intent remains immutable and is reconciled afterward.
+export const TRANSPORT_INCIDENT={dealId:'11727',requestId:'9e5bb7dd-03ce-0eb3-0f04-2d31f1463304',payloadHash:'64a131220a2bf319c9c29e4167356b7ccd270fd7011e275dcfafe4cbdf3731f2'};
+export async function repairIncidentTransport(manifests:UploadManifestRepository,evidence:EvidenceRepository,record:CaseRow,actor:Actor,old:UploadRow,adapter:ReturnType<typeof createVerifiedDocumentUploadAdapter>,probe:()=>Promise<Awaited<ReturnType<typeof probeRecoveryTransport>>>,now=Date.now()){
+ if(actor.worker!=='ali'||record.external_id!==TRANSPORT_INCIDENT.dealId||old.request_id!==TRANSPORT_INCIDENT.requestId||old.payload_hash!==TRANSPORT_INCIDENT.payloadHash||old.state!=='uncertain'||old.outcome_code!=='UPLOAD_REFERENCE_COUNT_MISMATCH'||!Number.isFinite(Date.parse(old.created_at))||now-Date.parse(old.created_at)<10*60*1000)throw new RepositoryError('RECOVERY_TRANSPORT_SCOPE_CHANGED');
+ const m=JSON.parse(old.manifest_json) as UploadManifest,id=await uploadBatchId(old.request_id,100);
+ let replacement=await manifests.get(record.id,id);
+ if(!replacement||replacement.state==='prepared'){
+  const current=await adapter.read(record.external_id);
+  if(current.iin!==record.client_iin||!equal(current.refs,m.baseline))throw new RepositoryError('DOCUMENTS_CHANGED_IN_CRM');
+  const diagnostic=await probe();
+  if(diagnostic.results.find(r=>r.kind==='fixed')?.matched!==true||diagnostic.results.find(r=>r.kind==='stream')?.failed!==true)throw new RepositoryError('RECOVERY_TRANSPORT_NOT_REPRODUCED');
+  // adapter.append repeats the baseline check immediately before its sole send.
+  replacement=await uploadStoredDocuments(evidence,manifests,adapter,record,id,m.baseline,m.files,actor,{planHash:'fixed-transport:'+old.payload_hash,rootRequestId:id,batchIndex:0,reviewIds:[],reused:m.reused,supersedesRequestId:old.request_id,repairReason:'BITRIX_CHUNKED_TRANSPORT_TIMEOUT'});
+ }
+ if(!replacement)throw new RepositoryError('RECOVERY_TRANSPORT_PENDING');
+ // Never repeat the corrective write, even when its own response is lost.
+ const receipt=await adapter.reconcile(record.external_id,record.client_iin!,m.baseline,m.files,m.reused);
+ if(replacement.state!=='verified')await manifests.finish(record.id,id,receipt,'CORRECTIVE_TRANSFER_BYTES_VERIFIED');
+ return manifests.finish(record.id,old.request_id,receipt,'RECONCILED_AFTER_FIXED_LENGTH_REPAIR');
+}
 export async function runDraftRecovery(store:DraftRecoveryRepository,evidence:EvidenceRepository,record:CaseRow,actor:Actor,crm:ReturnType<typeof createRecoveryCrm>,webhook:string,action:string,expectedHash:string,day:string,uploadAdapter?:ReturnType<typeof createVerifiedDocumentUploadAdapter>){
  if(actor.worker!=='ali')throw new RepositoryError('OWNER_REQUIRED',403);
  let row=await store.get(record.id);
@@ -165,9 +186,14 @@ export async function runDraftRecovery(store:DraftRecoveryRepository,evidence:Ev
    upload=await uploadStoredDocuments(evidence,manifests,adapter,record,id,baseline,batch,actor,{planHash:'draft-recovery:'+row.plan_hash,rootRequestId:row.request_id,batchIndex:index,reviewIds:[],reused});
   }
   if(upload&&['writing','uncertain','verified'].includes(upload.state)){
-   const m=JSON.parse(upload.manifest_json) as UploadManifest;
+   const attempted=upload,m=JSON.parse(attempted.manifest_json) as UploadManifest;
    try{const receipt=await adapter.reconcile(record.external_id,record.client_iin!,m.baseline,m.files,m.reused);if(upload.state!=='verified')upload=await manifests.finish(record.id,id,receipt,'RECOVERED_ORIGINAL_BYTES_VERIFIED');}
-   catch{await store.finish(record.id,false);return {state:'files_uncertain',batch:index,finalAssessment:false};}
+   catch{
+    if(action==='repair-transport'){
+     try{upload=await repairIncidentTransport(manifests,evidence,record,actor,attempted,adapter,()=>probeRecoveryTransport(webhook,record.external_id));}
+     catch{await store.finish(record.id,false);return {state:'files_uncertain',batch:index,finalAssessment:false};}
+    }else{await store.finish(record.id,false);return {state:'files_uncertain',batch:index,finalAssessment:false};}
+   }
   }
   if(upload?.state!=='verified')return {state:'files_pending',batch:index,finalAssessment:false};
  }

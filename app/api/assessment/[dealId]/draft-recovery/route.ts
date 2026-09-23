@@ -6,7 +6,7 @@ export async function POST(request:Request,context:{params:Promise<{dealId:strin
  const denied=await requireStaffRequest(request);if(denied)return denied;
  try{
   const body=await boundedJson(request,4000);
-  if(!['inspect','recover','reconcile','cancel','probe-transport'].includes(String(body.action)))throw new RepositoryError('INVALID_RECOVERY_ACTION',400);
+  if(!['inspect','recover','reconcile','cancel','probe-transport','repair-transport'].includes(String(body.action)))throw new RepositoryError('INVALID_RECOVERY_ACTION',400);
   const {dealId}=await context.params,{record,repository,actor}=await evidenceContext(request,dealId);
   if(actor.worker!=='ali')throw new RepositoryError('OWNER_REQUIRED',403);
   const {env}=await import('cloudflare:workers');const db=(env as typeof env&{DB?:D1Database}).DB;if(!db)throw new RepositoryError('EVIDENCE_STORAGE_NOT_CONFIGURED',503);

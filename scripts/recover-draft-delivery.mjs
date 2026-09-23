@@ -23,7 +23,7 @@ try{
  const inspection=await request(root+'/draft-recovery',{action:'inspect'});report.inspection=inspection;
  if(!/^[a-f0-9]{64}$/.test(inspection.planHash||''))throw Error('RECOVERY_PROPOSAL_UNVERIFIED');
  let result;
- try{result=await request(root+'/draft-recovery',{action:'recover',expectedHash:inspection.planHash});}
+ try{result=await request(root+'/draft-recovery',{action:process.env.RECOVERY_REPAIR_TRANSPORT==='true'?'repair-transport':'recover',expectedHash:inspection.planHash});}
  catch{result=await request(root+'/draft-recovery',{action:'reconcile',expectedHash:inspection.planHash});}
  report.result=result;
  if(result.state!=='verified')throw Error('RECOVERY_NOT_YET_VERIFIED');

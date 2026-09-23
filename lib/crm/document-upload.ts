@@ -52,12 +52,29 @@ export function uploadBody(dealId:string,field:string,retained:CrmFileRef[],file
  const iterator=chunks();
  return new ReadableStream<Uint8Array>({pull(controller){const next=iterator.next();if(next.done)controller.close();else controller.enqueue(encoder.encode(next.value));},cancel(){iterator.return();}},{highWaterMark:1});
 }
+/** Exact UTF-8 length without allocating the base64 payload. */
+export function uploadBodyLength(dealId:string,field:string,retained:CrmFileRef[],files:PreparedUpload[]){
+ const bytes=(v:string)=>new TextEncoder().encode(v).byteLength;
+ let length=bytes(`{"entityTypeId":2,"id":${JSON.stringify(dealId)},"fields":{${JSON.stringify(field)}:[`)+3;
+ let count=0;
+ for(const ref of retained){length+=bytes(JSON.stringify(ref))+(count++?1:0);}
+ for(const file of files){length+=bytes('['+JSON.stringify(file.name)+',"')+4*Math.ceil(file.bytes.length/3)+2+(count++?1:0);}
+ return length;
+}
 export function createDocumentUploadAdapter(webhook:string,readFile:(reference:CrmFileRef,snapshot?:Record<string,unknown>)=>Promise<Uint8Array>,send:typeof fetch=fetch){
- async function call(method:string,body:unknown,stream=false){
+ async function call(method:string,body:unknown,stream=false,byteLength?:number){
   if(!webhook)throw new DocumentUploadError('BITRIX_NOT_CONFIGURED');
   const options:RequestInit&{duplex?:'half'}={method:'POST',headers:bitrixHeaders(webhook),body:stream?body as ReadableStream<Uint8Array>:JSON.stringify(body),cache:'no-store',redirect:'manual',signal:AbortSignal.timeout(30000)};
   if(stream)options.duplex='half';
-  const response=await send(webhook.replace(/\/?$/,'/')+method+'.json',options);
+  const stopped=typeof FixedLengthStream!=='undefined'?new AbortController():null;let pump:Promise<void>=Promise.resolve();
+  if(stream&&byteLength!==undefined&&typeof FixedLengthStream!=='undefined'){
+   const fixed=new FixedLengthStream(byteLength);
+   options.signal=AbortSignal.any([options.signal!,stopped!.signal]);options.body=fixed.readable;
+   pump=(body as ReadableStream<Uint8Array>).pipeTo(fixed.writable,{signal:options.signal});
+  }
+  let response:Response;
+  try{[response]=await Promise.all([send(webhook.replace(/\/?$/,'/')+method+'.json',options),pump]);}
+  catch(error){stopped?.abort();throw error;}
   if(!response.ok)throw new DocumentUploadError('BITRIX_UPLOAD_REQUEST_FAILED');
   const json=await response.json() as {result?:{item?:Record<string,unknown>};error?:string};
   if(json.error||!json.result?.item)throw new DocumentUploadError('BITRIX_UPLOAD_REQUEST_FAILED');return json.result.item;
@@ -84,7 +101,7 @@ export function createDocumentUploadAdapter(webhook:string,readFile:(reference:C
    return {hashes,before,newFiles};
   })().catch(error=>{throw new DocumentUploadError(error instanceof DocumentUploadError?error.code:'UPLOAD_PREFLIGHT_FAILED',true);});
   // Caller serializes an immutable upload intent. Never retry this write automatically.
-  try{if(newFiles.length)await call('crm.item.update',uploadBody(dealId,before.key,before.refs,newFiles),true);}catch{/* Lost response: reconcile by reading, not by resending. */}
+  try{if(newFiles.length)await call('crm.item.update',uploadBody(dealId,before.key,before.refs,newFiles),true,uploadBodyLength(dealId,before.key,before.refs,newFiles));}catch{/* Lost response: reconcile by reading, not by resending. */}
   return reconcile(dealId,expectedIin,baseline,files.map((file,index)=>({name:file.name,sha256:hashes[index],byteSize:file.bytes.length})),reused);
  }
  /** Read-only recovery from a durable manifest. This method never uploads files. */

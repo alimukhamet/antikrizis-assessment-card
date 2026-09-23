@@ -6,6 +6,10 @@ on:
         description: 'Optional additional deal: read saved document diagnostics, with no draft or CRM writes'
         type: string
         default: ''
+      recovery_repair_transport:
+        description: 'Separate guarded repair of the diagnosed 11727 transfer; reconciles first'
+        type: boolean
+        default: false
       recovery_probe_only:
         description: 'Read-only comparison of fixed-length and streaming Bitrix requests'
         type: boolean
@@ -131,6 +135,7 @@ jobs:
           ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
           RECOVERY_DEAL_ID: ${{ inputs.deal_id }}
           RECOVERY_PROBE_ONLY: ${{ inputs.recovery_probe_only }}
+          RECOVERY_REPAIR_TRANSPORT: ${{ inputs.recovery_repair_transport }}
         run: node scripts/recover-draft-delivery.mjs
       - uses: actions/upload-artifact@v4
         if: always()
