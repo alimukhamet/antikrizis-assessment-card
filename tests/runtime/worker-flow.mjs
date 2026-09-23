@@ -74,17 +74,23 @@ test('built Worker persists a complete contract and recovers a handoff without d
  const missingCheck=await api(root+'/check',{payload:missingLoan,bindings:[]});assert.equal(missingCheck.readyToSubmit,false);assert.equal(missingCheck.documents.packageReady,true);assert.ok(missingCheck.issues.some(i=>i.code==='ACTIVE_LOAN_MISSING'));
  assert.equal((await api(root+'/draft')).draft.revision,1,'read-only coverage checks preserve the draft');
  const destination={dealId:'900001',iin:fixture.iin,identityRevision:1},requestId=crypto.randomUUID();
+ const beforeDelivery=await api(root+'/handoff');assert.equal(beforeDelivery.delivery.ready,false);assert.equal(beforeDelivery.delivery.code,'HANDOFF_ASSESSMENT_REQUIRED');
+ const credentials=await api(root+'/credentials',{requestId:crypto.randomUUID(),identityRevision:1,clientName:'SYNTHETIC ONLY',password:'dummy-not-a-private-key',ownerConfirmed:true,files:[{name:'synthetic.key',base64:Buffer.from('SYNTHETIC ONLY - NOT A PRIVATE KEY').toString('base64')}]});
+ assert.equal(credentials.verified,true,JSON.stringify(credentials));
+ const prematureId=crypto.randomUUID(),beforeBlocked={...crm.counts};
+ const premature=await api(root+'/handoff',{action:'send',requestId:prematureId,destination,stage:beforeDelivery.destination,powerId:fixture.documents.find(d=>d.kind==='power_of_attorney').documentId,signedId:fixture.documents.find(d=>d.kind==='unknown').documentId,signedConfirmed:true},409);
+ assert.equal(premature.error,'HANDOFF_ASSESSMENT_REQUIRED');assert.deepEqual(crm.counts,beforeBlocked,'No uploads or stage writes without a saved assessment');
+ await api(root+'/handoff',{action:'cancel',requestId:prematureId,destination});
  await api(root+'/submission',{action:'prepare',requestId,identityRevision:1,payload:fixture.payload,bindings:[],destination});
  const complete=await api(root+'/submission',{action:'complete',requestId,destination});
  assert.equal(complete.assessmentSaved,true,JSON.stringify(complete));assert.equal(complete.historySaved,true,JSON.stringify(complete));assert.ok(complete.contract?.data);
  await api(root+'/submission',{action:'complete',requestId,destination});
  assert.equal(crm.counts.assessmentWrites,1);assert.equal(crm.counts.historyWrites,1);
  await renderContract(mf,origin,complete.contract);
+ const missingOriginals=await api(root+'/handoff');assert.equal(missingOriginals.delivery.ready,false);assert.equal(missingOriginals.delivery.code,'HANDOFF_ORIGINALS_REQUIRED');
  const uploadRequest=crypto.randomUUID();let batchIndex=0;
  for(;;){const result=await api(root+'/uploads',{requestId:uploadRequest,identityRevision:1,batchIndex,payload:fixture.payload});assert.equal(result.state,'verified',JSON.stringify(result));if(result.documentsUploaded)break;assert.ok(result.nextBatch>batchIndex);batchIndex=result.nextBatch;assert.ok(batchIndex<20);}
- const credentials=await api(root+'/credentials',{requestId:crypto.randomUUID(),identityRevision:1,clientName:'SYNTHETIC ONLY',password:'dummy-not-a-private-key',ownerConfirmed:true,files:[{name:'synthetic.key',base64:Buffer.from('SYNTHETIC ONLY - NOT A PRIVATE KEY').toString('base64')}]});
- assert.equal(credentials.verified,true,JSON.stringify(credentials));
- const stage=(await api(root+'/handoff')).destination;assert.ok(stage);
+ const delivered=await api(root+'/handoff');assert.equal(delivered.delivery.ready,true);const stage=delivered.destination;assert.ok(stage);
  const handoffRequest=crypto.randomUUID();
  const handoff=await api(root+'/handoff',{action:'send',requestId:handoffRequest,destination,stage,powerId:fixture.documents.find(d=>d.kind==='power_of_attorney').documentId,signedId:fixture.documents.find(d=>d.kind==='unknown').documentId,signedConfirmed:true});
  assert.equal(handoff.handoff.state,'uncertain',JSON.stringify(handoff));assert.equal(crm.counts.stageWrites,1);

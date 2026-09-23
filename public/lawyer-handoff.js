@@ -1,9 +1,10 @@
 (()=>{
  const ui=ClientContextUI;if(ui.mode!=='handoff')return;
  const $=id=>document.getElementById(id),make=ui.make,send=$('handoffSend'),signedInput=$('handoffSignedFile'),signedAgree=$('handoffSignedConfirmed');
- let busy=false,stage=null,pending=null,statusLoaded=false,powerCheckedId=null,message='',generation=0,inspection=0,statusBusy=false;
+ let busy=false,stage=null,pending=null,delivery=null,statusLoaded=false,powerCheckedId=null,message='',generation=0,inspection=0,statusBusy=false;
  const errors={HANDOFF_NOT_IN_SALES:'Сделка уже не в воронке продаж. Стадия не изменена.',HANDOFF_STAGE_UNVERIFIED:'Стадия продаж не подтверждена. Обратитесь к руководителю.',HANDOFF_ALREADY_COMPLETED:'Сделка уже завершена. Повторная передача не нужна.',HANDOFF_STAGE_CHANGED:'Стадия сделки изменилась. Обновите состояние перед передачей.',HANDOFF_ALREADY_PENDING:'Передача уже начата. Обновите состояние.',HANDOFF_OWNED_BY_ANOTHER_WORKER:'Передачу уже начал другой сотрудник. Обратитесь к нему.',HANDOFF_OUTCOME_UNCERTAIN:'Результат перехода ещё не подтверждён. Нажмите «Проверить результат» — повторного перехода не будет.',HANDOFF_UPLOAD_UNCERTAIN:'Сохранение файлов ещё не подтверждено. Повторите проверку; повторная отправка файлов не выполняется.',HANDOFF_POWER_NOT_READY:'Завершите проверку доверенности.',HANDOFF_CREDENTIALS_REQUIRED:'Сохраните ЭЦП и пароль и подтвердите владельца.',HANDOFF_SIGNED_PDF_REQUIRED:'Загрузите окончательный подписанный PDF из TrustMe.',HANDOFF_DOCUMENTS_CHANGED:'Документы или их подтверждения изменились. Отмените подготовку и проверьте пакет заново.',HANDOFF_FILE_REMOVED:'Один из файлов удалён из Bitrix. Передача остановлена.',HANDOFF_FILE_CHANGED:'Содержимое файла в Bitrix изменилось. Передача остановлена.',CASE_IDENTITY_CHANGED:'Клиент сделки изменился. Откройте клиента заново.',WRONG_CLIENT:'В документе указан другой клиент.',SIGN_IN_REQUIRED:'Войдите заново. Документы сохранены.',CLIENT_IDENTITY_UNVERIFIED:'Подтвердите ИИН клиента.',HANDOFF_CRM_UNAVAILABLE:'Bitrix не отвечает. Повторите проверку.',INVALID_HANDOFF_RESPONSE:'Не удалось прочитать состояние передачи. Повторите проверку.'};
  const explanation=code=>errors[code]||'Не удалось завершить действие. Повторите проверку.';
+ Object.assign(errors,{HANDOFF_ASSESSMENT_REQUIRED:'Анкета не сохранена в Bitrix. Откройте договор и завершите сохранение.',HANDOFF_ASSESSMENT_PENDING:'Сохранение анкеты не завершено. Откройте договор и проверьте результат.',HANDOFF_ASSESSMENT_CHANGED:'Данные анкеты изменились. Откройте договор и сверьте сохранение.',HANDOFF_ASSESSMENT_UNVERIFIED:'Не удалось проверить анкету в Bitrix. Повторите проверку.',HANDOFF_ORIGINALS_REQUIRED:'Документы анкеты не сохранены в Bitrix. Откройте договор и завершите сохранение.',HANDOFF_ORIGINALS_UNVERIFIED:'Не удалось проверить документы в Bitrix. Повторите проверку.',HANDOFF_ORIGINAL_REMOVED:'В Bitrix не хватает документа анкеты. Откройте договор и проверьте файлы.',HANDOFF_ORIGINAL_CHANGED:'Документ анкеты в Bitrix изменился. Откройте договор и проверьте файл.'});
  const invalid=()=>Object.assign(Error(explanation('INVALID_HANDOFF_RESPONSE')),{code:'INVALID_HANDOFF_RESPONSE'});
  const isStage=value=>Boolean(value&&typeof value==='object'&&['fromStageName','stageName'].every(key=>typeof value[key]==='string'&&value[key]));
  const isHandoff=value=>Boolean(value&&typeof value==='object'&&typeof value.requestId==='string'&&['prepared','writing','uncertain','verified','cancelled'].includes(value.state)&&isStage(value.destination));
@@ -30,11 +31,14 @@
   $('handoffSignedName').textContent=signed()?.file.name||'Файл не выбран';$('handoffSignedOpen').hidden=!signed();$('handoffPowerOpen').hidden=!item?.storedDocumentId;
   $('handoffCount').textContent='Пакет: '+count+' из 3';signedInput.disabled=locked;signedAgree.disabled=locked;$('handoffPowerCheck').disabled=locked||!item;
   send.textContent=busy?'Передаём…':statusBusy?'Проверяем…':pending?.state==='verified'?'Стадия изменена':pending?.state==='writing'||pending?.state==='uncertain'?'Проверить результат':pending?'Продолжить передачу':'Передать юристам →';
-  send.disabled=busy||af.busy||statusBusy||!ui.ready()||!statusLoaded||pending?.state==='verified'||(!pending&&(!stage||count!==3));
+  const reconcileOnly=pending?.state==='writing'||pending?.state==='uncertain';
+  send.disabled=busy||af.busy||statusBusy||!ui.ready()||!statusLoaded||pending?.state==='verified'||(!reconcileOnly&&delivery?.ready!==true)||(!pending&&(!stage||count!==3));
+  $('handoffDelivery').textContent=!ui.ready()?'':statusBusy?'Проверяем анкету и документы в Bitrix…':delivery?.ready?'Анкета и документы сохранены в Bitrix.':delivery?explanation(delivery.code):'Сохранение анкеты ещё не проверено.';
+  $('handoffDelivery').dataset.ready=String(delivery?.ready===true);$('handoffAssessmentLink').hidden=!ui.ready()||!delivery||delivery.ready===true;
   $('handoffCancel').hidden=pending?.state!=='prepared';$('handoffCancel').disabled=busy||statusBusy;
   $('handoffRefresh').disabled=busy||statusBusy||!ui.ready();
-  const next=!ui.ready()?'Выберите клиента.':statusBusy?'Проверяем состояние…':!statusLoaded?'Нажмите «Проверить состояние».':pending?.state==='verified'?'Передано.':pending?'Можно продолжить сохранённую передачу.':!key?'Добавьте ЭЦП и подтвердите владельца.':!powerReady?'Проверьте доверенность.':!contract?'Добавьте подписанный PDF и подтвердите подпись.':'Готово к передаче.';
-  $('handoffReason').textContent=message||next;
+  const next=!ui.ready()?'Выберите клиента.':statusBusy?'Проверяем состояние…':!statusLoaded?'Нажмите «Проверить состояние».':pending?.state==='verified'?'Передано.':pending?'Можно продолжить сохранённую передачу.':delivery?.ready!==true?'Сначала завершите сохранение анкеты и документов.':!key?'Добавьте ЭЦП и подтвердите владельца.':!powerReady?'Проверьте доверенность.':!contract?'Добавьте подписанный PDF и подтвердите подпись.':'Готово к передаче.';
+  $('handoffReason').textContent=pending?.state==='verified'&&delivery?.ready===false?'Стадия уже изменена, но данные переданы не полностью.':message||next;
   window.FileSelectionControls?.refresh();
  }
  async function request(body){
@@ -43,14 +47,15 @@
   if(!Object.hasOwn(data,'handoff')||(data.handoff!==null&&!isHandoff(data.handoff)))throw invalid();
   if(data.handoff?.state==='cancelled'&&body?.action!=='cancel')throw invalid();
   if(!body&&data.destination!==null&&!isStage(data.destination))throw invalid();
+  if(!body&&(!data.delivery||typeof data.delivery.ready!=='boolean'||(!data.delivery.ready&&typeof data.delivery.code!=='string')))throw invalid();
   if(body&&body.action!=='cancel'&&!data.handoff)throw invalid();
   return data;
  }
  async function load(){
   if(!ui.context())return;
-  const current=ui.context(),token=++generation;statusLoaded=false;statusBusy=true;refresh();
+  const current=ui.context(),token=++generation;statusLoaded=false;statusBusy=true;delivery=null;refresh();
   try{const data=await request();if(token!==generation||ui.context()!==current)return;
-   pending=data.handoff;stage=data.destination;statusLoaded=!data.stageError;
+   pending=data.handoff;stage=data.destination;delivery=data.delivery;statusLoaded=!data.stageError;
    const target=pending?.destination||stage;
    $('handoffStage').textContent=data.stageError?explanation(data.stageError):target?'«'+target.fromStageName+'» → «'+target.stageName+'»':'';
    if(data.stageError)message=explanation(data.stageError);
@@ -136,7 +141,7 @@
  $('handoffCancel').onclick=async()=>{if(busy||statusBusy||pending?.state!=='prepared')return;const current=ui.context();busy=true;refresh();try{const destination=await ui.confirm('Отменить подготовку передачи','Стадия сделки не изменится. Уже сохранённые файлы останутся в Bitrix.');if(destination&&ui.context()===current){await request({action:'cancel',requestId:pending.requestId,destination});message='Подготовка отменена. Файлы сохранены.';}}catch(error){if(ui.context()===current)message=error.message;}finally{if(ui.context()===current){busy=false;await load();}}};
  $('handoffRefresh').onclick=async()=>{if(busy||statusBusy)return;message='';await load();};
  function reset(){
-  generation++;inspection++;busy=false;statusBusy=false;statusLoaded=false;pending=null;stage=null;message='';powerCheckedId=null;signedAgree.checked=false;
+  generation++;inspection++;busy=false;statusBusy=false;statusLoaded=false;pending=null;stage=null;delivery=null;message='';powerCheckedId=null;signedAgree.checked=false;
   $('handoffStage').textContent='';$('handoffPowerStatus').textContent='';$('handoffPowerReview').replaceChildren();refresh();load();
  }
  document.addEventListener('assessment-case-opened',reset);

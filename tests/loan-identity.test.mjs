@@ -10,6 +10,7 @@ vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/documents/loan-identi
 const {creditorKey,loanRowKey}=exports,script=fs.readFileSync('public/assessment-review.js','utf8');
 const form=script.slice(script.indexOf('const afCreditorKey='),script.indexOf('\nfunction afRow('));
 const pairs=[
+ ['ТОО \"Микрофинансовая организация \"Азиатский Кредитный Фонд\"','ТОО \"МФО \"АКФ\"'],
  ['ТОО Микрофинансовая организация «SurfKaz Finance»','ТОО «МФО «SurfKaz Finance»'],
  ['Товарищество с ограниченной ответственностью «Микрофинансовая организация «Вивус»','ТОО «МФО «Вивус»'],
  ['АО "Народный банк Казахстана"','"Народный банк Казахстана"'],
@@ -26,7 +27,7 @@ test('printed creditor aliases and previously saved compact keys have one identi
  }
 });
 test('aliases never erase company identity, client identity or a different contract',()=>{
- for(const [a,b] of [['ТОО «МФО «Example»','ТОО «МФО «Example Plus»'],['АО «Example»','ТОО «Example»'],['ТОО «Example»','ТОО «МФО «Example»'],['АО «Example»','Example'],['АО «Народный банк Казахстана»','ТОО «Народный банк Казахстана»'],['АО «Народный банк Казахстана»','АО «Народный банк Казахстана» (ДБ Parent)']])assert.notEqual(creditorKey(a),creditorKey(b));
+ for(const [a,b] of [['ТОО МФО АКФ','ТОО МФО АКФ Плюс'],['ТОО МФО АКФ','АО МФО АКФ'],['ТОО МФО АКФ','ТОО АКФ'],['ТОО «МФО «Example»','ТОО «МФО «Example Plus»'],['АО «Example»','ТОО «Example»'],['ТОО «Example»','ТОО «МФО «Example»'],['АО «Example»','Example'],['АО «Народный банк Казахстана»','ТОО «Народный банк Казахстана»'],['АО «Народный банк Казахстана»','АО «Народный банк Казахстана» (ДБ Parent)']])assert.notEqual(creditorKey(a),creditorKey(b));
  const key=(name,id='TEST-1',client='synthetic')=>loanRowKey(`creditors|${client}|${name}|${id}`);
  assert.equal(key(pairs[0][0]),key(pairs[0][1]));
  assert.notEqual(key(pairs[0][0]),key(pairs[0][1],'TEST-2'));

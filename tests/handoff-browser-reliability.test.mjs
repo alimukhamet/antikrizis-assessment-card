@@ -22,7 +22,7 @@ async function setup(t,handler){
  w.HostedAssessment.analyzeFile=async item=>{analysed.push(item.id);item.storedDocumentId='power';return{documentId:'power'};};
  w.HostedAssessment.adapt=()=>({server:{documentId:'power'}});
  const realTimeout=w.setTimeout.bind(w);w.setTimeout=(fn,ms,...args)=>realTimeout(fn,ms>=30000?35:ms,...args);
- w.fetch=async(path,options={})=>{calls.push({path,method:options.method||'GET',body:options.body});return handler?handler(path,options):response({handoff:null,destination:stage,stageError:null});};
+ w.fetch=async(path,options={})=>{calls.push({path,method:options.method||'GET',body:options.body});return handler?handler(path,options):response({handoff:null,destination:stage,stageError:null,delivery:{ready:true}});};
  w.eval(fs.readFileSync('public/operations.js','utf8'));w.eval(fs.readFileSync('public/lawyer-handoff.js','utf8'));
  await tick();
  return {w,d,calls,analysed,open(id){current={...current,client:{...current.client,external:{dealId:id}}};d.dispatchEvent(new w.Event('assessment-case-opened'));},context:()=>current};
@@ -41,7 +41,7 @@ test('handoff status rejects malformed responses and exposes session recovery wi
  }
 });
 test('handoff client change clears the old pending transfer even when the new read fails',async t=>{
- const s=await setup(t,path=>path.includes('900001')?response({handoff:saved,destination:null,stageError:null}):Promise.reject(Error('B read failed')));
+ const s=await setup(t,path=>path.includes('900001')?response({handoff:saved,destination:null,stageError:null,delivery:{ready:true}}):Promise.reject(Error('B read failed')));
  assert.equal(s.d.getElementById('handoffSend').textContent,'Проверить результат');
  s.open('900002');await tick();
  assert.equal(s.d.getElementById('handoffSend').disabled,true);
@@ -50,14 +50,14 @@ test('handoff client change clears the old pending transfer even when the new re
  assert.equal(s.calls.filter(c=>c.method==='POST').length,0);
 });
 test('late failure from an old client does not overwrite the current handoff state',async t=>{
- let rejectOld;const s=await setup(t,path=>path.includes('900001')?new Promise((_,reject)=>{rejectOld=reject;}):response({handoff:null,destination:stage,stageError:null}));
+ let rejectOld;const s=await setup(t,path=>path.includes('900001')?new Promise((_,reject)=>{rejectOld=reject;}):response({handoff:null,destination:stage,stageError:null,delivery:{ready:true}}));
  s.open('900002');await tick();rejectOld(Error('STALE OLD CLIENT'));await tick();
  assert.doesNotMatch(s.d.getElementById('handoffReason').textContent,/STALE/);
  assert.match(s.d.getElementById('handoffStage').textContent,/Сделка успешна/);
  assert.equal(s.d.getElementById('handoffRefresh').disabled,false);
 });
 test('handoff power check reads only that document, not the intake questionnaire',async t=>{
- const s=await setup(t,(path)=>path.endsWith('/handoff-check')?response({identityRevision:1,documents:{packageReady:true,issues:[],manuallyReviewed:[]}}):response({handoff:null,destination:stage,stageError:null}));
+ const s=await setup(t,(path)=>path.endsWith('/handoff-check')?response({identityRevision:1,documents:{packageReady:true,issues:[],manuallyReviewed:[]}}):response({handoff:null,destination:stage,stageError:null,delivery:{ready:true}}));
  s.w.selectedFiles=[{id:1,type:'Доверенность',person:'Клиент',file:{name:'power.pdf'}},{id:2,type:'ГКБ — полный отчёт',person:'Клиент',file:{name:'unrelated.pdf'}}];
  s.d.dispatchEvent(new s.w.Event('assessment-files-selected'));await tick();await s.d.getElementById('handoffPowerCheck').onclick();
  assert.deepEqual(s.analysed,[1]);assert.equal(s.d.getElementById('handoffPowerState').textContent,'Проверена');
@@ -68,7 +68,7 @@ test('handoff power check reads only that document, not the intake questionnaire
 test('lost handoff response is checked read-only before retry uses the existing operation',async t=>{
  let state=null,sent=0;const s=await setup(t,(path,options)=>{
   if(options.method==='POST'){sent++;if(sent===1){state=saved;return new Promise(()=>{});}assert.equal(JSON.parse(options.body).action,'resume');state={...saved,state:'verified'};return response({handoff:state});}
-  return response({handoff:state,destination:state?null:stage,stageError:null});
+  return response({handoff:state,destination:state?null:stage,stageError:null,delivery:{ready:true}});
  });
  // A restored uncertain operation skips keys and uploads entirely.
  state=saved;await s.d.getElementById('handoffRefresh').onclick();
@@ -88,11 +88,27 @@ test('handoff guidance is collapsed; three cards and explicit signature agreemen
  assert.match(s.d.querySelector('.ux-confirm').textContent,/Клиент, подпись и QR/);
  assert.ok(s.d.getElementById('handoffRefresh'));
 });
+test('a historical stage receipt does not claim complete delivery when the assessment is missing',async t=>{
+ const s=await setup(t,()=>response({handoff:{...saved,state:'verified'},destination:null,stageError:null,delivery:{ready:false,code:'HANDOFF_ASSESSMENT_REQUIRED'}}));
+ assert.equal(s.d.getElementById('handoffSend').disabled,true);
+ assert.match(s.d.getElementById('handoffReason').textContent,/данные переданы не полностью/);
+ assert.match(s.d.getElementById('handoffDelivery').textContent,/Анкета не сохранена/);
+ assert.equal(s.d.getElementById('handoffAssessmentLink').hidden,false);
+ assert.equal(s.calls.filter(c=>c.method==='POST').length,0);
+});
+test('new and prepared transfers cannot bypass missing delivery; uncertain recovery stays read-only',async t=>{
+ for(const state of [null,'prepared','uncertain']){
+  const s=await setup(t,()=>response({handoff:state?{...saved,state}:null,destination:state?null:stage,stageError:null,delivery:{ready:false,code:'HANDOFF_ORIGINALS_REQUIRED'}}));
+  assert.equal(s.d.getElementById('handoffSend').disabled,state!=='uncertain');
+  assert.equal(s.d.getElementById('handoffAssessmentLink').hidden,false);
+  assert.equal(s.calls.filter(c=>c.method==='POST').length,0);
+ }
+});
 
 test('a prepared handoff cancels cleanly and restores inputs without a stage write',async t=>{
  let state={...saved,state:'prepared'};const s=await setup(t,(path,options)=>{
   if(options.method==='POST'){assert.equal(JSON.parse(options.body).action,'cancel');const row={...state,state:'cancelled'};state=null;return response({handoff:row});}
-  return response({handoff:state,destination:state?null:stage,stageError:null});
+  return response({handoff:state,destination:state?null:stage,stageError:null,delivery:{ready:true}});
  });
  await s.d.getElementById('handoffCancel').onclick();
  assert.match(s.d.getElementById('handoffReason').textContent,/Подготовка отменена/);
@@ -105,7 +121,7 @@ test('restored signed PDF is read and identity checked before any handoff side e
  const order=[];const s=await setup(t,(path,options)=>{
   if(path.endsWith('/handoff-check'))return response({identityRevision:1,documents:{packageReady:true,issues:[],manuallyReviewed:[]}});
   if(options.method==='POST'){order.push('send');return response({handoff:{...saved,state:'verified'}});}
-  return response({handoff:null,destination:stage,stageError:null});
+  return response({handoff:null,destination:stage,stageError:null,delivery:{ready:true}});
  });
  s.w.selectedFiles=[{id:1,type:'Доверенность',person:'Клиент',file:{name:'power.pdf'},storedDocumentId:'power'},{id:2,type:'Подписанный договор',person:'Клиент',file:{name:'signed.pdf'},storedDocumentId:'signed'}];
  let wrong=false;s.w.HostedAssessment.analyzeFile=async item=>{order.push('read-'+item.storedDocumentId);return {...s.context(),documentId:item.storedDocumentId,document:{totalPages:2,extraction:{identity:{iin:wrong?'different-client':s.context().client.iin}}}};};

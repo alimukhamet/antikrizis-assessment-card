@@ -16,16 +16,17 @@ const report = {
   healthy: false,
   checks: [],
   incidents: null,
+  lawyerWaiting: null,
   cases: [],
   failure: null,
 };
-async function request(path, body) {
+async function request(path, body, timeoutMs = 20000) {
   const response = await fetch(origin + path, {
     method: body ? "POST" : "GET",
     headers: { cookie, origin, "content-type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
     redirect: "manual",
-    signal: AbortSignal.timeout(20000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (path === "/api/session" && body)
     cookie = response.headers
@@ -60,7 +61,11 @@ try {
   if (!probe.ok || !probe.accepted) throw Error("MONITOR_WRITE_FAILED");
   report.checks.push("diagnostic_write");
   const health = await request("/api/operations-monitor");
-  if (!Array.isArray(health.events) || !Array.isArray(health.stuck))
+  if (
+    !Array.isArray(health.events) ||
+    !Array.isArray(health.stuck) ||
+    !Array.isArray(health.deliveryGaps)
+  )
     throw Error("MONITOR_RESPONSE_INVALID");
   report.incidents = health;
   report.checks.push("operations_storage");
@@ -77,11 +82,47 @@ try {
   )
     throw Error("CLIENT_RELEASE_MISMATCH");
   report.checks.push("client_release");
+  try {
+    const cohort = await request("/api/lawyer-delivery-audit", undefined, 60000);
+    const missingFields = new Set(["clientName", "procedure", "contractNumber", "contractDate", "card"]);
+    if (!cohort || cohort.complete !== true || cohort.categoryId !== "1" || cohort.stageId !== "C1:NEW" ||
+        typeof cohort.checkedAt !== "string" || !Number.isFinite(Date.parse(cohort.checkedAt)) ||
+        !Number.isInteger(cohort.count) || cohort.count < 0 || cohort.count > 500 ||
+        !Array.isArray(cohort.cases) || cohort.cases.length !== cohort.count)
+      throw Error("LAWYER_WAITING_RESPONSE_INVALID");
+    const seen = new Set();
+    const cases = cohort.cases.map((row) => {
+      if (!row || typeof row.dealId !== "string" || !/^[1-9]\d{0,19}$/.test(row.dealId) || seen.has(row.dealId) ||
+          typeof row.intakeStyleTitle !== "boolean" || typeof row.hasIin !== "boolean" ||
+          !Number.isInteger(row.fileCount) || row.fileCount < 0 ||
+          !Array.isArray(row.missingFields) || !row.missingFields.every((field) => missingFields.has(field)) ||
+          new Set(row.missingFields).size !== row.missingFields.length)
+        throw Error("LAWYER_WAITING_RESPONSE_INVALID");
+      seen.add(row.dealId);
+      // Never spread owner endpoint rows: names, titles and CRM values stay out
+      // of both artifacts and workflow logs. These are discovery signals only.
+      return {
+        dealId: row.dealId, intakeStyleTitle: row.intakeStyleTitle,
+        missingFields: row.missingFields, fileCount: row.fileCount, hasIin: row.hasIin,
+      };
+    }).filter((row) => row.intakeStyleTitle || row.missingFields.length > 0);
+    report.lawyerWaiting = {
+      checkedAt: new Date(cohort.checkedAt).toISOString(), count: cohort.count, complete: true,
+      classification: "discovery_signals", cases,
+    };
+    report.checks.push("lawyer_waiting_cohort");
+  } catch (error) {
+    throw Object.assign(Error("LAWYER_WAITING_MONITOR_FAILED"), {
+      scope: "monitoring", status: error.status || null, path: "/api/lawyer-delivery-audit",
+    });
+  }
   // Keep a stable canary and rotate affected/recently opened cases so old incidents
   // cannot starve new employee work of checks.
   const candidates = [
     ...new Set(
       [
+        ...health.deliveryGaps.map((v) => v.deal_id),
+        ...report.lawyerWaiting.cases.map((v) => v.dealId),
         ...health.stuck.map((v) => v.deal_id),
         ...health.events.map((v) => v.deal_id),
         ...(health.activeCases || []).map((v) => v.deal_id),
@@ -143,6 +184,8 @@ try {
     report.cases.push(result);
   }
   report.checks.push("bitrix_and_saved_cases");
+  // Availability and unfinished delivery are separate. Delivery gaps remain in
+  // incidents even outside the bounded sample; business readiness is not uptime.
   report.healthy = true;
 } catch (error) {
   report.failure = {
@@ -154,11 +197,13 @@ try {
       "QUESTIONNAIRE_UNAVAILABLE",
       "CLIENT_RELEASE_MISMATCH",
       "HTTP_FAILURE",
+      "LAWYER_WAITING_MONITOR_FAILED",
     ].includes(error.message)
       ? error.message
       : "MONITOR_REQUEST_FAILED",
     status: error.status || null,
     route: error.path || null,
+    ...(error.scope === "monitoring" ? { scope: "monitoring" } : {}),
   };
   process.exitCode = 1;
 }
@@ -169,6 +214,8 @@ console.log(
     checks: report.checks,
     events: report.incidents?.events.length,
     stuck: report.incidents?.stuck.length,
+    deliveryGaps: report.incidents?.deliveryGaps.length,
+    lawyerWaitingSignals: report.lawyerWaiting?.cases.length,
     stale: report.incidents?.staleClients.length,
     failure: report.failure,
   }),

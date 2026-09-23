@@ -7,6 +7,8 @@ import {uploadBatchId} from '../documents/upload-plan';
 import {HandoffRepository,type HandoffPayload,type HandoffRow} from './handoff-repository';
 import {HandoffMoveError,type createHandoffAdapter} from '../crm/lawyer-handoff';
 import type {createDocumentUploadAdapter,CrmFileRef} from '../crm/document-upload';
+import type {createAssessmentAdapter} from '../crm/assessment-write';
+import type {SubmissionRepository,SubmissionPayload} from './submission-repository';
 import type {Actor} from '../worker-session';
 
 export async function validateHandoffDocuments(repository:EvidenceRepository,record:CaseRow,powerId:string,signedId:string,day:string){
@@ -27,7 +29,58 @@ function verifiedReceipt(json:string,code:string):VerifiedReceipt{
  for(const file of value.files){if(!file||typeof file!=='object'||typeof file.id!=='string'||!file.id||typeof file.sha256!=='string'||!/^[a-f0-9]{64}$/.test(file.sha256))throw new RepositoryError(code);}
  return value as VerifiedReceipt;
 }
-type Dependencies={repository:EvidenceRepository;handoffs:HandoffRepository;manifests:UploadManifestRepository;upload:ReturnType<typeof createDocumentUploadAdapter>;readFile:(ref:CrmFileRef)=>Promise<Uint8Array>;stages:ReturnType<typeof createHandoffAdapter>};
+type DeliveryDependencies={repository:Pick<EvidenceRepository,'document'>;submissions:Pick<SubmissionRepository,'latestForCase'>;assessment:Pick<ReturnType<typeof createAssessmentAdapter>,'reconcile'>;manifests:Pick<UploadManifestRepository,'reusableFiles'>;upload:Pick<ReturnType<typeof createDocumentUploadAdapter>,'read'>;readFile:(ref:CrmFileRef)=>Promise<Uint8Array>};
+/** Read-only delivery proof. A historical stage receipt is not evidence that the
+ * assessment or its originals reached Bitrix. Use the immutable saved submission,
+ * never the current editable draft, to determine which originals are required. */
+export async function verifyHandoffDelivery(deps:DeliveryDependencies,record:CaseRow,options:{verifyBytes?:boolean}={}){
+ const submission=await deps.submissions.latestForCase(record.id);
+ if(!submission)throw new RepositoryError('HANDOFF_ASSESSMENT_REQUIRED');
+ if(submission.case_id!==record.id||submission.identity_revision!==record.identity_revision||!record.client_iin)throw new RepositoryError('HANDOFF_ASSESSMENT_CHANGED');
+ if(submission.state!=='verified'||submission.history_state!=='verified'||!/^[1-9]\d*$/.test(submission.history_comment_id||''))throw new RepositoryError('HANDOFF_ASSESSMENT_PENDING');
+ let payload:SubmissionPayload;
+ try{payload=JSON.parse(submission.payload_json);}catch{throw new RepositoryError('HANDOFF_ASSESSMENT_CHANGED');}
+ if(!payload?.values||payload.values.iin!==record.client_iin||!Array.isArray(payload.draft?.documents))throw new RepositoryError('HANDOFF_ASSESSMENT_CHANGED');
+ let assessment;
+ try{assessment=await deps.assessment.reconcile(record.external_id,record.client_iin,payload.values);}catch{throw new RepositoryError('HANDOFF_ASSESSMENT_UNVERIFIED');}
+ if(!assessment.verified)throw new RepositoryError('HANDOFF_ASSESSMENT_CHANGED');
+ const files:UploadManifest['files']=[],seen=new Set<string>();
+ for(const selected of payload.draft.documents){
+  if(!selected||typeof selected.documentId!=='string'||!selected.documentId)throw new RepositoryError('HANDOFF_ORIGINALS_REQUIRED');
+  // Match documentUploadPlan: these two files belong to the handoff upload
+  // phase below, where the selected current originals are verified separately.
+  if(['Доверенность','Подписанный договор'].includes(selected.type))continue;
+  if(seen.has(selected.documentId))continue;seen.add(selected.documentId);
+  const doc=await deps.repository.document(record.id,selected.documentId);
+  if(!doc)throw new RepositoryError('HANDOFF_ORIGINALS_REQUIRED');
+  files.push({documentId:doc.id,name:doc.original_name,sha256:doc.original_sha256,byteSize:doc.byte_size});
+ }
+ if(!files.length)throw new RepositoryError('HANDOFF_ORIGINALS_REQUIRED');
+ let baseline,receipts;
+ try{
+  baseline=await deps.upload.read(record.external_id);
+  // Existing confirmed Bitrix imports carry the same immutable hash/size receipt
+  // as uploads. They must remain attached and have their bytes checked again.
+  receipts=await deps.manifests.reusableFiles(record,files,baseline.refs);
+ }catch{throw new RepositoryError('HANDOFF_ORIGINALS_UNVERIFIED');}
+ if(baseline.iin!==record.client_iin)throw new RepositoryError('HANDOFF_ASSESSMENT_CHANGED');
+ for(const file of files){
+  const receipt=receipts.find(ref=>ref.sha256===file.sha256&&ref.byteSize===file.byteSize&&baseline.refs.some(current=>current.id===ref.id));
+  if(!receipt){
+   let previous;
+   try{previous=await deps.manifests.reusableFiles(record,[file]);}catch{throw new RepositoryError('HANDOFF_ORIGINALS_UNVERIFIED');}
+   if(previous.length)throw new RepositoryError('HANDOFF_ORIGINAL_REMOVED');
+   throw new RepositoryError('HANDOFF_ORIGINALS_REQUIRED');
+  }
+  if(options.verifyBytes!==false){
+   let bytes;
+   try{bytes=await deps.readFile(receipt);}catch{throw new RepositoryError('HANDOFF_ORIGINALS_UNVERIFIED');}
+   if(bytes.byteLength!==file.byteSize||await sha256(bytes)!==file.sha256)throw new RepositoryError('HANDOFF_ORIGINAL_CHANGED');
+  }
+ }
+ return {requestId:submission.request_id,payloadHash:submission.payload_hash,originals:seen.size};
+}
+type Dependencies=DeliveryDependencies&{repository:EvidenceRepository;handoffs:HandoffRepository;manifests:UploadManifestRepository;upload:ReturnType<typeof createDocumentUploadAdapter>;stages:ReturnType<typeof createHandoffAdapter>};
 /** A timeout never authorizes a second stage update. All recovery after claim is read-only. */
 export async function runHandoff(deps:Dependencies,record:CaseRow,actor:Actor,row:HandoffRow,day:string){
  const {repository,handoffs,manifests,upload,stages}=deps,payload=JSON.parse(row.payload_json) as HandoffPayload;
@@ -39,6 +92,7 @@ export async function runHandoff(deps:Dependencies,record:CaseRow,actor:Actor,ro
   return handoffs.finish(record,row,verified?'verified':'uncertain',verified?'STAGE_READBACK_VERIFIED':'HANDOFF_OUTCOME_UNCERTAIN');
  }
  if(row.state!=='prepared')throw new RepositoryError('HANDOFF_CANCELLED');
+ const delivered=await verifyHandoffDelivery(deps,record);
  const verify=async()=>{
   const current=await validateHandoffDocuments(repository,record,payload.powerId,payload.signedId,day);
   if(current.credentialRequestId!==payload.credentialRequestId||JSON.stringify(current.reviewIds)!==JSON.stringify(payload.reviewIds))throw new RepositoryError('HANDOFF_DOCUMENTS_CHANGED');
@@ -76,6 +130,8 @@ export async function runHandoff(deps:Dependencies,record:CaseRow,actor:Actor,ro
   const bytes=await deps.readFile(file);if(bytes.byteLength!==file.byteSize||await sha256(bytes)!==file.sha256)throw new RepositoryError('HANDOFF_FILE_CHANGED');
  }
  await verify();
+ const currentDelivery=await verifyHandoffDelivery(deps,record);
+ if(currentDelivery.requestId!==delivered.requestId||currentDelivery.payloadHash!==delivered.payloadHash)throw new RepositoryError('HANDOFF_ASSESSMENT_CHANGED');
  if(!await handoffs.claim(record,row))return handoffs.get(record.id,row.request_id);
  let verified=false;
  try{verified=await stages.move(record.external_id,record.client_iin!,payload.destination,row.created_at);}

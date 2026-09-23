@@ -1,4 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';import ts from 'typescript';import {webcrypto} from 'node:crypto';import {DatabaseSync} from 'node:sqlite';
+import {compareGkb} from '../public/gkb-comparison.mjs';
 function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>imports[n],Date,Map,Set,BigInt,Uint8Array,TextEncoder,crypto:webcrypto,JSON});return exports;}
 const repositoryModule=load('lib/documents/repository.ts'),{EvidenceRepository}=repositoryModule,policy=load('lib/documents/policy.ts'),identity=load('lib/documents/loan-identity.ts');
 const matching=load('lib/documents/credit-report-match.ts',{'./policy':policy,'./loan-identity':identity});
@@ -10,11 +11,15 @@ function analyses(){return {
  short:{read:{pages:[{page:1,needsOcr:false}]},extraction:{kind:'gkb_short',identity:{iin:client.iin},issuedAt:day,creditList:{declared:2,complete:false},credits:[credit('CONTRACT-A..','1250.25'),credit('CONTRACT-B..','500.00')],findings:['SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED']}},
  full:{read:{pages:[{page:1,needsOcr:false}]},extraction:{kind:'gkb_full',identity:{iin:client.iin},issuedAt:day,creditList:{declared:3,complete:true},credits:[credit('CONTRACT-A-123','1250.25',true),credit('CONTRACT-B-123','500.00'),credit('ZERO-LIMIT','0.00')],findings:['TOTAL_DEBT_REQUIRES_RECONCILIATION']}}
 };}
-async function fixture(t,{twoMissing=false}={}){
+function unknownPenalty(source){
+ source.full.extraction.credits[0].components={remaining:'1000.00',arrears:'250.25',penalty:null,interest:null,fine:null};
+ return source;
+}
+async function fixture(t,{twoMissing=false,unconfirmedTotal=false}={}){
  const sqlite=new DatabaseSync(':memory:');t.after(()=>sqlite.close());sqlite.exec('PRAGMA foreign_keys=ON');for(const name of fs.readdirSync(new URL('../drizzle/',import.meta.url)).filter(n=>n.endsWith('.sql')).sort())sqlite.exec(fs.readFileSync(new URL('../drizzle/'+name,import.meta.url),'utf8'));
  const db={prepare(sql){return{bind(...args){const q=sqlite.prepare(sql);return{async first(){return q.get(...args)||null;},async all(){return{results:q.all(...args)};},async run(){q.run(...args);return{success:true};}};}};}};
  const objects=new Map(),files={async put(key,value){objects.set(key,Buffer.from(value));},async get(key){const b=objects.get(key);return b?{text:async()=>b.toString(),arrayBuffer:async()=>Uint8Array.from(b).buffer}:null;}};
- const repo=new EvidenceRepository(db,files),record=await repo.syncCase(client),source=analyses();if(twoMissing)source.full.extraction.credits[1]=credit('CONTRACT-B-123','500.00',true);
+ const repo=new EvidenceRepository(db,files),record=await repo.syncCase(client),source=analyses();if(twoMissing)source.full.extraction.credits[1]=credit('CONTRACT-B-123','500.00',true);if(unconfirmedTotal)unknownPenalty(source);
  const short=await repo.store(record.id,new Uint8Array([1]),'short.pdf',actor,'v',source.short),full=await repo.store(record.id,new Uint8Array([2]),'full.pdf',actor,'v',source.full);
  const payload={schemaVersion:1,answers:[],docContext:{social:'0',salary:'0'},pendingFiles:[],documents:[{documentId:short.document.id,type:'ГКБ — краткий отчёт',person:'Клиент'},{documentId:full.document.id,type:'ГКБ — полный отчёт',person:'Клиент'}],groups:[{id:'creditors',rowKeys:[null,null,null],rows:source.full.extraction.credits.map((c,i)=>[{key:'n8038',value:'ТЕСТ БАНК'},{key:'loanContractId',value:c.contractNumber},{key:'n8040',value:['1250.25','500.00','0.00'][i]}])}]};
  const input={action:'confirm',shortDocumentId:short.document.id,fullDocumentId:full.document.id,identityRevision:record.identity_revision,requestId:crypto.randomUUID()};
@@ -25,6 +30,49 @@ test('missing full balance is a review proposal, never an automatic match or zer
  const {short,full}=analyses(),before=JSON.stringify({short,full});assert.equal(matching.matchShortReport(short,full,client.iin,day),null);
  const plan=matching.shortBalanceReviewPlan(short,full,client.iin,day);assert.equal(plan.balances.length,1);assert.equal(plan.balances[0].amount,'1250.25');assert.equal(plan.activeLoans,3);assert.equal(JSON.stringify({short,full}),before);
  for(const mutate of [s=>s.full.extraction.identity.iin='other',s=>s.full.extraction.issuedAt='2026-09-20',s=>s.full.read.pages[0].needsOcr=true,s=>s.full.extraction.creditList.complete=false,s=>s.short.extraction.creditList.declared=3,s=>s.short.extraction.findings.push('SHORT_TOTAL_MISMATCH'),s=>s.full.extraction.credits[0].components.arrears='1.00',s=>s.full.extraction.credits[0].components.remaining='10.00',s=>s.full.extraction.credits[0].facts.push({key:'debtOutstanding',value:'1250.26'}),s=>s.full.extraction.credits.push(credit('CONTRACT-A-456','0.00')),s=>s.full.extraction.credits[2].facts[1].value='0.01']){const s=analyses();mutate(s);assert.equal(matching.shortBalanceReviewPlan(s.short,s.full,client.iin,day),null);}
+});
+test('legacy balance plans retain their exact shape without a new reason discriminator',()=>{
+ const {short,full}=analyses(),plan=matching.shortBalanceReviewPlan(short,full,client.iin,day);
+ const first={shortIndex:0,fullIndex:0,shortNumber:'CONTRACT-A..',fullNumber:'CONTRACT-A-123',shortPage:3,fullPage:3},second={shortIndex:1,fullIndex:1,shortNumber:'CONTRACT-B..',fullNumber:'CONTRACT-B-123',shortPage:3,fullPage:3};
+ const legacy={matches:[first,second],balances:[{...first,creditor:'ТЕСТ БАНК',contractNumber:'CONTRACT-A-123',aliases:['CONTRACT-A-123'],amount:'1250.25'}],activeLoans:3,issuedAt:day};
+ assert.equal(JSON.stringify(plan),JSON.stringify(legacy),'Existing plan hashes must not change');
+});
+test('unknown penalty allows only an exact known-component proposal without calculating a full total',()=>{
+ const source=unknownPenalty(analyses()),credit=source.full.extraction.credits[0];credit.components.remaining='1064949.89';credit.components.arrears='132755.00';source.short.extraction.credits[0].facts.find(f=>f.key==='debtOutstanding').value='1197704.89';
+ const before=JSON.stringify(source),plan=matching.shortBalanceReviewPlan(source.short,source.full,client.iin,day);
+ assert.equal(plan.balances[0].amount,'1197704.89');assert.equal(plan.balances[0].reason,'FULL_TOTAL_UNCONFIRMED');assert.equal(plan.activeLoans,3);assert.equal(matching.matchShortReport(source.short,source.full,client.iin,day),null);assert.equal(JSON.stringify(source),before);
+ const comparison=()=>compareGkb([['short','gkbShort'],['full','gkbFull']].map(([key,kind])=>({fileId:key,kind,date:source[key].extraction.issuedAt,identity:source[key].extraction.identity,creditEvidence:{...source[key].extraction,readable:true}})),{iin:client.iin,day});
+ assert.equal(comparison().fullTotal,null);assert.equal(credit.components.penalty,null);assert.equal(credit.comparisonDebt,undefined);assert.equal(credit.facts.some(f=>f.key==='debtOutstanding'),false);
+});
+test('unknown totals reject mismatched debt, unknown principal or arrears, report ambiguity, dates and identity',()=>{
+ for(const mutate of [
+  s=>s.short.extraction.credits[0].facts.find(f=>f.key==='debtOutstanding').value='1250.26',
+  s=>s.full.extraction.credits[0].components.remaining=null,
+  s=>s.full.extraction.credits[0].components.arrears=null,
+  s=>s.full.extraction.credits[0].components.remaining='-1.00',
+  s=>s.full.extraction.credits[0].components.arrears='250.251',
+  s=>s.full.extraction.credits[0].components.penalty='0.00',
+  s=>delete s.full.extraction.credits[0].components.penalty,
+  s=>s.full.extraction.credits[0].components.interest='1.00',
+  s=>s.full.extraction.credits[0].components.fine='1.00',
+  s=>s.full.extraction.credits[0].components.interest='unknown',
+  s=>s.full.extraction.credits[0].comparisonDebt={value:'1250.25'},
+  s=>s.full.extraction.credits[0].facts.push({key:'debtOutstanding',value:'1250.26'}),
+  s=>s.full.extraction.identity.iin='other',
+  s=>s.short.extraction.identity.iin=null,
+  s=>s.full.extraction.issuedAt='2026-09-20',
+  s=>s.full.extraction.issuedAt=s.short.extraction.issuedAt='2026-08-01',
+  s=>s.full.read.pages[0].needsOcr=true,
+  s=>s.full.extraction.creditList.complete=false,
+  s=>s.full.extraction.credits.push(credit('CONTRACT-A-456','0.00')),
+  s=>s.full.extraction.credits[2].facts.find(f=>f.key==='debtOutstanding').value='0.01',
+ ]){const s=unknownPenalty(analyses());mutate(s);assert.equal(matching.shortBalanceReviewPlan(s.short,s.full,client.iin,day),null);assert.equal(matching.matchShortReport(s.short,s.full,client.iin,day),null);}
+});
+test('every explicitly reported interest and fine is included in the proposed known-component sum',()=>{
+ const s=unknownPenalty(analyses());s.full.extraction.credits[0].components.interest='1.25';s.full.extraction.credits[0].components.fine='0.10';
+ assert.equal(matching.shortBalanceReviewPlan(s.short,s.full,client.iin,day),null);
+ s.short.extraction.credits[0].facts.find(f=>f.key==='debtOutstanding').value='1251.60';
+ const before=JSON.stringify(s),plan=matching.shortBalanceReviewPlan(s.short,s.full,client.iin,day);assert.equal(plan.balances[0].amount,'1251.60');assert.equal(plan.balances[0].reason,'FULL_TOTAL_UNCONFIRMED');assert.equal(matching.matchShortReport(s.short,s.full,client.iin,day),null);assert.equal(JSON.stringify(s),before);
 });
 test('confirmation persists, retries once, carries source evidence and keeps every active loan required',async t=>{
  const f=await fixture(t),before=JSON.stringify(f.payload),plan=await f.inspect();assert.equal(plan.review,null);assert.ok((await f.check()).issues.some(i=>i.code==='SHORT_CREDIT_REVIEW_REQUIRED'));
@@ -53,6 +101,21 @@ test('withdrawal is durable and retry-safe, and a stale withdrawal cannot cancel
 });
 
 const rowInput=(f,plan,index,decision,extra={})=>({...f.input,fullIndex:index,decision,planKey:plan.planKey,expectedReviewId:plan.rowHeads.find(r=>r.fullIndex===index).reviewId,requestId:crypto.randomUUID(),...extra});
+test('unknown totals require a per-loan employee decision and preserve unknown extraction and active-loan coverage',async t=>{
+ for(const decision of ['confirm','correct']){
+  const f=await fixture(t,{unconfirmedTotal:true}),plan=await f.inspect(),originalReports=JSON.stringify(f.source);
+  assert.equal(plan.review,null);assert.equal(service.gkbBalanceEvidence(f.payload,plan,f.short).length,0);assert.ok((await f.check()).issues.some(i=>i.code==='SHORT_CREDIT_REVIEW_REQUIRED'));
+  await assert.rejects(()=>service.confirmGkbBalanceReview(f.repo,f.record,{...f.input,planKey:plan.planKey},f.payload,actor,day),/GKB_REVIEW_CHANGED/);
+  const extra=decision==='correct'?{amount:'1251.00',reason:'Уточнено по справке кредитора, страница 2'}:{};
+  if(decision==='correct'){
+   await assert.rejects(()=>service.confirmGkbBalanceReview(f.repo,f.record,rowInput(f,plan,0,decision,extra),f.payload,actor,day),/GKB_ANSWERS_NOT_SAVED/);
+   f.payload.groups[0].rows[0][2].value=extra.amount;
+  }
+  const saved=await service.confirmGkbBalanceReview(f.repo,f.record,rowInput(f,plan,0,decision,extra),f.payload,actor,day),review=await f.repo.reviewRecord(f.record.id,saved.reviewId);assert.match(review.reason,/[Ии]тог.*не подтверждён/);assert.doesNotMatch(review.reason,/остаток не указан/);
+  const reopened=await f.inspect(),checked=await f.check();assert.ok(reopened.review);assert.equal(checked.issues.some(i=>i.code==='SHORT_CREDIT_REVIEW_REQUIRED'),false);assert.equal(checked.gkbEvidence[0].value,extra.amount||'1250.25');assert.match(checked.gkbEvidence[0].source,/[Ии]тог.*не подтверждён/);assert.doesNotMatch(checked.gkbEvidence[0].source,/остаток не указан/);assert.equal(checked.loanCoverage.expected,3);assert.equal(checked.loanCoverage.complete,true);assert.equal(JSON.stringify(f.source),originalReports);assert.equal(f.full.result.extraction.credits[0].components.penalty,null);assert.equal(f.full.result.extraction.credits[0].comparisonDebt,undefined);assert.equal(f.full.result.extraction.credits[0].facts.some(f=>f.key==='debtOutstanding'),false);
+  f.payload.groups[0].rows.pop();assert.equal((await f.check()).loanCoverage.missing,1);
+ }
+});
 test('per-loan decisions persist separately; corrections retain original source and require saved matching answers',async t=>{
  const f=await fixture(t,{twoMissing:true}),plan=await f.inspect();
  const first=rowInput(f,plan,0,'confirm');const receipt=await service.confirmGkbBalanceReview(f.repo,f.record,first,f.payload,actor,day);assert.deepEqual(await service.confirmGkbBalanceReview(f.repo,f.record,first,f.payload,actor,day),receipt);

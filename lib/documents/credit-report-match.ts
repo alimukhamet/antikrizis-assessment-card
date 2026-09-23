@@ -7,6 +7,23 @@ function amount(value:string|undefined){
  if(!value||!/^\d+(?:\.\d{1,2})?$/.test(value))return null;
  const [whole,fraction='']=value.split('.');return BigInt(whole)*BigInt(100)+BigInt(fraction.padEnd(2,'0'));
 }
+function balanceReviewReason(credit:Analysis['extraction']['credits'][number],shortDebt:bigint){
+ if(credit.facts.some(f=>f.key==='debtOutstanding')||credit.comparisonDebt)return null;
+ const components=credit.components;
+ if(components?.remaining===null&&amount(components.arrears??undefined)===BigInt(0)&&amount(components.penalty??undefined)===BigInt(0)&&['interest','fine'].every(key=>components[key]===null||components[key]===undefined||amount(components[key])===BigInt(0)))return 'MISSING_BALANCE';
+ // An unknown penalty is still unknown. Equality only makes the short-report
+ // amount eligible for an employee's source choice; it never creates a full
+ // report total or substitutes zero for the unreported component.
+ if(components?.penalty!==null)return null;
+ const remaining=amount(components.remaining??undefined),arrears=amount(components.arrears??undefined);
+ if(remaining===null||arrears===null)return null;
+ let known=remaining+arrears;
+ for(const key of ['interest','fine']){
+  if(components[key]===null||components[key]===undefined)continue;
+  const value=amount(components[key]);if(value===null)return null;known+=value;
+ }
+ return known===shortDebt?'FULL_TOTAL_UNCONFIRMED':null;
+}
 function numberMatches(short:string,full:string){
  short=short.trim();full=full.trim();
  if(/\.\.|…/.test(full))return false;
@@ -36,7 +53,7 @@ function matchReportLoans(short:Analysis,full:Analysis,clientIin:string|null,day
   // Demand unique matches before consuming rows; never resolve ambiguity by order.
   if(candidates.length!==1||used.has(candidates[0]))return null;
   const fullIndex=candidates[0],other=f.credits[fullIndex],ff=Object.fromEntries(other.facts.map(v=>[v.key,v.value]));
-  const missingBalance=allowMissingBalance&&ff.debtOutstanding===undefined&&!other.comparisonDebt&&other.components?.remaining===null&&amount(other.components.arrears??undefined)===BigInt(0)&&amount(other.components.penalty??undefined)===BigInt(0)&&['interest','fine'].every(key=>other.components[key]===null||other.components[key]===undefined||amount(other.components[key])===BigInt(0));
+  const missingBalance=allowMissingBalance&&balanceReviewReason(other,debt)!==null;
   if(!missingBalance&&debt!==amount(ff.debtOutstanding)||!/^\d+$/.test(ff.overdueDays||'')||BigInt(sf.overdueDays)!==BigInt(ff.overdueDays))return null;
   used.add(fullIndex);
   matches.push({shortIndex,fullIndex,shortNumber:credit.contractNumber,fullNumber:other.contractNumber,shortPage:credit.page,fullPage:other.page});
@@ -55,7 +72,7 @@ export function shortBalanceReviewPlan(short:Analysis,full:Analysis,clientIin:st
  const matches=matchReportLoans(short,full,clientIin,day,true);if(!matches)return null;
  const balances=matches.filter(m=>!f.credits[m.fullIndex].facts.some(f=>f.key==='debtOutstanding')).map(m=>{
   const a=s.credits[m.shortIndex],b=f.credits[m.fullIndex],fact=a.facts.find(f=>f.key==='debtOutstanding')!,cents=amount(fact.value)!;
-  return {...m,creditor:b.facts.find(f=>f.key==='creditor')!.value,contractNumber:b.contractCode||b.contractNumber,aliases:[...new Set([b.contractNumber,b.contractCode].filter((v):v is string=>!!v))],amount:`${cents/BigInt(100)}.${String(cents%BigInt(100)).padStart(2,'0')}`,shortPage:fact.page||a.page,fullPage:b.page};
+  return {...m,creditor:b.facts.find(f=>f.key==='creditor')!.value,contractNumber:b.contractCode||b.contractNumber,aliases:[...new Set([b.contractNumber,b.contractCode].filter((v):v is string=>!!v))],amount:`${cents/BigInt(100)}.${String(cents%BigInt(100)).padStart(2,'0')}`,shortPage:fact.page||a.page,fullPage:b.page,...(balanceReviewReason(b,cents)==='FULL_TOTAL_UNCONFIRMED'?{reason:'FULL_TOTAL_UNCONFIRMED' as const}:{})};
  });
  return balances.length?{matches,balances,activeLoans:f.credits.length,issuedAt:s.issuedAt!}:null;
 }

@@ -1,6 +1,8 @@
 (()=>{
  const {make,mode}=ClientContextUI,$=id=>document.getElementById(id),wrap=document.querySelector('main.wrap');
  const handoff=make('section',null,'ux-handoff-area');handoff.id='uxHandoff';handoff.dataset.uxClientContent='';
+ const delivery=make('p','Проверяем анкету и документы в Bitrix…','ux-handoff-note');delivery.id='handoffDelivery';delivery.setAttribute('role','status');
+ const assessmentLink=make('a','Открыть договор и завершить сохранение','btn btn-ghost');assessmentLink.id='handoffAssessmentLink';assessmentLink.dataset.clientPath='/assessment-review';assessmentLink.href='/assessment-review';assessmentLink.target='_top';assessmentLink.hidden=true;handoff.append(delivery,assessmentLink);
  const grid=make('div',null,'ux-handoff-grid');handoff.append(grid);
  function card(title,description,id){const box=make('section',null,'ux-handoff-card'),head=make('header'),copy=make('div'),state=make('span','Не добавлен','ux-handoff-state');state.id=id;copy.append(make('h2',title));if(description)copy.append(make('p',description));head.append(copy,state);box.append(head);grid.append(box);return box;}
  card('1. ЭЦП клиента','','handoffKeyState').append(document.querySelector('.wf-credential'));

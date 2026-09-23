@@ -184,6 +184,39 @@ test("summary finds stuck preparations and unfinished writes, excludes completed
   assert.equal(result.activity.samples, 3);
   assert.equal(JSON.stringify(result).includes("payload_json"), false);
 });
+test("verified handoffs remain visible without current-identity assessment and history delivery, including inactive cases", async (t) => {
+  const { sql, repo } = setup(t),
+    old = "2026-08-01T10:00:00.000Z",
+    now = "2026-09-23T12:00:00.000Z";
+  const cases = [
+    [1, "verified", null, null, null],
+    [2, "verified", "verified", "pending", 2],
+    [3, "verified", "verified", "verified", 1],
+    [4, "verified", "uncertain", "verified", 2],
+    [5, "verified", "verified", "verified", 2],
+    [6, "cancelled", null, null, null],
+    [7, "uncertain", null, null, null],
+  ];
+  for (const [index, handoff, state, history, identity] of cases) {
+    sql.prepare("INSERT INTO assessment_cases (id,external_system,external_id,title,identity_revision,created_at,updated_at) VALUES (?,?,?,?,?,?,?)")
+      .run("c" + index, "bitrix", String(900000 + index), "private-name", 2, old, old);
+    sql.prepare("INSERT INTO assessment_handoffs (id,case_id,request_id,identity_revision,actor_id,authentication,payload_json,payload_hash,state,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+      .run("h" + index, "c" + index, "hr" + index, 2, "worker:ali", "test", '{"credential":"private-key"}', "hash", handoff, old, old);
+    if (state) sql.prepare("INSERT INTO assessment_submissions (id,case_id,request_id,identity_revision,payload_json,payload_hash,actor_id,authentication,state,created_at,updated_at,history_state) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
+      .run("s" + index, "c" + index, "sr" + index, identity, '{"answers":"private-answer"}', "hash", "worker:ali", "test", state, old, old, history);
+  }
+  const handoffsBefore = sql.prepare("SELECT * FROM assessment_handoffs ORDER BY id").all();
+  await repo.record(input({ code: "PAGE_OPEN" }), "worker:ali", old);
+  await repo.prune(now);
+  const result = await repo.summary(now);
+  assert.equal(result.activeCases.length, 0, "expired telemetry must not hide incomplete deliveries");
+  assert.deepEqual(Array.from(result.deliveryGaps, (r) => r.deal_id), ["900001", "900002", "900003", "900004"]);
+  assert.ok(result.deliveryGaps.every((r) => r.code === "HANDOFF_ASSESSMENT_NOT_DELIVERED" && r.action === "handoff" && r.state === "verified"));
+  assert.equal(JSON.stringify(result).includes("private-"), false);
+  assert.deepEqual(sql.prepare("SELECT * FROM assessment_handoffs ORDER BY id").all(), handoffsBefore);
+  sql.prepare("UPDATE assessment_submissions SET history_state='verified' WHERE id='s2'").run();
+  assert.deepEqual(Array.from((await repo.summary(now)).deliveryGaps, (r) => r.deal_id), ["900001", "900003", "900004"], "confirmed delivery clears the computed incident without rewriting the stage receipt");
+});
 test("server diagnostics record failures only on protected assessment routes and absorb database errors", async (t) => {
   const { repo, db } = setup(t),
     actor = { id: "worker:ali" };
@@ -448,14 +481,25 @@ test("production probe checks saved cases without modifying answers and never ex
       "import.meta.url",
       "'file:///synthetic/scripts/monitor-production.mjs'",
     );
-  for (const broken of [false, true]) {
+  for (const mode of ["healthy", "broken", "delivery_gaps", "cohort_signals", "cohort_failed", "cohort_incomplete", "cohort_count", "cohort_private_field", "cohort_duplicate", "cohort_badflag", "cohort_outside"]) {
+    const broken = mode === "broken";
+    const cohortFailure = mode.startsWith("cohort_") && mode !== "cohort_signals";
     const output = {},
       calls = [],
+      logs = [],
       process = { env: { ASSESSMENT_TEST_PASSWORD: "private-password" } };
     const health = {
       version: release.version,
       events: [],
       stuck: [],
+      deliveryGaps: mode === "delivery_gaps"
+        ? ["900002", "900003", "900004", "900005"].map((deal_id) => ({
+            deal_id,
+            action: "handoff",
+            code: "HANDOFF_ASSESSMENT_NOT_DELIVERED",
+            updated_at: "2026-08-01T10:00:00.000Z",
+          }))
+        : [],
       staleClients: [],
       activeCases: [],
     };
@@ -477,7 +521,27 @@ test("production probe checks saved cases without modifying answers and never ex
         return new Response(
           `<body data-assessment-version="${release.version}"><script src="/operations-monitor.js"></script>`,
         );
-      if (path === "/api/assessment/12103")
+      if (path === "/api/lawyer-delivery-audit") {
+        assert.equal(options.method, "GET");
+        if (mode === "cohort_failed") return Response.json({ error: "private-upstream" }, { status: 503 });
+        const cohort = {
+          checkedAt: "2026-09-23T12:00:00.000Z", categoryId: "1", stageId: "C1:NEW", complete: true,
+          count: mode.startsWith("cohort_") ? 3 : 0,
+          cases: mode.startsWith("cohort_") ? ["900010", "900011", "900012"].map((dealId, index) => ({
+            dealId, title: "private-title", clientName: "private-name", procedure: "private-procedure",
+            intakeStyleTitle: index === 1, missingFields: index === 2 ? ["card"] : [], fileCount: 2, hasIin: true,
+            password: "private-key", rawIin: "private-iin", card: "private-card",
+          })) : [],
+        };
+        if (mode === "cohort_incomplete") cohort.complete = false;
+        if (mode === "cohort_count") cohort.count = 4;
+        if (mode === "cohort_private_field") cohort.cases[0].missingFields = ["private-answer"];
+        if (mode === "cohort_duplicate") cohort.cases[1].dealId = cohort.cases[0].dealId;
+        if (mode === "cohort_badflag") cohort.cases[0].intakeStyleTitle = "private-flag";
+        if (mode === "cohort_outside") cohort.stageId = "C13:NEW";
+        return Response.json(cohort);
+      }
+      if (/^\/api\/assessment\/\d+$/.test(path))
         return Response.json({ client: { name: "private-name" } });
       if (path.endsWith("/draft"))
         return Response.json({
@@ -501,30 +565,53 @@ test("production probe checks saved cases without modifying answers and never ex
       AbortSignal,
       process,
       fetch,
-      console: { log: () => {} },
+      console: { log: (line) => logs.push(line) },
       randomUUID: () => webcrypto.randomUUID(),
       readFile: async () => JSON.stringify(release),
       writeFile: async (path, body) => (output[path] = body),
     });
     const report = JSON.parse(output["production-monitor.json"]);
     assert.equal(output["production-monitor.json"].includes("private-"), false);
-    assert.equal(report.healthy, !broken);
+    assert.equal(logs.join("").includes("private-"), false);
+    assert.equal(report.healthy, !broken && !cohortFailure);
     if (broken) {
       assert.equal(process.exitCode, 1);
       assert.equal(report.failure.code, "HTTP_FAILURE");
+    } else if (cohortFailure) {
+      assert.equal(process.exitCode, 1);
+      assert.equal(report.failure.code, "LAWYER_WAITING_MONITOR_FAILED");
+      assert.equal(report.failure.scope, "monitoring", "failed discovery is a monitoring failure, not a site outage classification");
+      assert.equal(report.failure.route, "/api/lawyer-delivery-audit");
+      assert.equal(report.lawyerWaiting, null, "unvalidated or incomplete cohort data is never exported");
     } else {
       assert.equal(report.cases[0].ready, false);
       assert.equal(report.cases[0].missingLoans, null);
       assert.deepEqual(report.cases[0].blockerCodes, ["DOCUMENT_REQUIRED"]);
+      assert.equal(process.exitCode, undefined, "business unreadiness is not a service outage");
+      if (mode === "delivery_gaps") {
+        assert.equal(report.cases.length, 3, "case reads remain bounded");
+        assert.equal(report.incidents.deliveryGaps.length, 4, "unsampled inactive delivery gaps remain actionable in the artifact");
+        assert.ok(report.cases.slice(1).every((c) => health.deliveryGaps.some((g) => g.deal_id === c.dealId)), "delivery gaps supply cases even without recent activity");
+      }
+      if (mode === "cohort_signals") {
+        assert.deepEqual(report.lawyerWaiting, {
+          checkedAt: "2026-09-23T12:00:00.000Z", count: 3, complete: true, classification: "discovery_signals",
+          cases: [
+            { dealId: "900011", intakeStyleTitle: true, missingFields: [], fileCount: 2, hasIin: true },
+            { dealId: "900012", intakeStyleTitle: false, missingFields: ["card"], fileCount: 2, hasIin: true },
+          ],
+        });
+        assert.deepEqual(report.cases.map((row) => row.dealId).sort(), ["12103", "900011", "900012"]);
+        assert.equal(report.incidents.deliveryGaps.length, 0, "title and field signals are not asserted failed transfers");
+      }
     }
     assert.ok(
       calls
         .filter((c) => c.method === "POST")
         .every((c) =>
-          [
+          /^\/api\/assessment\/\d+\/check$/.test(c.path) || [
             "/api/session",
             "/api/operations-monitor",
-            "/api/assessment/12103/check",
           ].includes(c.path),
         ),
     );

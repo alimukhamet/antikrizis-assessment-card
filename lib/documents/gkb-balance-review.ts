@@ -48,7 +48,7 @@ export function gkbBalanceRows(payload:DraftPayload,inspection:GkbBalanceInspect
  });
 }
 export function gkbBalanceEvidence(payload:DraftPayload,inspection:GkbBalanceInspection,short:StoredReport):ApprovedAnswerEvidence[]{
- return gkbBalanceRows(payload,inspection).filter(r=>r.approved&&r.matches).map(r=>({key:'n8040',group:'creditors',row:r.row!,documentId:short.document.id,extractionId:short.extraction.id,factKey:r.decision!.factKey,reviewId:r.decision!.reviewId,value:r.chosenAmount,page:r.shortPage,source:r.decision!.decision==='correct'?`Сотрудник исправил сумму: ${r.decision!.reason}. Извлечённая сумма краткого ГКБ: ${r.amount}, стр. ${r.shortPage}. Договор ${r.contractNumber}, полный ГКБ, стр. ${r.fullPage}.`:`Сумма из краткого ГКБ, стр. ${r.shortPage}; договор ${r.contractNumber} сопоставлен с полным ГКБ, стр. ${r.fullPage}, где остаток не указан. Выбор источника подтверждён сотрудником.`,documentSha256:short.document.original_sha256,documentName:short.document.original_name,reviewedAt:r.decision!.reviewedAt,reviewActorId:r.decision!.actorId,disposition:r.decision!.decision==='correct'?'corrected':'confirmed'}));
+ return gkbBalanceRows(payload,inspection).filter(r=>r.approved&&r.matches).map(r=>({key:'n8040',group:'creditors',row:r.row!,documentId:short.document.id,extractionId:short.extraction.id,factKey:r.decision!.factKey,reviewId:r.decision!.reviewId,value:r.chosenAmount,page:r.shortPage,source:r.decision!.decision==='correct'?`Сотрудник исправил сумму: ${r.decision!.reason}. Извлечённая сумма краткого ГКБ: ${r.amount}, стр. ${r.shortPage}. Договор ${r.contractNumber}, полный ГКБ, стр. ${r.fullPage}.${r.reason==='FULL_TOTAL_UNCONFIRMED'?' Итог полного ГКБ не подтверждён: неустойка не указана.':''}`:`Сумма из краткого ГКБ, стр. ${r.shortPage}; договор ${r.contractNumber} сопоставлен с полным ГКБ, стр. ${r.fullPage}, где ${r.reason==='FULL_TOTAL_UNCONFIRMED'?'итог не подтверждён: неустойка не указана':'остаток не указан'}. Выбор источника подтверждён сотрудником.`,documentSha256:short.document.original_sha256,documentName:short.document.original_name,reviewedAt:r.decision!.reviewedAt,reviewActorId:r.decision!.actorId,disposition:r.decision!.decision==='correct'?'corrected':'confirmed'}));
 }
 export async function loadGkbBalanceReview(repository:EvidenceRepository,record:CaseRow,input:Record<string,unknown>,day:string){
  if(input.identityRevision!==record.identity_revision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
@@ -82,10 +82,13 @@ export async function confirmGkbBalanceReview(repository:EvidenceRepository,reco
    const expected={...inspection,decisions:[{fullIndex:balance.fullIndex,decision,amount,reason,reviewId:'pending',factKey:rowKey(balance.fullIndex),actorId:actor.id,reviewedAt:'',rowReviewId:null}] as SavedDecision[]};
    if(!gkbBalanceRows(payload,expected).find(r=>r.fullIndex===balance.fullIndex)?.matches)throw new RepositoryError('GKB_ANSWERS_NOT_SAVED');
   }
-  const review=await repository.appendReview({caseId:record.id,documentId:short.document.id,extractionId:short.extraction.id,identityRevision:record.identity_revision,requestId:input.requestId,factKey:rowKey(balance.fullIndex),value:{planKey:inspection.planKey,fullIndex:balance.fullIndex,decision,amount,reason},disposition:decision==='confirm'?'confirmed':decision==='correct'?'corrected':'unresolved',reason,...(input.expectedReviewId?{expectedReviewId:input.expectedReviewId as string}:{requireNewReview:true})},actor);
+  const reviewReason=reason+(balance.reason==='FULL_TOTAL_UNCONFIRMED'?' Итог полного ГКБ не подтверждён: неустойка не указана.':'');
+  const review=await repository.appendReview({caseId:record.id,documentId:short.document.id,extractionId:short.extraction.id,identityRevision:record.identity_revision,requestId:input.requestId,factKey:rowKey(balance.fullIndex),value:{planKey:inspection.planKey,fullIndex:balance.fullIndex,decision,amount,reason},disposition:decision==='confirm'?'confirmed':decision==='correct'?'corrected':'unresolved',reason:reviewReason,...(input.expectedReviewId?{expectedReviewId:input.expectedReviewId as string}:{requireNewReview:true})},actor);
   return {reviewId:review.id,reviewedAt:review.created_at};
  }
  // Old open tabs retain their batch action until the first per-loan review.
+ // The new unknown-total proposal has never had a legacy batch approval flow.
+ if(inspection.plan.balances.some(b=>b.reason==='FULL_TOTAL_UNCONFIRMED'))throw new RepositoryError('GKB_REVIEW_CHANGED');
  if(inspection.rowHeads.some(r=>r.reviewId))throw new RepositoryError('GKB_REVIEW_CHANGED');
  const withdraw=input.action==='withdraw';
  if(withdraw){

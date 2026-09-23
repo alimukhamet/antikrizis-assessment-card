@@ -2,21 +2,27 @@ import {requireStaffRequest} from '../../../staff-access';
 import {boundedJson,evidenceContext,evidenceError,operatingDay} from '../../../../../lib/documents/request-context';
 import {RepositoryError} from '../../../../../lib/documents/repository';
 import {HandoffRepository,type HandoffRow} from '../../../../../lib/questionnaire/handoff-repository';
-import {validateHandoffDocuments,runHandoff} from '../../../../../lib/questionnaire/handoff-service';
+import {validateHandoffDocuments,verifyHandoffDelivery,runHandoff} from '../../../../../lib/questionnaire/handoff-service';
+import {SubmissionRepository} from '../../../../../lib/questionnaire/submission-repository';
+import {createAssessmentAdapter} from '../../../../../lib/crm/assessment-write';
 import {UploadManifestRepository} from '../../../../../lib/documents/upload-manifest';
 import {createHandoffAdapter,sameHandoffDestination} from '../../../../../lib/crm/lawyer-handoff';
 import {createCrmDocumentReader,createVerifiedDocumentUploadAdapter} from '../../../../../lib/crm/document-download';
 import {assertSubmissionDestination} from '../../../../../lib/questionnaire/submission-destination';
-async function store(){const {env}=await import('cloudflare:workers');const db=(env as typeof env&{DB?:D1Database}).DB;if(!db)throw new RepositoryError('EVIDENCE_STORAGE_NOT_CONFIGURED',503);return{handoffs:new HandoffRepository(db),manifests:new UploadManifestRepository(db)};}
+async function store(){const {env}=await import('cloudflare:workers');const db=(env as typeof env&{DB?:D1Database}).DB;if(!db)throw new RepositoryError('EVIDENCE_STORAGE_NOT_CONFIGURED',503);return{handoffs:new HandoffRepository(db),manifests:new UploadManifestRepository(db),submissions:new SubmissionRepository(db)};}
 function view(row:HandoffRow|null){return row?{requestId:row.request_id,state:row.state,outcomeCode:row.outcome_code,destination:JSON.parse(row.payload_json).destination,updatedAt:row.updated_at}:null;}
 export async function GET(request:Request,context:{params:Promise<{dealId:string}>}){
  const denied=await requireStaffRequest(request);if(denied)return denied;
  try{
-  const {dealId}=await context.params,{record}=await evidenceContext(request,dealId),{handoffs}=await store();
+  const {dealId}=await context.params,{record,repository}=await evidenceContext(request,dealId),stores=await store(),{handoffs}=stores;
   const current=await handoffs.active(record.id);let destination=null,stageError=null;
   if(current&&current.identity_revision!==record.identity_revision)stageError='CASE_IDENTITY_CHANGED';
   else if(!current)try{destination=await createHandoffAdapter(process.env.BITRIX_WEBHOOK??'').discover(dealId,record.client_iin??'');}catch(error){stageError=error instanceof RepositoryError?error.code:'HANDOFF_STAGE_UNVERIFIED';}
-  return Response.json({handoff:view(current),destination,stageError},{headers:{'cache-control':'no-store'}});
+  const webhook=process.env.BITRIX_WEBHOOK??'';
+  let delivery;
+  try{const verified=await verifyHandoffDelivery({...stores,repository,assessment:createAssessmentAdapter(webhook),upload:createVerifiedDocumentUploadAdapter(webhook,dealId,record.client_iin??''),readFile:createCrmDocumentReader(webhook,dealId,record.client_iin??'')},record,{verifyBytes:false});delivery={ready:true,...verified};}
+  catch(error){delivery={ready:false,code:error instanceof RepositoryError?error.code:'HANDOFF_ASSESSMENT_UNVERIFIED'};}
+  return Response.json({handoff:view(current),destination,stageError,delivery},{headers:{'cache-control':'no-store'}});
  }catch(error){return evidenceError(error);}
 }
 export async function POST(request:Request,context:{params:Promise<{dealId:string}>}){
@@ -39,7 +45,7 @@ export async function POST(request:Request,context:{params:Promise<{dealId:strin
   }
   if(!['send','resume'].includes(String(body.action)))throw new RepositoryError('INVALID_HANDOFF_ACTION',400);
   const reader=createCrmDocumentReader(webhook,dealId,record.client_iin??'');
-  const result=await runHandoff({repository,...stores,stages,upload:createVerifiedDocumentUploadAdapter(webhook,dealId,record.client_iin??''),readFile:reader},record,actor,row,operatingDay());
+  const result=await runHandoff({repository,...stores,stages,assessment:createAssessmentAdapter(webhook),upload:createVerifiedDocumentUploadAdapter(webhook,dealId,record.client_iin??''),readFile:reader},record,actor,row,operatingDay());
   return Response.json({handoff:view(result)},{headers:{'cache-control':'no-store'}});
  }catch(error){return evidenceError(error);}
 }

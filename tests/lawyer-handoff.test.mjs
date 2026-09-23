@@ -53,24 +53,104 @@ test('durable handoff claim is unique across retries and employees, including af
   await assert.rejects(s.handoffs.prepare(record,webcrypto.randomUUID(),payload,actor),/HANDOFF_ALREADY_PENDING/);
  }finally{s.sql.close();}
 });
-test('three stored files are read back before the stage changes; repeat calls never send again',async()=>{
- const s=database(),keyId=webcrypto.randomUUID(),id=webcrypto.randomUUID(),contents={power:new Uint8Array([1,2]),signed:new Uint8Array([3,4]),key:new Uint8Array([5,6])};
- const docs={};for(const [name,bytes]of Object.entries(contents))docs[name]={id:name,original_sha256:await evidence.sha256(bytes),byte_size:bytes.length};
+async function deliveredHandoff(){
+ const s=database(),keyId=webcrypto.randomUUID(),id=webcrypto.randomUUID(),contents={power:new Uint8Array([1,2]),signed:new Uint8Array([3,4]),key:new Uint8Array([5,6]),original:new Uint8Array([7,8])};
+ const docs={};for(const [name,bytes]of Object.entries(contents))docs[name]={id:name,case_id:record.id,original_name:name+'.pdf',original_sha256:await evidence.sha256(bytes),byte_size:bytes.length};
+ const crmFiles=new Map([['11',contents.key],['12',contents.original]]),counts={uploads:0,moves:0,reads:0,assessments:0};
+ const adapter={read:async()=>({iin:record.client_iin,refs:[...crmFiles.keys()].map(id=>({id}))}),append:async(deal,iin,baseline,files)=>{counts.uploads++;const refs=[];for(const file of files){const id=String(11+crmFiles.size);crmFiles.set(id,file.bytes);refs.push({id,name:file.name,sha256:await evidence.sha256(file.bytes)});}return{verified:true,preserved:baseline,files:refs};}};
  const keyManifest={version:1,scope:'credentials',credentialOwnerConfirmed:true,baseline:[],files:[{documentId:'key',name:'synthetic.key',sha256:docs.key.original_sha256,byteSize:2}]};
- const crmFiles=new Map([['11',contents.key]]);let uploads=0,moves=0,reads=0;
- const adapter={read:async()=>({iin:record.client_iin,refs:[...crmFiles.keys()].map(id=>({id}))}),append:async(deal,iin,baseline,files)=>{uploads++;const refs=[];for(const file of files){const id=String(11+crmFiles.size);crmFiles.set(id,file.bytes);refs.push({id,name:file.name,sha256:await evidence.sha256(file.bytes)});}return{verified:true,preserved:baseline,files:refs};}};
+ await s.manifests.prepare(record,keyId,keyManifest,actor);await s.manifests.claim(record,keyId);await s.manifests.finish(record.id,keyId,{verified:true,preserved:[],files:[{id:'11',name:'synthetic.key',sha256:docs.key.original_sha256}]},'VERIFIED');
+ const originalId=webcrypto.randomUUID(),originalManifest={version:1,baseline:[],files:[{documentId:'original',name:'original.pdf',sha256:docs.original.original_sha256,byteSize:2}]};
+ await s.manifests.prepare(record,originalId,originalManifest,actor);await s.manifests.claim(record,originalId);await s.manifests.finish(record.id,originalId,{verified:true,preserved:[],files:[{id:'12',name:'original.pdf',sha256:docs.original.original_sha256}]},'VERIFIED');
+ const repository={document:async(caseId,id)=>caseId===record.id?docs[id]:null,original:async doc=>contents[doc.id],cached:async()=>({result:{read:{totalPages:1},extraction:{identity:{iin:record.client_iin}}}}),credentialStatus:async()=>({verified:true,passwordStored:true,requestId:keyId})};
+ const row=await s.handoffs.prepare(record,id,{destination,powerId:'power',signedId:'signed',credentialRequestId:keyId,reviewIds:[],signedConfirmed:true,confirmedAt:new Date().toISOString()},actor);
+ const payload={values:{iin:record.client_iin},draft:{documents:[{documentId:'original',type:'Удостоверение личности'},{documentId:'original',type:'Удостоверение личности'},{documentId:'power',type:'Доверенность'},{documentId:'signed',type:'Подписанный договор'}]}},submission={case_id:record.id,identity_revision:record.identity_revision,state:'verified',history_state:'verified',history_comment_id:'41',request_id:webcrypto.randomUUID(),payload_hash:'saved-hash',payload_json:JSON.stringify(payload)};
+ const deps={...s,repository,submissions:{latestForCase:async()=>submission},assessment:{reconcile:async(deal,iin,values)=>{counts.assessments++;assert.equal(deal,record.external_id);assert.equal(iin,record.client_iin);assert.deepEqual(JSON.parse(JSON.stringify(values)),payload.values);return{verified:true};}},upload:adapter,readFile:async file=>{counts.reads++;return crmFiles.get(file.id);},stages:{move:async()=>{counts.moves++;return true;},reconcile:async()=>true}};
+ return {...s,deps,row,submission,contents,docs,crmFiles,counts,originalId};
+}
+test('saved intake originals are verified first; unsent handoff docs in the snapshot are uploaded and verified before the stage move',async()=>{
+ const s=await deliveredHandoff();
  try{
-  await s.manifests.prepare(record,keyId,keyManifest,actor);await s.manifests.claim(record,keyId);await s.manifests.finish(record.id,keyId,{verified:true,preserved:[],files:[{id:'11',name:'synthetic.key',sha256:docs.key.original_sha256}]},'VERIFIED');
-  const repository={document:async(caseId,id)=>caseId===record.id?docs[id]:null,original:async doc=>contents[doc.id],cached:async()=>({result:{read:{totalPages:1},extraction:{identity:{iin:record.client_iin}}}}),credentialStatus:async()=>({verified:true,passwordStored:true,requestId:keyId})};
-  const row=await s.handoffs.prepare(record,id,{destination,powerId:'power',signedId:'signed',credentialRequestId:keyId,reviewIds:[],signedConfirmed:true,confirmedAt:new Date().toISOString()},actor);
-  const deps={...s,repository,upload:adapter,readFile:async file=>{reads++;return crmFiles.get(file.id);},stages:{move:async()=>{moves++;assert.equal(reads,3);return true;},reconcile:async()=>true}};
-  const done=await service.runHandoff(deps,record,actor,row,'2026-09-16');assert.equal(done.state,'verified');assert.equal(uploads,2);assert.equal(moves,1);
-  await service.runHandoff(deps,record,actor,done,'2026-09-16');assert.equal(uploads,2);assert.equal(moves,1);
+  assert.deepEqual([...s.crmFiles.keys()],['11','12']);
+  s.deps.stages.move=async()=>{s.counts.moves++;assert.equal(s.counts.reads,5);assert.equal(s.counts.assessments,2);assert.equal(s.counts.uploads,2);assert.deepEqual(s.crmFiles.get('13'),s.contents.power);assert.deepEqual(s.crmFiles.get('14'),s.contents.signed);return true;};
+  const done=await service.runHandoff(s.deps,record,actor,s.row,'2026-09-16');assert.equal(done.state,'verified');assert.equal(s.counts.uploads,2);assert.equal(s.counts.moves,1);
+  s.deps.submissions.latestForCase=async()=>{throw Error('historical stage receipt must remain readable');};
+  await service.runHandoff(s.deps,record,actor,done,'2026-09-16');assert.equal(s.counts.uploads,2);assert.equal(s.counts.moves,1);
  }finally{s.sql.close();}
 });
-test('uncertain operations are read-only and never upload or repeat a stage update',async()=>{
- let reconciles=0;const row={state:'uncertain',actor_id:actor.id,identity_revision:1,payload_json:JSON.stringify({destination}),created_at:'2026-09-16T08:00:00Z'};
- const result=await service.runHandoff({handoffs:{finish:async(record,row,state)=>({state})},stages:{reconcile:async()=>{reconciles++;return false;}}},record,actor,row,'2026-09-16');assert.equal(result.state,'uncertain');assert.equal(reconciles,1);
+test('missing, pending, foreign or changed assessment blocks before any upload or stage write',async()=>{
+ for(const [change,code]of [
+  [s=>s.deps.submissions.latestForCase=async()=>null,'HANDOFF_ASSESSMENT_REQUIRED'],
+  [s=>s.submission.state='prepared','HANDOFF_ASSESSMENT_PENDING'],
+  [s=>s.submission.history_state='uncertain','HANDOFF_ASSESSMENT_PENDING'],
+  [s=>s.submission.history_comment_id=null,'HANDOFF_ASSESSMENT_PENDING'],
+  [s=>s.submission.case_id='other-case','HANDOFF_ASSESSMENT_CHANGED'],
+  [s=>s.submission.identity_revision=2,'HANDOFF_ASSESSMENT_CHANGED'],
+  [s=>s.deps.assessment.reconcile=async()=>({verified:false}),'HANDOFF_ASSESSMENT_CHANGED'],
+  [s=>s.deps.assessment.reconcile=async()=>{throw Error('read failed');},'HANDOFF_ASSESSMENT_UNVERIFIED'],
+ ]){
+  const s=await deliveredHandoff();try{change(s);await assert.rejects(service.runHandoff(s.deps,record,actor,s.row,'2026-09-16'),new RegExp(code));assert.equal(s.counts.uploads,0);assert.equal(s.counts.moves,0);assert.equal((await s.handoffs.get(record.id,s.row.request_id)).state,'prepared');}finally{s.sql.close();}
+ }
+});
+test('missing upload receipts, removed originals and changed original bytes cannot pass handoff',async()=>{
+ for(const [change,code]of [
+  [s=>s.sql.prepare("UPDATE assessment_upload_manifests SET state='uncertain' WHERE request_id=?").run(s.originalId),'HANDOFF_ORIGINALS_REQUIRED'],
+  [s=>s.crmFiles.delete('12'),'HANDOFF_ORIGINAL_REMOVED'],
+  [s=>s.crmFiles.set('12',new Uint8Array([8,7])),'HANDOFF_ORIGINAL_CHANGED'],
+  [s=>delete s.docs.original,'HANDOFF_ORIGINALS_REQUIRED'],
+ ]){
+  const s=await deliveredHandoff();try{change(s);await assert.rejects(service.runHandoff(s.deps,record,actor,s.row,'2026-09-16'),new RegExp(code));assert.equal(s.counts.uploads,0);assert.equal(s.counts.moves,0);}finally{s.sql.close();}
+ }
+});
+test('an empty intake package cannot be replaced by only signed contract and power of attorney',async()=>{
+ for(const keepHandoffDocuments of [true,false]){
+  const s=await deliveredHandoff();try{
+   const payload=JSON.parse(s.submission.payload_json);payload.draft.documents=keepHandoffDocuments?payload.draft.documents.filter(doc=>['Доверенность','Подписанный договор'].includes(doc.type)):[];s.submission.payload_json=JSON.stringify(payload);
+   await assert.rejects(service.runHandoff(s.deps,record,actor,s.row,'2026-09-16'),/HANDOFF_ORIGINALS_REQUIRED/);
+   assert.equal(s.counts.uploads,0);assert.equal(s.counts.moves,0);
+  }finally{s.sql.close();}
+ }
+});
+test('snapshot handoff documents are still blocked if their uploaded bytes differ from the selected originals',async()=>{
+ const s=await deliveredHandoff();try{
+  const append=s.deps.upload.append;s.deps.upload.append=async(...args)=>{const receipt=await append(...args);if(s.counts.uploads===2)s.crmFiles.set(receipt.files[0].id,new Uint8Array([8,7]));return receipt;};
+  await assert.rejects(service.runHandoff(s.deps,record,actor,s.row,'2026-09-16'),/HANDOFF_FILE_CHANGED/);
+  assert.equal(s.counts.uploads,2);assert.equal(s.counts.moves,0);assert.equal((await s.handoffs.get(record.id,s.row.request_id)).state,'prepared');
+ }finally{s.sql.close();}
+});
+test('assessment changes during uploads are caught again before claiming the stage transition',async()=>{
+ const s=await deliveredHandoff();try{
+  s.deps.assessment.reconcile=async()=>({verified:++s.counts.assessments===1});
+  await assert.rejects(service.runHandoff(s.deps,record,actor,s.row,'2026-09-16'),/HANDOFF_ASSESSMENT_CHANGED/);
+  assert.equal(s.counts.uploads,2);assert.equal(s.counts.moves,0);assert.equal((await s.handoffs.get(record.id,s.row.request_id)).state,'prepared');
+ }finally{s.sql.close();}
+});
+test('original changes during uploads are caught again before claiming the stage transition',async()=>{
+ const s=await deliveredHandoff();try{
+  const append=s.deps.upload.append;s.deps.upload.append=async(...args)=>{const receipt=await append(...args);s.crmFiles.set('12',new Uint8Array([8,7]));return receipt;};
+  await assert.rejects(service.runHandoff(s.deps,record,actor,s.row,'2026-09-16'),/HANDOFF_ORIGINAL_CHANGED/);
+  assert.equal(s.counts.uploads,2);assert.equal(s.counts.moves,0);assert.equal((await s.handoffs.get(record.id,s.row.request_id)).state,'prepared');
+ }finally{s.sql.close();}
+});
+test('a different saved submission appearing during upload cannot inherit the prepared delivery proof',async()=>{
+ const s=await deliveredHandoff();try{
+  let checks=0;s.deps.submissions.latestForCase=async()=>++checks===1?s.submission:{...s.submission,request_id:webcrypto.randomUUID()};
+  await assert.rejects(service.runHandoff(s.deps,record,actor,s.row,'2026-09-16'),/HANDOFF_ASSESSMENT_CHANGED/);
+  assert.equal(s.counts.uploads,2);assert.equal(s.counts.moves,0);assert.equal((await s.handoffs.get(record.id,s.row.request_id)).state,'prepared');
+ }finally{s.sql.close();}
+});
+test('status inspection verifies assessment and current original refs without downloading original bytes',async()=>{
+ const s=await deliveredHandoff();try{
+  const result=await service.verifyHandoffDelivery(s.deps,record,{verifyBytes:false});
+  assert.equal(result.requestId,s.submission.request_id);assert.equal(result.originals,1);assert.equal(s.counts.assessments,1);assert.equal(s.counts.reads,0);assert.equal(s.counts.uploads,0);assert.equal(s.counts.moves,0);
+  s.crmFiles.delete('12');await assert.rejects(service.verifyHandoffDelivery(s.deps,record,{verifyBytes:false}),/HANDOFF_ORIGINAL_REMOVED/);assert.equal(s.counts.reads,0);
+ }finally{s.sql.close();}
+});
+test('writing and uncertain operations reconcile read-only even if current delivery is missing',async()=>{
+ for(const state of ['writing','uncertain']){
+  let reconciles=0;const row={state,actor_id:actor.id,identity_revision:1,payload_json:JSON.stringify({destination}),created_at:'2026-09-16T08:00:00Z'};
+  const result=await service.runHandoff({submissions:{latestForCase:async()=>{throw Error('delivery guard must not replay claimed operations');}},handoffs:{finish:async(record,row,state)=>({state})},stages:{reconcile:async()=>{reconciles++;return false;}}},record,actor,row,'2026-09-16');assert.equal(result.state,'uncertain');assert.equal(reconciles,1);
+ }
 });
 test('signed PDF ownership and saved credentials are required independently of contract intake',async()=>{
  const repo={document:async()=>({id:'signed',original_sha256:'hash'}),cached:async()=>({result:{read:{totalPages:1},extraction:{identity:{iin:'other'}}}}),credentialStatus:async()=>null};

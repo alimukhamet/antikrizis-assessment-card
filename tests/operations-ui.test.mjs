@@ -37,7 +37,7 @@ async function setup(t,{identity=null,mode='contract',draft=null,stageError=null
   else if(path.endsWith('/submission'))result={submission:null};
   else if(path.endsWith('/uploads'))result={unsent:null};
   else if(path.endsWith('/credentials'))result={credentials:{verified:false},identityRevision:1};
-  else if(path.endsWith('/handoff'))result={handoff,destination,stageError};
+  else if(path.endsWith('/handoff'))result={handoff,destination,stageError,delivery:{ready:true}};
   else if(analyze&&path.endsWith('/analyze'))return analyze(path,options,context);
   else if(path.endsWith('/documents/power/analyze'))result={...context,documentId:'power',extractionId:'parsed-power',eligibleForAutofill:true,document:{totalPages:2,pages:[{text:'Synthetic page',needsOcr:false},{text:'Synthetic page two',needsOcr:false}],extraction:{identity:{iin:context.client.iin},kind:'power_of_attorney',facts:[],credits:[],findings:[]}},reviewContext:{pages:2,iin:context.client.iin}};
   else if(path.endsWith('/handoff-check'))result={identityRevision:1,documents:{packageReady:powerReady,issues:powerReady?[]:[{code:'POWER_SCOPE_REVIEW_REQUIRED',documentId:'power',message:'Сверьте полномочия.'}],manuallyReviewed:[],structurallyChecked:powerReady?['Доверенность']:[]}};

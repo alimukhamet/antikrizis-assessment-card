@@ -193,6 +193,20 @@ export class OperationsRepository {
         .all();
       stuck.push(...rows.results.map((row) => ({ ...row, action })));
     }
+    // A verified stage change proves only the handoff itself. Missing assessment
+    // delivery remains actionable until both receipts exist for the current
+    // identity, even when nobody has opened the case in the last 24 hours.
+    const deliveryGaps = await this.db
+      .prepare(
+        `SELECT c.external_id AS deal_id,h.id AS operation_id,h.state,h.updated_at,
+      'handoff' AS action,'HANDOFF_ASSESSMENT_NOT_DELIVERED' AS code
+    FROM assessment_handoffs h JOIN assessment_cases c ON c.id=h.case_id
+    WHERE h.state='verified' AND NOT EXISTS (
+      SELECT 1 FROM assessment_submissions s WHERE s.case_id=c.id
+      AND s.identity_revision=c.identity_revision AND s.state='verified' AND s.history_state='verified'
+    ) ORDER BY h.updated_at,h.id LIMIT 200`,
+      )
+      .all();
     const activity = await this.db
       .prepare(
         "SELECT MAX(created_at) AS last_seen,COUNT(*) AS samples FROM assessment_operations_events WHERE created_at>=?",
@@ -207,6 +221,7 @@ export class OperationsRepository {
       staleClients: stale.results,
       activeCases: activeCases.results,
       stuck,
+      deliveryGaps: deliveryGaps.results,
       activity,
     };
   }
