@@ -1,5 +1,7 @@
 # Antikrizis assessment and document intake
 
+Project ownership, unresolved issues and completion rules are maintained in [RELIABILITY.md](RELIABILITY.md). Agents working on this project must also follow [AGENTS.md](AGENTS.md).
+
 For deployment outside ChatGPT Sites, start with
 [OWN_HOSTING_HANDOFF.md](OWN_HOSTING_HANDOFF.md) and
 [environment.example](environment.example).
@@ -48,7 +50,7 @@ The Site manifest declares `DB` and `FILES`. Required server secrets are `BITRIX
 
 Authentication defaults to the canonical payment-control Site. `AUTH_PROVIDER=local` with `SITE_ACCESS_PASSWORD` is reserved for deliberately isolated tests. Do not use that override in the user preview or release. The inherited shared-password/worker-selection mechanism is not individual identity verification. Login uses a native POST form and checks the saved cookie before entering the protected page. A missing cookie has a distinct error; passwords never enter redirect URLs.
 
-Keep `.env*`, `.dev.vars*`, local databases, real keys, CRM responses and recovery bundles out of source and release archives. See [RELEASE_RECOVERY.md](RELEASE_RECOVERY.md) before publishing.
+Keep `.env*`, `.dev.vars*`, local databases, real keys, CRM responses and recovery bundles out of source and release archives. Use [RELIABILITY.md](RELIABILITY.md) for the current production release path. [RELEASE_RECOVERY.md](RELEASE_RECOVERY.md) preserves the historical Sites recovery procedure and case-data preservation rules.
 
 ## Verification limits
 

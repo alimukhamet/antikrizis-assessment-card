@@ -2,9 +2,9 @@
 
 Publish the combined application only through the `deploy/anti-krizis` branch and its GitHub release workflow. Direct local Wrangler publication is blocked: an older checkout previously replaced newer intake screens while publishing earnings changes. Preserve and merge both areas before release. Do not remove the guard to publish a feature from an old checkout.
 
-# Release and recovery
+# Historical Sites release and recovery reference
 
-Checked on **12 September 2026**. Publication and pushing the canonical repository await user approval. This procedure is not proof of a hosted rollback.
+Checked on **12 September 2026**. The publication state and approval gates below describe that historical Sites migration, not the current assessment.anti-krizis.kz release process. For current deployment use the canonical GitHub workflow described in [RELIABILITY.md](RELIABILITY.md). Retain the case-data preservation rules below; this reference is not proof of a current hosted rollback.
 
 ## Published recovery reference
 
