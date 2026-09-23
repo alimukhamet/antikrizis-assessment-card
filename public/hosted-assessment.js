@@ -32,6 +32,7 @@ window.HostedAssessment=(()=>{
   const cancel=()=>controller.abort();
   if(options.signal?.aborted)cancel();else options.signal?.addEventListener('abort',cancel,{once:true});
   const failure=code=>{
+   window.OperationsMonitor?.requestFailure(url,code);
    if(code==='SIGN_IN_REQUIRED')sessionRecovery();
    if(code==='EXTRACTION_VERSION_CHANGED')recognitionRecovery();
    const messages={SERVER_UNAVAILABLE:'Сервис временно недоступен. Ответы не удалены. Повторите действие.',INVALID_SERVER_RESPONSE:'Не удалось прочитать ответ сервера. Ответы не удалены. Повторите действие.'};

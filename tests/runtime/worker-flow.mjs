@@ -48,6 +48,12 @@ test('built Worker persists a complete contract and recovers a handoff without d
  await api('/api/assessment/900001',undefined,401);
  await api('/api/session',{worker:'ali',password:'synthetic-password'});
  assert.equal((await api('/api/session')).ok,true);
+ const monitorEvent={id:crypto.randomUUID(),dealId:'900001',action:'draft',code:'NETWORK_FAILURE',clientVersion:'assessment-synthetic'};
+ assert.equal((await api('/api/operations-monitor',monitorEvent)).accepted,true);
+ assert.equal((await api('/api/operations-monitor',monitorEvent)).accepted,false);
+ assert.equal((await api('/api/operations-monitor')).events[0].deal_id,'900001');
+ const crossOriginMonitor=await mf.dispatchFetch(origin+'/api/operations-monitor',{method:'POST',headers:{origin:'https://untrusted.synthetic.invalid',cookie,'content-type':'application/json'},body:JSON.stringify(monitorEvent)});
+ assert.equal(crossOriginMonitor.status,403);await crossOriginMonitor.arrayBuffer();
  const crossOrigin=await mf.dispatchFetch(origin+'/api/assessment/900001/draft',{method:'POST',headers:{origin:'https://untrusted.synthetic.invalid',cookie,'content-type':'application/json'},body:'{}'});
  assert.equal(crossOrigin.status,403);await crossOrigin.arrayBuffer();
  for(const method of ['crm.deal.update','crm.timeline.comment.add','crm.item.update'])assert.equal((await api('/api/bitrix/'+method,{id:900001},410)).error,'OLD_TOOL_RETIRED');
@@ -84,6 +90,7 @@ test('built Worker persists a complete contract and recovers a handoff without d
  assert.equal(handoff.handoff.state,'uncertain',JSON.stringify(handoff));assert.equal(crm.counts.stageWrites,1);
  // Destroy the process, preserving only D1/R2 and the remote CRM state.
  await mf.dispose();crm.restore();mf=new Miniflare(options);
+ assert.equal((await api('/api/operations-monitor')).events[0].occurrences,1,'automatic diagnostics survive a Worker restart');
  const resumed=await api(root+'/handoff',{action:'resume',requestId:handoffRequest,destination});
  assert.equal(resumed.handoff.state,'verified',JSON.stringify(resumed));
  const counts={...crm.counts};

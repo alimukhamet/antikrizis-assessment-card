@@ -68,7 +68,10 @@ jobs:
         run: npm run test:runtime
 
       - name: Deploy existing Worker configuration
-        run: npx --no-install wrangler deploy --keep-vars --config wrangler.anti-krizis.jsonc
+        # Apply only this additive, idempotent telemetry schema; no customer tables change.
+        run: |
+          npx --no-install wrangler d1 execute DB --remote --config wrangler.anti-krizis.jsonc --file drizzle/0012_operations_events.sql
+          npx --no-install wrangler deploy --keep-vars --config wrangler.anti-krizis.jsonc
 
       - name: Verify live contract assets
         run: |
@@ -77,6 +80,7 @@ jobs:
           paths=(
             'tools-home.js'
             'app-ready.js'
+            'operations-monitor.js'
             'client-context-ui.js'
             'client-workspace.js'
             'operations-config.js'
@@ -147,6 +151,7 @@ jobs:
         run: |
           node scripts/audit-live-tools.mjs
           node scripts/audit-live-knowledge.mjs
+          node scripts/monitor-production.mjs
 
       - name: Preserve live audit result
         if: always()
@@ -156,5 +161,6 @@ jobs:
           path: |
             live-tools-audit.json
             live-knowledge-audit.json
+            production-monitor.json
           if-no-files-found: ignore
           retention-days: 1

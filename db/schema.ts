@@ -1,5 +1,10 @@
 import { sqliteTable, text, integer, real, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
 import {sql} from 'drizzle-orm';
+export const operationsEvents=sqliteTable('assessment_operations_events',{
+ id:text('id').primaryKey(),actorId:text('actor_id').notNull(),dealId:text('deal_id'),action:text('action').notNull(),code:text('code').notNull(),
+ clientVersion:text('client_version').notNull(),serverVersion:text('server_version').notNull(),status:integer('status').notNull(),
+ asset:text('asset'),line:integer('line'),createdAt:text('created_at').notNull(),
+},t=>[index('assessment_operations_time').on(t.createdAt),index('assessment_operations_actor_time').on(t.actorId,t.createdAt)]);
 export const assessmentCases = sqliteTable('assessment_cases', {
   id:text('id').primaryKey(), externalSystem:text('external_system').notNull(), externalId:text('external_id').notNull(),
   clientIin:text('client_iin'), identityRevision:integer('identity_revision').notNull().default(1), title:text('title').notNull(),

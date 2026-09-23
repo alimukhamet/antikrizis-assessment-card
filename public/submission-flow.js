@@ -13,7 +13,7 @@ window.SubmissionFlow={contractFilename(data,dealId){
  let checked=null,attempt=null,latest=null,busy=false,busyLabel='Скачать договор',generation=0,destination=null,destinationSnapshot=null;
  const progress=()=>document.dispatchEvent(new CustomEvent('assessment-submission-progress',{detail:{busy,label:busy?busyLabel:'Скачать договор',message:status.textContent}}));
  const report=text=>{status.textContent=text;progress();};
- const intakeMessage=sync=>sync?.status==='synced'?'Передача в юридическую CRM подтверждена.':sync?.status==='disabled'||sync?.status==='failed'?'Передача в юридическую CRM не подтверждена. Сообщите ответственному за интеграцию.':'Передача в юридическую CRM пока не подтверждена. Нажмите «Проверить передачу в юридическую CRM».';
+ const intakeMessage=sync=>{if(sync?.status==='disabled'||sync?.status==='failed')window.OperationsMonitor?.record('CRM_INTAKE_FAILED',{action:'intake'});return sync?.status==='synced'?'Передача в юридическую CRM подтверждена.':sync?.status==='disabled'||sync?.status==='failed'?'Передача в юридическую CRM не подтверждена. Сообщите ответственному за интеграцию.':'Передача в юридическую CRM пока не подтверждена. Нажмите «Проверить передачу в юридическую CRM».';};
  const phase=(label,message)=>{busyLabel=label;save.textContent=label;if(message!==undefined)report(message);else progress();};
  new MutationObserver(()=>{if(busy)progress();}).observe(status,{childList:true,characterData:true,subtree:true});
  const currentDeal=()=>HostedAssessment.ready()?HostedAssessment.getContext().client.external.dealId:null;

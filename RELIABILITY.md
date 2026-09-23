@@ -2,7 +2,7 @@
 
 ## Ownership and completion rules — 23 September 2026
 
-Codex owns technical triage, prioritization, fixes, regression prevention and verification. Ali owns business decisions and approvals that change the authorized scope. Employees report through `/assessment-feedback`; Ali can identify a problem by deal ID. Inspect the recorded report before asking an employee to repeat it.
+Codex owns technical triage, prioritization, fixes, regression prevention and verification. Ali owns business decisions and approvals that change the authorized scope. Automatic diagnostics and scheduled checks are the first source of incidents; employee reports are optional additional evidence. Ali can identify a problem by deal ID. Inspect diagnostics, saved state and reports before asking an employee to repeat anything.
 
 Prioritize lost or corrupted data, duplicate external actions and wrong-client documents first; blocked employee work second; confusing labels and unnecessary steps next. Preserve every active loan and its provenance. Uncertainty must lead to a clear manager action, without invented amounts, approvals or missing-loan suppression.
 
@@ -53,7 +53,7 @@ The fixture seeds explicit extracted document results. It does not prove PDF int
 
 `Tools 03 and 04 audit` can be dispatched on `deploy/anti-krizis` without changing client answers or CRM business data. The normal audit signs in with the existing test secret, reads saved drafts, submissions, uploads, credentials and handoff state, and runs the read-only final check. It fails for authentication, API, storage recovery or contract retrieval errors. The optional saved-analysis refresh is separate and disabled by default.
 
-After every release the deploy workflow runs the same read-only audit. This is a release check, not continuous monitoring. GitHub cron only runs workflows on the repository's default branch; adding a schedule to the deployment branch alone would provide no coverage.
+After every release the deploy workflow runs the same read-only audit and the production monitoring probe. Recurring monitoring is configured separately below. GitHub schedules only run workflows on the repository default branch; the monitoring workflow must exist on `main`, even though it checks out `deploy/anti-krizis`.
 
 ## Remaining live acceptance
 
@@ -77,3 +77,16 @@ Automatic production asset and authenticated readback checks run inside the depl
 ENPF coverage now recognizes the labelled “Весь период” value in the immutable first-page text. It uses the printed issue date, accepts the all-history coverage without inventing a start date, and retains missing-date, future-date, wrong-client and unreadable-page gates. This policy check also applies to existing cached analyses, preserving extraction receipts and employee inspections.
 
 Typed document-review fields are saved with the versioned assessment draft, keyed by document and type. They survive rechecking and reload; confirmation checkboxes and approval flags are excluded. Accepted document inspections return their saved dates. A duplicate file selected under a wrong type remains an actionable error but no longer hides a valid inspection of that same file under its correct type.
+
+
+## Proactive monitoring — 23 September 2026
+
+Implementation and activation must be verified independently; the release evidence is recorded after publication.
+
+- `operations-monitor.js` observes questionnaire/handoff browser errors, failed assessment API calls, known stale-version/save failures and contract actions busy for three minutes. Successful browser work is never retried or changed by diagnostics. Reports include deal ID, action, stable code, release and timing; no raw errors, input values, document text or credentials. Client events are deduplicated and bounded. Failed delivery is retried while the tab remains open; an offline or closed tab can lose undelivered diagnostics.
+- The Worker records assessment API 5xx failures independently. D1 stores diagnostics in `assessment_operations_events`; this release adds only that table and indexes. An unavailable diagnostics database does not replace the business response. Staff can submit their own diagnostics; only Ali can read the combined owner view at `/assessment-feedback`.
+- `scripts/monitor-production.mjs` signs in normally, verifies configuration, diagnostic persistence, the current client release, saved drafts and read-only checks for up to three cases. It distinguishes technical availability from business readiness. Missing/duplicate active loans appear as counts; unknown coverage stays unknown. It does not submit contracts, approve evidence, change answers or reprocess documents.
+- `Production monitoring` is scheduled in GitHub every 15 minutes at minutes 7, 22, 37 and 52. Scheduled execution can be delayed. Its artifact records automatic incidents from the last 24 hours and external operations still writing/uncertain after 15 minutes. Historical incidents remain visible; their presence alone does not turn every check into a new outage. Probe artifacts expire after seven days. The successful owner probe removes diagnostics older than 30 days from this telemetry table only; business records and originals are untouched.
+- The `Assessment reliability` Codex heartbeat reviews results hourly, investigates actionable changes, and keeps unchanged checks quiet. Local Codex follow-up requires the host/app to be available; GitHub probes run independently in the cloud. Check the monitor itself if its latest result is older than 45 minutes. State belongs in `../../outputs/operations-monitor-state.json`, outside Git, and must not contain client content.
+- Review new incidents by signature, affected deal and saved operation receipt before retrying. Update this register with cause, fix, release and actual verification. A technical fix can be released under existing authorization; client decisions and evidence approval still belong to the manager. Escalate only a required business decision, unavailable access, or a consequential action outside that scope.
+- Existing pre-monitor browser tabs need one safe reload or a fresh tab to acquire this code. Later version differences offer a new tab while preserving unsaved input in the original. This does not prove universal OCR accuracy or full employee acceptance, and it does not close the open issues above.

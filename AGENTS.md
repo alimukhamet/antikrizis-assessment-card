@@ -10,4 +10,4 @@ The owner asked Codex to act as project manager and technical owner on 23 Septem
 - For a release, use the existing canonical GitHub workflow and preserve concurrent changes. Test old open tabs, reload and saved-state recovery when relevant to the change.
 - Update the register as evidence changes. Give the owner a concise result, remaining blocker and next action. Do not claim ongoing background work unless an actual automation is configured.
 
-These rules supplement the user's model, authorization and business instructions; they do not expand permission to submit real contracts, change client facts, transmit credentials or create recurring jobs.
+On 23 September the owner explicitly requested proactive detection without employee reports. The `Assessment reliability` hourly thread automation is authorized to inspect monitoring results, investigate and release focused technical repairs through the canonical workflow. Keep unchanged checks quiet. This authorization does not permit submitting real contracts for tests, changing client facts, transmitting credentials or messaging employees.
