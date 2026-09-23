@@ -11,6 +11,38 @@ import {ASSESSMENT_FIELDS} from '../crm/assessment-write';
 import {bitrixHeaders} from '../crm/http-headers';
 import type {Actor} from '../worker-session';
 
+/** These two incident batches are small. A fixed byte body gives Bitrix a
+ * Content-Length; an arbitrary Worker stream instead uses chunked encoding.
+ * Keep a hard bound before allocating, and never retry the network write. */
+export function recoveryTransport(send:typeof fetch=fetch):typeof fetch{
+ return (async(input:RequestInfo|URL,init?:RequestInit)=>{
+  if(init?.body instanceof ReadableStream){
+   const reader=init.body.getReader(),chunks:Uint8Array[]=[];let size=0;
+   try{while(true){const next=await reader.read();if(next.done)break;size+=next.value.byteLength;if(size>5*1024*1024)throw new RepositoryError('RECOVERY_TRANSPORT_TOO_LARGE');chunks.push(next.value);}}
+   catch(error){await reader.cancel();throw error;}
+   const body=new Uint8Array(size);let offset=0;for(const chunk of chunks){body.set(chunk,offset);offset+=chunk.length;}
+   return send(input,{...init,body});
+  }
+  return send(input,init);
+ }) as typeof fetch;
+}
+/** Diagnostic requests only crm.item.get and returns no client fields. */
+export async function probeRecoveryTransport(webhook:string,dealId:string,send:typeof fetch=fetch){
+ if(!RECOVERY_SOURCES[dealId])throw new RepositoryError('RECOVERY_SOURCE_CHANGED');
+ const bytes=new TextEncoder().encode(JSON.stringify({entityTypeId:2,id:dealId,transportProbe:'x'.repeat(512*1024)}));
+ const results=[];
+ for(const kind of ['fixed','stream'] as const){
+  const start=Date.now();
+  try{
+   const body=kind==='fixed'?bytes:new ReadableStream({start(c){c.enqueue(bytes);c.close();}});
+   const response=await send(webhook.replace(/\/?$/,'/')+'crm.item.get.json',{method:'POST',headers:bitrixHeaders(webhook),body,signal:AbortSignal.timeout(12000),redirect:'manual',duplex:'half'} as RequestInit);
+   const data=await response.json() as {result?:{item?:{id?:number|string}};error?:string};
+   results.push({kind,status:response.status,matched:String(data.result?.item?.id)===dealId,milliseconds:Date.now()-start});
+  }catch{results.push({kind,matched:false,failed:true,milliseconds:Date.now()-start});}
+ }
+ return {readOnly:true,results};
+}
+
 // Incident recovery is deliberately bounded to the two immutable employee saves
 // the owner asked us to recover. This is not an alternate final-submission path.
 export const RECOVERY_SOURCES:Record<string,{draft:string;handoff:string}>={
@@ -117,7 +149,7 @@ export async function runDraftRecovery(store:DraftRecoveryRepository,evidence:Ev
  }
  // A retry never repeats the questionnaire write, including after a process restart.
  if(!await crm.reconcile(plan)){await store.finish(record.id,false);return {state:'uncertain',finalAssessment:false};}
- const manifests=new UploadManifestRepository(store.db),adapter=uploadAdapter??createVerifiedDocumentUploadAdapter(webhook,record.external_id,record.client_iin!);
+ const manifests=new UploadManifestRepository(store.db),adapter=uploadAdapter??createVerifiedDocumentUploadAdapter(webhook,record.external_id,record.client_iin!,recoveryTransport());
  for(let index=0;index<plan.files.batches.length;index++){
   await store.source(record);
   if(!await crm.reconcile(plan))throw new RepositoryError('RECOVERY_CRM_CHANGED');

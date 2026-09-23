@@ -50,3 +50,14 @@ test('original-file receipt survives lost responses and restart without duplicat
  const saved=f.sql.prepare('SELECT * FROM assessment_upload_manifests').get();assert.equal(saved.state,'verified');assert.deepEqual(JSON.parse(saved.manifest_json).reviewIds,[]);assert.match(JSON.parse(saved.manifest_json).planHash,/^draft-recovery:/);
 });
 test('cancel is allowed only before a write claim and releases a prepared recovery lock',async t=>{const f=await fixture(t),{plan}=await planFor(transport());plan.sourceHash=f.sourceHash;const h=await hash(JSON.stringify(plan));await f.store.prepare(f.record,plan,owner,h);assert.equal((await f.store.cancel(f.record.id,h)).state,'cancelled');assert.equal(await f.store.claim(f.record),false);});
+test('bounded recovery transport sends exact fixed bytes once and preserves failures without retries',async()=>{
+ const bytes=new TextEncoder().encode('original Кириллица bytes');let calls=0;
+ const send=mod.recoveryTransport(async(_url,init)=>{calls++;assert.ok(init.body instanceof Uint8Array);assert.deepEqual(init.body,bytes);throw Error('lost');});
+ await assert.rejects(send('https://synthetic.invalid/',{body:new ReadableStream({start(c){c.enqueue(bytes.subarray(0,3));c.enqueue(bytes.subarray(3));c.close();}})}),/lost/);assert.equal(calls,1);
+ let cancelled=false;
+ await assert.rejects(send('https://synthetic.invalid/',{body:new ReadableStream({pull(c){c.enqueue(new Uint8Array(6*1024*1024));},cancel(){cancelled=true;}})}),/RECOVERY_TRANSPORT_TOO_LARGE/);assert.equal(cancelled,true);assert.equal(calls,1);
+});
+test('transport diagnostic uses read-only method, hides client fields and continues after timeout',async()=>{
+ const methods=[];const result=await mod.probeRecoveryTransport('https://synthetic.invalid/rest/','11727',async(url,init)=>{methods.push(url);if(init.body instanceof ReadableStream)throw Error('timeout');return {status:200,json:async()=>({result:{item:{id:11727,secret:'must not export'}}})};});
+ assert.equal(result.readOnly,true);assert.equal(result.results[0].matched,true);assert.equal(result.results[1].failed,true);assert.ok(methods.every(u=>u.endsWith('/crm.item.get.json')));assert.equal(JSON.stringify(result).includes('secret'),false);
+});

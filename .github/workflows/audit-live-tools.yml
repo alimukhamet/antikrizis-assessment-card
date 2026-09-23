@@ -6,6 +6,10 @@ on:
         description: 'Optional additional deal: read saved document diagnostics, with no draft or CRM writes'
         type: string
         default: ''
+      recovery_probe_only:
+        description: 'Read-only comparison of fixed-length and streaming Bitrix requests'
+        type: boolean
+        default: false
       recover_draft_delivery:
         description: 'Owner-authorized recovery of the pinned existing draft and originals; no final approval'
         type: boolean
@@ -126,6 +130,7 @@ jobs:
         env:
           ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
           RECOVERY_DEAL_ID: ${{ inputs.deal_id }}
+          RECOVERY_PROBE_ONLY: ${{ inputs.recovery_probe_only }}
         run: node scripts/recover-draft-delivery.mjs
       - uses: actions/upload-artifact@v4
         if: always()

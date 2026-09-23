@@ -15,6 +15,7 @@ try{
  if(!['11727','12221'].includes(dealId)||!process.env.ASSESSMENT_TEST_PASSWORD)throw Error('EXACT_RECOVERY_TARGET_REQUIRED');
  await request('/api/session',{worker:'ali',password:process.env.ASSESSMENT_TEST_PASSWORD});
  const root='/api/assessment/'+dealId;
+ if(process.env.RECOVERY_PROBE_ONLY==='true'){report.probe=await request(root+'/draft-recovery',{action:'probe-transport'});await writeFile('draft-delivery-recovery.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));process.exit(0);}
  const draftBefore=await request(root+'/draft'),sourceBefore=(await request(root+'/export',null,true)).trim().split('\n').map(v=>JSON.parse(v));
  const unchangedRows=v=>v.filter(r=>['document','extraction','questionnaire-draft','review','assessment-submission'].includes(r.type));
  const before=(await request('/api/bitrix/crm.deal.get',{id:dealId})).result;
