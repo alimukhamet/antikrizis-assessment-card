@@ -123,7 +123,7 @@ test("payload validation discards sensitive extra data and rejects unsupported r
     "analysis",
   );
 });
-test("summary finds unfinished external writes, excludes completed/recent/prepared operations and probes", async (t) => {
+test("summary finds stuck preparations and unfinished writes, excludes completed/recent operations and probes", async (t) => {
   const { sql, repo } = setup(t),
     now = "2026-09-23T12:00:00.000Z",
     old = "2026-09-23T11:00:00.000Z";
@@ -178,7 +178,7 @@ test("summary finds unfinished external writes, excludes completed/recent/prepar
   assert.equal(result.events[0].occurrences, 1);
   assert.deepEqual(
     Array.from(result.stuck, (r) => r.operation_id),
-    ["s1", "s5"],
+    ["s1", "s3", "s5"],
   );
   assert.equal(result.staleClients.length, 1);
   assert.equal(result.activity.samples, 3);

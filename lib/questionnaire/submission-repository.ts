@@ -30,6 +30,7 @@ export class SubmissionRepository {
  constructor(private db:D1Database){}
  get(caseId:string,requestId:string){return this.db.prepare('SELECT * FROM assessment_submissions WHERE case_id=? AND request_id=?').bind(caseId,requestId).first<SubmissionRow>();}
  latest(caseId:string,actorId:string){return this.db.prepare("SELECT * FROM assessment_submissions WHERE case_id=? AND actor_id=? AND state<>'cancelled' ORDER BY CASE WHEN state<>'verified' THEN 0 WHEN history_state<>'verified' THEN 1 ELSE 2 END,created_at DESC,rowid DESC LIMIT 1").bind(caseId,actorId).first<SubmissionRow>();}
+ latestForCase(caseId:string){return this.db.prepare("SELECT * FROM assessment_submissions WHERE case_id=? AND state<>'cancelled' ORDER BY CASE WHEN state<>'verified' THEN 0 WHEN history_state<>'verified' THEN 1 ELSE 2 END,created_at DESC,rowid DESC LIMIT 1").bind(caseId).first<SubmissionRow>();}
  active(caseId:string){return this.db.prepare("SELECT * FROM assessment_submissions WHERE case_id=? AND state NOT IN ('verified','cancelled') ORDER BY created_at DESC,rowid DESC LIMIT 1").bind(caseId).first<SubmissionRow>();}
  async prepare(record:CaseRow,requestId:string,payload:SubmissionPayload,actor:Actor){
   if(!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(requestId))throw new RepositoryError('INVALID_REQUEST_ID',400);

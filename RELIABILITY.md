@@ -25,6 +25,10 @@ This is a dated evidence register, not a claim that production was inspected tod
 
 ### Narrowly verified fixes
 
+- Deal 12103 assessment delivery, 23 September: live audit `35824286378` found 11 Bitrix attachments and a verified lawyer handoff, while D1 contained an uncommitted employee submission. The final commit mistakenly fed package-derived GKB balance evidence back through the ordinary fact-binding validator; the built-Worker test reproduced `ASSESSMENT_NOT_READY` after a successful readiness check. Commit now revalidates the original bindings and compares the full regenerated evidence before any write. The regression covers GKB preparation through final contract, owner continuation with unchanged snapshot/author, retries, and withdrawal before commit. Stalled prepared submissions are now monitored; owner audits include all employees' submissions instead of only Ali's. Live recovery remains a separate gate from deployment.
+
+  The manual audit workflow accepts an optional exact request ID and payload hash for an explicitly authorized recovery. The owner-only continuation preserves the saved employee intent and refuses changed answers, identity or evidence. It cannot supply replacement answers, upload files or move stages. Original authorship remains intact and a separate owner recovery event is recorded. It is never called by scheduled monitoring. Uncertain operations remain read-only reconciliation. Treat this as recovery of an authorized operation, never permission to submit real contracts as tests.
+
 - Contract filenames: commit `2b1b1b4`, release `.7`; production run `35742132865` passed 707 tests with one existing skip, plus runtime recovery. A real preliminary download for 12103 used the legacy name/contract-number/deal-ID format, matched the DOCX contents and passed ZIP integrity. Final/recovered filename paths have regression coverage; this does not establish a final submission for that deal.
 - Return from document to credit reconciliation: commit `147e587`; verified live opening a report and returning to the same comparison. Keep this verification separate from overall case readiness.
 

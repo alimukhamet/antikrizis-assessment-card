@@ -182,7 +182,7 @@ export class OperationsRepository {
     ] as const) {
       const extra =
         table === "assessment_submissions"
-          ? " OR (s.state='verified' AND s.history_state NOT IN ('verified','cancelled'))"
+          ? " OR s.state='prepared' OR (s.state='verified' AND s.history_state NOT IN ('verified','cancelled'))"
           : "";
       const rows = await this.db
         .prepare(

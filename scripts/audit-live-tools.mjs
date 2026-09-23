@@ -43,7 +43,7 @@ try{
   item.identityRevision=assessment.identityRevision;item.hasIin=Boolean(assessment.client?.iin);
   for(const route of ['draft','submission','uploads','credentials','handoff','crm-documents']){
    try{
-    const data=await request(root+'/'+route);
+    const data=await request(root+'/'+route+(route==='submission'?'?scope=case':''));
     if(route==='draft'){
      const d=data.draft,p=d?.payload;
      item.draft={present:!!d,revision:d?.revision,identityRevision:d?.identityRevision,answers:p?.answers?.length,groups:p?.groups?.length,documents:p?.documents?.map(v=>({type:v.type,person:v.person})),pendingFiles:p?.pendingFiles?.length};
