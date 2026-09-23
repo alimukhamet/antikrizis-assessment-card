@@ -12,7 +12,7 @@ async function respondConfirmation(s,pending,accept=true){
  return pending;
 }
 async function setup(t,{identity=null,mode='contract',draft=null,stageError=null,delayedDraft=false,handoff=null,powerReady=true,clientIin='000000000010',analyze=null,draftResponse=null,fastTimeout=false,answerIssues=[]}={}){
- const dom=new JSDOM(html,{url:'https://synthetic.invalid/questionnaire.html'+(mode==='handoff'?'?mode=handoff':''),runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window,d=w.document,run=code=>vm.runInContext(code,dom.getInternalVMContext()),calls=[],errors=[];
+ const dom=new JSDOM(html,{url:'https://synthetic.invalid/questionnaire.html'+(mode==='handoff'?'?mode=handoff':''),runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window,d=w.document,run=code=>vm.runInContext(code,dom.getInternalVMContext()),calls=[],diagnostics=[],errors=[];
  w.HTMLElement.prototype.scrollIntoView=function(){};
  w.HTMLElement.prototype.getClientRects=function(){return this.isConnected&&!this.closest('.hidden,[hidden]')?[{}]:[];};
  w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};w.HTMLDialogElement.prototype.close=function(){this.open=false;};
@@ -22,6 +22,13 @@ async function setup(t,{identity=null,mode='contract',draft=null,stageError=null
  if(fastTimeout){const timeout=w.setTimeout.bind(w);w.setTimeout=(fn,ms,...args)=>timeout(fn,ms===30000||ms===15000||ms===25000?35:ms,...args);}
  const destination={categoryId:'13',fromStageId:'C13:FINAL_INVOICE',fromStageName:'Договор',stageId:'C13:WON',stageName:'Сделка завершена'};
  w.fetch=async(path,options={})=>{
+  // Diagnostics have a separate, metadata-only destination; the assertions below
+  // still reject every unintended customer-data write.
+  if(path==='/api/operations-monitor'){
+   const event=JSON.parse(options.body);assert.equal(options.method,'POST');
+   assert.deepEqual(Object.keys(event).sort(),['id','dealId','action','code','clientVersion','status','asset','line'].sort());
+   diagnostics.push(event);return {ok:true,json:async()=>({ok:true,serverVersion:d.body.dataset.assessmentVersion})};
+  }
   calls.push({path,method:options.method||'GET',body:options.body});let result;
   if(path==='/api/assessment/900001')result=context;
   else if(path==='/api/assessment/clients')result={drafts:[],recent:[]};
@@ -45,15 +52,17 @@ async function setup(t,{identity=null,mode='contract',draft=null,stageError=null
  }
  t.after(()=>{w.close();assert.deepEqual(errors,[]);});
  await tick();
- return{w,d,run,calls,context,destination,releaseDraft,async load(){d.getElementById('hostDealId').value='900001';await d.getElementById('hostLoadDeal').onclick();await tick();}};
+ return{w,d,run,calls,diagnostics,context,destination,releaseDraft,async load(){d.getElementById('hostDealId').value='900001';await d.getElementById('hostLoadDeal').onclick();await tick();}};
 }
-test('production portal starts with no client, no random deal, and no writes',async t=>{
+test('production portal starts with no client, no random deal, and no business writes',async t=>{
  const s=await setup(t);assert.equal(s.w.HostedAssessment.getContext(),null);assert.equal(s.d.body.dataset.uxClientState,'empty');assert.equal(s.d.getElementById('uxClientEntry').hidden,false);assert.equal(s.d.getElementById('questionnaireStep').inert,true);assert.equal(s.calls.length,0);
  assert.equal(s.run('requiredDocumentLabels().length'),6);assert.equal(s.run('requiredDocumentLabels().includes("Доверенность")'),false);assert.equal(s.run('requiredDocumentLabels().includes("ЭЦП файл")'),false);
  const controls=s.w.ServerDrafts.capture();assert.ok(controls.answers.length>=81);assert.equal(controls.groups.length,21);
  await s.load();assert.equal(s.d.body.dataset.uxClientState,'ready');assert.match(s.d.querySelector('.wf-client-copy').textContent,/SYNTHETIC CLIENT/);assert.match(s.d.querySelector('.wf-client-copy').textContent,/900001/);
  assert.equal(s.d.querySelector('[data-client-path="/lawyer-handoff"]').getAttribute('href'),'/lawyer-handoff?dealId=900001');
  assert.equal(s.calls.some(c=>c.method==='POST'),false);
+ assert.equal(s.diagnostics[0].code,'PAGE_OPEN');assert.equal(s.diagnostics[0].dealId,null);
+ assert.ok(s.diagnostics.some(e=>e.code==='PAGE_OPEN'&&e.dealId==='900001'),'Selecting a client without a URL change must attach the real deal ID to diagnostics');
 });
 const storedDraft=(answers=[],groups=[],documents=[{documentId:'gkb',type:'ГКБ — полный отчёт',person:'Клиент',originalName:'synthetic-gkb.pdf'}])=>({revision:3,identityRevision:1,payload:{schemaVersion:1,answers,groups,docContext:{social:'0',salary:'0',salaryBank:'none'},pendingFiles:[],documents}});
 test('client search does not recalculate or mutate the questionnaire on each keystroke',async t=>{

@@ -9,7 +9,7 @@
   const version = () =>
     document.body?.dataset.assessmentVersion || "assessment-unknown";
   const deal = () => {
-    const value = new URLSearchParams(location.search).get("dealId");
+    const value = window.HostedAssessment?.getContext()?.client?.external?.dealId || new URLSearchParams(location.search).get("dealId");
     return /^\d{1,20}$/.test(value || "") ? value : null;
   };
   function route(input) {

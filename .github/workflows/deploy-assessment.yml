@@ -60,6 +60,7 @@ jobs:
           if node --test tests/*.test.mjs > /tmp/assessment-release-tests.log 2>&1; then
             tail -12 /tmp/assessment-release-tests.log
           else
+            grep -A30 '^not ok' /tmp/assessment-release-tests.log || true
             tail -100 /tmp/assessment-release-tests.log
             exit 1
           fi
