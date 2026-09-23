@@ -3,7 +3,7 @@ import {UploadManifestRepository,type UploadManifest} from './upload-manifest';
 import {DocumentUploadError,type createDocumentUploadAdapter,type CrmFileRef,type ReusedUpload} from '../crm/document-upload';
 import type {Actor} from '../worker-session';
 /** Internal operation after document approval; no browser-supplied bytes or hashes trusted. */
-export async function uploadStoredDocuments(repository:EvidenceRepository,manifests:UploadManifestRepository,adapter:ReturnType<typeof createDocumentUploadAdapter>,record:CaseRow,requestId:string,baseline:CrmFileRef[],selection:Array<{documentId:string;name:string}>,actor:Actor,context?:{supersedesRequestId?:string;repairReason?:'BITRIX_CHUNKED_TRANSPORT_TIMEOUT';planHash:string;rootRequestId?:string;batchIndex?:number;reviewIds:string[];reused?:ReusedUpload[]}){
+export async function uploadStoredDocuments(repository:EvidenceRepository,manifests:UploadManifestRepository,adapter:ReturnType<typeof createDocumentUploadAdapter>,record:CaseRow,requestId:string,baseline:CrmFileRef[],selection:Array<{documentId:string;name:string}>,actor:Actor,context?:{planHash:string;rootRequestId?:string;batchIndex?:number;reviewIds:string[];reused?:ReusedUpload[]}){
  if(!record.client_iin||!selection.length||selection.length>200)throw new RepositoryError('INVALID_UPLOAD_SELECTION',400);
  const documents=[];
  for(const selected of selection){const doc=await repository.document(record.id,selected.documentId);if(!doc)throw new RepositoryError('DOCUMENT_NOT_IN_CASE');if(!selected.name||selected.name.length>240||/[\r\n/\\]/.test(selected.name))throw new RepositoryError('INVALID_UPLOAD_NAME',400);documents.push({doc,name:selected.name});}

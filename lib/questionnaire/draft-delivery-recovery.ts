@@ -137,23 +137,47 @@ export async function inspectDraftRecovery(store:DraftRecoveryRepository,evidenc
 // One separately recorded corrective transfer for the diagnosed incident. The
 // original uncertain intent remains immutable and is reconciled afterward.
 export const TRANSPORT_INCIDENT={dealId:'11727',requestId:'9e5bb7dd-03ce-0eb3-0f04-2d31f1463304',payloadHash:'64a131220a2bf319c9c29e4167356b7ccd270fd7011e275dcfafe4cbdf3731f2'};
-export async function repairIncidentTransport(manifests:UploadManifestRepository,evidence:EvidenceRepository,record:CaseRow,actor:Actor,old:UploadRow,adapter:ReturnType<typeof createVerifiedDocumentUploadAdapter>,probe:()=>Promise<Awaited<ReturnType<typeof probeRecoveryTransport>>>,now=Date.now()){
+export type TransportRepairRow={case_id:string;request_id:string;original_request_id:string;original_payload_hash:string;identity_revision:number;actor_id:string;state:string;receipt_json:string|null};
+export class TransportRepairRepository{
+ constructor(private db:D1Database){}
+ get(caseId:string){return this.db.prepare('SELECT * FROM assessment_transport_repairs WHERE case_id=?').bind(caseId).first<TransportRepairRow>();}
+ async prepare(record:CaseRow,old:UploadRow,actor:Actor){
+  const now=new Date().toISOString(),id=await uploadBatchId(old.request_id,100);
+  await this.db.prepare("INSERT INTO assessment_transport_repairs (case_id,request_id,original_request_id,original_payload_hash,identity_revision,actor_id,state,created_at,updated_at) SELECT ?,?,?,?,?,?,'prepared',?,? WHERE EXISTS (SELECT 1 FROM assessment_upload_manifests WHERE case_id=? AND request_id=? AND payload_hash=? AND identity_revision=? AND state='uncertain') AND EXISTS (SELECT 1 FROM assessment_cases WHERE id=? AND identity_revision=?) ON CONFLICT DO NOTHING").bind(record.id,id,old.request_id,old.payload_hash,record.identity_revision,actor.id,now,now,record.id,old.request_id,old.payload_hash,record.identity_revision,record.id,record.identity_revision).run();
+  const row=await this.get(record.id);if(!row||row.original_request_id!==old.request_id||row.original_payload_hash!==old.payload_hash||row.actor_id!==actor.id||row.identity_revision!==record.identity_revision)throw new RepositoryError('RECOVERY_REPAIR_CLAIM_CONFLICT');return row;
+ }
+ async claim(record:CaseRow){return (await this.db.prepare("UPDATE assessment_transport_repairs SET state='writing',updated_at=? WHERE case_id=? AND state='prepared' AND identity_revision=? AND EXISTS (SELECT 1 FROM assessment_cases WHERE id=? AND identity_revision=?)").bind(new Date().toISOString(),record.id,record.identity_revision,record.id,record.identity_revision).run()).meta.changes===1;}
+ async finish(caseId:string,receipt:unknown,code:string){await this.db.prepare("UPDATE assessment_transport_repairs SET state=?,receipt_json=?,outcome_code=?,updated_at=? WHERE case_id=? AND state IN ('writing','uncertain')").bind(receipt?'verified':'uncertain',receipt?JSON.stringify(receipt):null,code,new Date().toISOString(),caseId).run();}
+}
+export async function repairIncidentTransport(repairs:TransportRepairRepository,manifests:UploadManifestRepository,evidence:EvidenceRepository,record:CaseRow,actor:Actor,old:UploadRow,adapter:ReturnType<typeof createVerifiedDocumentUploadAdapter>,probe:()=>Promise<Awaited<ReturnType<typeof probeRecoveryTransport>>>,now=Date.now()){
  if(actor.worker!=='ali'||record.external_id!==TRANSPORT_INCIDENT.dealId||old.request_id!==TRANSPORT_INCIDENT.requestId||old.payload_hash!==TRANSPORT_INCIDENT.payloadHash||old.state!=='uncertain'||old.outcome_code!=='UPLOAD_REFERENCE_COUNT_MISMATCH'||!Number.isFinite(Date.parse(old.created_at))||now-Date.parse(old.created_at)<10*60*1000)throw new RepositoryError('RECOVERY_TRANSPORT_SCOPE_CHANGED');
- const m=JSON.parse(old.manifest_json) as UploadManifest,id=await uploadBatchId(old.request_id,100);
- let replacement=await manifests.get(record.id,id);
- if(!replacement||replacement.state==='prepared'){
+ const m=JSON.parse(old.manifest_json) as UploadManifest;
+ let repair=await repairs.get(record.id);
+ if(!repair||repair.state==='prepared'){
   const current=await adapter.read(record.external_id);
   if(current.iin!==record.client_iin||!equal(current.refs,m.baseline))throw new RepositoryError('DOCUMENTS_CHANGED_IN_CRM');
   const diagnostic=await probe();
-  if(diagnostic.results.find(r=>r.kind==='fixed')?.matched!==true||diagnostic.results.find(r=>r.kind==='stream')?.failed!==true)throw new RepositoryError('RECOVERY_TRANSPORT_NOT_REPRODUCED');
-  // adapter.append repeats the baseline check immediately before its sole send.
-  replacement=await uploadStoredDocuments(evidence,manifests,adapter,record,id,m.baseline,m.files,actor,{planHash:'fixed-transport:'+old.payload_hash,rootRequestId:id,batchIndex:0,reviewIds:[],reused:m.reused,supersedesRequestId:old.request_id,repairReason:'BITRIX_CHUNKED_TRANSPORT_TIMEOUT'});
+  if(diagnostic.results.find(r=>r.kind==='fixed')?.matched!==true)throw new RepositoryError('RECOVERY_TRANSPORT_UNAVAILABLE');
+  const files=[];
+  for(const file of m.files){
+   const doc=await evidence.document(record.id,file.documentId);
+   if(!doc||doc.original_sha256!==file.sha256||doc.byte_size!==file.byteSize)throw new RepositoryError('ORIGINAL_INTEGRITY_FAILED');
+   const bytes=await evidence.original(doc);if(bytes.length!==file.byteSize||await sha256(bytes)!==file.sha256)throw new RepositoryError('ORIGINAL_INTEGRITY_FAILED');
+   files.push({name:file.name,bytes});
+  }
+  repair=await repairs.prepare(record,old,actor);
+  if(await repairs.claim(record)){
+   // A separate immutable incident claim, not a second ordinary upload intent.
+   // The existing unique active-upload index continues to block other uploads.
+   try{await adapter.append(record.external_id,record.client_iin!,m.baseline,files,m.reused);}
+   catch{await repairs.finish(record.id,null,'CORRECTIVE_TRANSFER_OUTCOME_UNCERTAIN');}
+  }
  }
- if(!replacement)throw new RepositoryError('RECOVERY_TRANSPORT_PENDING');
+ if(repair.original_request_id!==old.request_id||repair.original_payload_hash!==old.payload_hash||repair.actor_id!==actor.id||repair.identity_revision!==record.identity_revision)throw new RepositoryError('RECOVERY_REPAIR_CLAIM_CONFLICT');
  // Never repeat the corrective write, even when its own response is lost.
  const receipt=await adapter.reconcile(record.external_id,record.client_iin!,m.baseline,m.files,m.reused);
- if(replacement.state!=='verified')await manifests.finish(record.id,id,receipt,'CORRECTIVE_TRANSFER_BYTES_VERIFIED');
- return manifests.finish(record.id,old.request_id,receipt,'RECONCILED_AFTER_FIXED_LENGTH_REPAIR');
+ const resolved=await manifests.finish(record.id,old.request_id,receipt,'RECONCILED_AFTER_FIXED_LENGTH_REPAIR');
+ await repairs.finish(record.id,receipt,'CORRECTIVE_TRANSFER_BYTES_VERIFIED');return resolved;
 }
 export async function runDraftRecovery(store:DraftRecoveryRepository,evidence:EvidenceRepository,record:CaseRow,actor:Actor,crm:ReturnType<typeof createRecoveryCrm>,webhook:string,action:string,expectedHash:string,day:string,uploadAdapter?:ReturnType<typeof createVerifiedDocumentUploadAdapter>){
  if(actor.worker!=='ali')throw new RepositoryError('OWNER_REQUIRED',403);
@@ -187,11 +211,11 @@ export async function runDraftRecovery(store:DraftRecoveryRepository,evidence:Ev
   }
   if(upload&&['writing','uncertain','verified'].includes(upload.state)){
    const attempted=upload,m=JSON.parse(attempted.manifest_json) as UploadManifest;
-   try{const receipt=await adapter.reconcile(record.external_id,record.client_iin!,m.baseline,m.files,m.reused);if(upload.state!=='verified')upload=await manifests.finish(record.id,id,receipt,'RECOVERED_ORIGINAL_BYTES_VERIFIED');}
+   try{const receipt=await adapter.reconcile(record.external_id,record.client_iin!,m.baseline,m.files,m.reused);if(upload.state!=='verified')upload=await manifests.finish(record.id,id,receipt,'RECOVERED_ORIGINAL_BYTES_VERIFIED');const repairs=new TransportRepairRepository(store.db),repair=await repairs.get(record.id);if(repair?.original_request_id===id&&repair.original_payload_hash===attempted.payload_hash)await repairs.finish(record.id,receipt,'CORRECTIVE_TRANSFER_BYTES_VERIFIED');}
    catch{
     if(action==='repair-transport'){
-     try{upload=await repairIncidentTransport(manifests,evidence,record,actor,attempted,adapter,()=>probeRecoveryTransport(webhook,record.external_id));}
-     catch{await store.finish(record.id,false);return {state:'files_uncertain',batch:index,finalAssessment:false};}
+     try{upload=await repairIncidentTransport(new TransportRepairRepository(store.db),manifests,evidence,record,actor,attempted,adapter,()=>probeRecoveryTransport(webhook,record.external_id));}
+     catch(error){await store.finish(record.id,false);return {state:'files_uncertain',batch:index,code:error instanceof RepositoryError?error.code:'RECOVERY_REPAIR_UNCERTAIN',finalAssessment:false};}
     }else{await store.finish(record.id,false);return {state:'files_uncertain',batch:index,finalAssessment:false};}
    }
   }
