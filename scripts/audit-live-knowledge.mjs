@@ -22,7 +22,7 @@ try{
  const cookie=login.headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');assert.ok(cookie);
  const headers={cookie};
  const session=await request('/api/session',{...options,headers});assert.equal(session.status,200);report.authenticated=(await session.json()).ok===true;assert.ok(report.authenticated);
- const page=await request('/knowledge',{...options,headers});assert.equal(page.status,200);assert.match(await page.text(),/Практика судов/);assert.match(page.headers.get('cache-control'),/private, no-store/);
+ const page=await request('/knowledge',{...options,headers});assert.equal(page.status,200);const markup=await page.text();assert.match(markup,/Практика судов/);assert.match(markup,/aria-label="Выбрать регион"/);assert.match(markup,/aria-label="Выбрать суд"/);assert.match(page.headers.get('cache-control'),/private, no-store/);report.courtPicker=true;
  const r=await request('/api/knowledge',{...options,headers});assert.equal(r.status,200);assert.match(r.headers.get('cache-control'),/private, no-store/);
  const actual=await r.json(),expected=buildKnowledgeData();assert.deepEqual(actual,expected);
  const launcher=await request('/assessment-card.html',{...options,headers});assert.equal(launcher.status,200);assert.match(await launcher.text(),/href="\/knowledge" target="_top"/);
