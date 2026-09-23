@@ -10,6 +10,10 @@ on:
         description: 'Refresh outdated analysis for saved deal 11749 originals; preserve answers and Bitrix'
         type: boolean
         default: false
+      audit_lawyer_names:
+        description: 'Read-only naming format audit only; exports matches without client names or titles'
+        type: boolean
+        default: false
       recover_request_id:
         description: 'Owner-authorized continuation of this exact existing submission; empty means read-only'
         type: string
@@ -36,10 +40,18 @@ jobs:
           node-version: '22'
           package-manager-cache: false
       - run: npm ci --ignore-scripts
+        if: inputs.audit_lawyer_names != true
       - run: npx --no-install esbuild lib/documents/extract-native.ts --bundle --platform=node --format=esm --outfile=.audit-native-preview.mjs
+        if: inputs.audit_lawyer_names != true
       - run: npx --no-install esbuild lib/documents/gkb-balance-review.ts --bundle --platform=node --format=esm --outfile=.audit-gkb-preview.mjs
+        if: inputs.audit_lawyer_names != true
+      - name: Inspect lawyer deal naming formats without exporting names
+        if: inputs.audit_lawyer_names == true
+        env:
+          ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
+        run: node scripts/audit-lawyer-names.mjs
       - name: Recover an explicitly selected saved submission
-        if: inputs.recover_request_id != ''
+        if: inputs.audit_lawyer_names != true && inputs.recover_request_id != ''
         env:
           ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
           AUDIT_DEAL_ID: ${{ inputs.deal_id }}
@@ -47,6 +59,7 @@ jobs:
           RECOVER_EXPECTED_HASH: ${{ inputs.recover_expected_hash }}
         run: node scripts/recover-assessment.mjs
       - name: Inspect existing cases and optionally refresh derived document analysis
+        if: inputs.audit_lawyer_names != true
         env:
           ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
           REFRESH_SAVED_ANALYSIS: ${{ inputs.refresh_saved_analysis }}
@@ -54,10 +67,16 @@ jobs:
           AUDIT_DEAL_ID: ${{ inputs.deal_id }}
         run: node scripts/audit-live-tools.mjs
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && inputs.audit_lawyer_names != true
         with:
           name: live-tools-audit
           path: |
             live-tools-audit.json
             assessment-recovery.json
+          retention-days: 1
+      - uses: actions/upload-artifact@v4
+        if: always() && inputs.audit_lawyer_names == true
+        with:
+          name: lawyer-names-audit
+          path: lawyer-names-audit.json
           retention-days: 1
