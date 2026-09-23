@@ -30,6 +30,10 @@ function fixture(options={}){
   '../../../../../lib/crm/assessment-history':{createAssessmentHistoryAdapter:(url,send,signal)=>{signals.push(signal);return{};}},
   '../../../../../lib/crm/assessment-write':{AssessmentWriteError:class extends Error{},createAssessmentAdapter:(url,send,signal)=>{signals.push(signal);return{};}},
   '../../../../../lib/crm/assessment-intake-sync':{syncAssessmentIntake:async()=>{syncs++;return {status:'synced',sourceSubmissionId:'synthetic'};}},
+  '../../../../../lib/questionnaire/submission-recovery':{authorizeSubmissionRecovery:async()=>assert.fail('Ordinary continuations must not invoke owner recovery')},
+  '../../../../../lib/questionnaire/repository':{DraftRepository:class{constructor(){assert.fail('Ordinary continuations must not read recovery drafts');}}},
+  '../../../../../lib/operations-monitor':{OperationsRepository:class{constructor(){assert.fail('Ordinary continuations must not create owner recovery events');}}},
+  '../../../../../lib/assessment-release.json':{default:{version:'assessment-test'}},
   'cloudflare:workers':{env:{DB:{}}},
  };
  const route=load('app/api/assessment/[dealId]/submission/route.ts',imports,options.syncEnabled?{ASSESSMENT_INTAKE_HMAC_SECRET:'synthetic-secret-32-characters-minimum',CRM_ASSESSMENT_INTAKE_ORIGIN:'https://crm.invalid',ASSESSMENT_INTAKE_SOURCE_ORIGIN:'https://assessment.invalid'}:{});
