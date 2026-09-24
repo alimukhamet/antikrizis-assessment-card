@@ -1,6 +1,6 @@
 import {test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import vm from'node:vm';import ts from'typescript';
 function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>imports[n],Date,Map,Set,BigInt});return exports;}
-const policy=load('lib/documents/policy.ts'),{matchShortReport}=load('lib/documents/credit-report-match.ts',{'./policy':policy,'./loan-identity':load('lib/documents/loan-identity.ts')});
+const policy=load('lib/documents/policy.ts'),{matchShortReport,shortBalanceReviewPlan}=load('lib/documents/credit-report-match.ts',{'./policy':policy,'./loan-identity':load('lib/documents/loan-identity.ts')});
 const credit=(number,debt='100.25',page=1)=>({contractNumber:number,page,facts:[{key:'creditor',value:'ТЕСТ БАНК'},{key:'debtOutstanding',value:debt},{key:'overdueDays',value:'0'}],components:{}});
 function fixture(){const report=(kind,credits,findings=[])=>({read:{pages:[{page:1,needsOcr:false}]},extraction:{kind,identity:{iin:'test-client'},issuedAt:'2026-09-10',credits,findings}});return {short:report('gkb_short',[credit('ABC123..')],['SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED']),full:report('gkb_full',[credit('ABC123456','100.25',3)])};}
 const run=s=>matchShortReport(s.short,s.full,'test-client','2026-09-10');
@@ -23,4 +23,13 @@ test('legal-form spelling and whitespace around an omission link the exact same 
 test('unused active limits can be absent from the short report only with explicit zero debt and overdue',()=>{
  const s=fixture();s.full.extraction.credits.push(credit('ZERO-LIMIT','0.00'));assert.equal(run(s)?.length,1);
  for(const change of [c=>c.facts[1].value='0.01',c=>c.facts[1].value='',c=>c.facts[2].value='1',c=>c.facts.pop()]){const r=fixture();const extra=credit('ZERO-LIMIT','0.00');change(extra);r.full.extraction.credits.push(extra);assert.equal(run(r),null);}
+});
+test('a pawnshop loan with only its overdue part printed is offered for employee review, never matched automatically',()=>{
+ const pawn=(debt,components,withDebt)=>({contractNumber:'PAWN-1',page:2,facts:[{key:'creditor',value:'ТЕСТ БАНК'},...(withDebt?[{key:'debtOutstanding',value:debt}]:[]),{key:'overdueDays',value:'11'}],components});
+ const make=components=>{const s=fixture();s.short.extraction.credits=[pawn('481766.00',{},true)];s.short.extraction.creditList={declared:1};s.short.extraction.findings=['SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED'];s.short.extraction.credits[0].contractNumber='PAWN-1..';s.full.extraction.credits=[pawn(null,components,false)];s.full.extraction.credits[0].contractNumber='PAWN-12345';s.full.extraction.findings=['TOTAL_DEBT_REQUIRES_RECONCILIATION'];s.full.extraction.creditList={complete:true};return s;};
+ const plan=s=>shortBalanceReviewPlan(s.short,s.full,'test-client','2026-09-10');
+ const ok=make({remaining:null,arrears:'240883.00',penalty:'0.00',interest:null,fine:null});
+ assert.equal(run(ok),null);assert.equal(plan(ok).balances[0].amount,'481766.00');
+ assert.equal(plan(make({remaining:null,arrears:'500000.00',penalty:'0.00',interest:null,fine:null})),null);
+ assert.equal(plan(make({remaining:null,arrears:'240883.00',penalty:null,interest:null,fine:null})),null);
 });

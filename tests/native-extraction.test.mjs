@@ -112,3 +112,8 @@ test('Eurasian salary-bank statement is identified by its issuer despite Kaspi t
  const halyk=rules.extractNative(page('Народный банк Казахстана\nВыписка по счету\nТип счета: Зарплата\nФИО: СЫНАҚ КЛИЕНТ\nИИН: 991231300003\nДата формирования выписки: 22.09.2026\nПериод выписки: с 22.09.2025 по 22.09.2026\nПеревод Kaspi'));
  assert.equal(halyk.kind,'salary');assert.equal(halyk.coverage.from,r.coverage.from);assert.equal(halyk.coverage.to,r.coverage.to);
 });
+test('short-report rows with Latin TOO/AO legal forms are counted and totalled',()=>{
+ const rows=shortRows+'\nTOO\n"Тест\nФинанс"\n777888   50.00 KZT   0   Нет данных   Нет данных';
+ const r=rules.extractNative(page(shortReport(rows,'3','350.75')));assert.equal(r.credits.length,3);
+ assert.equal(r.findings.includes('SHORT_CREDIT_COUNT_MISMATCH'),false);assert.equal(r.findings.includes('SHORT_TOTAL_MISMATCH'),false);
+});

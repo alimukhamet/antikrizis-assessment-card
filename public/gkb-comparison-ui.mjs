@@ -83,7 +83,7 @@ function renderRow(row,result){
  const sources=make('div',null,'gkb-sources');
  for(const [key,title] of [['short','Краткий'],['full','Полный']]){
   const source=row[key];if(!source){sources.append(make('span',title+': договор не сопоставлен'));continue;}
-  const block=make('div'),link=button(title+' · '+(choice&&key==='full'?(choice.reason==='FULL_TOTAL_UNCONFIRMED'?'итог не подтверждён':'сумма не указана'):amount(source.value)),()=>openSource(source));block.append(link,make('span','Страница '+source.page));
+  const block=make('div'),link=button(title+' · '+(choice&&key==='full'?(choice.reason==='FULL_TOTAL_UNCONFIRMED'?'итог не подтверждён':choice.reason==='OVERDUE_ONLY'?'указана только просрочка':'сумма не указана'):amount(source.value)),()=>openSource(source));block.append(link,make('span','Страница '+source.page));
   if(source.calculated){const calculation=make('details');calculation.append(make('summary','Расчёт по составным суммам'),make('p',source.quote));block.append(calculation);}
   if(!choice&&source.days!==null){const label='Просрочка: '+source.days+' дн.';block.append(source.daysPage!==source.page?button(label,()=>openSource({...source,page:source.daysPage,quote:'Количество дней просрочки'})):make('span',label));}
   sources.append(block);
@@ -102,7 +102,7 @@ function render(){
   const matched=result.rows.filter(r=>r.status==='matched');if(matched.length){const fold=make('details');fold.append(make('summary','Совпадают · '+matched.length));for(const row of matched)fold.append(renderRow(row,result));dialog.append(fold);}
  }else for(const report of result.reports)dialog.append(button(report.kind==='gkbShort'?'Открыть краткий ГКБ':'Открыть полный ГКБ',()=>openSource({fileId:report.fileId,page:1})));
  const actions=make('div',null,'gkb-review-actions'),status=make('p',inspectionError||(inspectionPending?'Загружаем сохранённые решения…':''));status.setAttribute('role','status');status.dataset.gkbReviewStatus='';
- if(result.inspection){const count=result.inspection.plan.balances.filter(b=>rowConfirmed(b)).length;actions.append(make('strong','Сохранено '+count+' из '+result.inspection.plan.balances.length),make('span',result.inspection.plan.balances.some(b=>b.reason==='FULL_TOTAL_UNCONFIRMED')?' · итоги полного ГКБ требуют подтверждения':' · в полном ГКБ суммы не указаны'));}
+ if(result.inspection){const count=result.inspection.plan.balances.filter(b=>rowConfirmed(b)).length;actions.append(make('strong','Сохранено '+count+' из '+result.inspection.plan.balances.length),make('span',result.inspection.plan.balances.some(b=>b.reason==='FULL_TOTAL_UNCONFIRMED'||b.reason==='OVERDUE_ONLY')?' · итоги полного ГКБ требуют подтверждения':' · в полном ГКБ суммы не указаны'));}
  if(inspectionError)actions.append(button('Обновить сверку',()=>inspect(true)));
  actions.append(status);dialog.append(actions);if(busy)dialog.querySelectorAll('button,input,textarea').forEach(node=>node.disabled=true);
 }
