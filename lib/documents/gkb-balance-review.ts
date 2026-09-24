@@ -82,13 +82,13 @@ export async function confirmGkbBalanceReview(repository:EvidenceRepository,reco
    const expected={...inspection,decisions:[{fullIndex:balance.fullIndex,decision,amount,reason,reviewId:'pending',factKey:rowKey(balance.fullIndex),actorId:actor.id,reviewedAt:'',rowReviewId:null}] as SavedDecision[]};
    if(!gkbBalanceRows(payload,expected).find(r=>r.fullIndex===balance.fullIndex)?.matches)throw new RepositoryError('GKB_ANSWERS_NOT_SAVED');
   }
-  const reviewReason=reason+(balance.reason==='FULL_TOTAL_UNCONFIRMED'?' Итог полного ГКБ не подтверждён: неустойка не указана.':'');
+  const reviewReason=reason+(balance.reason==='FULL_TOTAL_UNCONFIRMED'?' Итог полного ГКБ не подтверждён: неустойка не указана.':balance.reason==='OVERDUE_ONLY'?' В полном ГКБ указана только просрочка; остаток не указан.':'');
   const review=await repository.appendReview({caseId:record.id,documentId:short.document.id,extractionId:short.extraction.id,identityRevision:record.identity_revision,requestId:input.requestId,factKey:rowKey(balance.fullIndex),value:{planKey:inspection.planKey,fullIndex:balance.fullIndex,decision,amount,reason},disposition:decision==='confirm'?'confirmed':decision==='correct'?'corrected':'unresolved',reason:reviewReason,...(input.expectedReviewId?{expectedReviewId:input.expectedReviewId as string}:{requireNewReview:true})},actor);
   return {reviewId:review.id,reviewedAt:review.created_at};
  }
  // Old open tabs retain their batch action until the first per-loan review.
  // The new unknown-total proposal has never had a legacy batch approval flow.
- if(inspection.plan.balances.some(b=>b.reason==='FULL_TOTAL_UNCONFIRMED'))throw new RepositoryError('GKB_REVIEW_CHANGED');
+ if(inspection.plan.balances.some(b=>b.reason==='FULL_TOTAL_UNCONFIRMED'||b.reason==='OVERDUE_ONLY'))throw new RepositoryError('GKB_REVIEW_CHANGED');
  if(inspection.rowHeads.some(r=>r.reviewId))throw new RepositoryError('GKB_REVIEW_CHANGED');
  const withdraw=input.action==='withdraw';
  if(withdraw){

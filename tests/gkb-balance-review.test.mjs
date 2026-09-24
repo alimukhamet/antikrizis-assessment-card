@@ -29,7 +29,7 @@ async function fixture(t,{twoMissing=false,unconfirmedTotal=false}={}){
 test('missing full balance is a review proposal, never an automatic match or zero amount',()=>{
  const {short,full}=analyses(),before=JSON.stringify({short,full});assert.equal(matching.matchShortReport(short,full,client.iin,day),null);
  const plan=matching.shortBalanceReviewPlan(short,full,client.iin,day);assert.equal(plan.balances.length,1);assert.equal(plan.balances[0].amount,'1250.25');assert.equal(plan.activeLoans,3);assert.equal(JSON.stringify({short,full}),before);
- for(const mutate of [s=>s.full.extraction.identity.iin='other',s=>s.full.extraction.issuedAt='2026-09-20',s=>s.full.read.pages[0].needsOcr=true,s=>s.full.extraction.creditList.complete=false,s=>s.short.extraction.creditList.declared=3,s=>s.short.extraction.findings.push('SHORT_TOTAL_MISMATCH'),s=>s.full.extraction.credits[0].components.arrears='1.00',s=>s.full.extraction.credits[0].components.remaining='10.00',s=>s.full.extraction.credits[0].facts.push({key:'debtOutstanding',value:'1250.26'}),s=>s.full.extraction.credits.push(credit('CONTRACT-A-456','0.00')),s=>s.full.extraction.credits[2].facts[1].value='0.01']){const s=analyses();mutate(s);assert.equal(matching.shortBalanceReviewPlan(s.short,s.full,client.iin,day),null);}
+ for(const mutate of [s=>s.full.extraction.identity.iin='other',s=>s.full.extraction.issuedAt='2026-09-20',s=>s.full.read.pages[0].needsOcr=true,s=>s.full.extraction.creditList.complete=false,s=>s.short.extraction.creditList.declared=3,s=>s.short.extraction.findings.push('SHORT_TOTAL_MISMATCH'),s=>s.full.extraction.credits[0].components.arrears='1250.26',s=>s.full.extraction.credits[0].components.penalty=null,s=>s.full.extraction.credits[0].components.remaining='10.00',s=>s.full.extraction.credits[0].facts.push({key:'debtOutstanding',value:'1250.26'}),s=>s.full.extraction.credits.push(credit('CONTRACT-A-456','0.00')),s=>s.full.extraction.credits[2].facts[1].value='0.01']){const s=analyses();mutate(s);assert.equal(matching.shortBalanceReviewPlan(s.short,s.full,client.iin,day),null);}
 });
 test('legacy balance plans retain their exact shape without a new reason discriminator',()=>{
  const {short,full}=analyses(),plan=matching.shortBalanceReviewPlan(short,full,client.iin,day);
@@ -145,4 +145,9 @@ test('stale row edits cannot overwrite a newer decision, including simultaneous 
 test('correction rejects blank, negative, fractional-cent and unsafe amounts or absent explanation',async t=>{
  const f=await fixture(t),plan=await f.inspect();for(const amount of ['', '-1', '2.001', '9007199254740991', 'abc'])await assert.rejects(()=>service.confirmGkbBalanceReview(f.repo,f.record,rowInput(f,plan,0,'correct',{amount,reason:'По оригиналу'}),f.payload,actor,day),/GKB_CORRECTION_REQUIRED/);
  await assert.rejects(()=>service.confirmGkbBalanceReview(f.repo,f.record,rowInput(f,plan,0,'correct',{amount:'1250.25',reason:''}),f.payload,actor,day),/GKB_CORRECTION_REQUIRED/);
+});
+test('a loan printing only its overdue part becomes an explicit employee proposal',()=>{
+ const s=analyses();s.full.extraction.credits[0].components.arrears='600.00';
+ assert.equal(matching.matchShortReport(s.short,s.full,client.iin,day),null);
+ const plan=matching.shortBalanceReviewPlan(s.short,s.full,client.iin,day);assert.equal(plan.balances[0].amount,'1250.25');assert.equal(plan.balances[0].reason,'OVERDUE_ONLY');
 });

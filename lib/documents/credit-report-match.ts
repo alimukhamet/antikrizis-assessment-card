@@ -11,6 +11,17 @@ function balanceReviewReason(credit:Analysis['extraction']['credits'][number],sh
  if(credit.facts.some(f=>f.key==='debtOutstanding')||credit.comparisonDebt)return null;
  const components=credit.components;
  if(components?.remaining===null&&amount(components.arrears??undefined)===BigInt(0)&&amount(components.penalty??undefined)===BigInt(0)&&['interest','fine'].every(key=>components[key]===null||components[key]===undefined||amount(components[key])===BigInt(0)))return 'MISSING_BALANCE';
+ // Pawnshop loans can print only the overdue part and no used/outstanding amount.
+ // When every printed component is known and does not exceed the short-report
+ // debt, the short-report amount may be offered to the employee as a source choice.
+ if(components?.remaining===null&&components.penalty!==null){
+  let known=BigInt(0);
+  for(const key of ['arrears','penalty','interest','fine']){
+   if(components[key]===null||components[key]===undefined){if(key==='arrears'||key==='penalty')return null;continue;}
+   const value=amount(components[key]??undefined);if(value===null)return null;known+=value;
+  }
+  if(known>BigInt(0)&&known<=shortDebt)return 'OVERDUE_ONLY';
+ }
  // An unknown penalty is still unknown. Equality only makes the short-report
  // amount eligible for an employee's source choice; it never creates a full
  // report total or substitutes zero for the unreported component.
@@ -72,7 +83,7 @@ export function shortBalanceReviewPlan(short:Analysis,full:Analysis,clientIin:st
  const matches=matchReportLoans(short,full,clientIin,day,true);if(!matches)return null;
  const balances=matches.filter(m=>!f.credits[m.fullIndex].facts.some(f=>f.key==='debtOutstanding')).map(m=>{
   const a=s.credits[m.shortIndex],b=f.credits[m.fullIndex],fact=a.facts.find(f=>f.key==='debtOutstanding')!,cents=amount(fact.value)!;
-  return {...m,creditor:b.facts.find(f=>f.key==='creditor')!.value,contractNumber:b.contractCode||b.contractNumber,aliases:[...new Set([b.contractNumber,b.contractCode].filter((v):v is string=>!!v))],amount:`${cents/BigInt(100)}.${String(cents%BigInt(100)).padStart(2,'0')}`,shortPage:fact.page||a.page,fullPage:b.page,...(balanceReviewReason(b,cents)==='FULL_TOTAL_UNCONFIRMED'?{reason:'FULL_TOTAL_UNCONFIRMED' as const}:{})};
+  return {...m,creditor:b.facts.find(f=>f.key==='creditor')!.value,contractNumber:b.contractCode||b.contractNumber,aliases:[...new Set([b.contractNumber,b.contractCode].filter((v):v is string=>!!v))],amount:`${cents/BigInt(100)}.${String(cents%BigInt(100)).padStart(2,'0')}`,shortPage:fact.page||a.page,fullPage:b.page,...(()=>{const why=balanceReviewReason(b,cents);return why==='FULL_TOTAL_UNCONFIRMED'||why==='OVERDUE_ONLY'?{reason:why}:{};})()};
  });
  return balances.length?{matches,balances,activeLoans:f.credits.length,issuedAt:s.issuedAt!}:null;
 }

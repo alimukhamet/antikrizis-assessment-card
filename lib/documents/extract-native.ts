@@ -1,7 +1,7 @@
 import labels from './kz-labels.json';
 import type { PageText } from './read-pdf';
 import {extractPowerParties,type PowerParties} from './power-of-attorney';
-export const EXTRACTION_VERSION = 'rules-native-21';
+export const EXTRACTION_VERSION = 'rules-native-22';
 export type Fact = { key: string; value: string; page: number; source: string };
 export type Credit = { contractNumber: string; contractCode?: string; page: number; facts: Fact[]; components: Record<string, string | null>; comparisonDebt?:Fact; relatedPartiesNotice?: {page:number;source:string} };
 export type BankStatement={from:string|null;to:string|null;credits:string;topUps:string;topUpsVerified:boolean;debits:string;transactions:number;reconciled:boolean;rowsReadable:boolean;sourcePage:number;reconciliation?:string;gambling?:{total:string;matches:Array<{date:string;amount:string;description:string;page:number}>}};
@@ -237,7 +237,7 @@ export function extractNative(pages: PageText[]): NativeExtraction {
     const seen=new Set<string>();
     for(const page of transformed){
       // Last payment is historical; it must never become a monthly payment suggestion.
-      const rows=page.text.matchAll(/((?:АО|ТОО|АҚ|ЖШС|Акционерное\s+общество|Товарищество\s+с\s+ограниченной\s+ответственностью)\s+[\s\S]{1,240}?)(?:[ \t]{2,}|\n)(\S+(?:[ \t]\S+)*)\s{2,}((?:\d{1,3}(?:[ \u00a0]\d{3})+|\d+)(?:[.,]\d{1,2})?)\s+KZT\s{2,}(\d+)\s{2,}(?:\d{4}-\d{2}-\d{2}|Нет данных)\s{2,}(?:[0-9][0-9 .,]*?\s+KZT|Нет данных)/g);
+      const rows=page.text.matchAll(/((?:АО|ТОО|АҚ|ЖШС|TOO|AO|Акционерное\s+общество|Товарищество\s+с\s+ограниченной\s+ответственностью)\s+[\s\S]{1,240}?)(?:[ \t]{2,}|\n)(\S+(?:[ \t]\S+)*)\s{2,}((?:\d{1,3}(?:[ \u00a0]\d{3})+|\d+)(?:[.,]\d{1,2})?)\s+KZT\s{2,}(\d+)\s{2,}(?:\d{4}-\d{2}-\d{2}|Нет данных)\s{2,}(?:[0-9][0-9 .,]*?\s+KZT|Нет данных)/g);
       for(const row of rows){
         const creditor=row[1].replace(/\s+/g,' ').trim(),contractNumber=row[2],debt=cents(row[3]);
         if(debt===null||creditor.length>240)continue;

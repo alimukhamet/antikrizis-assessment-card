@@ -14,6 +14,8 @@ const pairs=[
  ['ТОО Микрофинансовая организация «SurfKaz Finance»','ТОО «МФО «SurfKaz Finance»'],
  ['Товарищество с ограниченной ответственностью «Микрофинансовая организация «Вивус»','ТОО «МФО «Вивус»'],
  ['АО "Народный банк Казахстана"','"Народный банк Казахстана"'],
+ ['Дочерний Банк Акционерное Общество "Сбербанк России"','АО «Bereke Bank» (ДБ Lesha Bank LLC (Public))'],
+ ['TOO "Микрофинансовая организация Тест Финанс"','ТОО "МФО "Тест Финанс"'],
 ];
 test('printed creditor aliases and previously saved compact keys have one identity everywhere',()=>{
  for(const pair of pairs){
