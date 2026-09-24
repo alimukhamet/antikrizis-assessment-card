@@ -3,9 +3,9 @@ import type {Actor} from '../worker-session';
 import type {Analysis} from './analysis-service';
 import {analysisVersion} from './analysis-version';
 import {checkPowerRepresentative} from './power-validation';
-import {statementPeriod,salaryStatementPeriod,enpfPeriod,type Representative} from './policy';
+import {statementPeriod,salaryStatementPeriod,enpfPeriod,gkbFreshness,type Representative} from './policy';
 export const DOCUMENT_REVIEW_KEY='document.manual-check.v1';
-export const MANUAL_DOCUMENT_TYPES:Record<string,string>={'Удостоверение личности':'identity','Ф6 об отсутствии имущества':'property','Справка ЕНПФ':'enpf','Справка по выплатам пенсии и пособий':'benefits','Выписка Kaspi Gold':'kaspi','Выписка зарплатного банка':'salary','Доверенность':'power_of_attorney'};
+export const MANUAL_DOCUMENT_TYPES:Record<string,string>={'Удостоверение личности':'identity','Ф6 об отсутствии имущества':'property','Справка ЕНПФ':'enpf','Справка по выплатам пенсии и пособий':'benefits','Выписка Kaspi Gold':'kaspi','Выписка зарплатного банка':'salary','Доверенность':'power_of_attorney','ГКБ — краткий отчёт':'gkb_short','ГКБ — полный отчёт':'gkb_full'};
 type ManualCheck={version:1;type:string;iin:string;pages:number;complete:true;contentMatches:true;periodChecked:true;reason:string;issuedAt:string;expiresAt:string;from:string;to:string;representative:Representative|null;authorityChecked:boolean};
 function day(value:string){const d=new Date(value+'T00:00:00Z');return /^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(d.getTime())&&d.toISOString().slice(0,10)===value;}
 /** Human inspection is recorded separately from extraction and never proves authenticity. */
@@ -25,6 +25,12 @@ export function validateDocumentReview(raw:unknown,analysis:Analysis,record:Case
  if(type==='Справка ЕНПФ'){
   if(enpfPeriod(from,to,issuedAt,today).length)throw new RepositoryError('ENPF_PERIOD_NOT_ACCEPTABLE');
   if(parsed.coverage?.from&&parsed.coverage?.to&&(parsed.coverage.from!==from||parsed.coverage.to!==to||parsed.issuedAt!==issuedAt))throw new RepositoryError('ENPF_PERIOD_NOT_ACCEPTABLE');
+ }
+ // Staff confirm GKB reconciliation by hand when automatic short/full matching cannot.
+ // The 30-day rule still applies and is re-checked every time the review is read.
+ if(type==='ГКБ — краткий отчёт'||type==='ГКБ — полный отчёт'){
+  if(!issuedAt||gkbFreshness(issuedAt,today).length)throw new RepositoryError('GKB_DATE_NOT_ACCEPTABLE');
+  if(parsed.issuedAt&&parsed.issuedAt!==issuedAt)throw new RepositoryError('GKB_DATE_NOT_ACCEPTABLE');
  }
  if(type==='Удостоверение личности'&&!expiresAt)throw new RepositoryError('DOCUMENT_EXPIRY_REQUIRED',400);
  if(type==='Выписка зарплатного банка'&&(salaryStatementPeriod(from,to,today).length||parsed.coverage&&(parsed.coverage.from!==from||parsed.coverage.to!==to)))throw new RepositoryError('STATEMENT_PERIOD_NOT_ACCEPTABLE');

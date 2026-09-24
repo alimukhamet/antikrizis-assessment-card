@@ -11,7 +11,7 @@ test('identity, content, completeness and expiry cannot be bypassed by a checkbo
  assert.throws(()=>review.validateDocumentReview(input(),{...analysis,extraction:{kind:'identity',identity:{iin:'other'}}},record,'2026-09-10'),/DOCUMENT_IDENTITY_CONFLICT/);
  assert.throws(()=>review.validateDocumentReview(input(),{...analysis,extraction:{kind:'gkb_full',identity:{iin:null}}},record,'2026-09-10'),/DOCUMENT_TYPE_CONFLICT/);
 });
-test('manual review never overrides GKB or separate credential requirements',()=>{for(const type of ['ГКБ — полный отчёт','ЭЦП файл'])assert.throws(()=>check({...input(),type}),/MANUAL_TYPE_NOT_SUPPORTED/);});
+test('manual review never overrides separate credential requirements',()=>{for(const type of ['ЭЦП файл'])assert.throws(()=>check({...input(),type}),/MANUAL_TYPE_NOT_SUPPORTED/);});
 test('salary periods and powers retain additional requirements',()=>{const v={...input(),type:'Выписка зарплатного банка',from:'2025-09-01',to:'2026-08-31'};assert.equal(check(v).from,'2025-09-01');assert.equal(check({...v,to:'2026-09-10'}).to,'2026-09-10');assert.throws(()=>check({...v,from:'2025-10-01'}),/STATEMENT_PERIOD_NOT_ACCEPTABLE/);
  const power={...input(),type:'Доверенность',authorityChecked:true,representative:{kind:'person',legalName:'Synthetic person',identifier:'synthetic-approved'}};assert.equal(check(power).authorityChecked,true);assert.throws(()=>check({...power,authorityChecked:false}),/POWER_AUTHORITY_REVIEW_REQUIRED/);assert.throws(()=>check({...power,representative:{...power.representative,identifier:'other'}}),/REPRESENTATIVE_NOT_APPROVED/);
 });
@@ -45,4 +45,12 @@ test('ENPF accepts annual dated coverage and rechecks incomplete approvals',asyn
  assert.equal(await review.currentDocumentReview(repository,record,'doc','ext',analysis,'Справка ЕНПФ','2026-09-10'),null);
  const leap={...v,issuedAt:'2024-02-29',from:'2023-02-28',to:'2024-02-29'};
  assert.equal(review.validateDocumentReview(leap,analysis,record,'2024-02-29').from,'2023-02-28');
+});
+test('staff can confirm a GKB report by hand, but only for the client and a fresh matching issue date',()=>{
+ const gkb={read:{totalPages:2,pages:[{needsOcr:false},{needsOcr:false}]},extraction:{kind:'gkb_short',identity:{iin:'test-client'},issuedAt:'2026-09-05'}};
+ const v=()=>({...input(),type:'ГКБ — краткий отчёт',issuedAt:'2026-09-05',expiresAt:''});
+ assert.equal(review.validateDocumentReview(v(),gkb,record,'2026-09-10').type,'ГКБ — краткий отчёт');
+ for(const [change,error]of [[x=>x.issuedAt='','GKB_DATE_NOT_ACCEPTABLE'],[x=>x.issuedAt='2026-09-04','GKB_DATE_NOT_ACCEPTABLE'],[x=>x.iin='other','DOCUMENT_CLIENT_UNVERIFIED'],[x=>x.pages=1,'DOCUMENT_INSPECTION_INCOMPLETE']]){const x=v();change(x);assert.throws(()=>review.validateDocumentReview(x,gkb,record,'2026-09-10'),new RegExp(error));}
+ assert.throws(()=>review.validateDocumentReview(v(),gkb,record,'2026-10-10'),/GKB_DATE_NOT_ACCEPTABLE/);
+ assert.throws(()=>review.validateDocumentReview({...v(),type:'ГКБ — полный отчёт'},gkb,record,'2026-09-10'),/DOCUMENT_TYPE_CONFLICT/);
 });

@@ -75,3 +75,10 @@ test('modern short format fails closed on missing rows, totals, role, identity o
  }
  const p=modernShortPages();delete p[0].layoutText;const r=rules.extractNative(p);assert.equal(r.identity.iin,null);assert.ok(r.findings.includes('DOCUMENT_IDENTITY_UNVERIFIED'));
 });
+test('older Kazakh short report is not mistaken for the 2026 layout by its legal notes and reads Latin TOO creditors',()=>{
+ const notes='\n'+'• id.mkb.kz. КБ сайты арқылы берілген жеке тұлғалар үшін дербес кредиттік есепті беру тегін негізде жүзеге асырылады.';
+ const rows=shortRows+'\nTOO\n"Тест\nФинанс"\n777888   50.00 KZT   0   Нет данных   Нет данных';
+ const pages=[{page:1,text:shortReport(rows,'3','350.75'),nativeCharacters:500,needsOcr:false},{page:2,text:notes,nativeCharacters:200,needsOcr:false}];
+ const r=rules.extractNative(pages);assert.equal(r.kind,'gkb_short');assert.equal(r.issuedAt!==null,true);assert.equal(r.credits.length,3);
+ assert.equal(r.findings.includes('SHORT_CREDIT_COUNT_MISMATCH'),false);assert.equal(r.findings.includes('SHORT_TOTAL_MISMATCH'),false);
+});

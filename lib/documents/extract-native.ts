@@ -1,7 +1,7 @@
 import labels from './kz-labels.json';
 import type { PageText } from './read-pdf';
 import {extractPowerParties,type PowerParties} from './power-of-attorney';
-export const EXTRACTION_VERSION = 'rules-native-17';
+export const EXTRACTION_VERSION = 'rules-native-18';
 export type Fact = { key: string; value: string; page: number; source: string };
 export type Credit = { contractNumber: string; contractCode?: string; page: number; facts: Fact[]; components: Record<string, string | null>; comparisonDebt?:Fact; relatedPartiesNotice?: {page:number;source:string} };
 export type BankStatement={from:string|null;to:string|null;credits:string;topUps:string;topUpsVerified:boolean;debits:string;transactions:number;reconciled:boolean;rowsReadable:boolean;sourcePage:number;reconciliation?:string;gambling?:{total:string;matches:Array<{date:string;amount:string;description:string;page:number}>}};
@@ -41,7 +41,10 @@ function questionnaireCreditType(financing:string|null,purpose:string|null,objec
 }
 export function extractNative(pages: PageText[]): NativeExtraction {
   const raw = pages.map(p => p.text).join('\n'), head = raw.slice(0,14000).toLowerCase().replace(/ё/g,'е');
-  const modernShort=/дербес\s+кредиттік есеп/.test(head)&&/қысқаша нысан/.test(head);
+  // Detect the 2026 layout by its title on the first page only. Older Kazakh short
+  // reports mention «дербес кредиттік есепті» in the page-3 legal notes.
+  const title=(pages[0]?.text||'').slice(0,600).toLowerCase().replace(/ё/g,'е');
+  const modernShort=/дербес\s+кредиттік\s+есеп(?![а-яәіңғүұқөһ])/u.test(title)&&/қысқаша\s+нысан/u.test(title);
   const credit = modernShort || /персональный кредитный отчет|жеке кредиттік есеп/.test(head);
   const kind = credit ? /краткая форма|қысқаша/.test(head) ? 'gkb_short' : 'gkb_full'
     : /kaspi/.test(head) && /выписка/.test(head) ? 'kaspi'
@@ -205,7 +208,7 @@ export function extractNative(pages: PageText[]): NativeExtraction {
     const seen=new Set<string>();
     for(const page of transformed){
       // Last payment is historical; it must never become a monthly payment suggestion.
-      const rows=page.text.matchAll(/((?:АО|ТОО|АҚ|ЖШС|Акционерное\s+общество|Товарищество\s+с\s+ограниченной\s+ответственностью)\s+[\s\S]{1,240}?)(?:[ \t]{2,}|\n)(\S+(?:[ \t]\S+)*)\s{2,}((?:\d{1,3}(?:[ \u00a0]\d{3})+|\d+)(?:[.,]\d{1,2})?)\s+KZT\s{2,}(\d+)\s{2,}(?:\d{4}-\d{2}-\d{2}|Нет данных)\s{2,}(?:[0-9][0-9 .,]*?\s+KZT|Нет данных)/g);
+      const rows=page.text.matchAll(/((?:АО|ТОО|АҚ|ЖШС|TOO|AO|Акционерное\s+общество|Товарищество\s+с\s+ограниченной\s+ответственностью)\s+[\s\S]{1,240}?)(?:[ \t]{2,}|\n)(\S+(?:[ \t]\S+)*)\s{2,}((?:\d{1,3}(?:[ \u00a0]\d{3})+|\d+)(?:[.,]\d{1,2})?)\s+KZT\s{2,}(\d+)\s{2,}(?:\d{4}-\d{2}-\d{2}|Нет данных)\s{2,}(?:[0-9][0-9 .,]*?\s+KZT|Нет данных)/g);
       for(const row of rows){
         const creditor=row[1].replace(/\s+/g,' ').trim(),contractNumber=row[2],debt=cents(row[3]);
         if(debt===null||creditor.length>240)continue;

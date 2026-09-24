@@ -16,3 +16,8 @@ test('contract masks are literal, require visible identity, and cannot match an 
 test('staff warning distinguishes different loan counts and unresolved full-report debt',()=>{
  const {shortReportMismatchReasons}=load('lib/documents/credit-report-match.ts',{'./policy':policy});const s=fixture();s.full.extraction.credits.push(credit('SECOND'));s.full.extraction.findings.push('TOTAL_DEBT_REQUIRES_RECONCILIATION');const reasons=shortReportMismatchReasons(s.short,s.full,'2026-09-10').join(' ');assert.match(reasons,/краткий ГКБ — 1, полный — 2/);assert.match(reasons,/остаток, просрочку/);assert.match(reasons,/без задолженности и просрочки/);assert.match(reasons,/Не исключайте договор без проверки/);assert.equal(run(s),null);
 });
+test('a space before the truncation mark and the Bereke/Sberbank rename still match exactly one loan',()=>{
+ const s=fixture();s.short.extraction.credits[0].contractNumber='ABC123 ..';assert.equal(run(s).length,1);
+ const r=fixture();r.short.extraction.credits[0].facts[0].value='АО «Bereke Bank» (ДБ Lesha Bank LLC (Public))';r.full.extraction.credits[0].facts[0].value='Дочерний Банк Акционерное Общество "Сбербанк России"';assert.equal(run(r).length,1);
+ const other=fixture();other.short.extraction.credits[0].facts[0].value='АО «Bereke Bank»';other.full.extraction.credits[0].facts[0].value='АО "Kaspi Bank"';assert.equal(run(other),null);
+});

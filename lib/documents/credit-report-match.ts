@@ -3,6 +3,10 @@ import {gkbFreshness} from './policy';
 
 export type CreditMatch={shortIndex:number;fullIndex:number;shortNumber:string;fullNumber:string;shortPage:number;fullPage:number};
 const normalized=(value:string)=>value.normalize('NFKC').replace(/\s+/g,' ').trim().toLocaleUpperCase('ru');
+// Renamed creditors keep old names in some GKB sections. Only documented renames:
+// SB Sberbank Russia JSC (Kazakhstan) became Bereke Bank JSC in 2022.
+const RENAMED_CREDITORS:Array<[RegExp,string]>=[[/BEREKE\s*BANK|СБЕРБАНК\s+РОССИИ/u,'BEREKE BANK']];
+const creditorName=(value:string)=>{const name=normalized(value);return RENAMED_CREDITORS.find(([pattern])=>pattern.test(name))?.[1]??name;};
 function amount(value:string|undefined){
  if(!value||!/^\d+(?:\.\d{1,2})?$/.test(value))return null;
  const [whole,fraction='']=value.split('.');return BigInt(whole)*BigInt(100)+BigInt(fraction.padEnd(2,'0'));
@@ -10,7 +14,7 @@ function amount(value:string|undefined){
 function numberMatches(short:string,full:string){
  if(/\.\.|…/.test(full))return false;
  if(!/\.\.|…/.test(short))return short===full;
- const pieces=short.split(/\.{2,}|…/);
+ const pieces=short.split(/\.{2,}|…/).map(piece=>piece.trim());
  // Accept one omission with at least six literal characters; no fuzzy matching.
  if(pieces.length!==2||pieces.join('').length<6)return false;
  return full.length>pieces[0].length+pieces[1].length&&full.startsWith(pieces[0])&&full.endsWith(pieces[1]);
@@ -30,7 +34,7 @@ export function matchShortReport(short:Analysis,full:Analysis,clientIin:string|n
   if(!sf.creditor||debt===null||!/^\d+$/.test(sf.overdueDays||''))return null;
   const candidates=f.credits.flatMap((other,fullIndex)=>{
    const ff=Object.fromEntries(other.facts.map(v=>[v.key,v.value]));
-   return ff.creditor&&normalized(sf.creditor)===normalized(ff.creditor)&&[other.contractNumber,other.contractCode].some(number=>number&&numberMatches(credit.contractNumber,number))&&debt===amount(ff.debtOutstanding)&&/^\d+$/.test(ff.overdueDays||'')&&BigInt(sf.overdueDays)===BigInt(ff.overdueDays)?[fullIndex]:[];
+   return ff.creditor&&creditorName(sf.creditor)===creditorName(ff.creditor)&&[other.contractNumber,other.contractCode].some(number=>number&&numberMatches(credit.contractNumber,number))&&debt===amount(ff.debtOutstanding)&&/^\d+$/.test(ff.overdueDays||'')&&BigInt(sf.overdueDays)===BigInt(ff.overdueDays)?[fullIndex]:[];
   });
   // Demand unique matches before consuming rows; never resolve ambiguity by order.
   if(candidates.length!==1||used.has(candidates[0]))return null;
