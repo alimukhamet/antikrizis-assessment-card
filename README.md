@@ -20,6 +20,18 @@ Canonical Site: https://antikrizis-assessment-card.mukhamet-ali-ma.chatgpt.site
 
 Documents, drafts, inspections, submissions and upload receipts are separate records. A timeout does not prove that an external write failed. Retrying recovers the original operation. An owner can cancel an upload only while the server can prove it never started; cancellation remains available after reopening the case.
 
+## Profile backfill (Документолог, one-time)
+
+`/profile-backfill` lists every category `1` deal on a «ЗВИ…» or «В ожидании» stage, unfinished first, newest Дата ЗВИ first. Opening a deal runs the same questionnaire in `mode=profile`:
+
+- deal documents are pulled from Bitrix and read automatically; the old text card (`UF_CRM_AI_CARD`) is shown read-only next to the answers;
+- ФИО, телефон, семейное положение and процедура are prefilled from Bitrix; contract and payment questions are hidden;
+- extra profile questions: addresses, phone and channel, family members with birth dates, employer names;
+- «Не знаю» saves an open question («Требует уточнения») instead of blocking the save;
+- «Сохранить профиль» writes only `UF_CRM_1773669702495` (ФИО), `UF_CRM_AI_MARITAL`, `UF_CRM_AI_DEBT` and the new `UF_CRM_ANK_PROFILE_CARD` / `UF_CRM_ANK_PROFILE_JSON` / `UF_CRM_ANK_PROFILE_AT`, with conflict detection and readback. Contract, payment, procedure and the old card are never written. The previous values are kept in `assessment_profile_saves` and posted as a deal timeline comment.
+
+Before first use: apply migration `0011` (`npm run db:migrate:anti-krizis`), then Ali or Darkhan opens `/profile-backfill` and clicks «Создать поля в Bitrix» (needs a webhook with admin rights). Test writes only on synthetic deal 11665.
+
 ## Confirmed business rules
 
 - Preserve the canonical document list, contract/payment rules and downstream assessment format.

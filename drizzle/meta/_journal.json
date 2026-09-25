@@ -78,6 +78,13 @@
       "when": 1789556121232,
       "tag": "0010_dark_wong",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1790331513044,
+      "tag": "0011_loud_mathemanic",
+      "breakpoints": true
     }
   ]
 }

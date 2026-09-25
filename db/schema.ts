@@ -68,3 +68,14 @@ export const lawyerHandoffs=sqliteTable('assessment_handoffs',{
  payloadJson:text('payload_json').notNull(),payloadHash:text('payload_hash').notNull(),
  state:text('state').notNull(),outcomeCode:text('outcome_code'),createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull(),
 },t=>[uniqueIndex('assessment_handoff_request').on(t.caseId,t.requestId),uniqueIndex('assessment_handoff_once').on(t.caseId).where(sql`${t.state} <> 'cancelled'`)]);
+// One row per documentologist profile save. `payload_json` keeps the Bitrix baseline
+// read before the write, so any profile save can be reverted from here.
+export const profileSaves=sqliteTable('assessment_profile_saves',{
+ id:text('id').primaryKey(),caseId:text('case_id').notNull().references(()=>assessmentCases.id),
+ requestId:text('request_id').notNull(),identityRevision:integer('identity_revision').notNull(),
+ actorId:text('actor_id').notNull(),authentication:text('authentication').notNull(),
+ payloadJson:text('payload_json').notNull(),payloadHash:text('payload_hash').notNull(),
+ state:text('state').notNull(),outcomeCode:text('outcome_code'),historyCommentId:text('history_comment_id'),
+ createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull(),
+},t=>[uniqueIndex('assessment_profile_save_request').on(t.caseId,t.requestId),
+ uniqueIndex('assessment_profile_save_active').on(t.caseId).where(sql`${t.state} IN ('writing','uncertain')`)]);

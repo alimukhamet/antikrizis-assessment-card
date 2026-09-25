@@ -6,7 +6,7 @@ import type {AssessmentValues} from '../crm/assessment-write';
 import type {ApprovedAnswerEvidence} from './review-bindings';
 const procedures:Record<string,string>={'199':'ВП — восстановление платёжеспособности','201':'СБ','203':'ВБ — внесудебное банкротство','205':'График'};
 const holdings:Record<string,string>={real:'Недвижимость / доля',car:'Автомобиль',ip:'ИП',too:'Доля в ТОО',kh:'КХ',other:'Другое',none:'Ничего из перечисленного',unknown:'Неизвестно — уточнить'};
-const groupNames:Record<string,string>={clientjobs:'Место работы клиента',clientunofficial:'Неофициальный доход клиента',clientbenefits:'Государственная выплата клиента',partnerjobs:'Место работы супруга(и)',partnerunofficial:'Неофициальный доход супруга(и)',partnerbenefits:'Государственная выплата супруга(и)',clientreal:'Недвижимость клиента',clientcars:'Автомобиль клиента',clientip:'ИП клиента',clienttoo:'Доля в ТОО клиента',clientkh:'КХ клиента',partnerreal:'Недвижимость супруга(и)',partnercars:'Автомобиль супруга(и)',partnerip:'ИП супруга(и)',partnertoo:'Доля в ТОО супруга(и)',partnerkh:'КХ супруга(и)',transfers:'Передача имущества',creditors:'Кредит / обязательство'};
+export const groupNames:Record<string,string>={profilefamily:'Член семьи',clientjobs:'Место работы клиента',clientunofficial:'Неофициальный доход клиента',clientbenefits:'Государственная выплата клиента',partnerjobs:'Место работы супруга(и)',partnerunofficial:'Неофициальный доход супруга(и)',partnerbenefits:'Государственная выплата супруга(и)',clientreal:'Недвижимость клиента',clientcars:'Автомобиль клиента',clientip:'ИП клиента',clienttoo:'Доля в ТОО клиента',clientkh:'КХ клиента',partnerreal:'Недвижимость супруга(и)',partnercars:'Автомобиль супруга(и)',partnerip:'ИП супруга(и)',partnertoo:'Доля в ТОО супруга(и)',partnerkh:'КХ супруга(и)',transfers:'Передача имущества',creditors:'Кредит / обязательство'};
 const salesOnly=new Set(['dognum','summa','contractDate','months','payDay','grafType']);
 export function displayAnswer(answer:DisplayAnswer){
  if(['gamblingTransfers','lawyerNotesStatus'].includes(answer.key))return answer.value==='yes'?'Да':answer.value==='no'?'Нет':answer.value;
@@ -18,7 +18,7 @@ export function displayAnswer(answer:DisplayAnswer){
  if(answer.key==='c8037')return answer.value==='1'?'Да':answer.value==='0'?'Нет':answer.value;
  return answer.value;
 }
-function sumDebt(payload:DraftPayload){
+export function sumDebt(payload:DraftPayload){
  let cents=BigInt(0);
  for(const row of payload.groups.find(g=>g.id==='creditors')?.rows||[]){
   const value=row.find(a=>a.key==='n8040')?.value.trim()||'';

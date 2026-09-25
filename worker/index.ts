@@ -59,7 +59,7 @@ const worker = {
       secured.headers.set('cache-control', 'no-store');
       return secured;
     }
-    const protectedPage = ['/', '/assessment-review', '/lawyer-handoff', '/assessment-feedback', '/assessment-card', '/assessment-card.html', '/my-results', '/my-earnings'].includes(url.pathname);
+    const protectedPage = ['/', '/assessment-review', '/lawyer-handoff', '/assessment-feedback', '/assessment-card', '/assessment-card.html', '/my-results', '/my-earnings', '/profile-backfill'].includes(url.pathname);
     const protectedApi = url.pathname.startsWith('/api/') && url.pathname !== '/api/session';
     if (protectedPage || protectedApi) {
       const actor = await verifySession(readSessionCookie(request.headers.get('cookie')), env.SITE_SESSION_TOKEN ?? process.env.SITE_SESSION_TOKEN ?? '');

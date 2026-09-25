@@ -7,13 +7,21 @@ export type AnswerIssue={key:string;group?:string;row?:number;code:string;label:
 export type DisplayAnswer={key:string;group?:string;row?:number;label:string;value:string};
 type Definition={key:string;type:string;label:string;required?:boolean;legacy?:boolean;conditions?:string[];min?:string;max?:string;compactCount?:boolean};
 /** Answer completeness only. Document eligibility and fact review are separate gates. */
-export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessmentDay?:string){
+/** Contract/payment answers belong to sales. The profile backfill never asks for or writes them. */
+export const SALES_ONLY_KEYS=new Set(['dognum','summa','contractDate','months','payDay','grafType']);
+/** Optional for sales, required when the documentologist completes the profile. */
+const PROFILE_REQUIRED_KEYS=new Set(['n8001Employer','n8002Employer']);
+export type CheckOptions={profile?:boolean};
+export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessmentDay?:string,options:CheckOptions={}){
+ const profile=options.profile===true;
  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Almaty',year:'numeric',month:'2-digit'}).formatToParts(new Date());
  const assessmentMonth=assessmentDay?.slice(0,7)||`${parts.find(p=>p.type==='year')!.value}-${parts.find(p=>p.type==='month')!.value}`;
  const all=new Map(payload.answers.map(a=>[a.key,a])),groups=new Map(payload.groups.map(g=>[g.id,g]));
  const value=(key:string,row?:Map<string,Answer>)=>(row?.get(key)||all.get(key))?.value.trim()||'';
  const checked=(key:string)=>all.get(key)?.checked===true;
  const issues:AnswerIssue[]=[];
+ /** Profile mode: answers marked «Неизвестно» are saved as open questions instead of blocking. */
+ const unresolved:DisplayAnswer[]=[];
  const displayAnswers:DisplayAnswer[]=[];
  const issue=(key:string,code:string,label:string,group?:string,row?:number)=>issues.push({key,code,label,...(group?{group,row}:{})});
  const married=value('marital')==='В браке';
@@ -23,6 +31,8 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   return /^\d+(\.\d{1,2})?$/.test(annual)&&incomes.every(v=>/^\d+(\.\d{1,2})?$/.test(v))&&Number(annual)>30*incomes.reduce((sum,v)=>sum+Number(v),0);
  }
  function active(conditions:string[]=[],row?:Map<string,Answer>):boolean{return conditions.every(c=>{
+  if(c==='profileOnly')return profile;
+  if(c==='factAddressField')return value('factAddressSame')==='other';
   if(['partnerIncome','partnerAssets','partnerKaspi'].includes(c))return married;
   if(c==='childrenUnder18Field')return !checked('unknown:childrenTotal')&&Number(value('childrenTotal'))>0;
   if(c==='socialOtherField')return checked('choice:socialStatus:Другое');
@@ -42,6 +52,8 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
  });}
  function field(f:Definition,row?:Map<string,Answer>,group?:string,index?:number){
   if(f.legacy||!active(f.conditions,row)||f.key.startsWith('exact:'))return;
+  if(profile&&SALES_ONLY_KEYS.has(f.key))return;
+  const required=f.required||profile&&PROFILE_REQUIRED_KEYS.has(f.key);
   if((row?.get(f.key)||all.get(f.key))?.sourceReplaced)issue(f.key,'ANSWER_SOURCE_REPLACED','Источник заменён: '+f.label,group,index);
   if(f.type==='checkbox'){
    if(group==='creditors'&&f.key==='loanClaimIncluded'){
@@ -54,10 +66,11 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   const unknownKey='unknown:'+f.key;
   const unknown=f.key!=='loanParticipants'&&(row?row.get(unknownKey)?.checked===true:checked(unknownKey))&&(group?schema.groups.find(g=>g.id===group)?.fields:schema.scalar)?.some(x=>x.key===unknownKey);
   displayAnswers.push({key:f.key,label:f.label,value:unknown?'Неизвестно — уточнить':v,...(group?{group,row:index}:{})});
-  if(unknown||['unknown','Не знаю'].includes(v)){issue(f.key,'ANSWER_REQUIRED',f.label,group,index);return;}
-  if(!v){if(f.required)issue(f.key,'ANSWER_REQUIRED',f.label,group,index);return;}
+  if(unknown||['unknown','Не знаю'].includes(v)){if(profile)unresolved.push({key:f.key,label:f.label,value:'Неизвестно — уточнить',...(group?{group,row:index}:{})});else issue(f.key,'ANSWER_REQUIRED',f.label,group,index);return;}
+  if(!v){if(required)issue(f.key,'ANSWER_REQUIRED',f.label,group,index);return;}
   if(f.key==='loanParticipants'&&!parseParticipants(v).valid)issue(f.key,'PARTICIPANTS_REQUIRED','Выберите «Нет» или укажите ФИО и роль каждого участника',group,index);
   if(f.compactCount&&v==='more')issue(f.key,'EXACT_COUNT_REQUIRED',f.label,group,index);
+  if(f.key==='familyBirthDate'){const m=/^(\d{2})\.(\d{2})\.(\d{4})$/.exec(v),d=m?new Date(`${m[3]}-${m[2]}-${m[1]}T00:00:00Z`):null;if(!m||!d||!Number.isFinite(d.getTime())||d.toISOString().slice(0,10)!==`${m[3]}-${m[2]}-${m[1]}`||Number(m[3])<1900||`${m[3]}-${m[2]}`>assessmentMonth)issue(f.key,'INVALID_DATE','Дата рождения в формате ДД.ММ.ГГГГ',group,index);}
   if(f.type==='number'){
    const integer=['months','payDay','n8042'].includes(f.key);
    if(!(integer?/^\d+$/:/^\d+(\.\d{1,2})?$/).test(v)||!Number.isFinite(Number(v))||Number(v)>Number.MAX_SAFE_INTEGER/100||f.min!==undefined&&Number(v)<Number(f.min)||f.max!==undefined&&Number(v)>Number(f.max))issue(f.key,'INVALID_NUMBER',f.label,group,index);
@@ -90,14 +103,15 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
  }
  for(const prefix of ['choice:socialStatus:', 'holding:client:',...(married?['holding:partner:']:[])]){
   const selected=payload.answers.filter(a=>a.key.startsWith(prefix)&&a.checked).map(a=>a.key.slice(prefix.length));
-  if(!selected.length||selected.includes('unknown'))issue(prefix,'CHOICE_REQUIRED','Выберите подходящий ответ');
+  if(profile&&selected.length===1&&selected[0]==='unknown')unresolved.push({key:prefix,label:prefix.startsWith('holding:partner')?'Имущество супруга(и)':'Имущество клиента',value:'Неизвестно — уточнить'});
+  else if(!selected.length||selected.includes('unknown'))issue(prefix,'CHOICE_REQUIRED','Выберите подходящий ответ');
   if(selected.length>1&&selected.some(v=>['Нет','none','unknown'].includes(v)))issue(prefix,'CONFLICTING_CHOICES','Несовместимые ответы');
  }
  if(!trustedIin)issue('iin','DEAL_IDENTITY_UNVERIFIED','Сначала подтвердите клиента сделки');
  else if(value('iin')!==trustedIin)issue('iin','WRONG_CLIENT','ИИН отличается от клиента сделки');
  if(value('iin')&&!validIin(value('iin')))issue('iin','INVALID_IIN','Некорректный ИИН');
  if(active(['childrenUnder18Field'])&&!checked('unknown:childrenUnder18')&&Number(value('childrenUnder18'))>Number(value('childrenTotal')))issue('childrenUnder18','CHILD_COUNT_CONFLICT','Число несовершеннолетних превышает общее число детей');
- const schedule=createPaymentSchedule(Object.fromEntries(['summa','months','payDay','grafType','contractDate'].map(k=>[k,value(k)])));
- if(!schedule)issue('summa','INVALID_PAYMENT_SCHEDULE','Проверьте сумму, дату и условия оплаты');
- return {answersComplete:issues.length===0,issues,schedule,displayAnswers};
+ const schedule=profile?null:createPaymentSchedule(Object.fromEntries(['summa','months','payDay','grafType','contractDate'].map(k=>[k,value(k)])));
+ if(!profile&&!schedule)issue('summa','INVALID_PAYMENT_SCHEDULE','Проверьте сумму, дату и условия оплаты');
+ return {answersComplete:issues.length===0,issues,schedule,displayAnswers,unresolved};
 }
