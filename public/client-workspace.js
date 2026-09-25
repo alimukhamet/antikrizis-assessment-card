@@ -4,7 +4,7 @@ window.ClientWorkspace=(()=>{
  const el=(tag,text,cls)=>{const node=document.createElement(tag);if(text)node.textContent=text;if(cls)node.className=cls;return node;};
  const button=(text,fn)=>{const node=el('button',text,'btn btn-ghost');node.type='button';node.onclick=fn;return node;};
  let directory=null,switching=false;
- const url=id=>(new URLSearchParams(location.search).get('mode')==='handoff'?'/lawyer-handoff':'/assessment-review')+'?dealId='+encodeURIComponent(id);
+ const url=id=>({handoff:'/lawyer-handoff',profile:'/profile-backfill'}[new URLSearchParams(location.search).get('mode')]||'/assessment-review')+'?dealId='+encodeURIComponent(id);
  const json=(path,options)=>HostedAssessment.requestJson(path,options);
  function close(){if(directory){directory.close();directory.remove();directory=null;}}
  async function switchTo(id){
