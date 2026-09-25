@@ -1,6 +1,6 @@
 import { bitrixHeaders } from './http-headers';
 import {
-  PROFILE_CATEGORY_ID, PROFILE_FIELDS, ZVI_DATE_FIELD, PROCEDURE_FIELD, LEGACY_CARD_FIELD, IIN_FIELD,
+  PROFILE_CATEGORY_ID, ZVI_DATE_FIELD, PROCEDURE_FIELD, LEGACY_CARD_FIELD, IIN_FIELD,
   isProfileBackfillStage,
 } from './profile-fields';
 
@@ -13,7 +13,8 @@ export class ProfileQueueError extends Error { constructor(public code: string) 
 const MAX_PAGES = 60; // 60 × 50 = 3000 deals; the backfill scope is far smaller.
 
 /** Read-only: every deal in category 1 whose stage is «ЗВИ…» or «В ожидании». */
-export async function readProfileQueue(webhook: string, send: typeof fetch = fetch) {
+/** `savedAt`: deal ID → «time · worker» of its latest verified profile save (kept in the tool, not Bitrix). */
+export async function readProfileQueue(webhook: string, savedAt: Map<string, string> = new Map(), send: typeof fetch = fetch) {
   if (!webhook) throw new ProfileQueueError('BITRIX_NOT_CONFIGURED');
   async function call(method: string, body: unknown) {
     const response = await send(webhook.replace(/\/?$/, '/') + method + '.json', {
@@ -43,7 +44,7 @@ export async function readProfileQueue(webhook: string, send: typeof fetch = fet
     const json = await call('crm.deal.list', {
       filter: { CATEGORY_ID: PROFILE_CATEGORY_ID, STAGE_ID: [...stageNames.keys()] },
       order: { ID: 'ASC' },
-      select: ['ID', 'TITLE', 'STAGE_ID', ZVI_DATE_FIELD, PROCEDURE_FIELD, IIN_FIELD, LEGACY_CARD_FIELD, PROFILE_FIELDS.profileAt],
+      select: ['ID', 'TITLE', 'STAGE_ID', ZVI_DATE_FIELD, PROCEDURE_FIELD, IIN_FIELD, LEGACY_CARD_FIELD],
       start,
     });
     if (!Array.isArray(json.result)) throw new ProfileQueueError('BITRIX_REQUEST_FAILED');
@@ -58,7 +59,7 @@ export async function readProfileQueue(webhook: string, send: typeof fetch = fet
     dealId: String(d.ID), title: text(d.TITLE), stageName: stageNames.get(text(d.STAGE_ID)) || text(d.STAGE_ID),
     zviDate: text(d[ZVI_DATE_FIELD]), procedure: procedures.get(text(d[PROCEDURE_FIELD])) || text(d[PROCEDURE_FIELD]),
     hasIin: /^\d{12}$/.test(text(d[IIN_FIELD]).trim()), hasLegacyCard: Boolean(text(d[LEGACY_CARD_FIELD]).trim()),
-    profileSavedAt: text(d[PROFILE_FIELDS.profileAt]),
+    profileSavedAt: savedAt.get(String(d.ID)) || '',
   }));
   return sortProfileQueue(items);
 }

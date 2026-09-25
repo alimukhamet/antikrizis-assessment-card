@@ -11,7 +11,7 @@ export class ProfileWriteError extends Error {
 /** Read-only facts shown to the documentologist next to the questionnaire. */
 export type ProfileDealContext = {
   dealId: string; title: string; iin: string | null; stageId: string; zviDate: string;
-  procedure: string; legacyCard: string; phone: string; baseline: ProfileBaseline; fieldsReady: boolean;
+  procedure: string; legacyCard: string; phone: string; baseline: ProfileBaseline;
 };
 
 const keys = Object.keys(PROFILE_FIELDS) as ProfileField[];
@@ -65,9 +65,6 @@ export function createProfileAdapter(webhook: string, send: typeof fetch = fetch
   }
   const baselineOf = (row: Record<string, unknown>) =>
     Object.fromEntries(keys.map(key => [key, row[PROFILE_FIELDS[key]] ?? null])) as ProfileBaseline;
-  /** Bitrix omits unknown user fields from crm.deal.get; absence means the fields were not created yet. */
-  const fieldsReady = (row: Record<string, unknown>) =>
-    (['profileCard', 'profileJson', 'profileAt'] as const).every(key => PROFILE_FIELDS[key] in row);
   const text = (value: unknown) => Array.isArray(value) ? String(value[0] ?? '') : typeof value === 'string' || typeof value === 'number' ? String(value) : '';
 
   async function read(dealId: string) { return baselineOf(await deal(dealId)); }
@@ -86,7 +83,7 @@ export function createProfileAdapter(webhook: string, send: typeof fetch = fetch
     return {
       dealId, title: text(row.TITLE), iin: /^\d{12}$/.test(rawIin) ? rawIin : null, stageId: text(row.STAGE_ID),
       zviDate: text(row[ZVI_DATE_FIELD]), procedure: text(row[PROCEDURE_FIELD]), legacyCard: text(row[LEGACY_CARD_FIELD]),
-      phone, baseline: baselineOf(row), fieldsReady: fieldsReady(row),
+      phone, baseline: baselineOf(row),
     };
   }
 
@@ -97,7 +94,6 @@ export function createProfileAdapter(webhook: string, send: typeof fetch = fetch
       if (keys.some(key => typeof values[key] !== 'string' || normalize(key, values[key]) === null)) throw new ProfileWriteError('INVALID_PROFILE_VALUES');
       const row = await deal(dealId);
       if (row[IIN_FIELD] !== expectedIin) throw new ProfileWriteError('CASE_IDENTITY_CHANGED');
-      if (!fieldsReady(row)) throw new ProfileWriteError('PROFILE_FIELDS_MISSING');
       const before = baselineOf(row);
       if (!profileMismatches(before, values, true).length) return true;
       const conflicts = profileMismatches(before, baseline);

@@ -30,9 +30,9 @@ Documents, drafts, inspections, submissions and upload receipts are separate rec
 - ФИО, телефон, семейное положение and процедура are prefilled from Bitrix; contract and payment questions are hidden;
 - extra profile questions: addresses, phone and channel, family members with birth dates, employer names;
 - «Не знаю» saves an open question («Требует уточнения») instead of blocking the save;
-- «Сохранить профиль» writes only `UF_CRM_1773669702495` (ФИО), `UF_CRM_AI_MARITAL`, `UF_CRM_AI_DEBT` and the new `UF_CRM_ANK_PROFILE_CARD` / `UF_CRM_ANK_PROFILE_JSON` / `UF_CRM_ANK_PROFILE_AT`, with conflict detection and readback. Contract, payment, procedure and the old card are never written. The previous values are kept in `assessment_profile_saves` and posted as a deal timeline comment.
+- «Сохранить профиль» writes only the existing `UF_CRM_1773669702495` (ФИО), `UF_CRM_AI_MARITAL` and `UF_CRM_AI_DEBT`, with conflict detection and readback. No new Bitrix fields: the full profile (card text + `antikrizis.profile.v1` JSON) is kept in `assessment_profile_saves` and posted as a deal timeline comment together with the previous values. Contract, payment, procedure and the old card are never written.
 
-Before first use: apply migration `0011` (`npm run db:migrate:anti-krizis`), then Ali or Darkhan opens `/profile-backfill` and clicks «Создать поля в Bitrix» (needs a webhook with admin rights). Test writes only on synthetic deal 11665.
+Setup is done: migration `0016_profile_saves` is applied and no Bitrix fields are needed.
 
 ## Confirmed business rules
 

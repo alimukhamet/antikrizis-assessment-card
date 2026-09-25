@@ -28,6 +28,12 @@ export class ProfileSaveRepository {
   latestVerified(caseId: string) {
     return this.db.prepare("SELECT * FROM assessment_profile_saves WHERE case_id=? AND state='verified' ORDER BY rowid DESC LIMIT 1").bind(caseId).first<ProfileSaveRow>();
   }
+  /** Deal ID → «time · worker» of the latest verified profile save per deal (the queue's «done» marker). */
+  async savedByDeal(names: Record<string, string>) {
+    const { results } = await this.db.prepare("SELECT c.external_id AS deal_id, s.actor_id, s.updated_at FROM assessment_profile_saves s JOIN assessment_cases c ON c.id=s.case_id WHERE s.state='verified' AND c.external_system='bitrix' ORDER BY s.updated_at")
+      .all<{ deal_id: string; actor_id: string; updated_at: string }>();
+    return new Map(results.map(row => [row.deal_id, `${row.updated_at} · ${names[row.actor_id.replace(/^worker:/, '')] || row.actor_id}`]));
+  }
   /** Claims the single in-flight write for this case before Bitrix is touched. */
   async begin(record: CaseRow, requestId: string, payload: ProfileSavePayload, actor: Actor) {
     if (!requestPattern.test(requestId)) throw new RepositoryError('INVALID_REQUEST_ID', 400);

@@ -3,7 +3,6 @@ import {useEffect,useState} from 'react';
 
 type Item={dealId:string;title:string;stageName:string;zviDate:string;procedure:string;hasIin:boolean;hasLegacyCard:boolean;profileSavedAt:string};
 type Filter='todo'|'done'|'all';
-type FieldState={fields:{fieldName:string;label:string;exists:boolean}[];canCreate:boolean;error?:string};
 
 const date=(value:string)=>{const t=Date.parse(value);return Number.isFinite(t)?new Date(t).toLocaleDateString('ru-RU'):'—';};
 const open=(id:string)=>`/profile-backfill?dealId=${encodeURIComponent(id)}`;
@@ -17,14 +16,6 @@ export function ProfileQueue(){
    .catch(e=>{if(!controller.signal.aborted)setError(e.message==='SIGN_IN_REQUIRED'?'Войдите заново.':'Не удалось загрузить сделки из Bitrix. Повторите.');});
   return()=>controller.abort();
  },[reload]);
- const[fields,setFields]=useState<FieldState|null>(null),[creating,setCreating]=useState(false);
- useEffect(()=>{fetch('/api/profile-fields',{cache:'no-store'}).then(r=>r.json() as Promise<FieldState>).then(setFields).catch(()=>setFields(null));},[]);
- async function createFields(){
-  setCreating(true);
-  try{const r=await fetch('/api/profile-fields',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',cache:'no-store'});setFields(await r.json() as FieldState);}
-  catch{setFields(f=>f?{...f,error:'BITRIX_REQUEST_FAILED'}:f);}finally{setCreating(false);}
- }
- const missingFields=fields?.fields?.filter(f=>!f.exists)??[];
  const done=items?.filter(i=>i.profileSavedAt).length??0,total=items?.length??0;
  const next=items?.find(i=>!i.profileSavedAt);
  const q=query.trim().toLocaleLowerCase('ru-RU');
@@ -37,10 +28,6 @@ export function ProfileQueue(){
    </div>
    {next?<a className="profile-queue-next" href={open(next.dealId)}>Начать: {next.title||'Сделка № '+next.dealId} →</a>:null}
   </header>
-  {missingFields.length||fields?.error?<div className="profile-queue-error" role="alert">
-   <p>{fields?.error==='BITRIX_ADMIN_RIGHTS_REQUIRED'?'Вебхуку Bitrix не хватает прав администратора для создания полей.':fields?.error?'Не удалось проверить поля профиля в Bitrix.':'В Bitrix нет полей профиля: '+missingFields.map(f=>f.label).join(', ')+'. Пока их нет, профиль нельзя сохранить.'}</p>
-   {fields?.canCreate&&missingFields.length?<button type="button" disabled={creating} onClick={createFields}>{creating?'Создаём…':'Создать поля в Bitrix'}</button>:missingFields.length?<p>Попросите администратора открыть эту страницу и создать поля.</p>:null}
-  </div>:null}
   {items?<div className="profile-queue-progress" role="status">
    <strong>{done} из {total}</strong><span>профилей заполнено</span>
    <progress value={done} max={Math.max(total,1)}/>

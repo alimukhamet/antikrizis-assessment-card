@@ -107,28 +107,26 @@ function bitrix({deal,failUpdate=false,roundDebt=false}){
  return {send,calls,state:()=>state};
 }
 const F=fields.PROFILE_FIELDS;
-const baseDeal={ID:'11665',TITLE:'SYNTHETIC CLIENT',UF_CRM_AI_IIN:iin,CONTACT_ID:'5',[F.fio]:'OLD NAME',[F.marital]:'',[F.debt]:'10',[F.profileCard]:'',[F.profileJson]:'',[F.profileAt]:'',UF_CRM_AI_CARD:'OLD CARD',UF_CRM_AI_DOGNUM:'KEEP'};
+const baseDeal={ID:'11665',TITLE:'SYNTHETIC CLIENT',UF_CRM_AI_IIN:iin,CONTACT_ID:'5',[F.fio]:'OLD NAME',[F.marital]:'',[F.debt]:'10',UF_CRM_AI_CARD:'OLD CARD',UF_CRM_AI_DOGNUM:'KEEP'};
 const values={fio:'NEW NAME',marital:'Холост / не замужем',debt:'100.25',profileCard:'CARD',profileJson:'{}',profileAt:'2026-09-25 · Synthetic'};
 
-test('profile adapter writes only profile fields and verifies by readback',async()=>{
+test('profile adapter writes only existing ФИО, marital and debt fields and verifies by readback',async()=>{
  const fake=bitrix({deal:baseDeal}),adapter=createProfileAdapter('https://portal.example/rest/1/token/',fake.send);
  const context=await adapter.context('11665');
- assert.equal(context.fieldsReady,true);assert.equal(context.legacyCard,'OLD CARD');assert.equal(context.phone,'+7 700 000 00 01');
+ assert.equal(context.legacyCard,'OLD CARD');assert.equal(context.phone,'+7 700 000 00 01');
  const result=await adapter.save('11665',iin,context.baseline,values);
  assert.equal(result.verified,true);
  const update=fake.calls.find(c=>c.method==='crm.deal.update');
- assert.deepEqual(Object.keys(update.body.fields).sort(),Object.values(F).sort());
+ assert.deepEqual(Object.keys(update.body.fields).sort(),['UF_CRM_1773669702495','UF_CRM_AI_DEBT','UF_CRM_AI_MARITAL']);
+ assert.ok(!Object.keys(update.body.fields).some(k=>k.startsWith('UF_CRM_ANK_')),'no new Bitrix fields');
  assert.equal(fake.state().UF_CRM_AI_DOGNUM,'KEEP');assert.equal(fake.state().UF_CRM_AI_CARD,'OLD CARD');
  // A repeated save is recognised as already applied and does not write again.
  const again=await adapter.save('11665',iin,context.baseline,values);
  assert.equal(again.alreadyApplied,true);assert.equal(fake.calls.filter(c=>c.method==='crm.deal.update').length,1);
 });
 
-test('profile adapter refuses missing fields, changed CRM values and wrong identity before writing',async()=>{
- const missing={...baseDeal};delete missing[F.profileCard];
- let fake=bitrix({deal:missing});
- await assert.rejects(createProfileAdapter('https://portal.example/rest/1/token/',fake.send).save('11665',iin,{},values),e=>e.code==='PROFILE_FIELDS_MISSING'&&e.notStarted);
- fake=bitrix({deal:{...baseDeal,[F.fio]:'EDITED IN CRM'}});
+test('profile adapter refuses changed CRM values and wrong identity before writing',async()=>{
+ let fake=bitrix({deal:{...baseDeal,[F.fio]:'EDITED IN CRM'}});
  await assert.rejects(createProfileAdapter('https://portal.example/rest/1/token/',fake.send).save('11665',iin,{...Object.fromEntries(Object.entries(F).map(([k,f])=>[k,baseDeal[f]]))},values),e=>e.code==='PROFILE_CHANGED_IN_CRM'&&e.fields.includes('fio'));
  fake=bitrix({deal:{...baseDeal,UF_CRM_AI_IIN:'000000000029'}});
  await assert.rejects(createProfileAdapter('https://portal.example/rest/1/token/',fake.send).save('11665',iin,{},values),e=>e.code==='CASE_IDENTITY_CHANGED');
