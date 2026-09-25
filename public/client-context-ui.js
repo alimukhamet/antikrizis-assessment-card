@@ -1,23 +1,26 @@
 window.ClientContextUI=(()=>{
  const $=id=>document.getElementById(id),make=(tag,text,cls)=>{const n=document.createElement(tag);if(text)n.textContent=text;if(cls)n.className=cls;return n;};
  const mode=new URLSearchParams(location.search).get('mode')==='handoff'?'handoff':'contract';document.body.dataset.uxMode=mode;
+ // Profile backfill reuses the contract flow; only its labels, links and last step differ.
+ const profile=new URLSearchParams(location.search).get('mode')==='profile';if(profile)document.body.dataset.profileBackfill='';
+ const pageTitle=profile?'Профиль клиента':mode==='handoff'?'Передать юристам':'Подготовить договор',homePath=profile?'/profile-backfill':mode==='handoff'?'/lawyer-handoff':'/assessment-review';
  const context=()=>HostedAssessment.getContext(),ready=()=>Boolean(context()&&ServerDrafts.canSwitch());
  const label=()=>{const c=context()?.client;return c?c.title+' · Сделка № '+c.external.dealId+(c.iin?' · ИИН '+c.iin:' · ИИН не указан'):'Клиент не выбран';};
  async function confirm(action,note){
   if(!ready()){afStatus('Сначала выберите клиента и дождитесь загрузки карточки.',true);return null;}
   return SubmissionDestination.confirm({title:'Проверьте клиента',action,note:note||'Продолжайте, только если это клиент, с которым вы сейчас работаете.'});
  }
- const wrap=document.querySelector('main.wrap'),bar=make('div',null,'ux-context'),home=make('a','← Инструменты');home.href='/';home.target='_top';
+ const wrap=document.querySelector('main.wrap'),bar=make('div',null,'ux-context'),home=make('a',profile?'← Все сделки ЗВИ':'← Инструменты');home.href=profile?'/profile-backfill':'/';home.target='_top';
  const nav=make('nav',null,'ux-mode-nav');nav.setAttribute('aria-label','Работа со сделкой');
- for(const [key,text,path]of [['contract','Подготовить договор','/assessment-review'],['handoff','Передать юристам','/lawyer-handoff']]){if(key===mode)continue;const a=make('a',text+' →');a.dataset.clientPath=path;a.href=path;a.target='_top';nav.append(a);}
+ for(const [key,text,path]of profile?[]:[['contract','Подготовить договор','/assessment-review'],['handoff','Передать юристам','/lawyer-handoff']]){if(key===mode)continue;const a=make('a',text+' →');a.dataset.clientPath=path;a.href=path;a.target='_top';nav.append(a);}
  if(window.self!==window.top)home.hidden=true;
- bar.append(home,make('h1',mode==='handoff'?'Передать юристам':'Подготовить договор','ux-page-title'),nav);wrap.prepend(bar);
+ bar.append(home,make('h1',pageTitle,'ux-page-title'),nav);wrap.prepend(bar);
  const entry=make('section',null,'ux-client-entry');entry.id='uxClientEntry';const note=make('p','Найдите клиента по имени или номеру сделки. Документы и договор откроются только после выбора.');
  const choose=make('button','Выбрать клиента','btn btn-main');choose.type='button';choose.onclick=()=>ClientWorkspace.open();entry.append(make('h2','С кем работаем?'),note,choose);document.querySelector('.wf-header').before(entry);
  const retryOpen=make('button','Повторить открытие','btn btn-ghost');retryOpen.type='button';retryOpen.hidden=!new URLSearchParams(location.search).has('dealId');retryOpen.onclick=async()=>{retryOpen.disabled=true;try{await $('hostLoadDeal').onclick();}finally{retryOpen.disabled=false;}};entry.append(retryOpen);
  const status=make('section',null,'ux-load-status');status.id='uxLoadStatus';status.setAttribute('role','status');
  const statusText=make('p'),retry=make('button','Повторить загрузку','btn btn-ghost');retry.type='button';retry.onclick=()=>$('loadDraft').classList.contains('hidden')?ServerDrafts.inspect():ServerDrafts.restore();
- const leave=make('a','Выбрать другого клиента','btn btn-ghost');leave.href=mode==='handoff'?'/lawyer-handoff':'/assessment-review';leave.target='_top';
+ const leave=make('a','Выбрать другого клиента','btn btn-ghost');leave.href=homePath;leave.target='_top';
  status.append(statusText,retry,leave);document.querySelector('.wf-header').after(status);
  const identity=make('section',null,'ux-identity-warning');identity.id='uxIdentityWarning';identity.setAttribute('role','status');
  const identityTitle=make('strong'),identityNote=make('p');identity.append(identityTitle,identityNote);
@@ -37,7 +40,7 @@ window.ClientContextUI=(()=>{
   const names=ServerDrafts.pendingFiles?.()||[];pending.hidden=!loaded||!names.length;
   const signature=JSON.stringify(names);if(pending.dataset.files!==signature){pending.dataset.files=signature;pendingTitle.textContent='Не сохранены ранее · '+names.length;pendingList.replaceChildren(...names.map(name=>make('li',/\.(p12|pfx|key)$/i.test(name)?'Ключ ЭЦП — добавляется в разделе «Передать юристам»':name)));}
   if(!c&&new URLSearchParams(location.search).has('dealId'))note.textContent=$('afStatus').textContent+' Выберите клиента, чтобы продолжить.';
-  document.title=(c?c.client.title+' · № '+c.client.external.dealId+' — ':'')+(mode==='handoff'?'Передать юристам':'Подготовить договор');
+  document.title=(c?c.client.title+' · № '+c.client.external.dealId+' — ':'')+pageTitle;
   document.querySelectorAll('[data-client-path]').forEach(a=>{a.href=a.dataset.clientPath+(c?'?dealId='+encodeURIComponent(c.client.external.dealId):'');});
   document.querySelectorAll('[data-ux-client-content]').forEach(n=>{n.inert=!loaded;});document.querySelector('.draft-toolbar').inert=!c;
   $('openClients').textContent=c?'Сменить клиента':'Выбрать клиента';
@@ -62,5 +65,5 @@ window.ClientContextUI=(()=>{
  },true);
  for(const event of ['assessment-identity-confirmed','assessment-case-opened','assessment-draft-restored','assessment-analysis-complete','assessment-draft-saved','assessment-draft-load-state'])document.addEventListener(event,()=>queueMicrotask(sync));
  new MutationObserver(sync).observe($('draftStatus'),{childList:true,subtree:true,characterData:true});new MutationObserver(sync).observe($('afStatus'),{childList:true,subtree:true,characterData:true});sync();
- return{mode,context,ready,label,confirm,sync,make};
+ return{mode,profile,context,ready,label,confirm,sync,make};
 })();
