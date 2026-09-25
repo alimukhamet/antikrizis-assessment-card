@@ -14,7 +14,7 @@ const requestPattern = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 
 function failure(error: unknown) {
   if (error instanceof ProfileWriteError) {
-    const status = error.code === 'PROFILE_FIELDS_MISSING' || error.code === 'BITRIX_NOT_CONFIGURED' ? 503
+    const status = error.code === 'BITRIX_NOT_CONFIGURED' ? 503
       : ['PROFILE_CHANGED_IN_CRM', 'CASE_IDENTITY_CHANGED', 'CLIENT_IDENTITY_UNVERIFIED'].includes(error.code) ? 409 : 502;
     return Response.json({ error: error.code, fields: error.fields }, { status, headers });
   }
@@ -39,11 +39,13 @@ export async function GET(request: Request, ctx: { params: Promise<{ dealId: str
   try {
     const { dealId } = await ctx.params, { record } = await evidenceContext(request, dealId);
     const deal = await createProfileAdapter(process.env.BITRIX_WEBHOOK ?? '').context(dealId);
-    const repo = await storage(), [active, latest] = await Promise.all([repo.active(record.id), repo.latestVerified(record.id)]);
+    const repo = await storage(), [active, verified] = await Promise.all([repo.active(record.id), repo.latestVerified(record.id)]);
+    // The timeline comment is the only full profile copy in Bitrix: retry it when an earlier save could not add it.
+    const latest = verified && !verified.history_comment_id && record.client_iin ? (await appendHistory(dealId, record.client_iin, verified, repo, record)).row : verified;
     return Response.json({
       dealId, title: deal.title, iin: deal.iin, zviDate: deal.zviDate, procedure: deal.procedure, phone: deal.phone,
-      legacyCard: deal.legacyCard, fieldsReady: deal.fieldsReady,
-      current: { fio: asText(deal.baseline.fio), marital: asText(deal.baseline.marital), profileAt: asText(deal.baseline.profileAt) },
+      legacyCard: deal.legacyCard,
+      current: { fio: asText(deal.baseline.fio), marital: asText(deal.baseline.marital) },
       active: active ? present(active) : null, latest: latest ? present(latest) : null,
     }, { headers });
   } catch (error) { return failure(error); }
@@ -54,7 +56,7 @@ async function appendHistory(dealId: string, iin: string, row: ProfileSaveRow, r
   const payload = JSON.parse(row.payload_json) as ProfileSavePayload, before = payload.baseline;
   const text = [payload.values.profileCard, '', 'ЗНАЧЕНИЯ СДЕЛКИ ДО СОХРАНЕНИЯ ПРОФИЛЯ',
     `• ФИО: ${asText(before.fio) || '—'}`, `• Семейное положение: ${asText(before.marital) || '—'}`,
-    `• Общий долг: ${asText(before.debt) || '—'}`, `• Профиль ранее заполнен: ${asText(before.profileAt) || 'нет'}`].join('\n');
+    `• Общий долг: ${asText(before.debt) || '—'}`].join('\n');
   try {
     const saved = await createAssessmentHistoryAdapter(process.env.BITRIX_WEBHOOK ?? '').append(dealId, iin, row.request_id, text);
     return { ok: true, row: await repo.history(record, row, saved.commentId) };
@@ -98,7 +100,6 @@ export async function POST(request: Request, ctx: { params: Promise<{ dealId: st
     if (body.identityRevision !== record.identity_revision) throw new RepositoryError('CASE_IDENTITY_CHANGED');
 
     const draft = validateDraft(body.draft), deal = await adapter.context(dealId);
-    if (!deal.fieldsReady) throw new ProfileWriteError('PROFILE_FIELDS_MISSING');
     if (deal.iin !== client.iin) throw new RepositoryError('CASE_IDENTITY_CHANGED');
     const at = new Date().toISOString();
     const compiled = compileProfile(draft, client.iin, dealId, { name: actor.displayName, at }, operatingDay());

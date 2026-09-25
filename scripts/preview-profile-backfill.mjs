@@ -15,12 +15,12 @@ const modules=await Promise.all(paths.map(async path=>({type:'ESModule',path,con
 // The openable synthetic deal sits on a ZVI stage with an old free-text card; three more deals fill the queue.
 const crm=syntheticCrm();
 Object.assign(crm.deal,{TITLE:'Тестовый клиент Иванова А.',CATEGORY_ID:'1',STAGE_ID:'C1:ZVI',CONTACT_ID:'5',UF_CRM_1778066504937:'2026-09-20T00:00:00+05:00',UF_CRM_1773655613972:'199',
- UF_CRM_1773669702495:'Иванова Айгуль Тестовна',UF_CRM_AI_MARITAL:'',UF_CRM_AI_DEBT:'',UF_CRM_ANK_PROFILE_CARD:'',UF_CRM_ANK_PROFILE_JSON:'',UF_CRM_ANK_PROFILE_AT:'',
+ UF_CRM_1773669702495:'Иванова Айгуль Тестовна',UF_CRM_AI_MARITAL:'',UF_CRM_AI_DEBT:'',
  UF_CRM_AI_CARD:'Старая карточка (тест): клиентка работает продавцом, двое детей, кредиты в 3 банках, просрочка 4 месяца.'});
 const others=[
- {ID:'900002',TITLE:'Тестовый клиент Петров Б.',STAGE_ID:'C1:WAIT',UF_CRM_1778066504937:'2026-09-18T00:00:00+05:00',UF_CRM_1773655613972:'203',UF_CRM_AI_IIN:'000000000029',UF_CRM_AI_CARD:'',UF_CRM_ANK_PROFILE_AT:''},
- {ID:'900003',TITLE:'Тестовый клиент Сидорова В.',STAGE_ID:'C1:ZVI',UF_CRM_1778066504937:'2026-09-10T00:00:00+05:00',UF_CRM_1773655613972:'201',UF_CRM_AI_IIN:'',UF_CRM_AI_CARD:'старая карточка',UF_CRM_ANK_PROFILE_AT:''},
- {ID:'900004',TITLE:'Тестовый клиент Ахметов Г.',STAGE_ID:'C1:ZVI',UF_CRM_1778066504937:'2026-09-01T00:00:00+05:00',UF_CRM_1773655613972:'199',UF_CRM_AI_IIN:'000000000037',UF_CRM_AI_CARD:'',UF_CRM_ANK_PROFILE_AT:'2026-09-24T10:00:00Z · Azhar'},
+ {ID:'900002',TITLE:'Тестовый клиент Петров Б.',STAGE_ID:'C1:WAIT',UF_CRM_1778066504937:'2026-09-18T00:00:00+05:00',UF_CRM_1773655613972:'203',UF_CRM_AI_IIN:'000000000029',UF_CRM_AI_CARD:''},
+ {ID:'900003',TITLE:'Тестовый клиент Сидорова В.',STAGE_ID:'C1:ZVI',UF_CRM_1778066504937:'2026-09-10T00:00:00+05:00',UF_CRM_1773655613972:'201',UF_CRM_AI_IIN:'',UF_CRM_AI_CARD:'старая карточка'},
+ {ID:'900004',TITLE:'Тестовый клиент Ахметов Г.',STAGE_ID:'C1:ZVI',UF_CRM_1778066504937:'2026-09-01T00:00:00+05:00',UF_CRM_1773655613972:'199',UF_CRM_AI_IIN:'000000000037',UF_CRM_AI_CARD:''},
 ];
 const stages=[{ENTITY_ID:'DEAL_STAGE_1',STATUS_ID:'C1:ZVI',NAME:'ЗВИ'},{ENTITY_ID:'DEAL_STAGE_1',STATUS_ID:'C1:WAIT',NAME:'В ожидании'},{ENTITY_ID:'DEAL_STAGE_1',STATUS_ID:'C1:NEW',NAME:'Новая'}];
 const handle=async request=>{
@@ -30,7 +30,6 @@ const handle=async request=>{
  if(method==='crm.deal.fields.json')return Response.json({result:{UF_CRM_1773655613972:{items:[{ID:'199',VALUE:'ВП'},{ID:'201',VALUE:'СБ'},{ID:'203',VALUE:'ВБ'},{ID:'205',VALUE:'График'}]}}});
  if(method==='crm.deal.list.json')return Response.json({result:[{...crm.deal},...others]});
  if(method==='crm.contact.get.json')return Response.json({result:{PHONE:[{VALUE:'+7 700 000 00 01'}]}});
- if(method==='crm.deal.userfield.list.json'){const b=await body();return Response.json({result:[{FIELD_NAME:b.filter.FIELD_NAME}]});}
  if(method==='crm.deal.update.json'){const b=await body();if(!b.fields.STAGE_ID){Object.assign(crm.deal,b.fields);return Response.json({result:true});}}
  if(method==='crm.timeline.comment.add.json')return Response.json({result:1});
  return crm.handle(request);

@@ -7,7 +7,7 @@ window.ProfileBackfill=(()=>{
  const make=(tag,text,cls)=>{const n=document.createElement(tag);if(text)n.textContent=text;if(cls)n.className=cls;return n;};
  const UNKNOWN='Не знаю';
  const messages={
-  ANSWERS_INCOMPLETE:'Заполните отмеченные ответы.',PROFILE_FIELDS_MISSING:'Поля профиля в Bitrix ещё не созданы. Сохранение недоступно — сообщите администратору.',
+  ANSWERS_INCOMPLETE:'Заполните отмеченные ответы.',
   PROFILE_CHANGED_IN_CRM:'Сделку изменили в Bitrix, пока вы работали. Обновите страницу и проверьте данные.',CASE_IDENTITY_CHANGED:'ИИН сделки изменился. Обновите страницу.',
   DEAL_IDENTITY_UNVERIFIED:'Сначала подтвердите ИИН клиента по ГКБ на шаге «Документы».',PROFILE_SAVE_PENDING:'Предыдущее сохранение ещё не подтверждено. Нажмите «Проверить сохранение».',
   PROFILE_READBACK_MISMATCH:'Bitrix вернул другие значения. Нажмите «Проверить сохранение» ещё раз.',PROFILE_SAVE_UNCERTAIN:'Не удалось подтвердить сохранение. Нажмите «Проверить сохранение» — повторная запись не выполняется.',
@@ -81,9 +81,8 @@ window.ProfileBackfill=(()=>{
  }
  function renderContext(){
   context.replaceChildren();if(!deal)return;context.hidden=false;
-  if(!deal.fieldsReady){context.classList.add('pb-warning');context.append(make('h3','Сохранение пока недоступно'),make('p',messages.PROFILE_FIELDS_MISSING));}
   const saved=deal.latest?.state==='verified'?deal.latest:null;
-  if(saved||deal.current.profileAt){const done=make('p','Профиль уже сохранён: '+(deal.current.profileAt||new Date(saved.savedAt).toLocaleString('ru-RU'))+'. Повторное сохранение заменит его; прежние значения останутся в истории сделки.');context.append(done);}
+  if(saved){const done=make('p','Профиль уже сохранён: '+new Date(saved.savedAt).toLocaleString('ru-RU')+'. Повторное сохранение заменит его; прежние значения останутся в истории сделки.');context.append(done);}
   if(deal.legacyCard){
    const legacy=make('details');legacy.open=true;legacy.append(make('summary','Старая карточка клиента из Bitrix — перенесите факты в ответы'),make('pre',deal.legacyCard));context.append(legacy);
   }else context.append(make('p','Старой карточки в сделке нет. Заполните профиль по документам клиента.','hint'));
@@ -145,10 +144,9 @@ window.ProfileBackfill=(()=>{
   if(done)return next();
   if(busy||!ClientContextUI.ready())return;busy=true;saveButton.disabled=check.disabled=true;
   try{
-   if(deal&&!deal.fieldsReady){status.textContent=messages.PROFILE_FIELDS_MISSING;return;}
    if(ServerDrafts.isDirty())await ServerDrafts.save({automatic:true});
    const checked=await runCheck();if(!checked?.ready)return;
-   if(!await ClientContextUI.confirm('Сохранить профиль в Bitrix','Будут обновлены ФИО, семейное положение, общий долг и поля профиля. Договор, оплата, процедура и старая карточка не меняются.'))return;
+   if(!await ClientContextUI.confirm('Сохранить профиль в Bitrix','Будут обновлены ФИО, семейное положение и общий долг; полный профиль добавится комментарием в историю сделки. Договор, оплата, процедура и старая карточка не меняются.'))return;
    status.textContent='Сохраняем профиль в Bitrix…';
    const requestId=crypto.randomUUID();pendingRequest=requestId;
    const result=await api(base()+'/profile',{action:'save',requestId,draft:ServerDrafts.capture(),identityRevision:HostedAssessment.getContext().identityRevision});

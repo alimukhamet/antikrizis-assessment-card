@@ -14,7 +14,7 @@ async function setup(t,{mode='profile',check={ready:false,issues:[{key:'regAddre
  w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};w.HTMLDialogElement.prototype.close=function(){this.open=false;};
  w.addEventListener('error',event=>errors.push(event.error));
  const context={caseId:'case',identityRevision:1,assessmentDay:'2026-09-25',client:{title:'SYNTHETIC CLIENT',iin:'000000000010',external:{system:'bitrix',dealId:'900001'}}};
- const profile={dealId:'900001',title:'SYNTHETIC CLIENT',iin:'000000000010',zviDate:'2026-09-01',procedure:'199',phone:'+7 700 000 00 01',legacyCard:'SYNTHETIC LEGACY CARD',fieldsReady:true,current:{fio:'SYNTHETIC CLIENT FULL',marital:'В браке',profileAt:''},active:null,latest:null};
+ const profile={dealId:'900001',title:'SYNTHETIC CLIENT',iin:'000000000010',zviDate:'2026-09-01',procedure:'199',phone:'+7 700 000 00 01',legacyCard:'SYNTHETIC LEGACY CARD',current:{fio:'SYNTHETIC CLIENT FULL',marital:'В браке'},active:null,latest:null};
  w.fetch=async(path,options={})=>{
   calls.push({path,method:options.method||'GET',body:options.body});let result;
   if(path==='/api/assessment/900001')result=context;
@@ -92,7 +92,7 @@ test('built Worker protects the profile queue page and its APIs; signed-in page 
  const {session,TEST_SECRET}=await import('./session-helper.mjs');
  const {default:worker}=await import('../dist/server/index.js');
  const env={SITE_SESSION_TOKEN:TEST_SECRET,ASSETS:{fetch:async()=>new Response('',{status:404})}},ctx={waitUntil(){},passThroughOnException(){}};
- for(const path of ['/profile-backfill','/profile-backfill?dealId=11665','/api/profile-queue','/api/profile-fields','/api/assessment/11665/profile']){
+ for(const path of ['/profile-backfill','/profile-backfill?dealId=11665','/api/profile-queue','/api/assessment/11665/profile']){
   const response=await worker.fetch(new Request('https://site.test'+path),env,ctx);
   assert.equal(response.status,path.startsWith('/api/')?401:303,path);
  }

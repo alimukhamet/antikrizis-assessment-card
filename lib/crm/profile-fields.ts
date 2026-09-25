@@ -10,22 +10,14 @@ export const PROCEDURE_FIELD = 'UF_CRM_1773655613972';
 export const LEGACY_CARD_FIELD = 'UF_CRM_AI_CARD';
 export const IIN_FIELD = 'UF_CRM_AI_IIN';
 
-/** Fields the backfill writes. Contract, payment, procedure and the legacy card are never written. */
+/** The only Bitrix fields the backfill writes — all existing. No new Bitrix fields are created:
+ * the full profile is kept in the tool database and posted to the deal timeline. */
 export const PROFILE_FIELDS = {
   fio: 'UF_CRM_1773669702495',
   marital: 'UF_CRM_AI_MARITAL',
   debt: 'UF_CRM_AI_DEBT',
-  profileCard: 'UF_CRM_ANK_PROFILE_CARD',
-  profileJson: 'UF_CRM_ANK_PROFILE_JSON',
-  profileAt: 'UF_CRM_ANK_PROFILE_AT',
 } as const;
 export type ProfileField = keyof typeof PROFILE_FIELDS;
-export type ProfileValues = Record<ProfileField, string>;
+/** Bitrix values plus the compiled profile, which stays in the tool (D1) and the timeline comment. */
+export type ProfileValues = Record<ProfileField, string> & { profileCard: string; profileJson: string; profileAt: string };
 export type ProfileBaseline = Record<ProfileField, unknown>;
-
-/** New deal user fields. Created once by scripts/ensure-profile-fields.mjs. */
-export const PROFILE_USER_FIELDS = [
-  { FIELD_NAME: 'ANK_PROFILE_CARD', label: 'Профиль клиента (текст)', rows: 20 },
-  { FIELD_NAME: 'ANK_PROFILE_JSON', label: 'Профиль клиента (данные для платформы)', rows: 5 },
-  { FIELD_NAME: 'ANK_PROFILE_AT', label: 'Профиль клиента заполнен', rows: 1 },
-] as const;
