@@ -18,7 +18,13 @@ function failure(error: unknown) {
 export async function GET(request: Request) {
   const denied = await requireStaffRequest(request); if (denied) return denied;
   const canCreate = Boolean(await admin(request));
-  try { return Response.json({ fields: await createProfileFieldSetup(process.env.BITRIX_WEBHOOK ?? '').status(), canCreate }, { headers }); }
+  try {
+    // The queue page calls this on open: the first visit creates any missing profile fields
+    // (idempotent, create-only), so the documentologist can start without an admin step.
+    const setup = createProfileFieldSetup(process.env.BITRIX_WEBHOOK ?? ''), fields = await setup.status();
+    if (fields.some(field => !field.exists)) return Response.json({ ...await setup.ensure(), canCreate }, { headers });
+    return Response.json({ fields, canCreate }, { headers });
+  }
   catch (error) { return failure(error); }
 }
 
