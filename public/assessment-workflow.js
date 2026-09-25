@@ -6,8 +6,10 @@ window.AssessmentWorkflow=(()=>{
  const details=(title,cls)=>{const node=make('details',null,cls);node.append(make('summary',title));return node;};
  const step=(node,name)=>{node.dataset.assessmentStep=name;return node;};
  const root=$('questionnaireStep'),documentStep=$('documentStep'),intro=document.querySelector('.workflow-intro');
+ // Profile backfill: same documents and answers; the last step saves the profile instead of a contract.
+ const profile=new URLSearchParams(location.search).get('mode')==='profile';
  if(!root||!documentStep||!intro)return null;
- let active='documents',lastCheck=null,collectionSignature='',checkingDocuments=false;
+ let active='documents',lastCheck=null,collectionSignature='',checkingDocuments=false,profileSaved=false;
  const socialLabel=$('socialStatusChips').closest('.field').querySelector('label.lbl');
  socialLabel.removeAttribute('for');socialLabel.id='workflowSocialStatusLabel';
  $('socialStatusChips').setAttribute('role','group');$('socialStatusChips').setAttribute('aria-labelledby',socialLabel.id);
@@ -46,7 +48,7 @@ window.AssessmentWorkflow=(()=>{
  const draftNote=make('p','Ответы сохраняются автоматически. В Bitrix — после «Сохранить и скачать».','wf-draft-note');moreContent.append(draftNote);
 
  const nav=make('nav',null,'wf-steps');nav.setAttribute('aria-label','Подготовка договора');top.after(nav);
- const stages=[['documents','Документы','Добавьте файлы клиента'],['answers','Ответы','Проверьте и дополните'],['contract','Договор','Проверьте и сохраните']];
+ const stages=[['documents','Документы','Добавьте файлы клиента'],['answers','Ответы','Проверьте и дополните'],['contract',profile?'Профиль':'Договор','Проверьте и сохраните']];
  const tabs=new Map();
  stages.forEach(([name,title,caption],index)=>{
   const button=action('',()=>show(name));button.className='wf-step';button.dataset.goStep=name;
@@ -106,18 +108,20 @@ window.AssessmentWorkflow=(()=>{
  const answerNotice=make('p',null,'wf-answer-notice');answerNotice.setAttribute('role','status');answerNotice.hidden=true;answerIntro.append(answerNotice);
  $('afNext').textContent='Заполнить';$('afNextReview').textContent='Проверить';questions.querySelector('summary').textContent='Список вопросов';
  const answerFooter=step(make('div',null,'wf-stage-footer'),'answers');
- answerFooter.append(action('← Документы',()=>show('documents')),action('Далее: договор →',()=>show('contract'),true));contractCard.before(answerFooter);
+ answerFooter.append(action('← Документы',()=>show('documents')),action(profile?'Далее: сохранить профиль →':'Далее: договор →',()=>show('contract'),true));contractCard.before(answerFooter);
  const contractIntro=step(make('div',null,'wf-contract-intro'),'contract');contractIntro.id='workflowContract';
- contractIntro.append(make('h2','Договор'));
+ contractIntro.append(make('h2',profile?'Сохранить профиль':'Договор'));
  contractCard.before(contractIntro);
  const finalActions=step(root.querySelector('.preview-check'),'contract');finalActions.classList.add('wf-final-actions');
  $('checkQuestions').textContent='Проверить';$('checkQuestions').className='btn btn-ghost';
  const finalTools=details('Предпросмотр и проверка','wf-contract-tools');$('checkQuestions').before(finalTools);finalTools.append($('checkQuestions'));$('checkQuestions').textContent='Проверить ответы';
+ if(profile)$('checkQuestions').closest('.wf-contract-tools').before(make('p','Профиль сохранится в Bitrix. Договор, оплата и документы сделки не меняются.','hint'));
  const reviewLink=action('Вернуться к документам',()=>show('documents'));reviewLink.hidden=true;reviewLink.id='workflowDocumentIssues';finalActions.append(reviewLink);
 
  const floating=make('nav',null,'wf-bottom-nav');floating.setAttribute('aria-label','Переход между этапами');
  const previous=action('← Назад',()=>show(active==='contract'?'answers':'documents'));
  const nextStep=action('Проверить и продолжить →',async()=>{
+  if(profile){if(active==='documents'){if(!af.busy&&HostedAssessment.ready())show('answers');}else if(active==='answers')show('contract');else window.ProfileBackfill?.save();return;}
   if(active==='documents'){
    if(checkingDocuments||af.busy||!HostedAssessment.ready()||!prepareUpload())return;
    const state=collection();
@@ -130,8 +134,9 @@ window.AssessmentWorkflow=(()=>{
  function downloadProgress(){
   downloadNotice.hidden=active!=='contract'||!downloadState.message;downloadNotice.textContent=downloadState.message;
   nextStep.disabled=active==='contract'&&downloadState.busy;nextStep.setAttribute('aria-busy',String(nextStep.disabled));
-  if(active==='contract')nextStep.textContent=downloadState.busy?(downloadState.label||'Проверяю…'):'Скачать договор';
+  if(active==='contract')nextStep.textContent=downloadState.busy?(downloadState.label||'Проверяю…'):profile?(profileSaved?'Следующая сделка →':'Сохранить профиль'):'Скачать договор';
  }
+ document.addEventListener('profile-backfill-saved',()=>{profileSaved=true;downloadProgress();});
  document.addEventListener('assessment-submission-progress',event=>{downloadState=event.detail;downloadProgress();});
  document.addEventListener('assessment-case-opened',()=>{downloadState={busy:false,message:''};downloadProgress();});
  // Participants are scoped to each obligation. Keep the old shared answer for reference only.
@@ -158,9 +163,9 @@ window.AssessmentWorkflow=(()=>{
 
  function show(name,{focus=true,remember=true}={}){
   if(!tabs.has(name))return false;
-  const blocked=name!=='documents'&&!collection().ready;
+  const blocked=!profile&&name!=='documents'&&!collection().ready;
   if(blocked){name='documents';remember=false;}
-  active=name;document.body.dataset.assessmentWorkflow=name;previous.hidden=name==='documents';stepCaption.textContent=name==='documents'?'1 из 3':name==='answers'?'2 из 3':'3 из 3';nextStep.textContent=name==='documents'?'Далее: ответы →':name==='answers'?'Далее: договор →':'Скачать договор';
+  active=name;document.body.dataset.assessmentWorkflow=name;previous.hidden=name==='documents';stepCaption.textContent=name==='documents'?'1 из 3':name==='answers'?'2 из 3':'3 из 3';nextStep.textContent=name==='documents'?'Далее: ответы →':name==='answers'?(profile?'Далее: сохранить профиль →':'Далее: договор →'):profile?'Сохранить профиль':'Скачать договор';
   const answerIssues=$('answerCheckIssues');if(answerIssues&&name!=='documents')(name==='answers'?answerIntro:contractIntro).append(answerIssues);
   if(remember&&HostedAssessment.ready())try{sessionStorage.setItem('assessment-step:'+HostedAssessment.getContext().client.external.dealId,name);}catch{/* Navigation still works when browser storage is unavailable. */}
   for(const node of document.querySelectorAll('[data-assessment-step]')){
@@ -201,7 +206,7 @@ window.AssessmentWorkflow=(()=>{
  }
  function prepareUpload(){
   if(!HostedAssessment.ready())return false;
-  if(new URLSearchParams(location.search).get('mode')==='handoff')return Boolean(window.ServerDrafts?.canSwitch());
+  if(['handoff','profile'].includes(new URLSearchParams(location.search).get('mode')))return Boolean(window.ServerDrafts?.canSwitch());
   const id=collection().context[0];if(!id)return true;
   show('documents',{focus:false});$(id).focus();$(id).scrollIntoView({block:'center'});return false;
  }
@@ -274,11 +279,13 @@ window.AssessmentWorkflow=(()=>{
     }
    }
   }
-  for(const [name,{button}]of tabs)if(name!=='documents'){button.setAttribute('aria-disabled',String(!state.ready));button.title=state.ready?'':'Сначала соберите обязательные документы';}
+  const open=profile||state.ready;
+  for(const [name,{button}]of tabs)if(name!=='documents'){button.setAttribute('aria-disabled',String(!open));button.title=open?'':'Сначала соберите обязательные документы';}
   nextStep.setAttribute('aria-disabled',String(active==='documents'&&(checkingDocuments||af.busy||!HostedAssessment.ready())));
-  nextStep.classList.toggle('wf-missing-action',active==='documents'&&HostedAssessment.ready()&&!af.busy&&!state.ready);
-  if(active==='documents')nextStep.textContent=!HostedAssessment.ready()?'Выберите клиента':checkingDocuments?'Проверяем изменения…':af.busy?'Читаем документы…':waitingForContext?'Ответить на вопросы':state.ready?'К ответам →':collectionAction(state.rows.find(row=>row.state!=='present'));
-  if(active!=='documents'&&!state.ready)show('documents',{focus:false,remember:false});
+  nextStep.classList.toggle('wf-missing-action',!profile&&active==='documents'&&HostedAssessment.ready()&&!af.busy&&!state.ready);
+  if(active==='documents'&&profile)nextStep.textContent=!HostedAssessment.ready()?'Выберите клиента':af.busy?'Читаем документы…':'Далее: ответы →';
+  else if(active==='documents')nextStep.textContent=!HostedAssessment.ready()?'Выберите клиента':checkingDocuments?'Проверяем изменения…':af.busy?'Читаем документы…':waitingForContext?'Ответить на вопросы':state.ready?'К ответам →':collectionAction(state.rows.find(row=>row.state!=='present'));
+  if(!profile&&active!=='documents'&&!state.ready)show('documents',{focus:false,remember:false});
  }
  function refresh(snapshot){
   window.BenefitEvidence?.refresh();
