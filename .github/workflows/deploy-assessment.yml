@@ -2,7 +2,7 @@ name: Deploy assessment to Cloudflare
 
 on:
   push:
-    branches: [deploy/anti-krizis]
+    branches: [main]
     paths-ignore:
       - 'SALES_TESTING.md'
   workflow_dispatch:
