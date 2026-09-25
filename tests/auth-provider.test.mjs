@@ -15,3 +15,10 @@ test('local test provider remains isolated and unknown configuration fails close
  assert.equal((await authenticateStaff('ali','local-test',{provider:'local',localPassword:'local-test'})).id,'worker:ali');
  await assert.rejects(authenticateStaff('ali','x',{provider:'https://caller-controlled.invalid'}),/AUTH_PROVIDER_UNAVAILABLE/);
 });
+test('documentologist signs in with her own secret, never via payment-control or the shared password',async()=>{
+ let calls=0;const send=async()=>{calls++;throw Error();};
+ assert.equal(await authenticateStaff('azhar','synthetic-azhar',config,send),null);
+ assert.equal(await authenticateStaff('azhar','synthetic-password',{...config,workerPasswords:{azhar:'synthetic-azhar'}},send),null);
+ const actor=await authenticateStaff('azhar','synthetic-azhar',{...config,workerPasswords:{azhar:'synthetic-azhar'}},send);
+ assert.equal(actor.id,'worker:azhar');assert.equal(actor.displayName,'Azhar');assert.equal(calls,0);
+});

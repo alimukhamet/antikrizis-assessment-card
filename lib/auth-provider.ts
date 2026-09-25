@@ -1,10 +1,12 @@
-import {authenticateWorker,WORKERS,type Actor,type WorkerId} from './worker-session';
+import {authenticateWorker,LOCAL_WORKER_PASSWORDS,WORKERS,type Actor,type WorkerId} from './worker-session';
 /** Replace this provider boundary when the legal CRM owns authentication. */
 const PAYMENT_ORIGIN='https://antikrizis-payment-control.mukhamet-ali-ma.chatgpt.site';
 export class AuthProviderError extends Error {constructor(){super('AUTH_PROVIDER_UNAVAILABLE');}}
-export type AuthConfiguration={provider:string;localPassword?:string};
+export type AuthConfiguration={provider:string;localPassword?:string;workerPasswords?:Partial<Record<string,string>>};
 export async function authenticateStaff(worker:string,password:string,configuration:AuthConfiguration,send:typeof fetch=fetch):Promise<Actor|null>{
  if(!Object.prototype.hasOwnProperty.call(WORKERS,worker)||!password||password.length>1024)return null;
+ // Documentologist accounts are not in payment-control; an unset secret means the account is disabled.
+ if(Object.prototype.hasOwnProperty.call(LOCAL_WORKER_PASSWORDS,worker))return authenticateWorker(worker,password,configuration.workerPasswords?.[worker]||'');
  if(configuration.provider==='local')return authenticateWorker(worker,password,configuration.localPassword||'');
  if(configuration.provider!=='payment-control')throw new AuthProviderError();
  let response:Response;

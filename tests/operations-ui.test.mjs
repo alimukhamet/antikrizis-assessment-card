@@ -57,7 +57,7 @@ async function setup(t,{identity=null,mode='contract',draft=null,stageError=null
 test('production portal starts with no client, no random deal, and no business writes',async t=>{
  const s=await setup(t);assert.equal(s.w.HostedAssessment.getContext(),null);assert.equal(s.d.body.dataset.uxClientState,'empty');assert.equal(s.d.getElementById('uxClientEntry').hidden,false);assert.equal(s.d.getElementById('questionnaireStep').inert,true);assert.equal(s.calls.length,0);
  assert.equal(s.run('requiredDocumentLabels().length'),6);assert.equal(s.run('requiredDocumentLabels().includes("Доверенность")'),false);assert.equal(s.run('requiredDocumentLabels().includes("ЭЦП файл")'),false);
- const controls=s.w.ServerDrafts.capture();assert.ok(controls.answers.length>=81);assert.equal(controls.groups.length,21);
+ const controls=s.w.ServerDrafts.capture();assert.ok(controls.answers.length>=81);assert.equal(controls.groups.length,22); // + profilefamily (profile backfill only);
  await s.load();assert.equal(s.d.body.dataset.uxClientState,'ready');assert.match(s.d.querySelector('.wf-client-copy').textContent,/SYNTHETIC CLIENT/);assert.match(s.d.querySelector('.wf-client-copy').textContent,/900001/);
  assert.equal(s.d.querySelector('[data-client-path="/lawyer-handoff"]').getAttribute('href'),'/lawyer-handoff?dealId=900001');
  assert.equal(s.calls.some(c=>c.method==='POST'),false);

@@ -1,4 +1,4 @@
-import { issueSession, readSessionCookie, verifySession, requestOriginAllowed, SESSION_COOKIE, SESSION_SECONDS, WORKERS } from '../../../lib/worker-session';
+import { issueSession, readSessionCookie, verifySession, requestOriginAllowed, SESSION_COOKIE, SESSION_SECONDS, WORKERS, LOCAL_WORKER_PASSWORDS } from '../../../lib/worker-session';
 import { authenticateStaff } from '../../../lib/auth-provider';
 import { checkLoginRate } from '../../../lib/login-rate';
 import { loginDestination, LOGIN_ERRORS } from '../../../lib/login-navigation';
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     if (!rate.allowed) return fail(429, LOGIN_ERRORS.rate, 'rate', {'retry-after': String(rate.retryAfter)});
   } catch { return fail(503, 'Вход временно недоступен. Повторите позже.', 'unavailable'); }
   let actor;
-  try { actor = await authenticateStaff(typeof body.worker === 'string' ? body.worker.trim().toLowerCase() : '', typeof body.password === 'string' ? body.password : '', {provider, localPassword: process.env.SITE_ACCESS_PASSWORD}); }
+  try { actor = await authenticateStaff(typeof body.worker === 'string' ? body.worker.trim().toLowerCase() : '', typeof body.password === 'string' ? body.password : '', {provider, localPassword: process.env.SITE_ACCESS_PASSWORD, workerPasswords: Object.fromEntries(Object.entries(LOCAL_WORKER_PASSWORDS).map(([worker, name]) => [worker, (process.env as Record<string, string | undefined>)[name as string]]))}); }
   catch { return fail(503, LOGIN_ERRORS.unavailable, 'unavailable'); }
   if (!actor) return fail(401, LOGIN_ERRORS.credentials, 'credentials');
   const token = await issueSession(actor.worker, process.env.SITE_SESSION_TOKEN ?? '');
