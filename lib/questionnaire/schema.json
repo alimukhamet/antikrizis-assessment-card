@@ -187,6 +187,96 @@
       "conditions": []
     },
     {
+      "key": "regAddress",
+      "type": "text",
+      "label": "Адрес прописки*",
+      "required": true,
+      "conditions": [
+        "profileOnly"
+      ]
+    },
+    {
+      "key": "factAddressSame",
+      "type": "select-one",
+      "label": "Где клиент живёт фактически?*",
+      "options": [
+        "",
+        "same",
+        "other",
+        "unknown"
+      ],
+      "required": true,
+      "conditions": [
+        "profileOnly"
+      ]
+    },
+    {
+      "key": "factAddress",
+      "type": "text",
+      "label": "Фактический адрес*",
+      "required": true,
+      "conditions": [
+        "factAddressField",
+        "profileOnly"
+      ]
+    },
+    {
+      "key": "postAddress",
+      "type": "text",
+      "label": "Почтовый адрес, если отличается",
+      "required": false,
+      "conditions": [
+        "profileOnly"
+      ]
+    },
+    {
+      "key": "clientPhone",
+      "type": "text",
+      "label": "Телефон клиента*",
+      "required": true,
+      "conditions": [
+        "profileOnly"
+      ]
+    },
+    {
+      "key": "contactChannel",
+      "type": "select-one",
+      "label": "Как клиент отвечает быстрее?*",
+      "options": [
+        "",
+        "WhatsApp",
+        "Звонок",
+        "Telegram",
+        "Другое",
+        "unknown"
+      ],
+      "required": true,
+      "conditions": [
+        "profileOnly"
+      ]
+    },
+    {
+      "key": "count-profilefamily",
+      "type": "select-one",
+      "label": "Сколько членов семьи указать: супруг(а), дети, иждивенцы?*",
+      "options": [
+        "",
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "more"
+      ],
+      "compactCount": true,
+      "groupTarget": "profilefamily",
+      "required": true,
+      "conditions": [
+        "profileOnly"
+      ]
+    },
+    {
       "key": "count-clientjobs",
       "type": "select-one",
       "label": "В скольких местах вы работаете официально?*",
@@ -886,6 +976,11 @@
       "label": "Точное количество: Сколько из них младше 18 лет?*"
     },
     {
+      "key": "exact:count-profilefamily",
+      "type": "number",
+      "label": "Точное количество: Сколько членов семьи указать: супруг(а), дети, иждивенцы?*"
+    },
+    {
       "key": "exact:count-clientjobs",
       "type": "number",
       "label": "Точное количество: В скольких местах вы работаете официально?*"
@@ -928,9 +1023,76 @@
   ],
   "groups": [
     {
+      "id": "profilefamily",
+      "conditions": [
+        "profileOnly"
+      ],
+      "fields": [
+        {
+          "key": "familyName",
+          "type": "text",
+          "label": "ФИО*",
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "familyRelation",
+          "type": "select-one",
+          "label": "Кем приходится клиенту?*",
+          "options": [
+            "",
+            "Супруг(а)",
+            "Сын",
+            "Дочь",
+            "Мать",
+            "Отец",
+            "Другой родственник",
+            "Другое лицо на иждивении"
+          ],
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "familyBirthDate",
+          "type": "text",
+          "label": "Дата рождения*",
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "familyDependent",
+          "type": "select-one",
+          "label": "На иждивении у клиента?*",
+          "options": [
+            "",
+            "Да, полностью",
+            "Да, частично",
+            "Нет",
+            "unknown"
+          ],
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "familyStudy",
+          "type": "text",
+          "label": "Учёба после 18 лет: ВУЗ и форма",
+          "required": false,
+          "conditions": []
+        }
+      ]
+    },
+    {
       "id": "clientjobs",
       "conditions": [],
       "fields": [
+        {
+          "key": "n8001Employer",
+          "type": "text",
+          "label": "Работодатель — название организации",
+          "required": false,
+          "conditions": []
+        },
         {
           "key": "n8001",
           "type": "number",
@@ -1024,6 +1186,13 @@
         "partnerIncome"
       ],
       "fields": [
+        {
+          "key": "n8002Employer",
+          "type": "text",
+          "label": "Работодатель — название организации",
+          "required": false,
+          "conditions": []
+        },
         {
           "key": "n8002",
           "type": "number",

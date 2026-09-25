@@ -1,5 +1,7 @@
 /** Portable actor/session boundary; no Bitrix identifiers are part of authentication. */
-export const WORKERS = { ali: 'Ali', ramazan: 'Ramazan', nurdaulet: 'Nurdaulet', darkhan: 'Darkhan' } as const;
+export const WORKERS = { ali: 'Ali', ramazan: 'Ramazan', nurdaulet: 'Nurdaulet', darkhan: 'Darkhan', azhar: 'Azhar' } as const;
+/** Workers without a payment-control account: each signs in with her own Worker secret. */
+export const LOCAL_WORKER_PASSWORDS: Partial<Record<string, string>> = { azhar: 'AZHAR_PASSWORD' };
 export const SESSION_COOKIE = '__Host-antikrizis_assessment_session';
 export const SESSION_SECONDS = 12 * 60 * 60;
 export type WorkerId = keyof typeof WORKERS;
