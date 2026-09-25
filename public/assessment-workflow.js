@@ -9,7 +9,7 @@ window.AssessmentWorkflow=(()=>{
  // Profile backfill: same documents and answers; the last step saves the profile instead of a contract.
  const profile=new URLSearchParams(location.search).get('mode')==='profile';
  if(!root||!documentStep||!intro)return null;
- let active='documents',lastCheck=null,collectionSignature='',checkingDocuments=false;
+ let active='documents',lastCheck=null,collectionSignature='',checkingDocuments=false,profileSaved=false;
  const socialLabel=$('socialStatusChips').closest('.field').querySelector('label.lbl');
  socialLabel.removeAttribute('for');socialLabel.id='workflowSocialStatusLabel';
  $('socialStatusChips').setAttribute('role','group');$('socialStatusChips').setAttribute('aria-labelledby',socialLabel.id);
@@ -134,8 +134,9 @@ window.AssessmentWorkflow=(()=>{
  function downloadProgress(){
   downloadNotice.hidden=active!=='contract'||!downloadState.message;downloadNotice.textContent=downloadState.message;
   nextStep.disabled=active==='contract'&&downloadState.busy;nextStep.setAttribute('aria-busy',String(nextStep.disabled));
-  if(active==='contract')nextStep.textContent=downloadState.busy?(downloadState.label||'Проверяю…'):profile?'Сохранить профиль':'Скачать договор';
+  if(active==='contract')nextStep.textContent=downloadState.busy?(downloadState.label||'Проверяю…'):profile?(profileSaved?'Следующая сделка →':'Сохранить профиль'):'Скачать договор';
  }
+ document.addEventListener('profile-backfill-saved',()=>{profileSaved=true;downloadProgress();});
  document.addEventListener('assessment-submission-progress',event=>{downloadState=event.detail;downloadProgress();});
  document.addEventListener('assessment-case-opened',()=>{downloadState={busy:false,message:''};downloadProgress();});
  // Participants are scoped to each obligation. Keep the old shared answer for reference only.

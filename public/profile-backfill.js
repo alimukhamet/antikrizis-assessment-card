@@ -134,12 +134,15 @@ window.ProfileBackfill=(()=>{
   status.textContent=result.body.ready?'Можно сохранять.'+(open?' Отмечено «Не знаю»: '+open+' — попадут в раздел «Требует уточнения».':''):'Не хватает ответов: '+result.body.issues.length+'. Нажмите на пункт, чтобы перейти к нему.';
   return result.body;
  }
+ let done=false;
  function finished(body){
+  done=true;document.dispatchEvent(new Event('profile-backfill-saved'));
   panel.classList.add('pb-done');saveButton.hidden=true;check.hidden=true;reconcileButton.hidden=true;nextButton.hidden=false;issues.replaceChildren();pendingRequest=null;
   status.textContent='Профиль сохранён в Bitrix.'+(body.unresolvedCount?' Требует уточнения: '+body.unresolvedCount+'.':'')+(body.historySaved===false?' Комментарий в истории сделки не добавлен — это не влияет на профиль.':'');
   nextButton.focus();
  }
  async function save(){
+  if(done)return next();
   if(busy||!ClientContextUI.ready())return;busy=true;saveButton.disabled=check.disabled=true;
   try{
    if(deal&&!deal.fieldsReady){status.textContent=messages.PROFILE_FIELDS_MISSING;return;}
