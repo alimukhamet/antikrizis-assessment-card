@@ -18,6 +18,8 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
  const benefitCount=payload.answers?.find(a=>a.key==='clientBenefitsCount')?.value||'';
  if(scope==='contract'&&(payload.docContext.social==='1'||Number(benefitCount)>0||payload.groups?.some(g=>g.id==='clientbenefits'&&g.rows.length>0)))required.push('Справка по выплатам пенсии и пособий');
  if(scope==='contract'&&payload.docContext.salary==='1')required.push('Выписка зарплатного банка');
+ // Pensioners without an ENPF account: the pension/benefits certificate stays required instead.
+ if(scope==='contract'&&payload.docContext.social==='1'&&payload.docContext.enpf==='none')required.splice(required.indexOf('Справка ЕНПФ'),1);
  if(scope==='contract'&&(!payload.docContext.social||!payload.docContext.salary))issues.push({code:'DOCUMENT_CONTEXT_REQUIRED',message:'Укажите, получает ли клиент пенсию или пособия и в какой банк поступает зарплата.'});
  if(scope==='contract'&&payload.pendingFiles.filter(name=>! /\.(p12|pfx|key|jks)$/i.test(name)).length)issues.push({code:'DOCUMENT_UPLOAD_PENDING',message:'Есть выбранные файлы, ещё не сохранённые для проверки.'});
  const manuallyReviewed:Array<{documentId:string;reviewId:string;type:string;actorId:string;reviewedAt:string}>=[];

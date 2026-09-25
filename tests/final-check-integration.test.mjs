@@ -97,3 +97,10 @@ test('an unidentified old sourced alias cannot double a loan, but stale keys can
  r=await check(p,s);assert.equal(r.documents.loanCoverage.complete,true,'a stale key never overrides a different actual loan in the report');s.sources.get('full').extraction.credits.pop();s.sources.get('full').extraction.creditList.declared=1;
  group.rows.shift();group.rowKeys.shift();alias.find(a=>a.key==='loanContractId').value='';r=await check(p,s);assert.equal(r.readyToSubmit,false);assert.equal(r.documents.loanCoverage.missing,1,'a source key alone never counts as an included loan');assert.match(r.issues.find(i=>i.code==='ACTIVE_LOAN_MISSING').label,/проверьте номер/);
 });
+test('a pensioner without an ENPF account needs the benefits certificate instead of the ENPF certificate',async()=>{
+ const requiredFor=async ctx=>{const p=fixture();p.docContext={social:'1',salary:'0',salaryBank:'none',...ctx};return (await repositoryFor(p).run()).required;};
+ const none=await requiredFor({enpf:'none'});assert.equal(none.includes('Справка ЕНПФ'),false);assert.ok(none.includes('Справка по выплатам пенсии и пособий'));
+ assert.ok((await requiredFor({})).includes('Справка ЕНПФ'));assert.ok((await requiredFor({enpf:''})).includes('Справка ЕНПФ'));
+ const draft=fixture();draft.docContext={social:'1',salary:'0',salaryBank:'none',enpf:'none'};assert.equal(validateDraft(draft).docContext.enpf,'none');
+ draft.docContext={social:'0',salary:'0',salaryBank:'none',enpf:'none'};assert.throws(()=>validateDraft(draft),/INVALID_ENPF_CONTEXT/);
+});

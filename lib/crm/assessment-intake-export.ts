@@ -33,6 +33,7 @@ export type AssessmentAnswersSnapshot = {
     social: string;
     salary: string;
     salaryBank?: 'kaspi' | 'other' | 'none' | '';
+    enpf?: 'none' | '';
   };
   documents: Array<{ documentId: string; type: string; person: string }>;
   pendingFiles: string[];
@@ -229,6 +230,8 @@ function draft(value: unknown): AssessmentAnswersSnapshot {
   }
   const salaryBank = value.docContext.salaryBank;
   if (salaryBank !== undefined && !['kaspi', 'other', 'none', ''].includes(String(salaryBank))) fail('ASSESSMENT_SUBMISSION_DRAFT_INVALID');
+  const enpf = value.docContext.enpf;
+  if (enpf !== undefined && !['none', ''].includes(String(enpf))) fail('ASSESSMENT_SUBMISSION_DRAFT_INVALID');
   if (!Array.isArray(value.documents) || value.documents.length > 300 || !Array.isArray(value.pendingFiles) || value.pendingFiles.length > 300) {
     fail('ASSESSMENT_SUBMISSION_DRAFT_INVALID');
   }
@@ -243,7 +246,7 @@ function draft(value: unknown): AssessmentAnswersSnapshot {
     schemaVersion: 1,
     answers: answerList(value.answers, 'answers'),
     groups,
-    docContext: { social: value.docContext.social, salary: value.docContext.salary, ...(salaryBank !== undefined ? { salaryBank: salaryBank as AssessmentAnswersSnapshot['docContext']['salaryBank'] } : {}) },
+    docContext: { social: value.docContext.social, salary: value.docContext.salary, ...(salaryBank !== undefined ? { salaryBank: salaryBank as AssessmentAnswersSnapshot['docContext']['salaryBank'] } : {}), ...(enpf !== undefined ? { enpf: enpf as AssessmentAnswersSnapshot['docContext']['enpf'] } : {}) },
     documents,
     pendingFiles: value.pendingFiles,
   };

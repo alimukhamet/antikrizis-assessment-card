@@ -14,7 +14,7 @@ window.ServerDrafts=(()=>{
   const documents=[],pendingFiles=missingFiles.filter(name=>!selectedFiles.some(item=>item.file.name===name)&&!(window.CredentialUpload?.collected?.()&&/\.(p12|pfx|key)$/i.test(name)));
   for(const item of selectedFiles){if(item.type==='ЭЦП файл'&&!window.CredentialUpload?.verified())pendingFiles.push(item.file.name);if(afExcluded(item))continue;const source=af.results.get(item.id)?.server;if((source&&source.dealId===HostedAssessment.getContext().client.external.dealId)||(!source&&item.storedDocumentId))documents.push({documentId:source?.documentId||item.storedDocumentId,type:item.type,person:item.person});else pendingFiles.push(item.file.name);}
   const reviewDrafts=documentReviewDrafts.filter(d=>documents.some(doc=>doc.documentId===d.documentId&&doc.type===d.type&&doc.person==='Клиент'));
-  return {schemaVersion:1,answers:values,groups,docContext:{social:$('needsSocialDoc').value,salary:$('needsSalaryDoc').value==='1'?'1':$('needsSalaryDoc').value?'0':'',salaryBank:$('needsSalaryDoc').value==='1'?'other':$('needsSalaryDoc').value},documents,pendingFiles,...(reviewDrafts.length?{documentReviewDrafts:reviewDrafts}:{})};
+  return {schemaVersion:1,answers:values,groups,docContext:{social:$('needsSocialDoc').value,salary:$('needsSalaryDoc').value==='1'?'1':$('needsSalaryDoc').value?'0':'',salaryBank:$('needsSalaryDoc').value==='1'?'other':$('needsSalaryDoc').value,enpf:$('needsSocialDoc').value==='1'&&$('needsEnpfDoc')?.value==='none'?'none':''},documents,pendingFiles,...(reviewDrafts.length?{documentReviewDrafts:reviewDrafts}:{})};
  }
  function getDocumentReviewDraft(documentId,type){return documentReviewDrafts.find(d=>d.documentId===documentId&&d.type===type)?.values||{};}
  function setDocumentReviewDraft(documentId,type,values){
@@ -95,7 +95,7 @@ window.ServerDrafts=(()=>{
   for(const group of p.groups){const g=document.getElementById(group.id);if(!g)continue;const rows=g.querySelector(':scope > .repeat-rows');for(let i=0;i<group.rows.length;i++){if(!rows.children[i])add(g);const cs=controls(rows.children[i]);for(const a of group.rows[i])assign(cs.find(e=>controlKey(e)===a.key),a);}}
   window.RequiredAnswers?.restore();
   const all=controls(root);af.applying=true;try{all.filter(e=>e.closest('.repeat-item')).forEach(e=>e.dispatchEvent(new Event('change',{bubbles:true})));}finally{af.applying=false;}
-  $('needsSocialDoc').value=p.docContext.social;$('needsSalaryDoc').value=p.docContext.salaryBank==='other'?'1':p.docContext.salaryBank??(p.docContext.salary==='1'?'1':'');
+  $('needsSocialDoc').value=p.docContext.social;if($('needsEnpfDoc'))$('needsEnpfDoc').value=p.docContext.enpf==='none'?'none':'';$('needsSalaryDoc').value=p.docContext.salaryBank==='other'?'1':p.docContext.salaryBank??(p.docContext.salary==='1'?'1':'');
   syncBenefitAnswer();
   selectedFiles=[];fileSequence=0;
   const failed=[];for(const doc of p.documents){if(!doc.originalName)failed.push(doc.documentId);selectedFiles.push({id:++fileSequence,file:{name:doc.originalName||'Сохранённый документ — '+doc.type,size:0,type:'application/pdf'},type:doc.type,person:doc.person||'Клиент',storedDocumentId:doc.documentId});}
