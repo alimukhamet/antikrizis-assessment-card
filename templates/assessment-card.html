@@ -2290,10 +2290,17 @@ async function saveAssessmentToBitrix(s,dealId){
     [MAP.card.bx]:"Карточка договора"
   };
   for(const [name,wanted] of Object.entries(fields)){
-    if(normalized(name,saved?.[name])!==normalized(name,wanted)){
-      throw new Error(`Bitrix не подтвердил поле «${labels[name]||name}». Договор не скачан; данные нужно проверить.`);
-    }
+    if(normalized(name,saved?.[name])===normalized(name,wanted))continue;
+    // UF_CRM_AI_DEBT stores whole tenge (PRECISION=0). The exact amount is kept
+    // in the card field, which is still compared exactly above.
+    if(name===MAP.debt.bx&&debtStoredAsWholeTenge(saved?.[name],wanted))continue;
+    throw new Error(`Bitrix не подтвердил поле «${labels[name]||name}». Договор не скачан; данные нужно проверить.`);
   }
+}
+
+function debtStoredAsWholeTenge(stored,sent){
+  const saved=Number(Array.isArray(stored)?stored[0]:stored),exact=Number(sent);
+  return Number.isFinite(saved)&&Number.isFinite(exact)&&exact>=0&&Number.isInteger(saved)&&saved===Math.round(exact);
 }
 
 async function addAssessmentToDealHistory(s,dealId){

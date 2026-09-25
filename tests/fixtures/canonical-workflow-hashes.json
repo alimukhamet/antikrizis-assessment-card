@@ -2,8 +2,8 @@
   "file": "templates/assessment-card.html",
   "suffixHashes": {
     "<div class=\"task-grid\">": "09e4ba5d1c213d3a9e1d757d9ee4ed26563362a416dcd3822d6e220b73a9d83a",
-    "<header class=\"workflow-header\"": "51874fd66e4a474e4314428a75826ab5095db4de1b126ce669a2b970c279e0b4"
+    "<header class=\"workflow-header\"": "3fbf34c2453bde7d3bb55366cd36f1580ca62bf18791498dafad0eb0ed7a5805"
   },
   "baseCommit": "256d2e064d41888c78edc3e0e9d1a518b703dc03",
-  "change": "Keep original tools 01/02 and expose newer assessment/handoff as 03/04; add non-destructive file selection controls. Approved DOCX remains unchanged."
+  "change": "Keep original tools 01/02 and expose newer assessment/handoff as 03/04; add non-destructive file selection controls. Approved DOCX remains unchanged. Tool 01 Bitrix readback accepts UF_CRM_AI_DEBT stored as whole tenge (PRECISION=0); the exact debt stays in the card, still compared exactly."
 }
