@@ -4,8 +4,10 @@ window.SubmissionFlow={mount(anchor,status){
  function clearFile(){if(fileUrl)URL.revokeObjectURL(fileUrl);fileUrl=null;fileLink.hidden=true;fileLink.removeAttribute('href');}
  const recovery=document.createElement('details'),summary=document.createElement('summary'),savedText=document.createElement('pre'),resume=document.createElement('button'),cancel=document.createElement('button');
  summary.textContent='Сохранённая версия анкеты';savedText.style.whiteSpace='pre-wrap';resume.type=cancel.type='button';resume.className=cancel.className='btn btn-ghost';cancel.textContent='Отменить подготовку';recovery.append(summary,savedText,resume,cancel);recovery.hidden=true;save.after(recovery);
+ const profile=document.createElement('button');profile.type='button';profile.id='saveProfileWithoutContract';profile.className='btn btn-ghost';profile.textContent='Сохранить профиль в CRM (без договора)';save.after(profile);
  const currentRenderer=window.ContractRenderer;
  let checked=null,attempt=null,latest=null,busy=false,busyLabel='Скачать договор',generation=0,destination=null,destinationSnapshot=null;
+ let profileBusy=false,profileAttempt=null;
  const progress=()=>document.dispatchEvent(new CustomEvent('assessment-submission-progress',{detail:{busy,label:busy?busyLabel:'Скачать договор',message:status.textContent}}));
  const report=text=>{status.textContent=text;progress();};
  const phase=(label,message)=>{busyLabel=label;save.textContent=label;if(message!==undefined)report(message);else progress();};
@@ -20,7 +22,7 @@ window.SubmissionFlow={mount(anchor,status){
   const selected=await SubmissionDestination.confirm();if(!selected)throw Error('Отправка отменена.');
   destination=selected;destinationSnapshot=before;guardDestination();
  }
- const messages={CONTRACT_OPERATION_TIMEOUT:'Проверка сохранения заняла слишком много времени. Нажмите «Скачать договор» ещё раз без изменения ответов: система продолжит ту же операцию.',SUBMISSION_DESTINATION_CHANGED:'Получатель изменился. Откройте сделку заново.',ASSESSMENT_NOT_READY:'Ответы или документы требуют проверки.',SUBMISSION_PENDING_OR_IDENTITY_CHANGED:'Есть незавершённое сохранение. Откройте сохранённую версию ниже.',SUBMISSION_EVIDENCE_CHANGED:'Источники изменились. Отмените подготовку и проверьте анкету заново.',SUBMISSION_VALIDATION_CHANGED:'Правила проверки обновились. Отмените подготовку и проверьте анкету заново.',IDEMPOTENCY_KEY_REUSED:'Для этого сохранения уже зафиксирована другая версия ответов.',SUBMISSION_ACTOR_OR_IDENTITY_CHANGED:'Сотрудник или клиент изменился. Откройте сделку заново.',CONTRACT_SNAPSHOT_UNAVAILABLE:'Версия договора недоступна; требуется восстановление.',CASE_IDENTITY_CHANGED:'Клиент сделки изменился.'};
+ const messages={CONTRACT_OPERATION_TIMEOUT:'Проверка сохранения заняла слишком много времени. Нажмите «Скачать договор» ещё раз без изменения ответов: система продолжит ту же операцию.',SUBMISSION_DESTINATION_CHANGED:'Получатель изменился. Откройте сделку заново.',ASSESSMENT_NOT_READY:'Ответы или документы требуют проверки.',SUBMISSION_PENDING_OR_IDENTITY_CHANGED:'Есть незавершённое сохранение. Откройте сохранённую версию ниже.',SUBMISSION_EVIDENCE_CHANGED:'Источники изменились. Отмените подготовку и проверьте анкету заново.',SUBMISSION_VALIDATION_CHANGED:'Правила проверки обновились. Отмените подготовку и проверьте анкету заново.',IDEMPOTENCY_KEY_REUSED:'Для этого сохранения уже зафиксирована другая версия ответов.',SUBMISSION_ACTOR_OR_IDENTITY_CHANGED:'Сотрудник или клиент изменился. Откройте сделку заново.',CONTRACT_SNAPSHOT_UNAVAILABLE:'Версия договора недоступна; требуется восстановление.',CASE_IDENTITY_CHANGED:'Клиент сделки изменился.',PROFILE_NOT_READY:'Заполните профиль: адрес регистрации, фактический адрес, ответ об исполнительных производствах и при ответе «Да» — взыскателя и сумму по каждому производству.',PROFILE_SUBMISSION_PERSISTENCE_FAILED:'Не удалось сохранить профиль. Ответы остаются на экране; повторите попытку.',SUBMISSION_TOO_LARGE:'Профиль слишком большой для отправки. Уменьшите объём комментариев.'};
  async function post(dealId,body){if(['prepare','complete','commit','history'].includes(body.action)){guardDestination();body={...body,destination};}const url=`/api/assessment/${encodeURIComponent(dealId)}/submission`,options={method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},message=code=>messages[code]||'Операция не подтверждена. Проверьте сохранённую версию и повторите.';if(HostedAssessment.requestJson)return HostedAssessment.requestJson(url,options,{timeoutMs:120000,message});const response=await fetch(url,options),data=await response.json();if(!response.ok)throw Error(message(data.error));return data;}
  async function refresh(){
   const dealId=currentDeal(),token=++generation;latest=null;recovery.hidden=true;if(!dealId)return;
@@ -53,6 +55,22 @@ window.SubmissionFlow={mount(anchor,status){
  }
  // The server owns commit, readback and timeline transitions. The browser only
  // guards the user's selection and renders the immutable contract returned to it.
+ async function saveProfile(){
+  if(profileBusy)return;
+  const dealId=currentDeal();
+  if(!dealId){report('Сначала откройте сделку.');return;}
+  profileBusy=true;const label=profile.textContent;profile.disabled=true;profile.textContent='Сохраняю профиль…';report('Сохраняю профиль без договора…');
+  try{
+   if(window.ServerDrafts.save&&!await window.ServerDrafts.save({automatic:true}))throw Error('Сначала сохраните черновик.');
+   const payload=ServerDrafts.capture(),signature=JSON.stringify(payload);
+   if(!profileAttempt||profileAttempt.signature!==signature)profileAttempt={signature,requestId:crypto.randomUUID()};
+   const result=await post(dealId,{action:'profile',requestId:profileAttempt.requestId,identityRevision:HostedAssessment.getContext().identityRevision,payload,bindings:ServerDrafts.reviewBindings()});
+   profileAttempt=null;
+   const sync=result.assessmentIntakeSync?.status;
+   report(sync==='synced'?'Профиль сохранён и передан в CRM (без договора).':sync==='pending'?'Профиль сохранён. Передача в CRM ожидает подтверждения — повторите «Сохранить профиль».':sync==='disabled'?'Профиль сохранён в анкете. Передача в CRM не настроена.':'Профиль сохранён.');
+  }catch(error){report(error.message);}
+  finally{profileBusy=false;profile.disabled=false;profile.textContent=label;}
+ }
  async function advance(dealId,row,guard){
   if(currentDeal()!==dealId)throw Error('Открыта другая сделка.');
   if(guard&&!guard()){
@@ -104,6 +122,7 @@ window.SubmissionFlow={mount(anchor,status){
  });
  resume.onclick=()=>operate(async()=>{const selected=latest,snapshot=signature();if(!selected)throw Error('Сохранение не найдено.');await confirmDestination();await advance(selected.dealId,selected,()=>currentDeal()===selected.dealId&&signature()===snapshot);});
  cancel.onclick=()=>operate(async()=>{if(!latest)return;const row=await post(latest.dealId,{action:'cancel',requestId:latest.requestId});if(row.state!=='cancelled')throw Error('Запись уже отправлялась. Нужно проверить результат сохранения.');attempt=null;status.textContent='Подготовка отменена. История сохранена; можно проверить новую версию.';});
- document.addEventListener('assessment-case-opened',()=>{clearFile();refresh();});window.addEventListener('pagehide',clearFile);
+ profile.onclick=saveProfile;
+ document.addEventListener('assessment-case-opened',()=>{clearFile();profileAttempt=null;refresh();});window.addEventListener('pagehide',clearFile);
  return {invalidate(){checked=null;clearFile();save.disabled=busy;},checked(result,context){checked=result.readyToSubmit?{...context,identityRevision:result.identityRevision}:null;save.disabled=busy;refresh();}};
 }};

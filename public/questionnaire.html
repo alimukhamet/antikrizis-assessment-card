@@ -360,6 +360,37 @@
       <h4>График платежей</h4>
       <div class="hint">Заполните сумму, количество платежей, даты и тип графика.</div>
     </div>
+  </section><section class="card" data-flow="contract">
+    <div class="card-title">Профиль клиента для CRM<span class="sub"> · без договора</span></div>
+    <div class="fields">
+      <div class="field full"><label class="lbl" for="addressRegistration">Адрес регистрации (прописка)</label><input id="addressRegistration" type="text" data-optional autocomplete="off" placeholder="Населённый пункт, улица, дом, квартира"></div>
+      <div class="field full"><label class="lbl" for="addressActual">Фактический адрес проживания</label><input id="addressActual" type="text" data-optional autocomplete="off" placeholder="Если совпадает с пропиской — отметьте ниже"></div>
+      <div class="field full"><label class="lbl" for="addressActualSame"><input id="addressActualSame" type="checkbox" data-optional> Фактический адрес совпадает с адресом регистрации</label></div>
+      <div class="field full"><label class="lbl" for="enforcementStatus">Есть исполнительные производства или исполнительные надписи?</label>
+        <select id="enforcementStatus" data-optional>
+          <option value="">—</option>
+          <option value="no">Нет</option>
+          <option value="yes">Да</option>
+          <option value="legacy">Сведения из прежней анкеты</option>
+        </select>
+        <div class="hint">Ответ «Да» требует указать каждое производство ниже. Эти структурированные суммы и даты идут в профиль CRM; прежний свободный ответ о взысканиях выше остаётся для договора.</div>
+      </div>
+      <div class="field full hidden conditional" id="enforcementRecords">
+        <div class="fields">
+          <div class="section-label">Исполнительные производства</div>
+          <div class="field full repeat" id="enforcements" data-profile-only="true">
+            <template><div class="repeat-item"><div class="row-head"><h3>Исполнительное производство <span class="item-number">1</span></h3><button type="button" class="remove-row">Убрать</button></div><div class="fields">
+              <div class="field"><label class="lbl" for="enforcementCreditor">Взыскатель / кредитор</label><input id="enforcementCreditor" type="text" data-optional></div>
+              <div class="field"><label class="lbl" for="enforcementAmount">Сумма взыскания, ₸</label><input id="enforcementAmount" type="number" min="0" step="any" inputmode="decimal" data-optional></div>
+              <div class="field full"><label class="lbl" for="enforcementNote">Номер, ЧСИ / нотариус, дата и другие сведения — если известны</label><textarea id="enforcementNote" rows="2" data-optional></textarea></div>
+            </div></div></template>
+            <div class="repeat-rows"></div>
+            <button type="button" class="btn btn-ghost add-row">+ Добавить исполнительное производство</button>
+          </div>
+        </div>
+      </div>
+      <div class="field full"><label class="lbl" for="riskNotes">Риски и комментарий для профиля CRM</label><textarea id="riskNotes" rows="2" data-optional placeholder="Свободный комментарий о рисках для профиля CRM"></textarea></div>
+    </div>
   </section><div class="preview-check"><button type="button" class="btn btn-ghost" id="checkQuestions">Проверить обязательные ответы</button><p id="checkStatus" role="status"></p></div></div></main><script>
 document.addEventListener('change',e=>{if(e.target.matches('.exact-count input')){const input=e.target,box=input.closest('.exact-count'),c=box.previousElementSibling;if(!input.value||!input.checkValidity())return;setCount(c,Number(input.value));box.classList.add('hidden');c.dispatchEvent(new Event('change',{bubbles:true}));}});
 function setCount(c,n){c.querySelectorAll('option[data-exact]').forEach(o=>o.remove());if(![...c.options].some(o=>o.value===String(n))){const o=new Option(String(n),String(n));o.dataset.exact='true';c.add(o);}c.value=String(n);}
@@ -395,7 +426,7 @@ document.querySelectorAll('[data-car-count]').forEach(c=>c.addEventListener('cha
 
 document.addEventListener('change',e=>{const c=e.target;if(c.matches('[data-transfer-type]'))c.parentElement.querySelector('.transfer-other').classList.toggle('hidden',c.value!=='Другое');if(c.matches('[data-benefit-type]'))c.closest('.repeat-item').querySelector('.benefit-other').classList.toggle('hidden',c.value!=='Другая государственная выплата');});
 function visibilityRules(){document.querySelectorAll('input:not([type="checkbox"]),select,textarea').forEach(x=>{x.required=!x.hasAttribute("data-optional")&&x.getClientRects().length>0&&!x.disabled;});}
-document.addEventListener('change',e=>{const c=e.target;if(c.matches('[data-ownership]')){c.closest('.repeat-item').querySelector('.ownership-share').classList.toggle('hidden',c.value!=='share');}if(c.id==='hardshipReason'){document.getElementById('hardshipDetails').classList.toggle('hidden',!c.value||c.value==='Платежи вношу, трудностей нет');}if(c.matches('[data-proof]')){document.querySelector('.proof-details').classList.toggle('hidden',!['Есть на руках','Можно получить'].includes(c.value));}if(c.closest?.('#questionnaireStep,#documentStep'))visibilityRules();});
+document.addEventListener('change',e=>{const c=e.target;if(c.matches('[data-ownership]')){c.closest('.repeat-item').querySelector('.ownership-share').classList.toggle('hidden',c.value!=='share');}if(c.id==='hardshipReason'){document.getElementById('hardshipDetails').classList.toggle('hidden',!c.value||c.value==='Платежи вношу, трудностей нет');}if(c.id==='enforcementStatus'){const panel=document.getElementById('enforcementRecords');if(panel)panel.classList.toggle('hidden',c.value!=='yes');}if(c.matches('[data-proof]')){document.querySelector('.proof-details').classList.toggle('hidden',!['Есть на руках','Можно получить'].includes(c.value));}if(c.closest?.('#questionnaireStep,#documentStep'))visibilityRules();});
 document.getElementById('checkQuestions').addEventListener('click',()=>{document.body.classList.add('checked');kaspi();visibilityRules();const bad=[...document.querySelectorAll('input,select,textarea')].filter(x=>!x.disabled&&x.getClientRects().length&&(!x.checkValidity()||(x.required&&!x.value.trim())));const missingGroup=[...document.querySelectorAll('.holdings,.chips')].find(g=>g.getClientRects().length&&!g.querySelector('input:checked'));const emptyAsset=[...document.querySelectorAll('[data-holding]:checked')].some(c=>{const panel=document.getElementById(c.dataset.owner+'-asset-'+c.value);return panel&&panel.getClientRects().length&&[...panel.querySelectorAll('.repeat-rows')].some(r=>!r.children.length);});const emptyLoans=!document.querySelector('#creditors .repeat-rows').children.length;document.getElementById('checkStatus').textContent=missingGroup?'Выберите ответ в разделе социального статуса и имущества.':emptyAsset?'Добавьте карточку для выбранного имущества / бизнеса.':emptyLoans?'Добавьте хотя бы один кредит / обязательство.':bad.length?'Заполните обязательные ответы: '+bad.length+'.':'Обязательные ответы заполнены. Сохраните черновик или скачайте анкету. Проверьте извлечённые ответы перед использованием.';if(missingGroup){missingGroup.scrollIntoView({block:'center'});}else if(bad.length){bad[0].focus();bad[0].reportValidity();}});
 
 const documentTypes=["ЭЦП файл","ГКБ — краткий отчёт", "ГКБ — полный отчёт", "Справка ЕНПФ", "Ф6 об отсутствии имущества", "Удостоверение личности", "Доверенность", "Выписка Kaspi Gold", "Справка по выплатам пенсии и пособий", "Выписка зарплатного банка", "Свидетельство о браке", "Свидетельство о расторжении брака", "Свидетельство о рождении ребёнка", "Техпаспорт на автомобиль", "Сведения о недвижимости", "Сведения об обременениях", "Справка с места работы", "Справка о заработной плате", "Выписки со счетов за 3 года", "Другой документ"];

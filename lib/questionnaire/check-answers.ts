@@ -38,6 +38,7 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   if(c==='purpose-other')return value('n8043',row)==='Другое';
   if(c==='benefit-other')return value('clientBenefitType',row)==='Другая государственная выплата'||value('partnerBenefitType',row)==='Другая государственная выплата';
   if(c==='loan-scheduled')return value('loanStatus',row)==='Платится по графику';
+  if(c==='enforcementRecords')return value('enforcementStatus')==='yes';
   throw Error('UNMAPPED_QUESTIONNAIRE_CONDITION:'+c);
  });}
  function field(f:Definition,row?:Map<string,Answer>,group?:string,index?:number){
@@ -80,7 +81,11 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   partnerreal:'Добавьте данные выбранной недвижимости супруга(и)',partnercars:'Добавьте выбранный автомобиль супруга(и)',partnerip:'Добавьте данные ИП супруга(и)',partnertoo:'Добавьте данные доли в ТОО супруга(и)',partnerkh:'Добавьте данные КХ супруга(и)',
   transfers:'Добавьте запись о переданном имуществе',creditors:'Добавьте хотя бы одного кредитора / обязательство',
  };
- for(const g of schema.groups){if(!active(g.conditions))continue;const rows=groups.get(g.id)?.rows||[];
+ for(const g of schema.groups){if(!active(g.conditions))continue;
+  // Profile-only sections are collected and validated by the explicit save-without-contract
+  // path; they never add a readiness gate to the existing contract download.
+  if((g as {profileOnly?:boolean}).profileOnly)continue;
+  const rows=groups.get(g.id)?.rows||[];
   const counted=schema.scalar.find(f=>'groupTarget' in f&&f.groupTarget===g.id),rowLabel=rowRequiredLabels[g.id]||`Добавьте запись в раздел ${g.id}`;
   if(!counted&&!rows.length)issue(g.id,'ROW_REQUIRED',rowLabel,g.id);
   if(counted&&g.id.endsWith('cars')&&!rows.length)issue(g.id,'ROW_REQUIRED',rowLabel,g.id);

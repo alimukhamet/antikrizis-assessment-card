@@ -25,6 +25,8 @@ function fixture(options={}){
   '../../../../../lib/questionnaire/submission-destination':load('lib/questionnaire/submission-destination.ts',{'../documents/repository':{RepositoryError}}),
   '../../../../../lib/questionnaire/submission-repository':{SubmissionRepository:class{}},
   '../../../../../lib/questionnaire/final-submission':final,
+  '../../../../../lib/questionnaire/profile-submission':{prepareProfileSubmission:async()=>{throw new Error('profile action is not exercised by contract-route tests');}},
+  '../../../../../lib/questionnaire/profile-answers':{ProfileNotReadyError:class extends RepositoryError{constructor(issues){super('PROFILE_NOT_READY',400);this.issues=issues;}}},
   '../../../../../lib/questionnaire/submission-history':{saveSubmissionHistory:async()=>{legacy.push('history');return row;}},
   '../../../../../lib/questionnaire/contract-operation':{completeContractOperation:async opts=>{operations++;assert.equal(opts.requestId,id);await opts.currentRecord();return{row,contract,message:'READY'};}},
   '../../../../../lib/crm/assessment-history':{createAssessmentHistoryAdapter:(url,send,signal)=>{signals.push(signal);return{};}},

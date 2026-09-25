@@ -102,6 +102,8 @@ export type AssessmentExportSubmission = {
   actor_id: string;
   payload_hash: string;
   sequence: number;
+  /** Present on new rows; absent/`contract` on legacy rows. */
+  kind?: string;
   payload?: unknown;
   payload_json?: string;
 };
@@ -250,6 +252,26 @@ function draft(value: unknown): AssessmentAnswersSnapshot {
 }
 
 function payload(value: unknown): UnknownRecord {
+  // A profile-only submission is an explicit, additive shape: it carries the
+  // validated draft and provenance but no contract, renderer, EDS or document
+  // data. Anything that claims `profileOnly` must satisfy exactly this shape.
+  if (isObject(value) && value.profileOnly === true) {
+    if (value.schemaVersion !== 1 || !isObject(value.draft)) fail('ASSESSMENT_SUBMISSION_PAYLOAD_INVALID');
+    draft(value.draft);
+    if (typeof value.assessmentDay !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(String(value.assessmentDay))) fail('ASSESSMENT_SUBMISSION_PAYLOAD_INVALID');
+    if (!Array.isArray(value.reviewIds) || value.reviewIds.length > 1_500 || value.reviewIds.some(id => typeof id !== 'string' || !id || id.length > 160)) {
+      fail('ASSESSMENT_SUBMISSION_PAYLOAD_INVALID');
+    }
+    if (!Array.isArray(value.evidence) || value.evidence.length > 1_500) fail('ASSESSMENT_SUBMISSION_EVIDENCE_INVALID');
+    for (const ref of value.evidence) {
+      if (!isObject(ref) || typeof ref.documentId !== 'string' || !ref.documentId || ref.documentId.length > 200 || typeof ref.reviewId !== 'string' || !ref.reviewId) {
+        fail('ASSESSMENT_SUBMISSION_EVIDENCE_INVALID');
+      }
+      optionalText(ref.documentSha256, 'ASSESSMENT_SUBMISSION_EVIDENCE_INVALID', 64);
+      optionalText(ref.documentName, 'ASSESSMENT_SUBMISSION_EVIDENCE_INVALID', 500);
+    }
+    return value;
+  }
   if (!isObject(value) || value.schemaVersion !== 1 || !isObject(value.baseline) || !isObject(value.values) || !isObject(value.contractData)) {
     fail('ASSESSMENT_SUBMISSION_PAYLOAD_INVALID');
   }
@@ -348,14 +370,20 @@ export function selectAssessmentSubmissionFromExport(input: unknown): Assessment
   }
   const sequenced = current.every(row => Number.isSafeInteger(row.sequence) && Number(row.sequence) >= 1 && Number(row.sequence) <= MAX_SOURCE_REVISION);
   if (!sequenced) return { status: 'pending', reason: 'identity_reconciliation', caseId: sourceCase.id, identityRevision };
-  const newest = [...current].sort((left, right) => Number(right.sequence) - Number(left.sequence))[0];
+  // A contract submission always wins over a profile-only one. A profile save
+  // must never displace the contract snapshot the existing flow produced; it is
+  // only selected when no contract submission exists for this revision.
+  const contractRows = current.filter(row => row.kind !== 'profile');
+  const profileRows = current.filter(row => row.kind === 'profile');
+  const selectable = contractRows.length ? contractRows : profileRows;
+  const newest = [...selectable].sort((left, right) => Number(right.sequence) - Number(left.sequence))[0];
   if (newest.state === 'prepared' || newest.state === 'writing' || newest.state === 'uncertain') {
     return { status: 'pending', reason: 'submission_pending', caseId: sourceCase.id, identityRevision, sourceSubmissionId: typeof newest.id === 'string' ? newest.id : undefined };
   }
   if (newest.state !== 'verified') {
     return { status: 'pending', reason: 'selection_required', caseId: sourceCase.id, identityRevision };
   }
-  const verified = current.filter(row => row.state === 'verified' && typeof row.id === 'string' && row.id
+  const verified = selectable.filter(row => row.state === 'verified' && typeof row.id === 'string' && row.id
     && typeof row.payload_hash === 'string' && /^[a-f0-9]{64}$/.test(row.payload_hash)
     && typeof row.actor_id === 'string' && row.actor_id && (row.payload !== undefined || row.payload_json !== undefined))
     .sort((left, right) => Number(right.sequence) - Number(left.sequence));

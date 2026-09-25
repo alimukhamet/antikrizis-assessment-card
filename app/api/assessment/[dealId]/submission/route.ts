@@ -5,6 +5,8 @@ import type {EvidenceRepository} from '../../../../../lib/documents/repository';
 import {assertSubmissionDestination} from '../../../../../lib/questionnaire/submission-destination';
 import {SubmissionRepository,type SubmissionRow} from '../../../../../lib/questionnaire/submission-repository';
 import {prepareFinalSubmission,commitFinalSubmission,reconcileFinalSubmission,cancelFinalPreparation,savedContract} from '../../../../../lib/questionnaire/final-submission';
+import {prepareProfileSubmission} from '../../../../../lib/questionnaire/profile-submission';
+import {ProfileNotReadyError} from '../../../../../lib/questionnaire/profile-answers';
 import {saveSubmissionHistory} from '../../../../../lib/questionnaire/submission-history';
 import {completeContractOperation} from '../../../../../lib/questionnaire/contract-operation';
 import {createAssessmentHistoryAdapter} from '../../../../../lib/crm/assessment-history';
@@ -14,7 +16,7 @@ export async function POST(request:Request,context:{params:Promise<{dealId:strin
  const denied=await requireStaffRequest(request);if(denied)return denied;
  try{
   const body=await boundedJson(request,256000);
-  if(typeof body.requestId!=='string'||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.requestId)||!['prepare','complete','commit','reconcile','cancel','history','contract'].includes(String(body.action)))throw new RepositoryError('INVALID_SUBMISSION_REQUEST',400);
+  if(typeof body.requestId!=='string'||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.requestId)||!['prepare','complete','commit','reconcile','cancel','history','contract','profile'].includes(String(body.action)))throw new RepositoryError('INVALID_SUBMISSION_REQUEST',400);
   const {dealId}=await context.params,{record,repository,actor}=await evidenceContext(request,dealId);
   const {env}=await import('cloudflare:workers');
   const runtime=env as typeof env & {DB?:D1Database};
@@ -22,6 +24,14 @@ export async function POST(request:Request,context:{params:Promise<{dealId:strin
   if(['prepare','complete','commit','history'].includes(String(body.action)))assertSubmissionDestination(record,body.destination);
   const submissions=new SubmissionRepository(runtime.DB),adapter=createAssessmentAdapter(process.env.BITRIX_WEBHOOK??'');
   if(body.action==='contract')return Response.json({contract:await savedContract(submissions,record,actor,body.requestId)},{headers:{'cache-control':'no-store'}});
+  if(body.action==='profile'){
+   if(!Number.isInteger(body.identityRevision))throw new RepositoryError('INVALID_SUBMISSION_REQUEST',400);
+   // Durability first: the profile snapshot is committed before any CRM call. A failed
+   // or partial CRM transfer leaves this verified row intact and is resolved by retry.
+   const row=await prepareProfileSubmission(submissions,record,actor,body.requestId,body.identityRevision as number,body.payload,body.bindings,operatingDay());
+   const assessmentIntakeSync=await boundedVerifiedAssessmentIntakeSync(repository,dealId,row);
+   return Response.json({requestId:row.request_id,profileSaved:true,state:row.state,outcomeCode:row.outcome_code,assessmentIntakeSync},{headers:{'cache-control':'no-store'}});
+  }
   if(body.action==='complete'){
    const signal=AbortSignal.timeout(90_000);
    const result=await completeContractOperation({repository,submissions,record,actor,requestId:body.requestId,day:operatingDay(),signal,
@@ -48,7 +58,7 @@ export async function POST(request:Request,context:{params:Promise<{dealId:strin
   if(!row)throw new RepositoryError('SUBMISSION_NOT_FOUND',404);
   const assessmentIntakeSync=row.state==='verified'?await boundedVerifiedAssessmentIntakeSync(repository,dealId,row):undefined;
   return Response.json(present(row,assessmentIntakeSync),{headers:{'cache-control':'no-store'}});
- }catch(error){return evidenceError(error instanceof AssessmentWriteError?new RepositoryError(error.code):error);}
+ }catch(error){if(error instanceof ProfileNotReadyError)return Response.json({error:'PROFILE_NOT_READY',issues:error.issues},{status:400,headers:{'cache-control':'no-store'}});return evidenceError(error instanceof AssessmentWriteError?new RepositoryError(error.code):error);}
 }
 
 async function verifiedAssessmentIntakeSync(repository:EvidenceRepository,dealId:string,row:SubmissionRow):Promise<AssessmentIntakeSyncResult>{

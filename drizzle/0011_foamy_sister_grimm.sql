@@ -1,0 +1,1 @@
+ALTER TABLE `assessment_submissions` ADD `kind` text DEFAULT 'contract' NOT NULL;

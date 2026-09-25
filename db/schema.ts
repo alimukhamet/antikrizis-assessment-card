@@ -40,7 +40,7 @@ export const assessmentSubmissions = sqliteTable('assessment_submissions', {
  requestId:text('request_id').notNull(),identityRevision:integer('identity_revision').notNull(),
  payloadJson:text('payload_json').notNull(),payloadHash:text('payload_hash').notNull(),
  actorId:text('actor_id').notNull(),authentication:text('authentication').notNull(),
- state:text('state').notNull(),outcomeCode:text('outcome_code'),
+ state:text('state').notNull(),outcomeCode:text('outcome_code'),kind:text('kind').notNull().default('contract'),
  historyState:text('history_state').notNull().default('pending'),historyCommentId:text('history_comment_id'),historyOutcomeCode:text('history_outcome_code'),
  createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull(),
 },t=>[uniqueIndex('assessment_submission_request').on(t.caseId,t.requestId),

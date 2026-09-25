@@ -8,9 +8,14 @@ export type SubmissionPayload = {
  // Trusted review IDs collected by the submission validator, never caller assertions.
  contractData:Record<string,unknown>;contractRendererVersion:string;lawyerCard:string;historyCard?:string; reviewIds:string[]; evidence:ApprovedAnswerEvidence[]; validationVersion:string; assessmentDay:string;
 };
+/** A profile-only snapshot. `profileOnly` is the explicit marker the signed
+ * export boundary uses so no contract/EDS artifact is ever implied or produced. */
+export type ProfileSubmissionPayload = {
+ schemaVersion:1;profileOnly:true;draft:DraftPayload;reviewIds:string[];evidence:ApprovedAnswerEvidence[];assessmentDay:string;
+};
 export type SubmissionRow = {
  id:string;case_id:string;request_id:string;identity_revision:number;payload_json:string;payload_hash:string;
- actor_id:string;authentication:string;state:'prepared'|'writing'|'uncertain'|'verified'|'cancelled';outcome_code:string|null;
+ actor_id:string;authentication:string;kind:'contract'|'profile';state:'prepared'|'writing'|'uncertain'|'verified'|'cancelled';outcome_code:string|null;
  history_state:'pending'|'writing'|'uncertain'|'verified';history_comment_id:string|null;history_outcome_code:string|null;
  created_at:string;updated_at:string;
 };
@@ -29,8 +34,9 @@ function samePreparedContent(left:SubmissionPayload,right:SubmissionPayload){
 export class SubmissionRepository {
  constructor(private db:D1Database){}
  get(caseId:string,requestId:string){return this.db.prepare('SELECT * FROM assessment_submissions WHERE case_id=? AND request_id=?').bind(caseId,requestId).first<SubmissionRow>();}
- latest(caseId:string,actorId:string){return this.db.prepare("SELECT * FROM assessment_submissions WHERE case_id=? AND actor_id=? AND state<>'cancelled' ORDER BY CASE WHEN state<>'verified' THEN 0 WHEN history_state<>'verified' THEN 1 ELSE 2 END,created_at DESC,rowid DESC LIMIT 1").bind(caseId,actorId).first<SubmissionRow>();}
- active(caseId:string){return this.db.prepare("SELECT * FROM assessment_submissions WHERE case_id=? AND state NOT IN ('verified','cancelled') ORDER BY created_at DESC,rowid DESC LIMIT 1").bind(caseId).first<SubmissionRow>();}
+ latest(caseId:string,actorId:string){return this.db.prepare("SELECT * FROM assessment_submissions WHERE case_id=? AND actor_id=? AND kind='contract' AND state<>'cancelled' ORDER BY CASE WHEN state<>'verified' THEN 0 WHEN history_state<>'verified' THEN 1 ELSE 2 END,created_at DESC,rowid DESC LIMIT 1").bind(caseId,actorId).first<SubmissionRow>();}
+ latestProfile(caseId:string,actorId:string){return this.db.prepare("SELECT * FROM assessment_submissions WHERE case_id=? AND actor_id=? AND kind='profile' AND state<>'cancelled' ORDER BY created_at DESC,rowid DESC LIMIT 1").bind(caseId,actorId).first<SubmissionRow>();}
+ active(caseId:string){return this.db.prepare("SELECT * FROM assessment_submissions WHERE case_id=? AND kind='contract' AND state NOT IN ('verified','cancelled') ORDER BY created_at DESC,rowid DESC LIMIT 1").bind(caseId).first<SubmissionRow>();}
  async prepare(record:CaseRow,requestId:string,payload:SubmissionPayload,actor:Actor){
   if(!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(requestId))throw new RepositoryError('INVALID_REQUEST_ID',400);
   const current=await this.db.prepare('SELECT identity_revision FROM assessment_cases WHERE id=?').bind(record.id).first<{identity_revision:number}>();
@@ -53,7 +59,7 @@ export class SubmissionRepository {
    }else throw new RepositoryError('SUBMISSION_PENDING_OR_IDENTITY_CHANGED');
   }
   const now=new Date().toISOString();
-  await this.db.prepare("INSERT INTO assessment_submissions (id,case_id,request_id,identity_revision,payload_json,payload_hash,actor_id,authentication,state,created_at,updated_at) SELECT ?,?,?,?,?,?,?,?,'prepared',?,? WHERE EXISTS (SELECT 1 FROM assessment_cases WHERE id=? AND identity_revision=?) ON CONFLICT DO NOTHING")
+  await this.db.prepare("INSERT INTO assessment_submissions (id,case_id,request_id,identity_revision,payload_json,payload_hash,actor_id,authentication,state,kind,created_at,updated_at) SELECT ?,?,?,?,?,?,?,?,'prepared','contract',?,? WHERE EXISTS (SELECT 1 FROM assessment_cases WHERE id=? AND identity_revision=?) ON CONFLICT DO NOTHING")
    .bind(crypto.randomUUID(),record.id,requestId,record.identity_revision,serialized,hash,actor.id,actor.authentication,now,now,record.id,record.identity_revision).run();
   const saved=await this.get(record.id,requestId);
   if(!saved){
@@ -62,6 +68,27 @@ export class SubmissionRepository {
    if(winner&&winner.identity_revision===record.identity_revision&&winner.actor_id===actor.id&&samePreparedContent(JSON.parse(winner.payload_json),payload))return winner;
    throw new RepositoryError('SUBMISSION_PENDING_OR_IDENTITY_CHANGED');
   }
+  if(saved.payload_hash!==hash)throw new RepositoryError('IDEMPOTENCY_KEY_REUSED');
+  return saved;
+ }
+ /** Persist a profile-only snapshot. It is durable and auditable before any CRM
+  * send, carries no contract data, and is idempotent by request id and content. */
+ async prepareProfile(record:CaseRow,requestId:string,payload:ProfileSubmissionPayload,actor:Actor){
+  if(!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(requestId))throw new RepositoryError('INVALID_REQUEST_ID',400);
+  const current=await this.db.prepare('SELECT identity_revision FROM assessment_cases WHERE id=?').bind(record.id).first<{identity_revision:number}>();
+  if(!current||current.identity_revision!==record.identity_revision)throw new RepositoryError('SUBMISSION_PENDING_OR_IDENTITY_CHANGED');
+  const serialized=JSON.stringify(payload);
+  if(new TextEncoder().encode(serialized).length>500000)throw new RepositoryError('SUBMISSION_TOO_LARGE',413);
+  const hash=await sha256(JSON.stringify({payload,identityRevision:record.identity_revision,actorId:actor.id}));
+  const prior=await this.get(record.id,requestId);
+  if(prior){if(prior.payload_hash!==hash||prior.kind!=='profile')throw new RepositoryError('IDEMPOTENCY_KEY_REUSED');return prior;}
+  const sameContent=await this.db.prepare("SELECT * FROM assessment_submissions WHERE case_id=? AND actor_id=? AND kind='profile' AND state='verified' AND payload_hash=? ORDER BY rowid DESC LIMIT 1").bind(record.id,actor.id,hash).first<SubmissionRow>();
+  if(sameContent)return sameContent;
+  const now=new Date().toISOString();
+  await this.db.prepare("INSERT INTO assessment_submissions (id,case_id,request_id,identity_revision,payload_json,payload_hash,actor_id,authentication,state,outcome_code,kind,created_at,updated_at) SELECT ?,?,?,?,?,?,?,?,'verified','PROFILE_SAVED_NO_CONTRACT','profile',?,? WHERE EXISTS (SELECT 1 FROM assessment_cases WHERE id=? AND identity_revision=?)")
+   .bind(crypto.randomUUID(),record.id,requestId,record.identity_revision,serialized,hash,actor.id,actor.authentication,now,now,record.id,record.identity_revision).run();
+  const saved=await this.get(record.id,requestId);
+  if(!saved)throw new RepositoryError('PROFILE_SUBMISSION_PERSISTENCE_FAILED',503);
   if(saved.payload_hash!==hash)throw new RepositoryError('IDEMPOTENCY_KEY_REUSED');
   return saved;
  }

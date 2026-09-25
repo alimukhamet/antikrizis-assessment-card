@@ -825,6 +825,47 @@
       "conditions": []
     },
     {
+      "key": "addressRegistration",
+      "type": "text",
+      "label": "Адрес регистрации (прописка)",
+      "required": false,
+      "conditions": []
+    },
+    {
+      "key": "addressActual",
+      "type": "text",
+      "label": "Фактический адрес проживания",
+      "required": false,
+      "conditions": []
+    },
+    {
+      "key": "addressActualSame",
+      "type": "checkbox",
+      "label": "Фактический адрес совпадает с адресом регистрации",
+      "required": false,
+      "conditions": []
+    },
+    {
+      "key": "enforcementStatus",
+      "type": "select-one",
+      "label": "Есть исполнительные производства или исполнительные надписи?",
+      "options": [
+        "",
+        "no",
+        "yes",
+        "legacy"
+      ],
+      "required": false,
+      "conditions": []
+    },
+    {
+      "key": "riskNotes",
+      "type": "textarea",
+      "label": "Риски и комментарий для профиля CRM",
+      "required": false,
+      "conditions": []
+    },
+    {
       "key": "exact:dependents",
       "type": "number",
       "label": "Точное количество: Сколько человек вы регулярно содержите финансово?*"
@@ -1667,6 +1708,37 @@
           "conditions": [
             "purpose-other"
           ]
+        }
+      ]
+    },
+    {
+      "id": "enforcements",
+      "conditions": [
+        "enforcementRecords"
+      ],
+      "profileOnly": true,
+      "fields": [
+        {
+          "key": "enforcementCreditor",
+          "type": "text",
+          "label": "Взыскатель / кредитор",
+          "required": false,
+          "conditions": []
+        },
+        {
+          "key": "enforcementAmount",
+          "type": "number",
+          "label": "Сумма взыскания, ₸",
+          "required": false,
+          "conditions": [],
+          "min": "0"
+        },
+        {
+          "key": "enforcementNote",
+          "type": "textarea",
+          "label": "Номер, ЧСИ / нотариус, дата и другие сведения — если известны",
+          "required": false,
+          "conditions": []
         }
       ]
     }

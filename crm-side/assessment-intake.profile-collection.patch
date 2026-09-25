@@ -1,0 +1,60 @@
+--- assessment-intake.ts	2026-09-25 12:37:18
++++ assessment-intake.proposed.ts	2026-09-25 12:55:58
+@@ -324,6 +324,8 @@
+   'choice:socialStatus:Получает соц. выплаты', 'choice:socialStatus:Другое',
+   'holding:client:real', 'holding:client:car', 'holding:client:ip', 'holding:client:too', 'holding:client:kh', 'holding:client:other', 'holding:client:none', 'holding:client:unknown',
+   'holding:partner:real', 'holding:partner:car', 'holding:partner:ip', 'holding:partner:too', 'holding:partner:kh', 'holding:partner:other', 'holding:partner:none', 'holding:partner:unknown',
++  // Profile-collection additions (Sales assessment -> CRM client profile).
++  'addressRegistration', 'addressActual', 'addressActualSame', 'enforcementStatus', 'riskNotes',
+ ]);
+ const supportedGroups: Record<string, Set<string>> = {
+   clientjobs: new Set(['n8001']), clientunofficial: new Set(['n12003', 'n12004']),
+@@ -338,6 +340,7 @@
+   partnertoo: new Set(['n8027', 'n8028', 'n8029']), partnerkh: new Set(['n8030', 'n8031']),
+   transfers: new Set(['n8033', 'transferOther', 'n8034', 'n8035', 'n8036', 'n8036Use']),
+   creditors: new Set(['n8038', 'n8038Start', 'n8039', 'n8040', 'n8041', 'n8042', 'n8043', 'loanParticipants', 'unknown:loanParticipants', 'creditPurposeOther']),
++  enforcements: new Set(['enforcementCreditor', 'enforcementAmount', 'enforcementNote']),
+ };
+
+ function groupRows(index: IndexedAnswers, group: string): Array<Map<string, AssessmentAnswerSnapshot>> { return index.groups.get(group) ?? []; }
+@@ -435,6 +438,12 @@
+   }
+   const records: NonNullable<ClientProfileData['records']> = {};
+   const asOfDate = asOf(envelope);
++  const registrationAddress = scalarValue(index, 'addressRegistration');
++  const actualAddress = scalarValue(index, 'addressActual') || (scalar(index, 'addressActualSame')?.checked ? registrationAddress : '');
++  const addresses: ProfileRecord[] = [];
++  if (registrationAddress) addRecord(addresses, sourceRecord('assessment-address-registration', { kind: 'Адрес регистрации', person: 'Клиент', address: registrationAddress }, asOfDate, 'Адрес заявлен клиентом в анкете продаж.'));
++  if (actualAddress) addRecord(addresses, sourceRecord('assessment-address-actual', { kind: 'Адрес проживания', person: 'Клиент', address: actualAddress }, asOfDate, 'Адрес заявлен клиентом в анкете продаж.'));
++  if (addresses.length) records.addresses = addresses;
+   const income: ProfileRecord[] = [];
+   for (const [indexRow, row] of groupRows(index, 'clientjobs').entries()) addRecord(income, rowValue(row, 'n8001') && numericValue(rowValue(row, 'n8001')) ? sourceRecord(`assessment-client-job-${indexRow + 1}`, { person: 'Клиент', kind: 'Зарплата', amount: rowValue(row, 'n8001'), frequency: 'Ежемесячно', official: 'Да' }, asOfDate) : null);
+   for (const [indexRow, row] of groupRows(index, 'partnerjobs').entries()) addRecord(income, rowValue(row, 'n8002') && numericValue(rowValue(row, 'n8002')) ? sourceRecord(`assessment-partner-job-${indexRow + 1}`, { person: 'Супруг(а)', kind: 'Зарплата', amount: rowValue(row, 'n8002'), frequency: 'Ежемесячно', official: 'Да' }, asOfDate) : null);
+@@ -486,6 +495,15 @@
+     }
+   }
+   if (creditors.length) records.creditors = creditors;
++  // Structured enforcement is attached to the existing creditor obligation slot
++  // (`creditors[].values.enforcement`); the CRM profile model has no standalone
++  // enforcement section. Numbers stay numbers; the free text stays in `note`.
++  for (const [indexRow, row] of groupRows(index, 'enforcements').entries()) {
++    const creditor = rowValue(row, 'enforcementCreditor'), amount = rowValue(row, 'enforcementAmount'), note = rowValue(row, 'enforcementNote');
++    if (!creditor && !amount && !note) continue;
++    const enforcementNote = [`Номер/ЧСИ: ${note || 'не указано'}`];
++    addRecord(records.creditors ??= [], sourceRecord(`assessment-enforcement-${indexRow + 1}`, { name: creditor || 'Исполнительное производство', ...(numericValue(amount) ? { amount } : {}), enforcement: 'Исполнительное производство' }, asOfDate, `Исполнительное производство. ${enforcementNote.join('; ')}.`));
++  }
+   if (Object.keys(records).length) profile.records = records;
+   const workCount = clientJobs;
+   const spouseWorkCount = marital === 'married' ? spouseJobs : null;
+@@ -503,8 +521,10 @@
+   if (scalar(index, 'holding:partner:unknown')?.checked) mark('holding:partner');
+   const car = carNone && carSelected ? (mark('holding:client'), null) : clientCarCount !== null ? clientCarCount > 0 : carSelected ? true : carNone ? false : null;
+   const spouseCar = spouseCarNone && spouseCarSelected ? (mark('holding:partner'), null) : spouseCarCount !== null ? spouseCarCount > 0 : spouseCarSelected ? true : spouseCarNone ? false : null;
++  const riskNotes = scalarValue(index, 'riskNotes');
++  if (riskNotes) profile.assessmentNote = riskNotes;
+   const clientInfo: ClaimContextFields = {
+-    registrationAddress: '', actualAddress: '', works: workCount === null ? null : workCount > 0, workplaceCount: workCount,
++    registrationAddress, actualAddress, works: workCount === null ? null : workCount > 0, workplaceCount: workCount,
+     marital, children: childValue, pensioner: social.pensioner, car: car as boolean | null,
+     spouseWorks: spouseWorkCount === null ? null : spouseWorkCount > 0, spouseWorkplaceCount: spouseWorkCount,
+     spousePensioner: null, spouseCar: spouseCar as boolean | null, ...(social.statuses ? { socialStatuses: social.statuses } : {}), ...(social.note ? { socialStatusNote: social.note } : {}), profile,
