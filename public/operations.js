@@ -1,6 +1,8 @@
 (()=>{
  const {make,mode}=ClientContextUI,$=id=>document.getElementById(id),wrap=document.querySelector('main.wrap');
  const handoff=make('section',null,'ux-handoff-area');handoff.id='uxHandoff';handoff.dataset.uxClientContent='';
+ const delivery=make('p','Проверяем анкету и документы в Bitrix…','ux-handoff-note');delivery.id='handoffDelivery';delivery.setAttribute('role','status');
+ const assessmentLink=make('a','Открыть договор и завершить сохранение','btn btn-ghost');assessmentLink.id='handoffAssessmentLink';assessmentLink.dataset.clientPath='/assessment-review';assessmentLink.href='/assessment-review';assessmentLink.target='_top';assessmentLink.hidden=true;handoff.append(delivery,assessmentLink);
  const grid=make('div',null,'ux-handoff-grid');handoff.append(grid);
  function card(title,description,id){const box=make('section',null,'ux-handoff-card'),head=make('header'),copy=make('div'),state=make('span','Не добавлен','ux-handoff-state');state.id=id;copy.append(make('h2',title));if(description)copy.append(make('p',description));head.append(copy,state);box.append(head);grid.append(box);return box;}
  card('1. ЭЦП клиента','','handoffKeyState').append(document.querySelector('.wf-credential'));
@@ -21,7 +23,7 @@
  const refresh=make('button','Проверить состояние','btn btn-ghost');refresh.id='handoffRefresh';refresh.type='button';
  const cancel=make('button','Отменить подготовку','btn btn-ghost');cancel.id='handoffCancel';cancel.type='button';cancel.hidden=true;handoff.append(refresh,cancel);wrap.append(handoff);
  if(mode==='contract'){
-  const next=make('section',null,'ux-signing-next');next.append(make('h3','После скачивания договора'),make('p','Загрузите договор в TrustMe. После подписания скачайте PDF с QR и откройте «Передать юристам». ЭЦП и доверенность потребуются только там.'));
+  const next=make('details',null,'ux-signing-next');next.append(make('summary','После скачивания договора'),make('p','Подпишите договор в TrustMe, затем передайте подписанный PDF юристам.'));
   const link=make('a','Договор уже подписан → Передать юристам','btn btn-ghost');link.dataset.clientPath='/lawyer-handoff';link.href='/lawyer-handoff';link.target='_top';next.append(link);document.querySelector('.wf-final-actions').append(next);
  }
  ClientContextUI.sync();

@@ -3,7 +3,9 @@
   "name": "antikrizis-assessment-card",
   "main": "dist/server/index.js",
   "compatibility_date": "2026-09-16",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "workers_dev": true,
   "routes": [
     {
@@ -41,5 +43,8 @@
     "ASSESSMENT_INTAKE_APPROVED_ORIGIN": "https://platform.anti-krizis.kz",
     "ASSESSMENT_INTAKE_SOURCE_ORIGIN": "https://assessment.anti-krizis.kz",
     "CRM_ASSESSMENT_INTAKE_ORIGIN": "https://platform.anti-krizis.kz"
+  },
+  "build": {
+    "command": "node scripts/verify-production-release.mjs"
   }
 }

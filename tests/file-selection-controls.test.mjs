@@ -25,12 +25,12 @@ function choose(s,kind='Доверенность',stored=true){
  s.run(`selectedFiles.push({id:++fileSequence,type:${JSON.stringify(kind)},person:'Клиент',file:new File(['SYNTHETIC'],'wrong.pdf',{type:'application/pdf'}),${stored?"storedDocumentId:'stored-original'":''}});renderDocuments();afRenderResults();FileSelectionControls.refresh();`);
  return s.run('selectedFiles.at(-1)');
 }
-test('new assessment shows remove next to pending, failed and saved files without opening hidden assignments',async t=>{
+test('file actions are inside expandable pending, failed and saved file rows',async t=>{
  const s=await assessment(t);choose(s,'Доверенность',false);choose(s,'Справка ЕНПФ');choose(s,'Удостоверение личности');s.run("af.results.set(2,{error:'Unreadable'});afRenderResults();");
  const buttons=[...s.d.querySelectorAll('#afFileResults .file-selection-remove')];assert.equal(buttons.length,3);
- for(const button of buttons){assert.equal(button.closest('details.af-file'),null);assert.equal(button.disabled,false);}
- assert.equal(s.d.querySelectorAll('.af-file-filename').length,3);
- buttons[0].click();assert.equal(s.run('selectedFiles.length'),2);
+ for(const button of buttons){assert.ok(button.closest('details.af-file'));assert.equal(button.closest('details.af-file').open,false);assert.equal(button.disabled,false);}
+ assert.equal(s.d.querySelectorAll('.af-file .af-original-name').length,3);
+ buttons[0].closest('details.af-file').querySelector('summary').click();buttons[0].click();assert.equal(s.run('selectedFiles.length'),2);
  assert.equal(s.w.ServerDrafts.capture().pendingFiles.length,0);
 });
 test('removing an analyzed file excludes its original and invalidates sourced answers without erasing typed answers',async t=>{
@@ -59,7 +59,8 @@ async function handoff(t,state=null){
  const context={identityRevision:1,client:{iin:'000000000010',external:{dealId:'900001'}}},stage={fromStageName:'Договор',stageName:'Успех'},calls=[];
  const make=(tag,text,cls)=>{const e=d.createElement(tag);if(text)e.textContent=text;if(cls)e.className=cls;return e;};
  w.ClientContextUI={mode:'handoff',make,context:()=>context,ready:()=>true,sync(){}};
- w.HostedAssessment={ready:()=>true,getContext:()=>context,requestJson:async(path,opts)=>{calls.push({path,method:opts.method||'GET'});if(path.endsWith('handoff-check'))return{identityRevision:1,documents:{packageReady:true,issues:[]}};return{handoff:state?{requestId:'saved',state,destination:stage}:null,destination:stage,stageError:null};}};
+ w.HostedAssessment={ready:()=>true,getContext:()=>context,requestJson:async(path,opts)=>{calls.push({path,method:opts.method||'GET'});if(path.endsWith('handoff-check'))return{identityRevision:1,documents:{packageReady:true,issues:[]}};return{handoff:state?{requestId:'saved',state,destination:stage}:null,destination:stage,stageError:null,delivery:{ready:true}};}};
+ w.HostedAssessment.analyzeFile=async item=>({...context,documentId:item.storedDocumentId,document:{totalPages:2,extraction:{identity:{iin:context.client.iin}}}});w.HostedAssessment.adapt=a=>({server:{documentId:a.documentId}});
  w.af={busy:false,results:new Map(),conflicts:[]};w.selectedFiles=[{id:1,type:'Подписанный договор',person:'Клиент',storedDocumentId:'signed',file:{name:'signed.pdf'}},{id:2,type:'Доверенность',person:'Клиент',storedDocumentId:'power',file:{name:'power.pdf'}},{id:3,type:'Другой документ',person:'Клиент',storedDocumentId:'keep',file:{name:'keep.pdf'}}];w.af.results.set(2,{server:{documentId:'power'}});
  w.fileSequence=3;w.renderDocuments=()=>{};w.afSource=()=>{};w.afStatus=()=>{};w.afRenderResults=()=>{};w.afRenderConflicts=()=>{};w.afClientChoices=()=>{};w.afRefresh=()=>{};
  w.DocumentReview={open(){},render(){}};w.CredentialUpload={collected:()=>true,verified:()=>true};w.ServerDrafts={save:async()=>true,canSwitch:()=>true};
@@ -68,7 +69,7 @@ async function handoff(t,state=null){
 }
 test('handoff exposes per-file removal and replacement without the hidden file list',async t=>{
  const s=await handoff(t);await s.d.getElementById('handoffPowerCheck').onclick();
- s.d.getElementById('handoffSignedConfirmed').checked=true;s.d.getElementById('handoffSignedConfirmed').onchange();
+ s.d.getElementById('handoffSignedConfirmed').checked=true;await s.d.getElementById('handoffSignedConfirmed').onchange();
  assert.equal(s.d.getElementById('handoffSend').disabled,false);assert.equal(s.d.getElementById('handoffSignedRemove').hidden,false);
  s.d.getElementById('handoffSignedRemove').click();await tick();assert.equal(s.d.getElementById('handoffSignedConfirmed').checked,false);assert.equal(s.d.getElementById('handoffSend').disabled,true);
  assert.deepEqual(s.w.selectedFiles.map(i=>i.id),[2,3]);

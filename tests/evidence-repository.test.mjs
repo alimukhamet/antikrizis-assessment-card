@@ -54,3 +54,37 @@ test('export preserves same-timestamp review insertion order, including withdraw
  assert.ok(bundle.reviews[1].sequence>bundle.reviews[0].sequence);assert.equal(bundle.reviews.at(-1).disposition,'unresolved');
  assert.equal((await repo.exportCase(other.id)).reviews.length,0);await assert.rejects(()=>repo.exportCase('missing'),/CASE_NOT_FOUND/);
 });
+test('Kazakh Kaspi update invalidates only affected v18 analyses and preserves unrelated review identities',async()=>{
+ const {repo}=setup(),c=await repo.syncCase(client());
+ for(const [index,kind,text,compatible] of [[1,'gkb_full','Персональный кредитный отчет',true],[2,'kaspi','Kaspi ВЫПИСКА',true],[3,'unknown','«Kaspi Bank» АҚ ҮЗІНДІ КӨШІРМЕ',false],[4,'identity','Удостоверение личности',true]]){
+  const a=await repo.store(c.id,new Uint8Array([index]),'synthetic.pdf',actor,'pdf-test:rules-native-18',{read:{pages:[{text}]},extraction:{kind}});
+  const cached=await repo.cached(c.id,a.document.original_sha256,'pdf-test:rules-native-19');assert.equal(Boolean(cached),compatible);if(compatible)assert.equal(cached.extraction.id,a.extraction.id);
+  assert.equal(await repo.cached(c.id,a.document.original_sha256,'pdf-different:rules-native-19'),null);
+  assert.ok(await repo.cached(c.id,a.document.original_sha256,'pdf-test:rules-native-18'));
+ }
+});
+test('v20 keeps current Kaspi evidence and preserves employee ID reviews while refreshing unreviewed layouts',async()=>{
+ const {repo}=setup(),c=await repo.syncCase(client());
+ const kaspi=await repo.store(c.id,new Uint8Array([51]),'statement.pdf',actor,'pdf-test:rules-native-19',{read:{pages:[{text:'Kaspi ҮЗІНДІ КӨШІРМЕ'}]},extraction:{kind:'kaspi'}});
+ assert.equal((await repo.cached(c.id,kaspi.document.original_sha256,'pdf-test:rules-native-20')).extraction.id,kaspi.extraction.id);
+ const old=await repo.store(c.id,new Uint8Array([52]),'card.pdf',actor,'pdf-test:rules-native-18',{read:{pages:[{text:'991231300003\n123456789\n17.12.2024 - 16.12.2034\nTESTOV<<SYNAQ<<<<<<<<<<<<'}]},extraction:{kind:'unknown'}});
+ const read=()=>repo.cached(c.id,old.document.original_sha256,'pdf-test:rules-native-20');
+ assert.equal(await read(),null);
+ const base={caseId:c.id,documentId:old.document.id,extractionId:old.extraction.id,identityRevision:1,factKey:'document.manual-check.v1',value:{type:'Удостоверение личности'},disposition:'confirmed',reason:'Synthetic inspection'};
+ await repo.appendReview({...base,requestId:'id-confirmed'},actor);
+ assert.equal((await read()).extraction.id,old.extraction.id);
+ await repo.appendReview({...base,requestId:'id-unresolved',disposition:'unresolved'},actor);assert.equal(await read(),null);
+ await repo.appendReview({...base,requestId:'id-confirmed-again'},actor);
+ await repo.syncCase(client('11665','different-identity'));assert.equal(await read(),null);
+});
+
+test('v21 refreshes bank statements misidentified by transfer recipients without invalidating unrelated reviews',async()=>{
+ const {repo}=setup(),c=await repo.syncCase(client());
+ const bank='АО "Евразийский Банк"\nwww.eubank.kz БИК EURIKZKA\nВыписка по счёту\nПеревод Kaspi';
+ for(const [index,kind,text,compatible] of [[61,'kaspi',bank,false],[62,'unknown',bank,false],[63,'gkb_full','Персональный кредитный отчет',true],[64,'kaspi','Kaspi ВЫПИСКА',true],[65,'salary',bank,true],[66,'kaspi','Народный банк Казахстана\nВыписка по счету\nТип счета: Зарплата\nПеревод Kaspi',false]]){
+  const old=await repo.store(c.id,new Uint8Array([index]),'synthetic.pdf',actor,'pdf-test:rules-native-20',{read:{pages:[{text}]},extraction:{kind}});
+  const cached=await repo.cached(c.id,old.document.original_sha256,'pdf-test:rules-native-21');assert.equal(Boolean(cached),compatible);if(compatible)assert.equal(cached.extraction.id,old.extraction.id);
+  assert.ok(await repo.cached(c.id,old.document.original_sha256,'pdf-test:rules-native-20'),'original evidence is retained');
+  assert.equal(await repo.cached(c.id,old.document.original_sha256,'different-reader:rules-native-21'),null);
+ }
+});

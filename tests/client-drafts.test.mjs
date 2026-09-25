@@ -25,7 +25,7 @@ async function setup(t,store={}){
   throw Error('Unexpected request '+path);
  };
  for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))run(match[1]);
- for(const file of ['loan-status','money-input','hosted-assessment','assessment-review','server-drafts'])run(fs.readFileSync('public/'+file+'.js','utf8'));
+ for(const file of ['loan-status','money-input','hosted-assessment','assessment-review','intake-data','enforcement-editor','server-drafts'])run(fs.readFileSync('public/'+file+'.js','utf8'));
  const load=async()=>{d.getElementById('hostDealId').value='11665';await d.getElementById('hostLoadDeal').onclick();await tick();};
  const edit=(id,value)=>{const control=d.getElementById(id);control.value=value;control.dispatchEvent(new w.Event('input',{bubbles:true}));};
  return{w,d,run,writes,store,edit,load,setReadGate:g=>{readGate=g},setWriteGate:g=>{writeGate=g},fail:()=>{failure=true},mountWorkspace(){for(const file of ['document-review','document-upload','credential-upload','submission-flow','server-answer-check'])run(fs.readFileSync('public/'+file+'.js','utf8'));run(fs.readFileSync('public/assessment-workflow.js','utf8'));run(fs.readFileSync('public/client-workspace.js','utf8'));}};

@@ -1,5 +1,5 @@
 import {RepositoryError,type EvidenceRepository,type CaseRow} from './repository';
-import {reviewFact,type StoredResult} from './review-service';
+import {reviewFact,compatibleReviewExtraction,type StoredResult} from './review-service';
 import type {Actor} from '../worker-session';
 
 /** One deliberate employee confirmation, with the same per-fact checks and audit trail. */
@@ -16,7 +16,7 @@ export async function reviewBatch(repository:EvidenceRepository,record:CaseRow,r
  async function load(input:typeof inputs[number]){
   const doc=await repository.document(record.id,input.documentId);if(!doc)throw new RepositoryError('DOCUMENT_NOT_IN_CASE',404);
   const extraction=await repository.extraction(record.id,doc.id,input.extractionId);if(!extraction)throw new RepositoryError('EXTRACTION_NOT_IN_DOCUMENT',404);
-  return {doc,extraction,result:await repository.readResult(extraction) as StoredResult};
+  return {doc,extraction,compatibleExtractionId:await compatibleReviewExtraction(repository,record,doc,extraction),result:await repository.readResult(extraction) as StoredResult};
  }
  const loaded=new Map<string,ReturnType<typeof load>>();
  const outcomes:Array<{requestId:string;review?:{id:string};error?:string}>=new Array(inputs.length);let next=0;
@@ -24,8 +24,8 @@ export async function reviewBatch(repository:EvidenceRepository,record:CaseRow,r
   while(next<inputs.length){const index=next++,input=inputs[index];
    try{
     const key=JSON.stringify([input.documentId,input.extractionId]);if(!loaded.has(key))loaded.set(key,load(input));
-    const {doc,extraction,result}=await loaded.get(key)!;
-    outcomes[index]={requestId:input.requestId,review:await reviewFact(repository,record,doc,extraction,result,input,actor,day)};
+    const {doc,extraction,result,compatibleExtractionId}=await loaded.get(key)!;
+    outcomes[index]={requestId:input.requestId,review:await reviewFact(repository,record,doc,extraction,result,input,actor,day,compatibleExtractionId)};
    }catch(error){if(!(error instanceof RepositoryError))throw error;outcomes[index]={requestId:input.requestId,error:error.code};}
   }
  }));

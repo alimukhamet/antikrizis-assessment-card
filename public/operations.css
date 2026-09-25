@@ -71,7 +71,7 @@ body[data-ux-client-state=empty] .wf-header{display:none}
 .submission-destination>p,.submission-destination>label{font-size:16px;line-height:1.5}
 @media(max-width:620px){.ux-context{align-items:flex-start}.ux-mode-nav{width:100%;display:grid;grid-template-columns:1fr 1fr;text-align:center}.ux-mode-nav a{font-size:12px;padding:8px}.ux-handoff-card{padding:17px}.ux-handoff-card>header{flex-wrap:wrap}.ux-handoff-footer{align-items:stretch;flex-direction:column}.ux-handoff-footer button{width:100%}body[data-view=home] .task-grid{grid-template-columns:1fr}.ux-preview-strip{font-size:11px}.ux-page-title{font-size:21px}}
 
-/* Tool 02: three compact items; detailed guidance stays available on demand. */
+/* Tool 04: three compact items; detailed guidance stays available on demand. */
 .ux-handoff-help{margin:12px 0;color:var(--text-mid);font-size:13px;line-height:1.5}
 .ux-handoff-help summary{cursor:pointer}
 .ux-handoff-help p{max-width:680px;margin:8px 0}
@@ -82,4 +82,35 @@ body[data-ux-client-state=empty] .wf-header{display:none}
  .ux-handoff-card>header{flex-wrap:wrap;margin-bottom:12px}
  .ux-handoff-card h2{font-size:16px}
  .ux-handoff-card .btn{font-size:13px;padding:9px 12px}
+}
+
+/* Compact task header: the client stays visible, with one link to the other task. */
+.ux-context{margin:0 0 12px;gap:8px 16px}
+.ux-page-title{margin:0;flex:1;font-size:22px;line-height:1.35}
+.ux-mode-nav{border:0;background:none;padding:0}
+.ux-mode-nav a{padding:8px 0;font-size:13px}
+.wf-header{padding:10px 14px;gap:8px}
+.wf-client-copy strong{font-size:17px}
+.wf-client-copy>span{font-size:12px}
+.wf-client #openClients{font-size:13px}
+.wf-header #draftStatus{margin:4px 0}
+.wf-step{min-height:46px;padding:8px 12px}
+.wf-step-number{flex-basis:26px;height:26px}
+.wf-collection-notice{padding:12px 14px;margin:12px 0}
+.wf-collection-title{font-size:16px}
+@media(max-width:620px){
+ .ux-context{align-items:center}.ux-mode-nav{width:auto;display:flex;text-align:left}
+ .ux-mode-nav a{font-size:12px;padding:8px 0}.ux-page-title{font-size:19px}
+ .wf-upload-actions{flex-wrap:wrap}.wf-upload-actions>.card-title{flex:1 1 100%}
+ body[data-assessment-workflow] .wf-upload-actions>.btn{flex:1;padding:9px 8px;font-size:13px}
+ .wf-step{padding:7px 8px;min-height:44px;gap:6px}
+ .wf-step-copy strong{font-size:12px}
+}
+@media(max-width:650px){
+ .wf-client{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px}
+ .wf-client-copy{display:contents}.wf-client-copy strong{grid-column:1;grid-row:1;align-self:center}
+ .wf-client-copy>span,.wf-client #afStatus{grid-column:1 / -1}
+ .wf-client #openClients{grid-column:2;grid-row:1}
+ .wf-header #draftStatus{flex:1;max-width:none}
+ .wf-header .draft-toolbar{flex-wrap:nowrap;gap:8px}
 }

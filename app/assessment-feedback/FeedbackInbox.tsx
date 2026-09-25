@@ -2,6 +2,7 @@
 import {useState,useEffect} from 'react';
 import Link from 'next/link';
 import type {FeedbackRow} from '../../lib/tool-feedback';
+import {AutomaticIncidents} from './AutomaticIncidents';
 const stages={documents:'Документы',answers:'Ответы',contract:'Договор'};
 async function readReports(before:string|null=null){
  const r=await fetch('/api/tool-feedback'+(before?'?before='+encodeURIComponent(before):''),{cache:'no-store'});
@@ -21,6 +22,7 @@ export function FeedbackInbox({allWorkers}:{allWorkers:boolean}){
  return <div className="ps-wrap feedback-inbox">
   <Link href="/" className="ps-back">← Инструменты</Link>
   <header className="ps-header"><div><h1>Сообщения об ошибках</h1><p>{allWorkers?'От сотрудников':'Ваши сообщения'}</p></div><a href="/api/tool-feedback?format=ndjson" download>Выгрузить</a></header>
+  {allWorkers?<AutomaticIncidents/>:null}
   {error?<div role="alert" className="ps-empty"><p>{error}</p><button disabled={busy} onClick={()=>load(loaded?cursor:null)}>Повторить</button></div>:null}
   {!loaded&&!error?<p role="status">Загрузка…</p>:null}
   {loaded&&!rows.length?<div className="ps-empty">Пока нет сообщений.</div>:null}

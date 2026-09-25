@@ -1,5 +1,10 @@
-import { sqliteTable, text, integer, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
 import {sql} from 'drizzle-orm';
+export const operationsEvents=sqliteTable('assessment_operations_events',{
+ id:text('id').primaryKey(),actorId:text('actor_id').notNull(),dealId:text('deal_id'),action:text('action').notNull(),code:text('code').notNull(),
+ clientVersion:text('client_version').notNull(),serverVersion:text('server_version').notNull(),status:integer('status').notNull(),
+ asset:text('asset'),line:integer('line'),createdAt:text('created_at').notNull(),
+},t=>[index('assessment_operations_time').on(t.createdAt),index('assessment_operations_actor_time').on(t.actorId,t.createdAt)]);
 export const assessmentCases = sqliteTable('assessment_cases', {
   id:text('id').primaryKey(), externalSystem:text('external_system').notNull(), externalId:text('external_id').notNull(),
   clientIin:text('client_iin'), identityRevision:integer('identity_revision').notNull().default(1), title:text('title').notNull(),
@@ -42,6 +47,7 @@ export const assessmentSubmissions = sqliteTable('assessment_submissions', {
  actorId:text('actor_id').notNull(),authentication:text('authentication').notNull(),
  state:text('state').notNull(),outcomeCode:text('outcome_code'),
  historyState:text('history_state').notNull().default('pending'),historyCommentId:text('history_comment_id'),historyOutcomeCode:text('history_outcome_code'),
+ titleRepairJson:text('title_repair_json'),titleRepairState:text('title_repair_state'),titleRepairUpdatedAt:text('title_repair_updated_at'),
  createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull(),
 },t=>[uniqueIndex('assessment_submission_request').on(t.caseId,t.requestId),
  uniqueIndex('assessment_submission_active').on(t.caseId).where(sql`${t.state} NOT IN ('verified', 'cancelled')`)]);
@@ -68,3 +74,11 @@ export const lawyerHandoffs=sqliteTable('assessment_handoffs',{
  payloadJson:text('payload_json').notNull(),payloadHash:text('payload_hash').notNull(),
  state:text('state').notNull(),outcomeCode:text('outcome_code'),createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull(),
 },t=>[uniqueIndex('assessment_handoff_request').on(t.caseId,t.requestId),uniqueIndex('assessment_handoff_once').on(t.caseId).where(sql`${t.state} <> 'cancelled'`)]);
+export const salesPayments=sqliteTable('sales_payments',{
+ id:text('id').primaryKey(),requestId:text('request_id').notNull(),person:text('person').notNull(),month:text('month').notNull(),
+ amountTenge:integer('amount_tenge').notNull(),paidAt:text('paid_at').notNull(),note:text('note').notNull(),actorId:text('actor_id').notNull(),createdAt:text('created_at').notNull(),
+},t=>[uniqueIndex('sales_payment_request').on(t.actorId,t.requestId),index('sales_payment_person_month').on(t.person,t.month,t.paidAt)]);
+export const salesPlans=sqliteTable('sales_plans',{
+ id:text('id').primaryKey(),requestId:text('request_id').notNull(),person:text('person').notNull(),startDate:text('start_date').notNull(),endDate:text('end_date').notNull(),
+ metric:text('metric').notNull(),target:integer('target').notNull(),baseRate:real('base_rate').notNull(),targetRate:real('target_rate').notNull(),actorId:text('actor_id').notNull(),createdAt:text('created_at').notNull(),
+},t=>[uniqueIndex('sales_plan_request').on(t.actorId,t.requestId),index('sales_plan_person_dates').on(t.person,t.startDate,t.endDate)]);

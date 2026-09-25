@@ -60,8 +60,32 @@ export class EvidenceRepository {
  }
  async cached(caseId:string,originalHash:string,version:string){
   const document=await this.db.prepare('SELECT * FROM assessment_documents WHERE case_id=? AND original_sha256=?').bind(caseId,originalHash).first<DocumentRow>();if(!document)return null;
-  const extraction=await this.db.prepare('SELECT * FROM assessment_extractions WHERE document_id=? AND version=?').bind(document.id,version).first<ExtractionRow>();if(!extraction)return null;
-  return {document,extraction,result:await this.readResult(extraction)};
+  let extraction=await this.db.prepare('SELECT * FROM assessment_extractions WHERE document_id=? AND version=?').bind(document.id,version).first<ExtractionRow>();
+  if(extraction)return {document,extraction,result:await this.readResult(extraction)};
+  // Preserve compatible evidence and its review identity through the bilingual
+  // reader updates. Only affected, unreviewed originals need another analysis.
+  if(!/:rules-native-(?:19|20|21)$/.test(version))return null;
+  const previous=version.endsWith(':rules-native-21')?[20,19,18]:version.endsWith(':rules-native-20')?[19,18]:[18];
+  for(const revision of previous){
+   extraction=await this.db.prepare('SELECT * FROM assessment_extractions WHERE document_id=? AND version=?').bind(document.id,version.replace(/:rules-native-\d+$/,':rules-native-'+revision)).first<ExtractionRow>();
+   if(extraction)break;
+  }
+  if(!extraction)return null;
+  const result=await this.readResult(extraction) as {extraction?:{kind?:string};read?:{pages?:Array<{text:string}>}};
+  const head=result.read?.pages?.map(p=>p.text).join('\n').slice(0,14000).toLowerCase()||'';
+  // v21 changes only salary-bank recognition and period labels. Preserve all
+  // other compatible evidence IDs, including already reviewed GKB facts.
+  if(version.endsWith(':rules-native-21')&&result.extraction?.kind!=='salary'&&((/^\s*ао\s*[«"“]?евразийский банк[»"”]?/u.test(head)&&/выписка по сч[её]ту/u.test(head)&&/eubank\.kz|eurikzka/u.test(head))||(/выписка по счету/.test(head)&&/тип счета\s*:[^\n]*зарплата/.test(head)&&/народный банк казахстана|halykbank\.kz/.test(head))))return null;
+  const newlyRecognizedId=result.extraction?.kind==='unknown'&&(/(?:қазақстан республикасының|қр)\s+ішкі істер министрлігі/iu.test(head)||/:rules-native-(?:20|21)$/.test(version)&&/^[a-z]+<<[a-z<]+\s*$/m.test(head)&&/^\d{12}\s*$/m.test(head));
+  if(newlyRecognizedId){
+   // Keeping the old extraction does not approve it: document-review validation
+   // still checks this employee inspection against today's owner and dates.
+   const review=await this.db.prepare('SELECT r.* FROM assessment_reviews r JOIN assessment_cases c ON c.id=r.case_id AND c.identity_revision=r.identity_revision WHERE r.case_id=? AND r.document_id=? AND r.extraction_id=? AND r.fact_key=? ORDER BY r.rowid DESC LIMIT 1').bind(caseId,document.id,extraction.id,'document.manual-check.v1').first<ReviewRow>();
+   let preserve=false;try{preserve=!!review&&['confirmed','corrected'].includes(review.disposition)&&JSON.parse(review.value_json).type==='Удостоверение личности';}catch{}
+   if(!preserve)return null;
+  }
+  if(!result.extraction?.kind||extraction.version.endsWith(':rules-native-18')&&/kaspi/.test(head)&&/үзінді\s+көшірме/u.test(head))return null;
+  return {document,extraction,result};
  }
  async readResult(extraction:ExtractionRow):Promise<unknown>{
   const object=await this.files.get(extraction.result_key);if(!object)throw new RepositoryError('EVIDENCE_OBJECT_MISSING',503);
@@ -84,20 +108,20 @@ export class EvidenceRepository {
   return {document,extraction,result:await this.readResult(extraction)};
  }
  async reviewRecord(caseId:string,reviewId:string){return this.db.prepare('SELECT * FROM assessment_reviews WHERE case_id=? AND id=?').bind(caseId,reviewId).first<ReviewRow>();}
- async appendReview(input:{caseId:string;documentId:string;extractionId:string;identityRevision:number;requestId:string;factKey:string;value:unknown;disposition:'confirmed'|'corrected'|'unresolved';reason:string;expectedReviewId?:string},actor:Actor){
+ async appendReview(input:{caseId:string;documentId:string;extractionId:string;identityRevision:number;requestId:string;factKey:string;value:unknown;disposition:'confirmed'|'corrected'|'unresolved';reason:string;expectedReviewId?:string;requireNewReview?:boolean},actor:Actor){
   const doc=await this.document(input.caseId,input.documentId);if(!doc)throw new RepositoryError('DOCUMENT_NOT_IN_CASE',404);
   const extraction=await this.db.prepare('SELECT * FROM assessment_extractions WHERE id=? AND document_id=?').bind(input.extractionId,doc.id).first<ExtractionRow>();if(!extraction)throw new RepositoryError('EXTRACTION_NOT_IN_DOCUMENT',404);
   const payloadHash=await sha256(JSON.stringify({...input,actorId:actor.id,authentication:actor.authentication}));
   const old=await this.db.prepare('SELECT * FROM assessment_reviews WHERE case_id=? AND request_id=?').bind(input.caseId,input.requestId).first<ReviewRow>();
   if(old){if(old.payload_hash!==payloadHash)throw new RepositoryError('IDEMPOTENCY_KEY_REUSED');return old;}
   // Revision condition is part of the insert, closing the check/write race if CRM identity changed.
-  await this.db.prepare('INSERT INTO assessment_reviews (id,request_id,case_id,document_id,extraction_id,identity_revision,fact_key,value_json,disposition,reason,actor_id,authentication,payload_hash,created_at) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM assessment_cases WHERE id=? AND identity_revision=?) AND (? IS NULL OR (SELECT id FROM assessment_reviews WHERE case_id=? AND document_id=? AND extraction_id=? AND identity_revision=? AND fact_key=? ORDER BY rowid DESC LIMIT 1)=?) ON CONFLICT(case_id,request_id) DO NOTHING').bind(crypto.randomUUID(),input.requestId,input.caseId,doc.id,extraction.id,input.identityRevision,input.factKey,JSON.stringify(input.value),input.disposition,input.reason,actor.id,actor.authentication,payloadHash,new Date().toISOString(),input.caseId,input.identityRevision,input.expectedReviewId??null,input.caseId,doc.id,extraction.id,input.identityRevision,input.factKey,input.expectedReviewId??null).run();
+  await this.db.prepare('INSERT INTO assessment_reviews (id,request_id,case_id,document_id,extraction_id,identity_revision,fact_key,value_json,disposition,reason,actor_id,authentication,payload_hash,created_at) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM assessment_cases WHERE id=? AND identity_revision=?) AND (?=0 OR NOT EXISTS (SELECT 1 FROM assessment_reviews WHERE case_id=? AND document_id=? AND extraction_id=? AND identity_revision=? AND fact_key=?)) AND (? IS NULL OR (SELECT id FROM assessment_reviews WHERE case_id=? AND document_id=? AND extraction_id=? AND identity_revision=? AND fact_key=? ORDER BY rowid DESC LIMIT 1)=?) ON CONFLICT(case_id,request_id) DO NOTHING').bind(crypto.randomUUID(),input.requestId,input.caseId,doc.id,extraction.id,input.identityRevision,input.factKey,JSON.stringify(input.value),input.disposition,input.reason,actor.id,actor.authentication,payloadHash,new Date().toISOString(),input.caseId,input.identityRevision,input.requireNewReview?1:0,input.caseId,doc.id,extraction.id,input.identityRevision,input.factKey,input.expectedReviewId??null,input.caseId,doc.id,extraction.id,input.identityRevision,input.factKey,input.expectedReviewId??null).run();
   const saved=await this.db.prepare('SELECT * FROM assessment_reviews WHERE case_id=? AND request_id=?').bind(input.caseId,input.requestId).first<ReviewRow>();
-  if(!saved)throw new RepositoryError(input.expectedReviewId?'REVIEW_CHANGED':'CASE_IDENTITY_CHANGED');if(saved.payload_hash!==payloadHash)throw new RepositoryError('IDEMPOTENCY_KEY_REUSED');return saved;
+  if(!saved)throw new RepositoryError(input.expectedReviewId||input.requireNewReview?'REVIEW_CHANGED':'CASE_IDENTITY_CHANGED');if(saved.payload_hash!==payloadHash)throw new RepositoryError('IDEMPOTENCY_KEY_REUSED');return saved;
  }
- async currentReviews(caseId:string,documentId:string,extractionId:string,identityRevision:number){
+ async currentReviews(caseId:string,documentId:string,extractionId:string,identityRevision:number,includeUnresolved=false){
   const rows=(await this.db.prepare('SELECT rowid AS sequence,* FROM assessment_reviews WHERE case_id=? AND document_id=? AND extraction_id=? AND identity_revision=? ORDER BY rowid DESC').bind(caseId,documentId,extractionId,identityRevision).all<ReviewRow>()).results;
-  const seen=new Set<string>();return rows.filter(row=>{if(seen.has(row.fact_key))return false;seen.add(row.fact_key);return row.disposition!=='unresolved';});
+  const seen=new Set<string>();return rows.filter(row=>{if(seen.has(row.fact_key))return false;seen.add(row.fact_key);return includeUnresolved||row.disposition!=='unresolved';});
  }
  async exportCase(caseId:string){
   // A single D1 batch is a transaction: mutable submission/upload receipts and

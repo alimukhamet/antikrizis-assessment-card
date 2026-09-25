@@ -32,11 +32,17 @@ jobs:
           node-version: '22'
           package-manager-cache: false
 
-      - name: Require Cloudflare deployment credentials
+      - name: Require deployment and live verification credentials
+        env:
+          ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
             echo '::error::Cloudflare deployment credentials are not configured in this repository.'
             echo 'Expected GitHub Actions secrets: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.'
+            exit 1
+          fi
+          if [ -z "$ASSESSMENT_TEST_PASSWORD" ]; then
+            echo '::error::ASSESSMENT_TEST_PASSWORD is required for post-deployment verification.'
             exit 1
           fi
 
@@ -49,23 +55,56 @@ jobs:
           npm run build:anti-krizis
           npx --no-install wrangler deploy --dry-run --config wrangler.anti-krizis.jsonc --outdir /tmp/assessment-worker-dry-run
 
+      - name: Require regression checks before production deployment
+        run: |
+          if node --test tests/*.test.mjs > /tmp/assessment-release-tests.log 2>&1; then
+            tail -12 /tmp/assessment-release-tests.log
+          else
+            grep -A30 '^not ok' /tmp/assessment-release-tests.log || true
+            tail -100 /tmp/assessment-release-tests.log
+            exit 1
+          fi
+
+      - name: Require runtime persistence and recovery checks
+        run: npm run test:runtime
+
       - name: Deploy existing Worker configuration
-        run: npx --no-install wrangler deploy --config wrangler.anti-krizis.jsonc
+        # D1 management uses the separately authorized Cloudflare connector.
+        # The diagnostics schema is provisioned; the live probe verifies storage.
+        run: npx --no-install wrangler deploy --keep-vars --config wrangler.anti-krizis.jsonc
 
       - name: Verify live contract assets
         run: |
           set -euo pipefail
           origin='https://assessment.anti-krizis.kz'
           paths=(
+            'tools-home.js'
+            'app-ready.js'
+            'operations-monitor.js'
+            'client-context-ui.js'
+            'client-workspace.js'
+            'operations-config.js'
+            'assessment-workflow.css'
             'contract-renderer.js'
             'submission-flow.js'
             'hosted-assessment.js'
             'server-drafts.js'
+            'intake-data.js'
+            'enforcement-editor.js'
+            'document-review.js'
+            'loan-duplicates.js'
+            'gkb-comparison.mjs'
+            'gkb-comparison-ui.mjs'
+            'server-answer-check.js'
+            'money-input.js'
             'lawyer-handoff.js'
             'operations.js'
             'operations.css'
+            'pdf-preview.css'
+            'document-viewer.html'
             'assessment-review.js'
             'assessment-workflow.js'
+            'benefit-evidence.js'
             'credential-upload.js'
             'document-replacement.js'
             'file-selection-controls.js'
@@ -105,3 +144,23 @@ jobs:
           done
           echo '::error::Deployment command completed, but live release assets did not converge to this commit.'
           exit 1
+
+      - name: Verify authenticated production read paths
+        env:
+          ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
+        run: |
+          node scripts/audit-live-tools.mjs
+          node scripts/audit-live-knowledge.mjs
+          node scripts/monitor-production.mjs
+
+      - name: Preserve live audit result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-live-tools-audit
+          path: |
+            live-tools-audit.json
+            live-knowledge-audit.json
+            production-monitor.json
+          if-no-files-found: ignore
+          retention-days: 1

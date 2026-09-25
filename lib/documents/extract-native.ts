@@ -1,11 +1,11 @@
 import labels from './kz-labels.json';
 import type { PageText } from './read-pdf';
 import {extractPowerParties,type PowerParties} from './power-of-attorney';
-export const EXTRACTION_VERSION = 'rules-native-18';
+export const EXTRACTION_VERSION = 'rules-native-22';
 export type Fact = { key: string; value: string; page: number; source: string };
 export type Credit = { contractNumber: string; contractCode?: string; page: number; facts: Fact[]; components: Record<string, string | null>; comparisonDebt?:Fact; relatedPartiesNotice?: {page:number;source:string} };
 export type BankStatement={from:string|null;to:string|null;credits:string;topUps:string;topUpsVerified:boolean;debits:string;transactions:number;reconciled:boolean;rowsReadable:boolean;sourcePage:number;reconciliation?:string;gambling?:{total:string;matches:Array<{date:string;amount:string;description:string;page:number}>}};
-export type NativeExtraction = { version: string; kind: string; identity: { iin: string | null; name: string | null }; issuedAt: string | null; facts: Fact[]; credits: Credit[]; findings: string[];creditList?:{complete:boolean;declared:number|null};bankStatement?:BankStatement;coverage?:{from:string|null;to:string|null};power?:PowerParties };
+export type NativeExtraction = { version: string; kind: string; identity: { iin: string | null; name: string | null }; issuedAt: string | null; expiresAt?:string|null; facts: Fact[]; credits: Credit[]; findings: string[];creditList?:{complete:boolean;declared:number|null};bankStatement?:BankStatement;coverage?:{from:string|null;to:string|null};power?:PowerParties };
 export function validIin(s: string | null): s is string {
   if (!s || !/^\d{12}$/.test(s) || /^0+$/.test(s)) return false;
   const a = [...s].map(Number); let n = a.slice(0, 11).reduce((sum, x, i) => sum + x * (i + 1), 0) % 11;
@@ -28,6 +28,29 @@ function day(v: string | null): string | null {
   const iso = v.slice(6)+'-'+v.slice(3,5)+'-'+v.slice(0,2), d = new Date(iso+'T00:00:00Z');
   return Number.isFinite(d.getTime()) && d.toISOString().slice(0,10) === iso ? iso : null;
 }
+/** Date proposals from an ID's printed labels or its explicit validity range, never its birthday. */
+export function identityCardDates(pages:Array<{page:number;text:string}>){
+ const issued=new Map<string,number>(),expires=new Map<string,number>();let invalid=false;
+ const date='(\\d{2}\\.\\d{2}\\.\\d{4})';
+ const labels={issued:'(?:дата выдачи|берілген күні)',expires:'(?:действителен до|действительно до|действует до|жарамдылық мерзімі|жарамды мерзімі)'};
+ const add=(target:Map<string,number>,raw:string,page:number)=>{const parsed=day(raw);if(parsed)target.set(parsed,page);else invalid=true;};
+ for(const page of pages){
+  for(const m of page.text.matchAll(new RegExp(date+'\\s*[-–—]\\s*'+date,'gu'))){add(issued,m[1],page.page);add(expires,m[2],page.page);}
+  for(const [key,label]of Object.entries(labels))for(const m of page.text.matchAll(new RegExp(label+'(?:[\\s/:]+'+label+')*[\\s/:]*'+date,'giu'))){add(key==='issued'?issued:expires,m[1],page.page);}
+ }
+ const issuedAt=issued.size===1?[...issued.keys()][0]:null,expiresAt=expires.size===1?[...expires.keys()][0]:null;
+ if(invalid||issued.size>1||expires.size>1||issuedAt&&expiresAt&&issuedAt>expiresAt)return {issuedAt:null,expiresAt:null,page:null};
+ return {issuedAt,expiresAt,page:issuedAt?issued.get(issuedAt)!:expiresAt?expires.get(expiresAt)!:null};
+}
+function identityCardHeader(text:string){
+ return /^([А-ЯӘІҢҒҮҰҚӨҺЁ -]+)\n([А-ЯӘІҢҒҮҰҚӨҺЁ -]+)\n([А-ЯӘІҢҒҮҰҚӨҺЁ -]+)\n\d{2}\.\d{2}\.\d{4}\s*\n(\d{12})\s*\n\d{9}\b/m.exec(text);
+}
+function identityCardWithoutIssuer(text:string,pages:PageText[]){
+ const header=identityCardHeader(text),dates=identityCardDates(pages);
+ // Some digital cards render the title/issuer as graphics. Demand the full
+ // printed card structure, a checksum-valid IIN, MRZ and an unambiguous term.
+ return !!header&&validIin(header[4])&&/^[A-Z]+<<[A-Z<]+\s*$/m.test(text)&&!!dates.issuedAt&&!!dates.expiresAt;
+}
 /** Questionnaire categories agreed for GKB intake; preserve the bureau wording in the source. */
 function questionnaireCreditType(financing:string|null,purpose:string|null,object:string|null):string|null{
  if(financing==='Кредитная карта')return 'Кредитная карта';
@@ -41,18 +64,23 @@ function questionnaireCreditType(financing:string|null,purpose:string|null,objec
 }
 export function extractNative(pages: PageText[]): NativeExtraction {
   const raw = pages.map(p => p.text).join('\n'), head = raw.slice(0,14000).toLowerCase().replace(/ё/g,'е');
-  // Detect the 2026 layout by its title on the first page only. Older Kazakh short
-  // reports mention «дербес кредиттік есепті» in the page-3 legal notes.
-  const title=(pages[0]?.text||'').slice(0,600).toLowerCase().replace(/ё/g,'е');
-  const modernShort=/дербес\s+кредиттік\s+есеп(?![а-яәіңғүұқөһ])/u.test(title)&&/қысқаша\s+нысан/u.test(title);
+  // Choose the layout from the first report title. Older reports also mention
+  // "Дербес кредиттік есеп" in their explanatory pages; that is not their format.
+  const reportTitle=/(?:дербес\s+кредиттік есеп|персональный кредитный отчет|жеке кредиттік есеп)/u.exec(head)?.[0];
+  const modernShort=Boolean(reportTitle?.startsWith('дербес')&&/қысқаша нысан/.test(head.slice(0,1500)));
   const credit = modernShort || /персональный кредитный отчет|жеке кредиттік есеп/.test(head);
+  // Identify the issuing bank before transaction counterparties. A transfer to
+  // Kaspi must not turn a Eurasian account statement into a Kaspi statement.
+  const statementFront=(pages[0]?.text||'').toLowerCase().replace(/ё/g,'е');
+  const eurasian=/^\s*ао\s*[«"“]?евразийский банк[»"”]?/u.test(statementFront)&&/выписка по сч[её]ту/u.test(statementFront)&&/eubank\.kz|eurikzka/u.test(statementFront);
+  const halyk=/выписка по счету/.test(head)&&/тип счета\s*:[^\n]*зарплата/.test(head)&&/народный банк казахстана|halykbank\.kz/.test(head);
   const kind = credit ? /краткая форма|қысқаша/.test(head) ? 'gkb_short' : 'gkb_full'
-    : /kaspi/.test(head) && /выписка/.test(head) ? 'kaspi'
-    : /выписка по счету/.test(head) && /тип счета:[^\n]*зарплата/.test(head) && /народный банк казахстана|halykbank\.kz/.test(head) ? 'salary'
+    : eurasian||halyk ? 'salary'
+    : /kaspi/.test(head) && /выписка|үзінді\s+көшірме/u.test(head) ? 'kaspi'
     : /об отсутствии \(наличии\) недвижимого имущества/.test(head) ? 'property'
     : /информация о пенсионных выплатах и пособиях/.test(head) ? 'benefits'
     : /выдача\s+информации\s+о\s+поступлении\s+и\s+движении\s+средств\s+вкладчика\s+единого\s+накопительного\s+пенсионного\s+фонда/.test(head) ? 'enpf'
-    : /удостоверение личности|жеке куәлік/.test(head)||/МИНИСТЕРСТВО ВНУТРЕННИХ ДЕЛ РК/.test(raw)&&/^[A-Z]+<<[A-Z<]+$/m.test(raw)&&/^\d{12}\s*$/m.test(raw) ? 'identity'
+    : /удостоверение личности|жеке куәлік/.test(head)||/МИНИСТЕРСТВО ВНУТРЕННИХ ДЕЛ РК|(?:ҚАЗАҚСТАН РЕСПУБЛИКАСЫНЫҢ|ҚР)\s+ІШКІ ІСТЕР МИНИСТРЛІГІ/iu.test(raw)&&/^[A-Z]+<<[A-Z<]+$/m.test(raw)&&/^\d{12}\s*$/m.test(raw)||identityCardWithoutIssuer(raw,pages) ? 'identity'
     : /(?:^|\n)\s*доверенность\s*(?:\n|$)/i.test(raw) ? 'power_of_attorney' : 'unknown';
   const output: NativeExtraction = { version: EXTRACTION_VERSION, kind, identity: { iin:null, name:null }, issuedAt:null, facts:[], credits:[], findings:[] };
   if (pages.some(p => p.needsOcr)) output.findings.push('OCR_OR_PAGE_REVIEW_REQUIRED');
@@ -83,13 +111,13 @@ export function extractNative(pages: PageText[]): NativeExtraction {
   } else if (['kaspi','property','benefits','identity','salary'].includes(kind)) {
     const front = raw.slice(0,8000), iin = value(/(?:ИИН|ЖСН)\s*\/?\s*(?:ИИН)?\s*:?\s*(\d{12})\b/,front);
     if (validIin(iin)) output.identity.iin = iin;
-    output.identity.name = kind === 'kaspi' ? value(/подтверждает,\s*что\s+([\s\S]+?),\s*ИИН/i,front)?.replace(/\s+/g,' ') || null : kind === 'property' ? value(/Выдан[ао]:\s*([^,\n]+)/i,front) : null;
+    output.identity.name = kind === 'kaspi' ? (value(/подтверждает,\s*что\s+([\s\S]+?),\s*ИИН/i,front)||value(/«Kaspi\s+Bank»\s+АҚ\s+([^,]+),\s*ЖСН/u,front))?.replace(/\s+/g,' ') || null : kind === 'property' ? value(/Выдан[ао]:\s*([^,\n]+)/i,front) : null;
   }
   if(kind==='salary'){
     const front=pages[0]?.text||'';
-    output.identity.name=value(/ФИО:\s*([^\n]+?)(?=\s+Дата формирования выписки:|\n|$)/,front);
-    output.issuedAt=day(value(/Дата формирования выписки:\s*(\d{2}\.\d{2}\.\d{4})/,front));
-    const period=/Период выписки:\s*с\s*(\d{2}\.\d{2}\.\d{4})\s+по\s+(\d{2}\.\d{2}\.\d{4})/.exec(front);
+    output.identity.name=value(/ФИО\s*:\s*([^\n]+?)(?=\s+Дата формирования(?: выписки)?\s*:|\n|$)/,front);
+    output.issuedAt=day(value(/Дата формирования(?: выписки)?\s*:\s*(\d{2}\.\d{2}\.\d{4})/,front));
+    const period=/Период(?: выписки)?\s*:\s*(?:с\s*)?(\d{2}\.\d{2}\.\d{4})\s*(?:по|[-–—])\s*(\d{2}\.\d{2}\.\d{4})/.exec(front);
     output.coverage={from:day(period?.[1]||null),to:day(period?.[2]||null)};
     // A salary account statement includes transfers as well as wages. Its totals are not income facts.
   }
@@ -106,9 +134,10 @@ export function extractNative(pages: PageText[]): NativeExtraction {
     extractEnpfPayers(pages,output);
   }
   if(kind==='identity'&&!output.identity.iin){
-    const card=/^([А-ЯӘІҢҒҮҰҚӨҺЁ -]+)\n([А-ЯӘІҢҒҮҰҚӨҺЁ -]+)\n([А-ЯӘІҢҒҮҰҚӨҺЁ -]+)\n\d{2}\.\d{2}\.\d{4}\s*\n(\d{12})\s*\n\d{9}\b/m.exec(raw);
+    const card=identityCardHeader(raw);
     if(card&&validIin(card[4]))output.identity={iin:card[4],name:card.slice(1,4).join(' ').replace(/\s+/g,' ').trim()};
   }
+  if(kind==='identity'){const dates=identityCardDates(pages);output.issuedAt=dates.issuedAt;output.expiresAt=dates.expiresAt;}
   if(kind==='benefits'){
     output.issuedAt=day(value(/Дата получения:\s*(\d{2}\.\d{2}\.\d{4})/,raw));
     const active=/Действующие выплаты:\s*([\s\S]*?)Төленген төлемдер\s*\/\s*Выплаченные выплаты:/.exec(raw);
@@ -268,6 +297,12 @@ function parseModernShort(pages:PageText[],output:NativeExtraction){
  output.creditList={complete:!output.findings.includes('SHORT_CREDIT_LIST_UNVERIFIED'),declared};
 }
 export function parseKaspiStatement(pages:PageText[]):BankStatement{
+ // Translate structural labels only. Preserve original pages and transaction descriptions.
+ pages=pages.map(page=>({...page,text:page.text
+  .replace(/(\d{2}\.\d{2}\.(?:\d{4}|\d{2}))(?:ж\.?)?\s+бастап\s+(\d{2}\.\d{2}\.(?:\d{4}|\d{2}))(?:ж\.?)?\s+дейінгі\s+кезең(?:ге|\s+үшін)/gu,'за период с $1 по $2')
+  .replace(/(\d{2}\.\d{2}\.(?:\d{4}|\d{2}))(?:ж\.?)?\s+қолжетімді:/gu,'Доступно на $1')
+  .replace(/Карта бойынша операциялардың қысқаша мазмұны:/gu,'Краткое содержание операций:')
+  .replace(/^(Толықтыру|Өз шоттарыңыздан түскені|Кредиттер сомасын шотқа түсіру|Аударым|Өз шоттарыңызға аудару|Зат сатып алу|Ақша алу|[ӘƏ]ртүрлі)(?=[ \t]+[+−-])/gmu,label=>({'Толықтыру':'Пополнения','Өз шоттарыңыздан түскені':'Поступления со своих счетов','Кредиттер сомасын шотқа түсіру':'Зачисления кредитов','Аударым':'Переводы','Өз шоттарыңызға аудару':'Переводы на свои счета','Зат сатып алу':'Покупки','Ақша алу':'Снятия','Әртүрлі':'Разное','Əртүрлі':'Разное'}[label]!))}));
  const text=pages.map(p=>p.text).join('\n');
  const parseDate=(raw:string)=>{
   const match=/^(\d{2})\.(\d{2})\.(\d{2}|\d{4})$/.exec(raw);if(!match)return null;
@@ -282,7 +317,7 @@ export function parseKaspiStatement(pages:PageText[]):BankStatement{
  const gamblingMatches:Array<{date:string;amount:string;description:string;page:number}>=[];let gamblingTotal=BigInt(0);
  let credits=BigInt(0),topUps=BigInt(0),debits=BigInt(0),transactions=0,rowsReadable=!!from&&!!to&&from<=to,sourcePage=1,knownCreditRows=true,knownOperationRows=true;
  const operationTotals=Array<bigint>(7).fill(BigInt(0));
- const operationKinds=[/^Пополнение(?:\s|$)/iu,/^Поступление со(?:\s|$)/iu,/^Зачисление(?:\s|$)/iu,/^Перевод(?:\s|$)/iu,/^Покупка(?:\s|$)/iu,/^Снятие(?:\s|$)/iu,/^Разное(?:\s|$)/iu];
+ const operationKinds=[/^(?:Пополнение|Толықтыру)(?:\s|$)/iu,/^(?:Поступление со|Өз шоттарыңыздан түскені)(?:\s|$)/iu,/^(?:Зачисление|Кредиттер сомасын шотқа түсіру|Кредит)(?:\s|$)/iu,/^(?:Перевод|Аударым|Өз шоттарыңызға аудару)(?:\s|$)/iu,/^(?:Покупка|Зат сатып алу)(?:\s|$)/iu,/^(?:Снятие|Ақша алу)(?:\s|$)/iu,/^(?:Разное|[ӘƏ]ртүрлі)(?:\s|$)/iu];
  for(const page of pages){
   const candidates=[...page.text.matchAll(/^\d{2}\.\d{2}\.(?:\d{4}|\d{2})\s+[+−-]/gm)].length;
   const rows=[...page.text.matchAll(/^(\d{2}\.\d{2}\.(?:\d{4}|\d{2}))\s+([+−-])\s*([\d \u00a0]+[,.]\d{2})\s*₸[^\n]*/gm)];

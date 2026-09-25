@@ -309,49 +309,35 @@
     {
       "key": "holding:client:real",
       "type": "checkbox",
-      "label": "Что зарегистрировано на ваше имя?*",
+      "label": "Какое имущество зарегистрировано на ваше имя?*",
+      "required": false,
+      "conditions": []
+    },
+    {
+      "key": "holding:client:land",
+      "type": "checkbox",
+      "label": "Какое имущество зарегистрировано на ваше имя?*",
       "required": false,
       "conditions": []
     },
     {
       "key": "holding:client:car",
       "type": "checkbox",
-      "label": "Что зарегистрировано на ваше имя?*",
-      "required": false,
-      "conditions": []
-    },
-    {
-      "key": "holding:client:ip",
-      "type": "checkbox",
-      "label": "Что зарегистрировано на ваше имя?*",
-      "required": false,
-      "conditions": []
-    },
-    {
-      "key": "holding:client:too",
-      "type": "checkbox",
-      "label": "Что зарегистрировано на ваше имя?*",
-      "required": false,
-      "conditions": []
-    },
-    {
-      "key": "holding:client:kh",
-      "type": "checkbox",
-      "label": "Что зарегистрировано на ваше имя?*",
+      "label": "Какое имущество зарегистрировано на ваше имя?*",
       "required": false,
       "conditions": []
     },
     {
       "key": "holding:client:other",
       "type": "checkbox",
-      "label": "Что зарегистрировано на ваше имя?*",
+      "label": "Какое имущество зарегистрировано на ваше имя?*",
       "required": false,
       "conditions": []
     },
     {
       "key": "holding:client:none",
       "type": "checkbox",
-      "label": "Что зарегистрировано на ваше имя?*",
+      "label": "Какое имущество зарегистрировано на ваше имя?*",
       "required": false,
       "conditions": []
     },
@@ -359,7 +345,7 @@
       "key": "holding:client:unknown",
       "type": "checkbox",
       "legacy": true,
-      "label": "Что зарегистрировано на ваше имя?*",
+      "label": "Какое имущество зарегистрировано на ваше имя?*",
       "required": false,
       "conditions": []
     },
@@ -387,7 +373,7 @@
     {
       "key": "n8017",
       "type": "textarea",
-      "label": "Что ещё зарегистрировано?*",
+      "label": "Укажите другое имущество*",
       "required": true,
       "conditions": [
         "client-asset-other"
@@ -396,7 +382,16 @@
     {
       "key": "holding:partner:real",
       "type": "checkbox",
-      "label": "Что зарегистрировано на имя супруга(и)?*",
+      "label": "Какое имущество зарегистрировано на имя супруга(и)?*",
+      "required": false,
+      "conditions": [
+        "partnerAssets"
+      ]
+    },
+    {
+      "key": "holding:partner:land",
+      "type": "checkbox",
+      "label": "Какое имущество зарегистрировано на имя супруга(и)?*",
       "required": false,
       "conditions": [
         "partnerAssets"
@@ -405,34 +400,7 @@
     {
       "key": "holding:partner:car",
       "type": "checkbox",
-      "label": "Что зарегистрировано на имя супруга(и)?*",
-      "required": false,
-      "conditions": [
-        "partnerAssets"
-      ]
-    },
-    {
-      "key": "holding:partner:ip",
-      "type": "checkbox",
-      "label": "Что зарегистрировано на имя супруга(и)?*",
-      "required": false,
-      "conditions": [
-        "partnerAssets"
-      ]
-    },
-    {
-      "key": "holding:partner:too",
-      "type": "checkbox",
-      "label": "Что зарегистрировано на имя супруга(и)?*",
-      "required": false,
-      "conditions": [
-        "partnerAssets"
-      ]
-    },
-    {
-      "key": "holding:partner:kh",
-      "type": "checkbox",
-      "label": "Что зарегистрировано на имя супруга(и)?*",
+      "label": "Какое имущество зарегистрировано на имя супруга(и)?*",
       "required": false,
       "conditions": [
         "partnerAssets"
@@ -441,7 +409,7 @@
     {
       "key": "holding:partner:other",
       "type": "checkbox",
-      "label": "Что зарегистрировано на имя супруга(и)?*",
+      "label": "Какое имущество зарегистрировано на имя супруга(и)?*",
       "required": false,
       "conditions": [
         "partnerAssets"
@@ -450,7 +418,7 @@
     {
       "key": "holding:partner:none",
       "type": "checkbox",
-      "label": "Что зарегистрировано на имя супруга(и)?*",
+      "label": "Какое имущество зарегистрировано на имя супруга(и)?*",
       "required": false,
       "conditions": [
         "partnerAssets"
@@ -460,7 +428,7 @@
       "key": "holding:partner:unknown",
       "type": "checkbox",
       "legacy": true,
-      "label": "Что зарегистрировано на имя супруга(и)?*",
+      "label": "Какое имущество зарегистрировано на имя супруга(и)?*",
       "required": false,
       "conditions": [
         "partnerAssets"
@@ -491,7 +459,7 @@
     {
       "key": "n8032",
       "type": "textarea",
-      "label": "Что ещё зарегистрировано?*",
+      "label": "Укажите другое имущество*",
       "required": true,
       "conditions": [
         "partner-asset-other",
@@ -509,6 +477,70 @@
       ],
       "required": true,
       "conditions": []
+    },
+    {
+      "key": "holding:client:ip",
+      "type": "checkbox",
+      "label": "Есть ли у вас ИП, доля в ТОО или КХ?*",
+      "required": false,
+      "conditions": []
+    },
+    {
+      "key": "holding:client:too",
+      "type": "checkbox",
+      "label": "Есть ли у вас ИП, доля в ТОО или КХ?*",
+      "required": false,
+      "conditions": []
+    },
+    {
+      "key": "holding:client:kh",
+      "type": "checkbox",
+      "label": "Есть ли у вас ИП, доля в ТОО или КХ?*",
+      "required": false,
+      "conditions": []
+    },
+    {
+      "key": "holding:client:businessNone",
+      "type": "checkbox",
+      "label": "Есть ли у вас ИП, доля в ТОО или КХ?*",
+      "required": false,
+      "conditions": []
+    },
+    {
+      "key": "holding:partner:ip",
+      "type": "checkbox",
+      "label": "Есть ли у супруга(и) ИП, доля в ТОО или КХ?*",
+      "required": false,
+      "conditions": [
+        "partnerBusiness"
+      ]
+    },
+    {
+      "key": "holding:partner:too",
+      "type": "checkbox",
+      "label": "Есть ли у супруга(и) ИП, доля в ТОО или КХ?*",
+      "required": false,
+      "conditions": [
+        "partnerBusiness"
+      ]
+    },
+    {
+      "key": "holding:partner:kh",
+      "type": "checkbox",
+      "label": "Есть ли у супруга(и) ИП, доля в ТОО или КХ?*",
+      "required": false,
+      "conditions": [
+        "partnerBusiness"
+      ]
+    },
+    {
+      "key": "holding:partner:businessNone",
+      "type": "checkbox",
+      "label": "Есть ли у супруга(и) ИП, доля в ТОО или КХ?*",
+      "required": false,
+      "conditions": [
+        "partnerBusiness"
+      ]
     },
     {
       "key": "choice:debtPurpose:Погашение других долгов",
@@ -738,17 +770,31 @@
       "min": "0"
     },
     {
+      "key": "enforcementStatus",
+      "type": "select-one",
+      "label": "Есть ли исполнительные производства или исполнительные надписи?*",
+      "options": [
+        "",
+        "no",
+        "yes",
+        "legacy"
+      ],
+      "required": true,
+      "conditions": []
+    },
+    {
       "key": "enforcementDetails",
       "type": "textarea",
-      "label": "Какие исполнительные производства или исполнительные надписи есть? Укажите количество и подробности*",
-      "required": true,
+      "legacy": true,
+      "label": "Прежние сведения о взысканиях",
+      "required": false,
       "conditions": []
     },
     {
       "key": "unknown:enforcementDetails",
       "type": "checkbox",
       "legacy": true,
-      "label": "Какие исполнительные производства или исполнительные надписи есть? Укажите количество и подробности*",
+      "label": "Прежние сведения о взысканиях",
       "required": false,
       "conditions": []
     },
@@ -1137,6 +1183,65 @@
       ]
     },
     {
+      "id": "clientland",
+      "conditions": [
+        "client-asset-land"
+      ],
+      "fields": [
+        {
+          "key": "clientLandDescription",
+          "type": "text",
+          "label": "Адрес или описание участка*",
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "clientLandOwnership",
+          "type": "select-one",
+          "label": "Вид собственности*",
+          "options": [
+            "",
+            "sole",
+            "joint",
+            "share"
+          ],
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "clientLandShare",
+          "type": "number",
+          "label": "Доля по документам, %*",
+          "required": true,
+          "conditions": [
+            "ownership-share"
+          ],
+          "min": "0.01",
+          "max": "100"
+        },
+        {
+          "key": "clientLandValue",
+          "type": "number",
+          "label": "Примерная стоимость участка, ₸*",
+          "required": true,
+          "conditions": [],
+          "min": "0"
+        },
+        {
+          "key": "clientLandPledged",
+          "type": "select-one",
+          "label": "Участок в залоге?*",
+          "options": [
+            "",
+            "Нет",
+            "Да"
+          ],
+          "required": true,
+          "conditions": []
+        }
+      ]
+    },
+    {
       "id": "clientcars",
       "conditions": [
         "client-asset-car"
@@ -1166,6 +1271,237 @@
             "Нет",
             "Да"
           ],
+          "required": true,
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "id": "partnerreal",
+      "conditions": [
+        "partner-asset-real",
+        "partnerAssets"
+      ],
+      "fields": [
+        {
+          "key": "n8018",
+          "type": "select-one",
+          "label": "Тип недвижимости*",
+          "options": [
+            "",
+            "Квартира",
+            "Дом",
+            "Земельный участок",
+            "Коммерческая недвижимость",
+            "Другое"
+          ],
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "n8019Kind",
+          "type": "select-one",
+          "label": "Вид собственности*",
+          "options": [
+            "",
+            "sole",
+            "joint",
+            "share"
+          ],
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "n8019",
+          "type": "number",
+          "label": "Доля по документам, %*",
+          "required": true,
+          "conditions": [
+            "ownership-share"
+          ],
+          "min": "0.01",
+          "max": "100"
+        },
+        {
+          "key": "n8020",
+          "type": "number",
+          "label": "Примерная стоимость всего объекта, ₸*",
+          "required": true,
+          "conditions": [],
+          "min": "0"
+        },
+        {
+          "key": "n8021",
+          "type": "select-one",
+          "label": "Недвижимость в залоге?*",
+          "options": [
+            "",
+            "Нет",
+            "Да"
+          ],
+          "required": true,
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "id": "partnerland",
+      "conditions": [
+        "partner-asset-land",
+        "partnerAssets"
+      ],
+      "fields": [
+        {
+          "key": "partnerLandDescription",
+          "type": "text",
+          "label": "Адрес или описание участка*",
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "partnerLandOwnership",
+          "type": "select-one",
+          "label": "Вид собственности*",
+          "options": [
+            "",
+            "sole",
+            "joint",
+            "share"
+          ],
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "partnerLandShare",
+          "type": "number",
+          "label": "Доля по документам, %*",
+          "required": true,
+          "conditions": [
+            "ownership-share"
+          ],
+          "min": "0.01",
+          "max": "100"
+        },
+        {
+          "key": "partnerLandValue",
+          "type": "number",
+          "label": "Примерная стоимость участка, ₸*",
+          "required": true,
+          "conditions": [],
+          "min": "0"
+        },
+        {
+          "key": "partnerLandPledged",
+          "type": "select-one",
+          "label": "Участок в залоге?*",
+          "options": [
+            "",
+            "Нет",
+            "Да"
+          ],
+          "required": true,
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "id": "partnercars",
+      "conditions": [
+        "partner-asset-car",
+        "partnerAssets"
+      ],
+      "fields": [
+        {
+          "key": "n8022",
+          "type": "text",
+          "label": "Марка, модель и год автомобиля*",
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "n8023",
+          "type": "number",
+          "label": "Примерная стоимость автомобиля, ₸*",
+          "required": true,
+          "conditions": [],
+          "min": "0"
+        },
+        {
+          "key": "n8024",
+          "type": "select-one",
+          "label": "Автомобиль в залоге?*",
+          "options": [
+            "",
+            "Нет",
+            "Да"
+          ],
+          "required": true,
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "id": "transfers",
+      "conditions": [
+        "panel-c8037"
+      ],
+      "fields": [
+        {
+          "key": "n8033",
+          "type": "select-one",
+          "label": "Какое имущество передали?*",
+          "options": [
+            "",
+            "Автомобиль",
+            "Недвижимость / доля",
+            "Доля в бизнесе",
+            "Другое"
+          ],
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "transferOther",
+          "type": "text",
+          "label": "Какое имущество передали?*",
+          "required": true,
+          "conditions": [
+            "transfer-other"
+          ]
+        },
+        {
+          "key": "n8034",
+          "type": "month",
+          "label": "Когда?*",
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "n8035",
+          "type": "select-one",
+          "label": "Вид сделки*",
+          "options": [
+            "",
+            "Продажа",
+            "Дарение",
+            "Раздел имущества",
+            "Другое"
+          ],
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "n8036",
+          "type": "number",
+          "label": "Сколько получили по сделке, ₸?*",
+          "required": true,
+          "conditions": [],
+          "min": "0"
+        },
+        {
+          "key": "n8036Use",
+          "type": "textarea",
+          "label": "На что использовали полученные деньги?*",
           "required": true,
           "conditions": []
         }
@@ -1264,114 +1600,10 @@
       ]
     },
     {
-      "id": "partnerreal",
-      "conditions": [
-        "partner-asset-real",
-        "partnerAssets"
-      ],
-      "fields": [
-        {
-          "key": "n8018",
-          "type": "select-one",
-          "label": "Тип недвижимости*",
-          "options": [
-            "",
-            "Квартира",
-            "Дом",
-            "Земельный участок",
-            "Коммерческая недвижимость",
-            "Другое"
-          ],
-          "required": true,
-          "conditions": []
-        },
-        {
-          "key": "n8019Kind",
-          "type": "select-one",
-          "label": "Вид собственности*",
-          "options": [
-            "",
-            "sole",
-            "joint",
-            "share"
-          ],
-          "required": true,
-          "conditions": []
-        },
-        {
-          "key": "n8019",
-          "type": "number",
-          "label": "Доля по документам, %*",
-          "required": true,
-          "conditions": [
-            "ownership-share"
-          ],
-          "min": "0.01",
-          "max": "100"
-        },
-        {
-          "key": "n8020",
-          "type": "number",
-          "label": "Примерная стоимость всего объекта, ₸*",
-          "required": true,
-          "conditions": [],
-          "min": "0"
-        },
-        {
-          "key": "n8021",
-          "type": "select-one",
-          "label": "Недвижимость в залоге?*",
-          "options": [
-            "",
-            "Нет",
-            "Да"
-          ],
-          "required": true,
-          "conditions": []
-        }
-      ]
-    },
-    {
-      "id": "partnercars",
-      "conditions": [
-        "partner-asset-car",
-        "partnerAssets"
-      ],
-      "fields": [
-        {
-          "key": "n8022",
-          "type": "text",
-          "label": "Марка, модель и год автомобиля*",
-          "required": true,
-          "conditions": []
-        },
-        {
-          "key": "n8023",
-          "type": "number",
-          "label": "Примерная стоимость автомобиля, ₸*",
-          "required": true,
-          "conditions": [],
-          "min": "0"
-        },
-        {
-          "key": "n8024",
-          "type": "select-one",
-          "label": "Автомобиль в залоге?*",
-          "options": [
-            "",
-            "Нет",
-            "Да"
-          ],
-          "required": true,
-          "conditions": []
-        }
-      ]
-    },
-    {
       "id": "partnerip",
       "conditions": [
         "partner-asset-ip",
-        "partnerAssets"
+        "partnerBusiness"
       ],
       "fields": [
         {
@@ -1400,7 +1632,7 @@
       "id": "partnertoo",
       "conditions": [
         "partner-asset-too",
-        "partnerAssets"
+        "partnerBusiness"
       ],
       "fields": [
         {
@@ -1437,7 +1669,7 @@
       "id": "partnerkh",
       "conditions": [
         "partner-asset-kh",
-        "partnerAssets"
+        "partnerBusiness"
       ],
       "fields": [
         {
@@ -1459,73 +1691,6 @@
           "required": true,
           "conditions": [],
           "min": "0"
-        }
-      ]
-    },
-    {
-      "id": "transfers",
-      "conditions": [
-        "panel-c8037"
-      ],
-      "fields": [
-        {
-          "key": "n8033",
-          "type": "select-one",
-          "label": "Какое имущество передали?*",
-          "options": [
-            "",
-            "Автомобиль",
-            "Недвижимость / доля",
-            "Доля в бизнесе",
-            "Другое"
-          ],
-          "required": true,
-          "conditions": []
-        },
-        {
-          "key": "transferOther",
-          "type": "text",
-          "label": "Какое имущество передали?*",
-          "required": true,
-          "conditions": [
-            "transfer-other"
-          ]
-        },
-        {
-          "key": "n8034",
-          "type": "month",
-          "label": "Когда?*",
-          "required": true,
-          "conditions": []
-        },
-        {
-          "key": "n8035",
-          "type": "select-one",
-          "label": "Вид сделки*",
-          "options": [
-            "",
-            "Продажа",
-            "Дарение",
-            "Раздел имущества",
-            "Другое"
-          ],
-          "required": true,
-          "conditions": []
-        },
-        {
-          "key": "n8036",
-          "type": "number",
-          "label": "Сколько получили по сделке, ₸?*",
-          "required": true,
-          "conditions": [],
-          "min": "0"
-        },
-        {
-          "key": "n8036Use",
-          "type": "textarea",
-          "label": "На что использовали полученные деньги?*",
-          "required": true,
-          "conditions": []
         }
       ]
     },
@@ -1667,6 +1832,36 @@
           "conditions": [
             "purpose-other"
           ]
+        }
+      ]
+    },
+    {
+      "id": "enforcements",
+      "conditions": [
+        "enforcementRecords"
+      ],
+      "fields": [
+        {
+          "key": "enforcementCreditor",
+          "type": "text",
+          "label": "Взыскатель / кредитор*",
+          "required": true,
+          "conditions": []
+        },
+        {
+          "key": "enforcementAmount",
+          "type": "number",
+          "label": "Сумма взыскания, ₸*",
+          "required": true,
+          "conditions": [],
+          "min": "0"
+        },
+        {
+          "key": "enforcementNote",
+          "type": "textarea",
+          "label": "Номер, ЧСИ / нотариус, другие сведения — если известны",
+          "required": false,
+          "conditions": []
         }
       ]
     }

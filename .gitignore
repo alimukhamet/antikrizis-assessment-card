@@ -45,3 +45,7 @@ next-env.d.ts
 
 # Generated from the pinned PDF viewer dependency
 /public/pdf-assets/
+
+.audit-native-preview.mjs
+
+.audit-gkb-preview.mjs

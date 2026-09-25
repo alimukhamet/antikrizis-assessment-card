@@ -33,7 +33,16 @@ test('wrong owner, dates, stale reports, partial pages, and multiple reports can
 });
 test('one truncated number does not hide the readable totals and independently matched rows',()=>{
  const r=reports();r[0].blocked=true;r[0].creditEvidence.creditList.complete=false;r[0].creditEvidence.findings=['SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED'];r[0].creditEvidence.credits[0].contractNumber='PREFIX-123 ..';r[1].creditEvidence.credits[0].contractNumber='PREFIX-123-456';
- const before=JSON.stringify(r),result=compare(r);assert.equal(result.shortTotal,'300.75');assert.equal(result.rows.length,2);assert.equal(result.rows[0].status,'matched');assert.equal(result.status,'unavailable','comparison does not approve an incomplete identifier list');assert.equal(JSON.stringify(r),before);
+ const before=JSON.stringify(r),result=compare(r);assert.equal(result.shortTotal,'300.75');assert.equal(result.rows.length,2);assert.equal(result.rows[0].status,'matched');assert.equal(result.status,'matched','the complete pair resolves literal shortened identifiers without approving answers');assert.equal(JSON.stringify(r),before);
  r[1].creditEvidence.credits.push({...structuredClone(r[1].creditEvidence.credits[0]),contractNumber:'PREFIX-123-789'});assert.equal(compare(r).rows[0].status,'unavailable');
  r[0].creditEvidence.findings.push('SHORT_TOTAL_MISMATCH');assert.equal(compare(r).rows.length,0);
+});
+test('legal forms match without equating different entities; UI normalization matches the server',async()=>{
+ const {creditorKey}=await import('../public/gkb-comparison.mjs');const fs=await import('node:fs'),ts=await import('typescript'),vm=await import('node:vm');const exports={};vm.runInNewContext(ts.default.transpileModule(fs.readFileSync(new URL('../lib/documents/loan-identity.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.default.ModuleKind.CommonJS}}).outputText,{exports});
+ for(const name of ['Акционерное общество «Example Bank»','АО "Example Bank"',' ТОО «Example Bank»','АО «Other Bank»','АО «Example Bank» (ДБ Parent)'])assert.equal(creditorKey(name),exports.creditorKey(name));
+ const r=reports();r[0].creditEvidence.credits[0].facts[0].value='Акционерное общество «Example Bank»';r[1].creditEvidence.credits[0].facts[0].value='АО "Example Bank"';assert.equal(compare(r).status,'matched');r[1].creditEvidence.credits[0].facts[0].value='ТОО "Example Bank"';assert.notEqual(compare(r).status,'matched');
+});
+test('explicit unused full-report limit remains visible alongside matching short-report loans',()=>{
+ const r=reports();r[1].creditEvidence.credits.push(credit('UNUSED','0.00'));r[1].creditEvidence.creditList.declared=3;const result=compare(r);assert.equal(result.status,'matched');assert.equal(result.rows.length,3);assert.match(result.rows[2].reason,/остаётся в анкете/);assert.equal(result.rows[2].short,null);
+ r[1].creditEvidence.credits[2].facts[1].value='0.01';assert.notEqual(compare(r).status,'matched');
 });

@@ -1,0 +1,10 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {auditFailures} from '../scripts/live-audit-result.mjs';
+const healthy=()=>({authenticated:true,status:{ok:true},cases:[{dealId:'1',identityRevision:1,draft:{present:true},check:{readyToSubmit:false,remainingGates:['document-validation']},handoff:{stageError:'HANDOFF_NOT_IN_SALES'}}]});
+test('legitimate incomplete client answers and sales gates are not outages',()=>assert.deepEqual(auditFailures(healthy(),['1']),[]));
+test('caught route errors cannot make the live audit pass',()=>{const r=healthy();r.cases[0].credentialsError='HTTP 503';assert.match(auditFailures(r,['1']).join(' '),/credentialsError/);});
+test('an HTTP 200 handoff response with failed CRM discovery still fails',()=>{const r=healthy();r.cases[0].handoff.stageError='HANDOFF_CRM_UNAVAILABLE';assert.match(auditFailures(r,['1']).join(' '),/stage unavailable/);});
+test('missing session, status or case is a failing audit',()=>{const r=healthy();r.authenticated=false;r.status={ok:false};assert.equal(auditFailures(r,['1','2']).length,3);});
+test('missing saved draft checks and unavailable contracts fail',()=>{const r=healthy();delete r.cases[0].check;r.cases[0].savedContract={available:false};assert.equal(auditFailures(r,['1']).length,2);});
+test('stored recovery must preserve identity, document and complete draft',()=>{const r=healthy(),c=r.cases[0];c.analysisRefresh=[{sameDocument:true,sameIdentity:true,pages:1}];c.draftUnchanged=true;assert.deepEqual(auditFailures(r,['1']),[]);c.draftUnchanged=false;c.analysisRefresh[0].sameIdentity=false;assert.equal(auditFailures(r,['1']).length,2);});

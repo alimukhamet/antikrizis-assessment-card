@@ -32,8 +32,18 @@ export function salaryStatementPeriod(from:string|null,to:string|null,assessment
  const anniversary=new Date(Date.UTC(end.getUTCFullYear()-1,end.getUTCMonth(),Math.min(end.getUTCDate(),new Date(Date.UTC(end.getUTCFullYear()-1,end.getUTCMonth()+1,0)).getUTCDate())));
  return start.getTime()<=anniversary.getTime()+86400000&&end>=latestCompletedMonth&&end<=assessment?[]:[{code:'STATEMENT_PERIOD_NOT_ACCEPTABLE',severity:'block'}];
 }
-export function enpfPeriod(from:string|null,to:string|null,issuedAt:string|null,assessmentDay:string):Finding[]{
+/** Only the labelled period on the original's first page establishes all-history coverage. */
+export function enpfAllHistory(firstPage:string):boolean{
+ return /(?:Период:\s*(?:Барлық\s+кезең\s*\/\s*)?Весь\s+период|(?:Барлық\s+кезең\s*\/\s*)?Весь\s+период\s*Период:)/iu.test(firstPage);
+}
+export function enpfPeriod(from:string|null,to:string|null,issuedAt:string|null,assessmentDay:string,firstPage=''):Finding[]{
  const issued=issuedAt?parseDay(issuedAt):null,start=from?parseDay(from):null,end=to?parseDay(to):null,today=parseDay(assessmentDay);
+ // All history includes the preceding year even when there were no contributions.
+ // Do not invent a start date from the filename or the first transaction.
+ if(!from&&(!to||to===issuedAt)&&enpfAllHistory(firstPage)){
+  if(!issued||!today)return [{code:'ENPF_PERIOD_UNVERIFIED',severity:'review'}];
+  return issued<=today?[]:[{code:'ENPF_PERIOD_NOT_ACCEPTABLE',severity:'block'}];
+ }
  if(!issued||!start||!end||!today)return [{code:'ENPF_PERIOD_UNVERIFIED',severity:'review'}];
  const year=issued.getUTCFullYear()-1,month=issued.getUTCMonth();
  const minimum=new Date(Date.UTC(year,month,Math.min(issued.getUTCDate(),new Date(Date.UTC(year,month+1,0)).getUTCDate())));

@@ -1,5 +1,5 @@
 import {RepositoryError,type EvidenceRepository,type CaseRow} from '../documents/repository';
-import {assertReviewAllowed,extractFactMap,type StoredResult} from '../documents/review-service';
+import {assertReviewAllowed,compatibleReviewExtraction,extractFactMap,type StoredResult} from '../documents/review-service';
 import type {DraftPayload} from './draft';
 import type {DisplayAnswer} from './check-answers';
 import {loanRowKey} from '../documents/loan-identity';
@@ -30,7 +30,7 @@ export async function checkReviewBindings(repository:EvidenceRepository,record:C
   const extraction=await repository.extraction(record.id,doc.id,extractionId);if(!extraction)throw new RepositoryError('EXTRACTION_NOT_IN_DOCUMENT');
   const result=await repository.readResult(extraction) as StoredResult;
   const reviews=await repository.currentReviews(record.id,doc.id,extraction.id,record.identity_revision);
-  return {doc,extraction,result,reviews};
+  return {doc,extraction,result,reviews,compatibleExtractionId:await compatibleReviewExtraction(repository,record,doc,extraction)};
  }
  const loaded=new Map<string,ReturnType<typeof load>>();
  for(const binding of bindings){
@@ -44,7 +44,7 @@ export async function checkReviewBindings(repository:EvidenceRepository,record:C
    if(!binding.reviewId)throw new RepositoryError('ANSWER_REVIEW_REQUIRED');
    const sourceKey=JSON.stringify([binding.documentId,binding.extractionId]);
    if(!loaded.has(sourceKey))loaded.set(sourceKey,load(binding.documentId,binding.extractionId));
-   const {doc,extraction,result,reviews}=await loaded.get(sourceKey)!;
+   const {doc,extraction,result,reviews,compatibleExtractionId}=await loaded.get(sourceKey)!;
    const parsed=result.extraction,loan=/^credits\.(\d+)\.([A-Za-z]+)$/.exec(binding.factKey);
    if(loan){
     const credit=parsed.credits[Number(loan[1])];
@@ -58,7 +58,7 @@ export async function checkReviewBindings(repository:EvidenceRepository,record:C
    if(!review)throw new RepositoryError('REVIEW_SUPERSEDED_OR_MISSING');
    const value=JSON.parse(review.value_json);
    if(typeof value!=='string'||answer.value!==value)throw new RepositoryError('REVIEW_VALUE_CHANGED');
-   assertReviewAllowed(record,doc,extraction,result,{factKey:binding.factKey,value,disposition:review.disposition,reason:review.reason,identityRevision:record.identity_revision},assessmentDay);
+   assertReviewAllowed(record,doc,extraction,result,{factKey:binding.factKey,value,disposition:review.disposition,reason:review.reason,identityRevision:record.identity_revision},assessmentDay,compatibleExtractionId);
    const fact=extractFactMap(parsed).get(binding.factKey)!;
    approved.push({...binding,reviewId:review.id,value,page:fact.page,source:fact.source,documentSha256:doc.original_sha256,documentName:doc.original_name,reviewedAt:review.created_at,reviewActorId:review.actor_id,disposition:review.disposition});
   }catch(error){if(!(error instanceof RepositoryError))throw error;issues.push({key:binding.key,...(binding.group?{group:binding.group,row:binding.row}:{}),code:error.code});}

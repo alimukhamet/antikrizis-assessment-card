@@ -75,10 +75,45 @@ test('modern short format fails closed on missing rows, totals, role, identity o
  }
  const p=modernShortPages();delete p[0].layoutText;const r=rules.extractNative(p);assert.equal(r.identity.iin,null);assert.ok(r.findings.includes('DOCUMENT_IDENTITY_UNVERIFIED'));
 });
-test('older Kazakh short report is not mistaken for the 2026 layout by its legal notes and reads Latin TOO creditors',()=>{
- const notes='\n'+'• id.mkb.kz. КБ сайты арқылы берілген жеке тұлғалар үшін дербес кредиттік есепті беру тегін негізде жүзеге асырылады.';
+
+test('Kazakh legacy short report keeps its own layout when later guidance names the newer report',()=>{
+ const text=shortReport(shortRows)
+  .replace('Персональный кредитный отчет (краткая форма)','Жеке кредиттік есеп (қысқаша нысан)')
+  .replace('Дата выдачи:', 'Тегі: Тестов\nАты: Тест\nӘкесінің аты: Тестович\nЖСН: 991231300003\nБерілген күні:')
+  .replace('Действующие обязательства','Қолданыстағы міндеттемелер')
+  .replace('Общая сумма задолженности/валюта:','Жалпы қарыз/валюта:')
+  .replaceAll('Нет данных','Деректер жоқ');
+ const baseline=rules.extractNative(page(text));
+ const withGuidance=rules.extractNative(page(text+'\nДербес кредиттік есеп туралы қосымша ақпарат'));
+ assert.equal(withGuidance.identity.name,'Тестов Тест Тестович');assert.equal(withGuidance.identity.iin,'991231300003');assert.equal(withGuidance.issuedAt,'2026-09-10');
+ assert.equal(withGuidance.credits.length,2);
+ assert.equal(withGuidance.creditList.complete,true);
+ assert.deepEqual(withGuidance,baseline,'Unrelated report descriptions must not change identity, date, loans or reconciliation');
+});
+test('bilingual digital ID dates come from its validity range, never birth date or an assumed ten-year term',()=>{
+ const card='ТЕСТОВА\nСЫНАҚ\nТЕСТОВНА\n11.07.1991\n991231300003\n123456789\nМИНИСТЕРСТВО ВНУТРЕННИХ ДЕЛ РК\n09.10.2017 - 08.10.2027\nTESTOVA<<SYNAQ<<<<<<<<<<<<';
+ const r=rules.extractNative(page(card));assert.equal(r.kind,'identity');assert.equal(r.issuedAt,'2017-10-09');assert.equal(r.expiresAt,'2027-10-08');
+ const kz=rules.extractNative(page(card.replace('МИНИСТЕРСТВО ВНУТРЕННИХ ДЕЛ РК','ҚР ІШКІ ІСТЕР МИНИСТРЛІГІ')));assert.equal(kz.kind,'identity');assert.equal(kz.issuedAt,r.issuedAt);assert.equal(kz.expiresAt,r.expiresAt);
+ const dates=rules.identityCardDates(page('ЖЕКЕ КУӘЛІК / УДОСТОВЕРЕНИЕ ЛИЧНОСТИ\nТуған күні / Дата рождения: 11.07.1991\nБерілген күні / Дата выдачи: 09.10.2017\nЖарамдылық мерзімі / Действителен до: 08.10.2027'));
+ assert.equal(dates.issuedAt,'2017-10-09');assert.equal(dates.expiresAt,'2027-10-08');
+ for(const t of ['Туған күні / Дата рождения: 11.07.1991','31.02.2020 - 01.03.2030','01.01.2030 - 01.01.2020','01.01.2020 - 01.01.2030\n02.02.2021 - 02.02.2031'])assert.equal(rules.identityCardDates(page(t)).expiresAt,null,t);
+});
+test('digital ID with graphical issuer is recognized only from complete card structure',()=>{
+ const card='ТЕСТОВ\nСЫНАҚ\nТЕСТОВИЧ\n03.05.1987\n991231300003\n123456789\nОБЛАСТЬ\nКАЗАХ\n17.12.2024 - 16.12.2034\n<<<<<<<<<<<<<<<<<<<<\nTESTOV<<SYNAQ<<<<<<<<<<<<';
+ const r=rules.extractNative(page(card));assert.equal(r.kind,'identity');assert.equal(r.identity.iin,'991231300003');assert.equal(r.identity.name,'ТЕСТОВ СЫНАҚ ТЕСТОВИЧ');assert.equal(r.issuedAt,'2024-12-17');assert.equal(r.expiresAt,'2034-12-16');
+ for(const [from,to] of [['991231300003','991231300004'],['123456789','12345'],['TESTOV<<SYNAQ<<<<<<<<<<<<',''],['17.12.2024 - 16.12.2034','17.12.2024'],['ТЕСТОВ\nСЫНАҚ\nТЕСТОВИЧ','ТЕСТОВ СЫНАҚ ТЕСТОВИЧ']])assert.equal(rules.extractNative(page(card.replace(from,to))).kind,'unknown',from);
+});
+
+test('Eurasian salary-bank statement is identified by its issuer despite Kaspi transfers',()=>{
+ const header='АО "Евразийский Банк"\nwww.eubank.kz БИК: EURIKZKA\nВыписка по счёту: Дата формирования : 22.09.2026 10:41:44\nПериод : 22.09.2025 - 22.09.2026\nФИО : СЫНАҚ КЛИЕНТ\nИИН : 991231300003\nПеревод в Kaspi Bank';
+ const r=rules.extractNative(page(header));assert.equal(r.kind,'salary');assert.equal(r.identity.iin,'991231300003');assert.equal(r.identity.name,'СЫНАҚ КЛИЕНТ');assert.equal(r.issuedAt,'2026-09-22');assert.equal(r.coverage.from,'2025-09-22');assert.equal(r.coverage.to,'2026-09-22');assert.equal(r.bankStatement,undefined);assert.ok(r.facts.every(f=>f.key.startsWith('identity.')),'statement totals must not become wages');
+ assert.equal(rules.extractNative(page(header.replace('22.09.2025','31.02.2025'))).coverage.from,null);
+ assert.notEqual(rules.extractNative(page(header.replace('АО "Евразийский Банк"','АО "Другой Банк"'))).kind,'salary','a transaction mentioning a bank cannot identify the issuer');
+ const halyk=rules.extractNative(page('Народный банк Казахстана\nВыписка по счету\nТип счета: Зарплата\nФИО: СЫНАҚ КЛИЕНТ\nИИН: 991231300003\nДата формирования выписки: 22.09.2026\nПериод выписки: с 22.09.2025 по 22.09.2026\nПеревод Kaspi'));
+ assert.equal(halyk.kind,'salary');assert.equal(halyk.coverage.from,r.coverage.from);assert.equal(halyk.coverage.to,r.coverage.to);
+});
+test('short-report rows with Latin TOO/AO legal forms are counted and totalled',()=>{
  const rows=shortRows+'\nTOO\n"Тест\nФинанс"\n777888   50.00 KZT   0   Нет данных   Нет данных';
- const pages=[{page:1,text:shortReport(rows,'3','350.75'),nativeCharacters:500,needsOcr:false},{page:2,text:notes,nativeCharacters:200,needsOcr:false}];
- const r=rules.extractNative(pages);assert.equal(r.kind,'gkb_short');assert.equal(r.issuedAt!==null,true);assert.equal(r.credits.length,3);
+ const r=rules.extractNative(page(shortReport(rows,'3','350.75')));assert.equal(r.credits.length,3);
  assert.equal(r.findings.includes('SHORT_CREDIT_COUNT_MISMATCH'),false);assert.equal(r.findings.includes('SHORT_TOTAL_MISMATCH'),false);
 });

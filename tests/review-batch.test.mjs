@@ -41,3 +41,14 @@ test('batch rejects malformed or duplicate targets before any write',async()=>{
  const s=setup();for(const raw of [[],Array(101).fill(s.inputs[0]),[s.inputs[0],s.inputs[0]],[s.inputs[0],{}]])await assert.rejects(s.run(raw));
  assert.equal(s.saved.size,0);assert.equal(s.reads(),0);
 });
+
+test('compatible saved recognition can be confirmed without reupload, but superseded analysis cannot',async()=>{
+ for(const accepted of ['extraction','new-extraction',null]){
+  const s=setup();s.repository.extraction=async()=>({id:'extraction',document_id:'doc',version:'previous-compatible'});
+  let checks=0;s.repository.cached=async()=>{checks++;return accepted?{extraction:{id:accepted}}:null;};
+  const r=await s.run();assert.equal(r.ok,accepted==='extraction');assert.equal(checks,1,'compatibility is checked once per document');
+  if(!r.ok){assert.equal(s.saved.size,0);assert.ok(r.outcomes.every(o=>o.error==='EXTRACTION_VERSION_CHANGED'));}
+ }
+ const s=setup();s.repository.extraction=async()=>({id:'extraction',document_id:'doc',version:'previous-compatible'});s.repository.cached=async()=>({extraction:{id:'extraction'}});s.result.extraction.identity.iin='OTHER';
+ assert.equal((await s.run()).outcomes[0].error,'CLIENT_IDENTITY_UNVERIFIED');assert.equal(s.saved.size,0);
+});

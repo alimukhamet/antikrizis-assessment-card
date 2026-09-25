@@ -71,3 +71,5 @@ test('read retries are bounded and permissions or malformed responses fail close
   let calls=0;await assert.rejects(exports.readCrmItem('https://synthetic.invalid/','11665',async()=>{calls++;return response();}));assert.equal(calls,expected);
  }
 });
+
+test('declared upload length equals actual UTF-8 bytes with retained refs and every base64 padding case',async()=>{for(const length of [1,2,3,6143,6144,6145,12291]){const selected=[{name:'Құжат "тест".pdf',bytes:new Uint8Array(length)},{name:'two.pdf',bytes:new Uint8Array(2)}];for(const old of [[],[{id:'11'},{id:'13'}]]){const actual=await new Response(exports.uploadBody('11665','ufCrmAnkPrimaryDocs',old,selected)).arrayBuffer();assert.equal(exports.uploadBodyLength('11665','ufCrmAnkPrimaryDocs',old,selected),actual.byteLength);}}});

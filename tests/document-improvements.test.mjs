@@ -96,6 +96,16 @@ test('ENPF uses the printed annual coverage; missing and shorter coverage is exp
  assert.equal(policy.enpfPeriod('2025-10-01',r.coverage.to,r.issuedAt,'2026-09-15')[0].code,'ENPF_PERIOD_NOT_ACCEPTABLE');
  assert.equal(policy.enpfPeriod(null,null,r.issuedAt,'2026-09-15')[0].code,'ENPF_PERIOD_UNVERIFIED');
 });
+test('ENPF all-history headers cover the year without inventing contribution dates',()=>{
+ for(const header of ['Период: Барлық кезең / Весь период','Барлық кезең / Весь период\nПериод:','Период:\nВесь период']){
+  assert.equal(policy.enpfPeriod(null,null,'2026-09-18','2026-09-21',header).length,0);
+  assert.equal(policy.enpfPeriod(null,'2026-09-18','2026-09-18','2026-09-21',header).length,0);
+  assert.equal(policy.enpfPeriod(null,null,null,'2026-09-21',header)[0].code,'ENPF_PERIOD_UNVERIFIED');
+  assert.equal(policy.enpfPeriod(null,null,'2026-09-22','2026-09-21',header)[0].code,'ENPF_PERIOD_NOT_ACCEPTABLE');
+ }
+ for(const text of ['Весь период','Период: 01.09.2026 - 18.09.2026','В примечании упоминается весь период'])assert.equal(policy.enpfPeriod(null,null,'2026-09-18','2026-09-21',text)[0].code,'ENPF_PERIOD_UNVERIFIED');
+ assert.equal(policy.enpfPeriod('2026-09-01','2026-09-18','2026-09-18','2026-09-21','Период: Весь период')[0].code,'ENPF_PERIOD_NOT_ACCEPTABLE');
+});
 test('a wrapped creditor name remains complete and stops at the next bureau field',()=>{
  const text='Персональный кредитный отчет\nОбязательство 1\nРоль субъекта: Заёмщик\nКредитор: Товарищество с ограниченной ответственностью\n"Специальная финансовая компания TEST"\nБИН: 111111111111\nНомер договора: TEST-1\nФаза контракта: Действующий\nСтраница 1 из 1';
  const r=rules.extractNative(pages(text));assert.equal(r.credits[0].facts.find(f=>f.key==='creditor').value,'Товарищество с ограниченной ответственностью "Специальная финансовая компания TEST"');

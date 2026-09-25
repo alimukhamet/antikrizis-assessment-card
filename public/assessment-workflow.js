@@ -43,7 +43,7 @@ window.AssessmentWorkflow=(()=>{
  workspace.replaceChildren(client,status,identity,oldName);workspace.className='wf-client';oldName.hidden=true;top.prepend(workspace);moreContent.append(picker);
  for(const button of moreContent.querySelectorAll('button'))if(!button.getAttribute('aria-label'))button.setAttribute('aria-label',button.textContent.trim());
  picker.open=false;picker.hidden=true;
- const draftNote=make('p','Черновик в инструменте. В Bitrix — при скачивании договора.','wf-draft-note');top.append(draftNote);
+ const draftNote=make('p','Ответы сохраняются автоматически. В Bitrix — после «Сохранить и скачать».','wf-draft-note');moreContent.append(draftNote);
 
  const nav=make('nav',null,'wf-steps');nav.setAttribute('aria-label','Подготовка договора');top.after(nav);
  const stages=[['documents','Документы','Добавьте файлы клиента'],['answers','Ответы','Проверьте и дополните'],['contract','Договор','Проверьте и сохраните']];
@@ -68,14 +68,14 @@ window.AssessmentWorkflow=(()=>{
  // Keep the actual file input and its handlers. No second visible batch picker.
  const fileInput=$('previewDocuments');fileInput.classList.add('wf-file-input');documentStep.append(fileInput);oldBatch.remove();
  documentStep.append(analysisActions);
- $('afChoose').textContent='Добавить файлы';$('afChoose').className='btn btn-main';$('afChoose').title='PDF или ZIP до 35 МБ. Сохраняются в черновике.';
+ $('afChoose').textContent='С компьютера';$('afChoose').className='btn btn-ghost';$('afChoose').title='Добавить PDF или ZIP до 35 МБ. Сохраняются в черновике.';
  $('afAnalyze').className='btn btn-ghost';
  analysisActions.classList.add('wf-upload-actions');
  const uploadBox=make('div',null,'wf-upload-box'),documentTools=details('Ещё','wf-document-tools'),toolsBody=make('div',null,'wf-tools-content');documentTools.id='workflowDocumentTools';
  $('afAnalyze').textContent='Распознать повторно';documentTools.append(toolsBody);toolsBody.append($('afAnalyze'));
  analysisActions.prepend(headings[0]);analysisActions.append(documentTools);uploadBox.append(analysisActions,progress);
  const fileAssignments=details('Тип и владелец','wf-file-assignments');fileAssignments.append(make('p','По умолчанию — документы клиента. Здесь можно выбрать другого владельца.','hint'),$('selectedDocuments'),$('documentsStatus'));toolsBody.append(fileAssignments,packageList);documentStep.prepend(uploadBox);uploadBox.after(fileResults,credential);
- const intake=make('section',null,'wf-document-intake'),intakeTitle=make('h3','Сначала уточните у клиента');intake.id='workflowDocumentIntake';intake.append(intakeTitle,conditions);documentStep.prepend(intake);
+ const intake=make('section',null,'wf-document-intake'),intakeTitle=make('h3','Уточните у клиента'),intakeDetails=details('Пенсия и зарплата','wf-intake-details');intake.id='workflowDocumentIntake';intakeDetails.append(conditions);intake.append(intakeTitle,intakeDetails);documentStep.prepend(intake);
  const collectionNotice=make('div',null,'wf-collection-notice');collectionNotice.id='workflowCollection';collectionNotice.setAttribute('role','status');collectionNotice.tabIndex=-1;uploadBox.after(collectionNotice);
  $('needsSocialDoc').closest('.field').querySelector('label').firstChild.textContent='Клиент получает пенсию или пособия? ';
  $('needsSalaryDoc').closest('.field').querySelector('label').firstChild.textContent='Куда поступает зарплата? ';
@@ -112,7 +112,7 @@ window.AssessmentWorkflow=(()=>{
  contractCard.before(contractIntro);
  const finalActions=step(root.querySelector('.preview-check'),'contract');finalActions.classList.add('wf-final-actions');
  $('checkQuestions').textContent='Проверить';$('checkQuestions').className='btn btn-ghost';
- const finalHelp=make('p','Нажмите «Проверить»: ответы из документов подтверждаются один раз, без кнопки у каждого поля. Карточка и документы сохранятся в Bitrix. Договор скачается.','hint');$('checkQuestions').before(finalHelp);
+ const finalTools=details('Предпросмотр и проверка','wf-contract-tools');$('checkQuestions').before(finalTools);finalTools.append($('checkQuestions'));$('checkQuestions').textContent='Проверить ответы';
  const reviewLink=action('Вернуться к документам',()=>show('documents'));reviewLink.hidden=true;reviewLink.id='workflowDocumentIssues';finalActions.append(reviewLink);
 
  const floating=make('nav',null,'wf-bottom-nav');floating.setAttribute('aria-label','Переход между этапами');
@@ -122,9 +122,7 @@ window.AssessmentWorkflow=(()=>{
    if(checkingDocuments||af.busy||!HostedAssessment.ready()||!prepareUpload())return;
    const state=collection();
    if(!state.ready){openCollectionAction(state.rows.find(row=>row.state!=='present'));return;}
-   checkingDocuments=true;collectionStatus();
-   try{const result=await window.AssessmentCheck.documents();const issues=(result?.documents?.issues||[]).filter(issue=>issue.code!=='EDS_SEPARATE_UPLOAD_REQUIRED'||!window.CredentialUpload?.collected());if(result&&issues.length)openDocumentIssues(result);else if(result&&collection().ready)show('answers');else{reviewDetails.open=true;$('documentCheckStatus').scrollIntoView({block:'center'});}}
-   finally{checkingDocuments=false;collectionStatus();}
+   show('answers');
   }else if(active==='answers')show('contract');else $('saveAssessment').click();
  },true);
  const stepCaption=make('span','Документы','wf-bottom-caption');floating.append(previous,stepCaption,nextStep);document.body.append(floating);
@@ -163,13 +161,14 @@ window.AssessmentWorkflow=(()=>{
   const blocked=name!=='documents'&&!collection().ready;
   if(blocked){name='documents';remember=false;}
   active=name;document.body.dataset.assessmentWorkflow=name;previous.hidden=name==='documents';stepCaption.textContent=name==='documents'?'1 из 3':name==='answers'?'2 из 3':'3 из 3';nextStep.textContent=name==='documents'?'Далее: ответы →':name==='answers'?'Далее: договор →':'Скачать договор';
+  const answerIssues=$('answerCheckIssues');if(answerIssues&&name!=='documents')(name==='answers'?answerIntro:contractIntro).append(answerIssues);
   if(remember&&HostedAssessment.ready())try{sessionStorage.setItem('assessment-step:'+HostedAssessment.getContext().client.external.dealId,name);}catch{/* Navigation still works when browser storage is unavailable. */}
   for(const node of document.querySelectorAll('[data-assessment-step]')){
    const current=node.dataset.assessmentStep===name;node.dataset.stepCurrent=String(current);node.setAttribute('aria-hidden',String(!current));
   }
   for(const [key,{button}]of tabs){if(key===name)button.setAttribute('aria-current','step');else button.removeAttribute('aria-current');}
   if(name==='answers')openNextSection();
-  if(focus){const target=blocked?collectionNotice:name==='documents'?documentStep:name==='answers'?answerIntro:contractIntro;target.tabIndex=-1;target.focus({preventScroll:true});target.scrollIntoView({block:'start',behavior:window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
+  if(focus){const target=blocked?collectionNotice:name==='documents'?documentStep:name==='answers'?answerIntro:contractIntro;target.tabIndex=-1;target.focus({preventScroll:true});(blocked?target:document.querySelector('.ux-context')||target).scrollIntoView({block:'start',behavior:window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
   collectionStatus();downloadProgress();return !blocked;
  }
  function openNextSection(){
@@ -228,19 +227,21 @@ window.AssessmentWorkflow=(()=>{
   const absent=state.rows.filter(row=>row.state==='missing'),pending=state.rows.filter(row=>row.state==='pending');
   const waitingForContext=state.context.length>0,uploadDisabled=af.busy||waitingForContext||!HostedAssessment.ready();
   intakeTitle.hidden=!waitingForContext;intake.classList.toggle('wf-intake-required',waitingForContext);
+  if(waitingForContext)intakeDetails.open=true;else if(!intakeDetails.dataset.ready){intakeDetails.open=false;intakeDetails.dataset.ready='true';}
   $('afChoose').disabled=uploadDisabled;$('afAnalyze').disabled=uploadDisabled||!selectedFiles.length;
   if($('importCrmDocuments'))$('importCrmDocuments').disabled=uploadDisabled;
   for(const input of documentStep.querySelectorAll('[data-required-picker],#previewDocuments'))input.disabled=uploadDisabled;
   const credentialAction=window.CredentialUpload?.nextAction();
-  const signature=JSON.stringify([HostedAssessment.ready(),af.busy,af.unpacking,af.progress,af.transferFailures,state,credentialAction?.label]);
+  const loanTask=window.GkbComparison?.task?.(),onlyLoanTask=state.attention.length===1&&state.attention[0].kind==='credits'&&loanTask?.pending>0&&!absent.length&&!pending.length&&!state.context.length;
+  const signature=JSON.stringify([loanTask,HostedAssessment.ready(),af.busy,af.unpacking,af.progress,af.transferFailures,state,credentialAction?.label]);
   if(signature!==collectionSignature){
-   collectionSignature=signature;collectionNotice.hidden=!HostedAssessment.ready()||(waitingForContext&&!selectedFiles.length&&!af.busy);collectionNotice.replaceChildren();
+   collectionSignature=signature;collectionNotice.hidden=!HostedAssessment.ready()||(waitingForContext&&!selectedFiles.length&&!af.busy)||(state.ready&&!state.attention.length&&!state.unassigned&&!af.transferFailures?.length);collectionNotice.replaceChildren();
    collectionNotice.classList.toggle('wf-collection-incomplete',!af.busy&&absent.length>0);
    collectionNotice.classList.toggle('wf-collection-complete',state.ready);
    const heading=make('div',null,'wf-collection-header');
    const progress=af.progress;
-   const title=af.busy?af.unpacking?'Открываем ZIP…':progress?.total?'Прочитано документов · '+progress.done+' из '+progress.total:'Получаем список документов…':absent.length?'Не хватает документов · '+absent.length:pending.length?'Завершите добавление · '+pending.length:state.context.length?'Основные документы добавлены':state.attention.length?'Проверьте замечания · '+state.attention.length:'Обязательные документы добавлены';
-   heading.append(make('strong',title,'wf-collection-title'),make('span',state.provided+' из '+state.rows.length+' в пакете','wf-collection-count'));collectionNotice.append(heading);
+   const title=af.busy?af.unpacking?'Открываем ZIP…':progress?.total?'Прочитано документов · '+progress.done+' из '+progress.total:'Получаем список документов…':absent.length?'Не хватает документов · '+absent.length:pending.length?'Завершите добавление · '+pending.length:state.context.length?'Основные документы добавлены':onlyLoanTask?loanTask.label:state.attention.length?'Нужно проверить · '+state.attention.length:'Файлы добавлены';
+   heading.append(make('strong',title,'wf-collection-title'));if(onlyLoanTask)heading.append(action('Проверить суммы',()=>window.GkbComparison?.open?.(),true));else heading.append(make('span',state.provided+' из '+state.rows.length+' в пакете','wf-collection-count'));collectionNotice.append(heading);
    const list=(rows,waiting=false)=>{
     const entries=make('ul',null,'wf-collection-list');
     for(const row of rows){
@@ -258,10 +259,10 @@ window.AssessmentWorkflow=(()=>{
    if(!af.busy){
     list(absent);
     if(pending.length){if(absent.length)collectionNotice.append(make('strong','Завершите добавление · '+pending.length,'wf-collection-subtitle'));list(pending,true);}
-    if(state.attention.length){
+    if(state.attention.length&&!onlyLoanTask){
      if(absent.length||pending.length)collectionNotice.append(make('strong','Проверьте замечания · '+state.attention.length,'wf-collection-subtitle'));
      const issues=make('ul',null,'wf-collection-list');
-     for(const issue of state.attention){const row=make('li'),copy=make('span');row.dataset.packageAttention=String(issue.fileId);copy.append(make('span',issue.label),make('small',issue.message));const inspect=action(issue.kind==='manual'?'Проверить':'Посмотреть',()=>{const item=selectedFiles.find(item=>item.id===issue.fileId);if(issue.kind==='manual'&&item?.storedDocumentId)window.DocumentReview?.open(item.storedDocumentId);else focusFile(issue.fileId);});inspect.setAttribute('aria-label','Посмотреть замечание: '+issue.label);row.append(copy,inspect);issues.append(row);}
+     for(const issue of state.attention){const row=make('li'),copy=make('span');row.dataset.packageAttention=String(issue.fileId);copy.append(make('span',issue.label),make('small',issue.message));const inspect=action(issue.kind==='manual'?'Проверить':issue.kind==='credits'?'Сверить кредиты':'Посмотреть',()=>{const item=selectedFiles.find(item=>item.id===issue.fileId);if(issue.kind==='credits')window.GkbComparison?.open?.();else if(issue.kind==='manual'&&item?.storedDocumentId)window.DocumentReview?.open(item.storedDocumentId);else focusFile(issue.fileId);});inspect.setAttribute('aria-label','Посмотреть замечание: '+issue.label);row.append(copy,inspect);issues.append(row);}
      collectionNotice.append(issues);
     }
     if(af.transferFailures?.length){const problem=make('div',null,'wf-collection-context');problem.append(make('strong','Не всё добавлено'));for(const message of af.transferFailures)problem.append(make('p',message,'wf-transfer-error'));collectionNotice.append(problem);}
@@ -276,10 +277,11 @@ window.AssessmentWorkflow=(()=>{
   for(const [name,{button}]of tabs)if(name!=='documents'){button.setAttribute('aria-disabled',String(!state.ready));button.title=state.ready?'':'Сначала соберите обязательные документы';}
   nextStep.setAttribute('aria-disabled',String(active==='documents'&&(checkingDocuments||af.busy||!HostedAssessment.ready())));
   nextStep.classList.toggle('wf-missing-action',active==='documents'&&HostedAssessment.ready()&&!af.busy&&!state.ready);
-  if(active==='documents')nextStep.textContent=!HostedAssessment.ready()?'Выберите клиента':checkingDocuments?'Проверяем изменения…':af.busy?'Читаем документы…':waitingForContext?'Ответить на вопросы':state.ready?'Проверить и продолжить →':collectionAction(state.rows.find(row=>row.state!=='present'));
+  if(active==='documents')nextStep.textContent=!HostedAssessment.ready()?'Выберите клиента':checkingDocuments?'Проверяем изменения…':af.busy?'Читаем документы…':waitingForContext?'Ответить на вопросы':state.ready?'К ответам →':collectionAction(state.rows.find(row=>row.state!=='present'));
   if(active!=='documents'&&!state.ready)show('documents',{focus:false,remember:false});
  }
  function refresh(snapshot){
+  window.BenefitEvidence?.refresh();
   const legacy=$('legacyLoanParticipants');legacy.hidden=!$('guarantors').value&&!legacy.querySelector('[data-legacy-unknown]').checked;legacy.querySelector('[data-legacy-unknown]').disabled=true;
   compactLoans();
   for(const hint of root.querySelectorAll('.field > .hint')){
@@ -300,16 +302,16 @@ window.AssessmentWorkflow=(()=>{
   conflictDetails.hidden=!af.conflicts.length;conflictDetails.querySelector('summary').textContent='Расхождения · '+af.conflicts.length;
   const packageState=collection();
   packageList.querySelector('summary').textContent=`Нужные документы · ${packageState.provided} из ${packageState.rows.length}`;
-  headings[0].textContent='Файлы'+(selectedFiles.length?' · '+selectedFiles.length:'');
+  headings[0].textContent='Документы'+(selectedFiles.length?' · '+selectedFiles.length:'');
   const missing=emptyAnswers.filter(node=>node.closest('[data-assessment-step]')?.dataset.assessmentStep==='answers').length+emptyGroups.length;
   const pending=(snapshot?.pending||afPending()).length;
   $('afMissing').textContent=missing;
   for(const tab of tabs.values())tab.note.textContent='';
-  $('afNext').textContent='Заполнить'+(missing?' · '+missing:'');$('afNextReview').textContent='Проверить'+(pending?' · '+pending:'');
+  $('afNext').textContent='Заполнить пропуски'+(missing?' · '+missing:'');$('afNext').hidden=!missing;$('afNextReview').textContent='Сверить ответы'+(pending?' · '+pending:'');$('afNextReview').hidden=!pending;
   reviewDetails.querySelector('summary').textContent='Проверка документов'+(lastCheck?.documents?.issues.length?' · '+lastCheck.documents.issues.length:'');
   reviewLink.hidden=!(lastCheck?.documents?.issues.length);
   const issues=lastCheck?.checkMode==='answers'?lastCheck.issues||[]:[];
-  answerNotice.hidden=!issues.length;answerNotice.textContent=issues.length?'Уточните ответы: '+issues.slice(0,5).map(issue=>issue.label).join('; ')+'.':'';
+  answerNotice.hidden=!issues.length;answerNotice.textContent=issues.length?'Уточните ответы · '+issues.length+'. Выберите поле в списке.':'';
   const filled=$('afFilled').textContent;
   if(!af.busy)$('afAnalyze').disabled=selectedFiles.length===0;
   $('afReview').closest('span').classList.toggle('wf-needs-review',pending>0);

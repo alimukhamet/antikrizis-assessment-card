@@ -30,6 +30,7 @@ export class SubmissionRepository {
  constructor(private db:D1Database){}
  get(caseId:string,requestId:string){return this.db.prepare('SELECT * FROM assessment_submissions WHERE case_id=? AND request_id=?').bind(caseId,requestId).first<SubmissionRow>();}
  latest(caseId:string,actorId:string){return this.db.prepare("SELECT * FROM assessment_submissions WHERE case_id=? AND actor_id=? AND state<>'cancelled' ORDER BY CASE WHEN state<>'verified' THEN 0 WHEN history_state<>'verified' THEN 1 ELSE 2 END,created_at DESC,rowid DESC LIMIT 1").bind(caseId,actorId).first<SubmissionRow>();}
+ latestForCase(caseId:string){return this.db.prepare("SELECT * FROM assessment_submissions WHERE case_id=? AND state<>'cancelled' ORDER BY CASE WHEN state<>'verified' THEN 0 WHEN history_state<>'verified' THEN 1 ELSE 2 END,created_at DESC,rowid DESC LIMIT 1").bind(caseId).first<SubmissionRow>();}
  active(caseId:string){return this.db.prepare("SELECT * FROM assessment_submissions WHERE case_id=? AND state NOT IN ('verified','cancelled') ORDER BY created_at DESC,rowid DESC LIMIT 1").bind(caseId).first<SubmissionRow>();}
  async prepare(record:CaseRow,requestId:string,payload:SubmissionPayload,actor:Actor){
   if(!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(requestId))throw new RepositoryError('INVALID_REQUEST_ID',400);
@@ -40,6 +41,7 @@ export class SubmissionRepository {
   const hash=await sha256(JSON.stringify({payload,identityRevision:record.identity_revision,actorId:actor.id}));
   const prior=await this.get(record.id,requestId);
   if(prior){if(prior.payload_hash!==hash)throw new RepositoryError('IDEMPOTENCY_KEY_REUSED');return prior;}
+  if(await this.db.prepare("SELECT id FROM assessment_submissions WHERE case_id=? AND title_repair_state IN ('prepared','writing','uncertain') LIMIT 1").bind(record.id).first())throw new RepositoryError('TITLE_REPAIR_PENDING');
   const active=await this.active(record.id);
   if(active){
    if(active.identity_revision!==record.identity_revision)throw new RepositoryError('SUBMISSION_PENDING_OR_IDENTITY_CHANGED');
@@ -53,8 +55,8 @@ export class SubmissionRepository {
    }else throw new RepositoryError('SUBMISSION_PENDING_OR_IDENTITY_CHANGED');
   }
   const now=new Date().toISOString();
-  await this.db.prepare("INSERT INTO assessment_submissions (id,case_id,request_id,identity_revision,payload_json,payload_hash,actor_id,authentication,state,created_at,updated_at) SELECT ?,?,?,?,?,?,?,?,'prepared',?,? WHERE EXISTS (SELECT 1 FROM assessment_cases WHERE id=? AND identity_revision=?) ON CONFLICT DO NOTHING")
-   .bind(crypto.randomUUID(),record.id,requestId,record.identity_revision,serialized,hash,actor.id,actor.authentication,now,now,record.id,record.identity_revision).run();
+  await this.db.prepare("INSERT INTO assessment_submissions (id,case_id,request_id,identity_revision,payload_json,payload_hash,actor_id,authentication,state,created_at,updated_at) SELECT ?,?,?,?,?,?,?,?,'prepared',?,? WHERE EXISTS (SELECT 1 FROM assessment_cases WHERE id=? AND identity_revision=?) AND NOT EXISTS (SELECT 1 FROM assessment_submissions repair WHERE repair.case_id=? AND repair.title_repair_state IN ('prepared','writing','uncertain')) ON CONFLICT DO NOTHING")
+   .bind(crypto.randomUUID(),record.id,requestId,record.identity_revision,serialized,hash,actor.id,actor.authentication,now,now,record.id,record.identity_revision,record.id).run();
   const saved=await this.get(record.id,requestId);
   if(!saved){
    // Another identical tab may have won the unique active-case insert after our read.
@@ -66,7 +68,7 @@ export class SubmissionRepository {
   return saved;
  }
  async claim(record:CaseRow,requestId:string){
-  const result=await this.db.prepare("UPDATE assessment_submissions SET state='writing',updated_at=? WHERE case_id=? AND request_id=? AND state='prepared' AND identity_revision=? AND EXISTS (SELECT 1 FROM assessment_cases WHERE id=? AND identity_revision=?) AND NOT EXISTS (SELECT 1 FROM json_each(assessment_submissions.payload_json, '$.reviewIds') required WHERE NOT EXISTS (SELECT 1 FROM assessment_reviews r WHERE r.id=required.value AND r.case_id=assessment_submissions.case_id AND r.identity_revision=assessment_submissions.identity_revision AND r.disposition IN ('confirmed','corrected') AND NOT EXISTS (SELECT 1 FROM assessment_reviews newer WHERE newer.case_id=r.case_id AND newer.document_id=r.document_id AND newer.extraction_id=r.extraction_id AND newer.identity_revision=r.identity_revision AND newer.fact_key=r.fact_key AND newer.rowid>r.rowid)))")
+  const result=await this.db.prepare("UPDATE assessment_submissions SET state='writing',updated_at=? WHERE case_id=? AND request_id=? AND state='prepared' AND identity_revision=? AND EXISTS (SELECT 1 FROM assessment_cases WHERE id=? AND identity_revision=?) AND NOT EXISTS (SELECT 1 FROM assessment_submissions repair WHERE repair.case_id=assessment_submissions.case_id AND repair.title_repair_state IN ('prepared','writing','uncertain')) AND NOT EXISTS (SELECT 1 FROM json_each(assessment_submissions.payload_json, '$.reviewIds') required WHERE NOT EXISTS (SELECT 1 FROM assessment_reviews r WHERE r.id=required.value AND r.case_id=assessment_submissions.case_id AND r.identity_revision=assessment_submissions.identity_revision AND r.disposition IN ('confirmed','corrected') AND NOT EXISTS (SELECT 1 FROM assessment_reviews newer WHERE newer.case_id=r.case_id AND newer.document_id=r.document_id AND newer.extraction_id=r.extraction_id AND newer.identity_revision=r.identity_revision AND newer.fact_key=r.fact_key AND newer.rowid>r.rowid)))")
    .bind(new Date().toISOString(),record.id,requestId,record.identity_revision,record.id,record.identity_revision).run();
   return result.meta.changes===1;
  }

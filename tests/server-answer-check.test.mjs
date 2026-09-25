@@ -4,6 +4,27 @@ function setup(send){const dom=new JSDOM('<section id="documentStep"></section><
 test('lawyer preview is plain text and disappears when an answer changes',async()=>{const s=setup(async()=>({ok:true,json:async()=>({answersComplete:true,preview:{lawyerCard:'TEST <img src=x onerror=alert(1)>'}})}));await s.button.onclick();assert.equal(s.preview.hidden,false);assert.equal(s.preview.querySelector('pre').textContent,'TEST <img src=x onerror=alert(1)>');assert.equal(s.preview.querySelector('img'),null);s.edit();assert.equal(s.preview.hidden,true);});
 test('response for an older answer snapshot cannot display a card',async()=>{let resolve;const response=new Promise(r=>{resolve=r});const s=setup(()=>response);const checking=s.button.onclick();s.edit();resolve({ok:true,json:async()=>({answersComplete:true,preview:{lawyerCard:'STALE'}})});await checking;assert.equal(s.preview.hidden,true);assert.match(s.w.document.getElementById('checkStatus').textContent,/изменились/);});
 
+test('review contract uses the full name, contract number and deal filename',async()=>{
+ const contractData={client_name:'  Тестова   Әсел Қанатқызы  ',contract_number:' 22/А:*?"<>| '};
+ const s=setup(async()=>({ok:true,json:async()=>({answersComplete:true,preview:{contractData}})}));let filename,rendered;
+ s.w.ContractRenderer={render:async data=>{rendered=data;return new s.w.Blob(['SYNTHETIC']);}};
+ s.w.URL.createObjectURL=()=> 'blob:test';s.w.URL.revokeObjectURL=()=>{};
+ s.w.HTMLAnchorElement.prototype.click=function(){filename=this.download;};
+ await s.button.onclick();assert.equal(s.preview.querySelector('button').textContent,'Скачать договор для проверки');await s.preview.querySelector('button').onclick();
+ assert.equal(rendered,contractData);
+ assert.equal(filename,'Тестова Әсел Қанатқызы - Договор 22А - ID 11665.docx');s.w.close();
+});
+
+test('review contract cannot receive another client deal ID while rendering',async()=>{
+ for(const change of [s=>s.edit(),s=>{s.w.HostedAssessment.getContext=()=>({client:{external:{dealId:'other'}}});}]){
+  const s=setup(async()=>({ok:true,json:async()=>({answersComplete:true,preview:{contractData:{client_name:'SYNTHETIC',contract_number:'22'}}})}));let finish,downloads=0;
+  s.w.ContractRenderer={render:()=>new Promise(resolve=>{finish=resolve;})};
+  s.w.HTMLAnchorElement.prototype.click=()=>{downloads++;};
+  await s.button.onclick();const rendering=s.preview.querySelector('button').onclick();change(s);finish(new s.w.Blob(['SYNTHETIC']));await rendering;
+  assert.equal(downloads,0);assert.match(s.w.document.getElementById('checkStatus').textContent,/изменились/);s.w.close();
+ }
+});
+
 test('editing document review keeps the inspection form visible and saves scoped evidence',async()=>{
  const calls=[];const s=setup(async(path,options)=>{calls.push({path,body:JSON.parse(options.body)});return{ok:true,json:async()=>path.endsWith('/document-reviews')?{ok:true,reviewId:'review'}:{answersComplete:true,identityRevision:7,documents:{issues:[],manuallyReviewed:[]},preview:{lawyerCard:'TEST'}}};});
  s.w.selectedFiles=[{id:1,storedDocumentId:'doc'}];s.w.af={results:new Map([[1,{server:{documentId:'doc'},reviewContext:{pages:2,issuedAt:'2026-09-10',from:'2025-09-10',to:'2026-09-10'}}]])};s.w.ServerDrafts.capture=()=>({answers:[],documents:[{documentId:'doc',type:'Справка ЕНПФ',person:'Клиент'}]});await s.button.onclick();
@@ -29,22 +50,16 @@ test('client search leaves the current review and lawyer preview intact',async()
  s.edit();assert.equal(s.preview.hidden,true);s.w.close();
 });
 
-test('предварительный договор скачивается под ФИО клиента из анкеты',async()=>{
- const answer=contractData=>async()=>({ok:true,json:async()=>({identityRevision:1,answersComplete:true,preview:{lawyerCard:'SYNTHETIC PREVIEW',contractData},documents:{issues:[],manuallyReviewed:[]}})});
- async function download(contractData){
-  const s=setup(answer(contractData)),w=s.w,names=[];
-  w.URL.createObjectURL=()=>'blob:test';w.URL.revokeObjectURL=()=>{};
-  w.HTMLAnchorElement.prototype.click=function(){if(this.download)names.push(this.download);};
-  w.ContractRenderer={render:async()=>new w.Blob(['SYNTHETIC'])};
-  await s.button.onclick();
-  const contract=[...s.preview.querySelectorAll('button')].find(b=>b.textContent==='Скачать предварительный договор');
-  assert.equal(contract.hidden,false);
-  await contract.onclick();
-  w.close();return names;
- }
- assert.deepEqual(await download({client_name:'СИНТЕТИЧЕСКИЙ ТЕСТ КЛИЕНТ'}),['СИНТЕТИЧЕСКИЙ ТЕСТ КЛИЕНТ.docx']);
- // Запрещённые в Windows символы заменяются, лишние пробелы схлопываются.
- assert.deepEqual(await download({client_name:'  ТЕСТ/КЛИЕНТ:  СИНТЕТИЧЕСКИЙ  '}),['ТЕСТ_КЛИЕНТ_ СИНТЕТИЧЕСКИЙ.docx']);
- // Без ФИО остаётся прежнее нейтральное имя, а не пустое.
- assert.deepEqual(await download({}),['Предварительный договор.docx']);
+test('every missing answer has a link to the exact repeated loan row',async()=>{
+ const issues=Array.from({length:6},(_,row)=>({group:'creditors',row,key:'n8041',label:'Ежемесячный платёж'}));
+ const s=setup(async()=>({ok:true,json:async()=>({answersComplete:false,issues})})),d=s.w.document;
+ const group=d.createElement('section');group.id='creditors';group.innerHTML='<h3>Кредиты</h3><div class="repeat-rows">'+issues.map((_,i)=>'<div><input id="n8041_r'+i+'"></div>').join('')+'</div>';d.getElementById('questionnaireStep').append(group);
+ await s.button.onclick();const links=d.querySelectorAll('#answerCheckIssues button');assert.equal(links.length,6);assert.match(links[5].textContent,/6 — Ежемесячный платёж/);links[5].click();assert.equal(d.activeElement.id,'n8041_r5');assert.equal(d.activeElement.value,'');
+ s.edit();assert.equal(d.getElementById('answerCheckIssues').hidden,true);s.w.close();
+});
+
+test('missing checkbox-group answers link to their visible choices',async()=>{
+ const s=setup(async()=>({ok:true,json:async()=>({answersComplete:false,issues:[{key:'choice:socialStatus:',label:'Социальный статус'},{key:'holding:client:',label:'Имущество'}]})})),d=s.w.document;
+ d.getElementById('questionnaireStep').insertAdjacentHTML('beforeend','<input type="checkbox" name="socialStatus" id="social-choice"><input type="checkbox" data-holding="none" data-owner="client" id="property-choice">');
+ await s.button.onclick();assert.equal(d.activeElement.id,'social-choice');d.querySelectorAll('#answerCheckIssues button')[1].click();assert.equal(d.activeElement.id,'property-choice');assert.equal(d.activeElement.checked,false);s.w.close();
 });

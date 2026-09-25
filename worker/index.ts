@@ -1,5 +1,6 @@
 import {readSessionCookie,verifySession,requestOriginAllowed} from '../lib/worker-session';
-import assessmentHtml from '../templates/assessment-card.html?raw';
+import {recordServerFailure} from '../lib/operations-monitor';
+import toolsHomeHtml from '../templates/tools-home.html?raw';
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
@@ -59,7 +60,7 @@ const worker = {
       secured.headers.set('cache-control', 'no-store');
       return secured;
     }
-    const protectedPage = ['/', '/assessment-review', '/lawyer-handoff', '/assessment-feedback', '/assessment-card', '/assessment-card.html', '/my-results', '/my-earnings'].includes(url.pathname);
+    const protectedPage = ['/', '/assessment-review', '/lawyer-handoff', '/assessment-feedback', '/assessment-card', '/assessment-card.html', '/my-results', '/my-earnings', '/knowledge', '/knowledge/'].includes(url.pathname);
     const protectedApi = url.pathname.startsWith('/api/') && url.pathname !== '/api/session';
     if (protectedPage || protectedApi) {
       const actor = await verifySession(readSessionCookie(request.headers.get('cookie')), env.SITE_SESSION_TOKEN ?? process.env.SITE_SESSION_TOKEN ?? '');
@@ -69,8 +70,11 @@ const worker = {
         return new Response(null,{status:303,headers:{location:login.toString(),'cache-control':'no-store'}});
       }
       if(!requestOriginAllowed(request))return Response.json({error:'INVALID_ORIGIN'},{status:403,headers:{'cache-control':'no-store'}});
-      if(['/assessment-card','/assessment-card.html'].includes(url.pathname))return new Response(assessmentHtml,{headers:{'content-type':'text/html; charset=utf-8','cache-control':'private, no-store'}});
-      const response=await handler.fetch(request,env,ctx);
+      if(['/assessment-card','/assessment-card.html'].includes(url.pathname))return new Response(toolsHomeHtml,{headers:{'content-type':'text/html; charset=utf-8','cache-control':'private, no-store'}});
+      let response:Response;
+      try{response=await handler.fetch(request,env,ctx);}
+      catch(error){ctx.waitUntil(recordServerFailure(env.DB,actor,url.pathname,500));throw error;}
+      if(response.status>=500)ctx.waitUntil(recordServerFailure(env.DB,actor,url.pathname,response.status));
       const secured=new Response(response.body,response);secured.headers.set('cache-control','private, no-store');return secured;
     }
 

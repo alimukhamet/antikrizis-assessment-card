@@ -1,6 +1,7 @@
 window.ServerDrafts=(()=>{
  let revision=0,request=null,loading=false,epoch=0,baselineLoaded=false,baselineSnapshot=null,casePath=null,recoverySnapshot=null,saveTask=null,timer=null,missingFiles=[];
  let loadState={phase:'idle',error:null};
+ let documentReviewDrafts=[];
  function loadStatus(phase,error=null){loadState={phase,error};document.dispatchEvent(new Event('assessment-draft-load-state'));}
  const $=id=>document.getElementById(id);
  function controlKey(e){if(e.closest('.af-source'))return null;if(e.closest('.exact-count'))return 'exact:'+e.closest('.exact-count').previousElementSibling.id;if(e.type==='checkbox'){if(e.dataset.holding)return `holding:${e.dataset.owner}:${e.dataset.holding}`;if(e.dataset.unknown)return `unknown:${e.dataset.unknown}`;if(e.dataset.legacyUnknown)return `unknown:${e.dataset.legacyUnknown}`;if(e.name)return `choice:${e.name}:${e.value}`;}return e.id.replace(/_r\d+$/,'');}
@@ -12,7 +13,15 @@ window.ServerDrafts=(()=>{
   // A confirmed replacement key supersedes old transient key names, never missing PDFs.
   const documents=[],pendingFiles=missingFiles.filter(name=>!selectedFiles.some(item=>item.file.name===name)&&!(window.CredentialUpload?.collected?.()&&/\.(p12|pfx|key)$/i.test(name)));
   for(const item of selectedFiles){if(item.type==='ЭЦП файл'&&!window.CredentialUpload?.verified())pendingFiles.push(item.file.name);if(afExcluded(item))continue;const source=af.results.get(item.id)?.server;if((source&&source.dealId===HostedAssessment.getContext().client.external.dealId)||(!source&&item.storedDocumentId))documents.push({documentId:source?.documentId||item.storedDocumentId,type:item.type,person:item.person});else pendingFiles.push(item.file.name);}
-  return {schemaVersion:1,answers:values,groups,docContext:{social:$('needsSocialDoc').value,salary:$('needsSalaryDoc').value==='1'?'1':$('needsSalaryDoc').value?'0':'',salaryBank:$('needsSalaryDoc').value==='1'?'other':$('needsSalaryDoc').value},documents,pendingFiles};
+  const reviewDrafts=documentReviewDrafts.filter(d=>documents.some(doc=>doc.documentId===d.documentId&&doc.type===d.type&&doc.person==='Клиент'));
+  return {schemaVersion:1,answers:values,groups,docContext:{social:$('needsSocialDoc').value,salary:$('needsSalaryDoc').value==='1'?'1':$('needsSalaryDoc').value?'0':'',salaryBank:$('needsSalaryDoc').value==='1'?'other':$('needsSalaryDoc').value,enpf:$('needsSocialDoc').value==='1'&&$('needsEnpfDoc')?.value==='none'?'none':''},documents,pendingFiles,...(reviewDrafts.length?{documentReviewDrafts:reviewDrafts}:{})};
+ }
+ function getDocumentReviewDraft(documentId,type){return documentReviewDrafts.find(d=>d.documentId===documentId&&d.type===type)?.values||{};}
+ function setDocumentReviewDraft(documentId,type,values){
+  if(loading||!baselineLoaded||!HostedAssessment.ready()||!capture().documents.some(d=>d.documentId===documentId&&d.type===type&&d.person==='Клиент'))return false;
+  const clean={};for(const key of ['iin','issuedAt','expiresAt','from','to','reason','kind','legalName','identifier'])if(typeof values[key]==='string')clean[key]=values[key];
+  const entry={documentId,type,values:clean},index=documentReviewDrafts.findIndex(d=>d.documentId===documentId&&d.type===type);
+  if(index<0)documentReviewDrafts.push(entry);else documentReviewDrafts[index]=entry;changed();return true;
  }
  const base=()=>'/api/assessment/'+HostedAssessment.getContext().client.external.dealId;
  const message=code=>({DRAFT_CHANGED:'Черновик изменён другим сотрудником. Загрузите последнюю версию перед сохранением.',CASE_IDENTITY_CHANGED:'ИИН сделки изменился. Откройте сделку заново.',WRONG_CLIENT:'ИИН анкеты не совпадает со сделкой.',IDEMPOTENCY_KEY_REUSED:'Запрос уже использован для другой версии. Перезагрузите черновик.',SIGN_IN_REQUIRED:'Войдите на сайт заново.'}[code]||'Не удалось сохранить или загрузить черновик. Ваши ответы остаются на экране.');
@@ -31,8 +40,8 @@ window.ServerDrafts=(()=>{
  }
  async function inspect(){
   if(!HostedAssessment.ready()||loading)return;
-  const sequence=++epoch,b=base(),initialSnapshot=JSON.stringify(capture());
-  if(casePath!==b){casePath=b;baselineLoaded=false;revision=0;baselineSnapshot=initialSnapshot;}
+  const sequence=++epoch,b=base();let initialSnapshot=JSON.stringify(capture());
+  if(casePath!==b){casePath=b;baselineLoaded=false;revision=0;documentReviewDrafts=[];initialSnapshot=JSON.stringify(capture());baselineSnapshot=initialSnapshot;}
   loadStatus('loading');showDraftStatus('Открываем черновик клиента…');
   try{
    const r=await api(b+'/draft');if(sequence!==epoch||b!==base())return;
@@ -60,7 +69,7 @@ window.ServerDrafts=(()=>{
     $('loadDraft').classList.add('hidden');
     showDraftStatus('Черновик сохранён · '+new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})+(payload.pendingFiles.length?' · выбрать заново: '+payload.pendingFiles.length:''));
     document.dispatchEvent(new Event('assessment-draft-saved'));return true;
-   }catch(e){if(savedContext!==HostedAssessment.getContext())return false;if(['DRAFT_CHANGED','CASE_IDENTITY_CHANGED'].includes(e.code)){baselineLoaded=false;$('loadDraft').classList.remove('hidden');}showDraftStatus(e.message);return false;}
+   }catch(e){if(savedContext!==HostedAssessment.getContext())return false;if(['DRAFT_CHANGED','CASE_IDENTITY_CHANGED'].includes(e.code)){baselineLoaded=false;$('loadDraft').classList.remove('hidden');}showDraftStatus(e.message);document.dispatchEvent(new CustomEvent('assessment-draft-save-error',{detail:{message:e.message}}));return false;}
    finally{if(savedContext===HostedAssessment.getContext())$('saveDraft').disabled=false;}
   })();
   const result=await saveTask;saveTask=null;if(result&&isDirty())changed();return result;
@@ -70,9 +79,10 @@ window.ServerDrafts=(()=>{
   if(baselineSnapshot===null||JSON.stringify(capture())===baselineSnapshot)return true;
   return new Promise(resolve=>{const dialog=document.createElement('dialog');dialog.className='draft-restore-dialog';const text=document.createElement('p');text.textContent='Загрузка заменит ваши несохранённые ответы. Можно сначала скачать их копию или отменить загрузку.';const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Отмена';cancel.className='btn btn-ghost';const apply=document.createElement('button');apply.type='button';apply.textContent='Скачать копию и загрузить';apply.className='btn btn-main';apply.dataset.draftReplace='true';const finish=value=>{dialog.close();dialog.remove();resolve(value);};cancel.onclick=()=>finish(false);dialog.addEventListener('cancel',event=>{event.preventDefault();finish(false);});apply.onclick=()=>{recoverySnapshot=capture();const url=URL.createObjectURL(new Blob([JSON.stringify(recoverySnapshot,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='unsaved-assessment-'+HostedAssessment.getContext().client.external.dealId+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);finish(true);};dialog.append(text,cancel,apply);document.body.append(dialog);dialog.showModal();});
  }
- async function restore(options={}){if(loading||!HostedAssessment.ready())return;clearTimeout(timer);if(saveTask)await saveTask;loading=true;$('loadDraft').disabled=true;try{if(!options.automatic&&!await confirmRestore())return;const path=base(),before=JSON.stringify(capture()),response=options.draft?{draft:options.draft}:await api(path+'/draft');if(path!==base()||!response.draft)return;if(JSON.stringify(capture())!==before)throw Error('Ответы изменились во время загрузки. Они сохранены на экране; повторите открытие черновика.');const draft=response.draft,p=draft.payload,recovered=draft.recovery?.mode==='documents-only'&&draft.recovery.identityRevision===HostedAssessment.getContext().identityRevision;if(draft.identityRevision!==HostedAssessment.getContext().identityRevision&&!recovered)throw Error('ИИН сделки изменился. Сохранённые ответы относятся к прежним данным клиента; они не заменены.');missingFiles=[...new Set(p.pendingFiles)];
+ async function restore(options={}){if(loading||!HostedAssessment.ready())return;clearTimeout(timer);if(saveTask)await saveTask;loading=true;$('loadDraft').disabled=true;try{if(!options.automatic&&!await confirmRestore())return;const path=base(),before=JSON.stringify(capture()),response=options.draft?{draft:options.draft}:await api(path+'/draft');if(path!==base()||!response.draft)return;if(JSON.stringify(capture())!==before)throw Error('Ответы изменились во время загрузки. Они сохранены на экране; повторите открытие черновика.');const draft=response.draft,p=IntakeData.normalizeIntake(draft.payload),recovered=draft.recovery?.mode==='documents-only'&&draft.recovery.identityRevision===HostedAssessment.getContext().identityRevision;if(draft.identityRevision!==HostedAssessment.getContext().identityRevision&&!recovered)throw Error('ИИН сделки изменился. Сохранённые ответы относятся к прежним данным клиента; они не заменены.');missingFiles=[...new Set(p.pendingFiles)];
   const iin=p.answers.find(a=>a.key==='iin')?.value;if(HostedAssessment.getContext().client.iin&&iin&&iin!==HostedAssessment.getContext().client.iin)throw Error('Черновик относится к другому ИИН. Ответы не загружены.');
   if(p.schemaVersion!==1)throw Error('Версия черновика не поддерживается.');
+  documentReviewDrafts=recovered?[]:JSON.parse(JSON.stringify(p.documentReviewDrafts||[]));
   const root=$('questionnaireStep');af.sources.clear();af.results.clear();af.rowKeys.clear();af.conflicts=[];af.client=HostedAssessment.getContext().client.iin||'';root.querySelectorAll('.af-source').forEach(e=>e.remove());
   // Only trusted templates build rows. No HTML from storage is inserted into the page.
   root.querySelectorAll('.exact-count').forEach(e=>e.remove());
@@ -85,15 +95,17 @@ window.ServerDrafts=(()=>{
   for(const group of p.groups){const g=document.getElementById(group.id);if(!g)continue;const rows=g.querySelector(':scope > .repeat-rows');for(let i=0;i<group.rows.length;i++){if(!rows.children[i])add(g);const cs=controls(rows.children[i]);for(const a of group.rows[i])assign(cs.find(e=>controlKey(e)===a.key),a);}}
   window.RequiredAnswers?.restore();
   const all=controls(root);af.applying=true;try{all.filter(e=>e.closest('.repeat-item')).forEach(e=>e.dispatchEvent(new Event('change',{bubbles:true})));}finally{af.applying=false;}
-  $('needsSocialDoc').value=p.docContext.social;$('needsSalaryDoc').value=p.docContext.salaryBank==='other'?'1':p.docContext.salaryBank??(p.docContext.salary==='1'?'1':'');
+  $('needsSocialDoc').value=p.docContext.social;if($('needsEnpfDoc'))$('needsEnpfDoc').value=p.docContext.enpf==='none'?'none':'';$('needsSalaryDoc').value=p.docContext.salaryBank==='other'?'1':p.docContext.salaryBank??(p.docContext.salary==='1'?'1':'');
   syncBenefitAnswer();
   selectedFiles=[];fileSequence=0;
-  const failed=[];for(const doc of p.documents){if(!doc.originalName){failed.push(doc.documentId);continue;}selectedFiles.push({id:++fileSequence,file:{name:doc.originalName,size:0,type:'application/pdf'},type:doc.type,person:doc.person||'Клиент',storedDocumentId:doc.documentId});}
+  const failed=[];for(const doc of p.documents){if(!doc.originalName)failed.push(doc.documentId);selectedFiles.push({id:++fileSequence,file:{name:doc.originalName||'Сохранённый документ — '+doc.type,size:0,type:'application/pdf'},type:doc.type,person:doc.person||'Клиент',storedDocumentId:doc.documentId});}
   revision=draft.revision;request=null;baselineLoaded=true;$('loadDraft').classList.add('hidden');renderDocuments();afRenderResults();afRenderConflicts();afClientChoices();children();spouse();kaspi();visibilityRules();afRefresh();document.dispatchEvent(new Event('assessment-draft-restored'));
   baselineSnapshot=JSON.stringify(capture());
   if(recovered&&HostedAssessment.getContext().client.iin)$('iin').value=HostedAssessment.getContext().client.iin;
   loadStatus('documents');
-  if(selectedFiles.length)await afAnalyze({cacheOnly:true,restoreOnly:true});
+  // Handoff owns its two PDFs and credentials. Unrelated intake analysis must
+  // neither delay this screen nor repopulate the saved questionnaire.
+  if(selectedFiles.length&&new URLSearchParams(location.search).get('mode')!=='handoff')await afAnalyze({cacheOnly:true,restoreOnly:true});
   showDraftStatus('Черновик загружен · версия '+revision+' · в облаке: '+selectedFiles.length+'.'+(recovered?' Документы восстановлены после обновления ИИН.':'')+(failed.length?' Не удалось получить: '+failed.length+'.':'')+(p.pendingFiles.length?' Выбрать заново: '+p.pendingFiles.length+'.':''));
  }catch(e){loadStatus('error',e.message);showDraftStatus(e.message);}finally{loading=false;$('loadDraft').disabled=false;if(loadState.phase!=='error')loadStatus('ready');changed();}}
  function mount(){
@@ -111,6 +123,6 @@ window.ServerDrafts=(()=>{
   const row=control.closest('.repeat-item'),group=row?.closest('.repeat');
   return [{key:controlKey(control),...(group?{group:group.id,row:[...group.querySelector(':scope > .repeat-rows').children].indexOf(row)}:{}),documentId:source.server.documentId,extractionId:source.server.extractionId,factKey:source.serverFactKey,reviewId:source.pending||source.stale?null:source.reviewId||null}];
  });}
- return{mount,capture,reviewBindings,save,restore,inspect,forgetPendingFile,loadState:()=>loadState,pendingFiles:()=>missingFiles.filter(name=>!selectedFiles.some(item=>item.file.name===name)&&!(window.CredentialUpload?.collected?.()&&/\.(p12|pfx|key)$/i.test(name))),recovery:()=>recoverySnapshot,isDirty,hasTransientFiles,changed,isBusy:()=>loading||Boolean(saveTask),canSwitch:()=>baselineLoaded&&!loading};
+ return{mount,capture,reviewBindings,save,restore,inspect,forgetPendingFile,getDocumentReviewDraft,setDocumentReviewDraft,loadState:()=>loadState,pendingFiles:()=>missingFiles.filter(name=>!selectedFiles.some(item=>item.file.name===name)&&!(window.CredentialUpload?.collected?.()&&/\.(p12|pfx|key)$/i.test(name))),recovery:()=>recoverySnapshot,isDirty,hasTransientFiles,changed,isBusy:()=>loading||Boolean(saveTask),canSwitch:()=>baselineLoaded&&!loading};
 })();
 ServerDrafts.mount();

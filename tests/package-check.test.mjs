@@ -1,6 +1,6 @@
 import{test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import vm from'node:vm';import ts from'typescript';
 function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>imports[n],Date,Map,Set});return exports;}
-const policy=load('lib/documents/policy.ts'),{checkDocumentPackage,REQUIRED_DOCUMENTS}=load('lib/documents/package-check.ts',{'./loan-identity':load('lib/documents/loan-identity.ts'),'./analysis-service':{analysisVersion:'current'},'./policy':policy,'./credit-report-match':load('lib/documents/credit-report-match.ts',{'./policy':policy}),'./document-review':{MANUAL_DOCUMENT_TYPES:{'Удостоверение личности':'identity'},currentDocumentReview:async()=>null}});
+const policy=load('lib/documents/policy.ts'),{checkDocumentPackage,REQUIRED_DOCUMENTS}=load('lib/documents/package-check.ts',{'./loan-identity':load('lib/documents/loan-identity.ts'),'./analysis-service':{analysisVersion:'current'},'./policy':policy,'./credit-report-match':load('lib/documents/credit-report-match.ts',{'./policy':policy,'./loan-identity':load('lib/documents/loan-identity.ts')}),'./document-review':{MANUAL_DOCUMENT_TYPES:{'Удостоверение личности':'identity'},currentDocumentReview:async(repository,...args)=>repository.review?.(...args)||null}});
 function fixture(){
  const sources=new Map();let reads=0;
  const payload={documents:[],pendingFiles:[],docContext:{social:'0',salary:'0'}};
@@ -9,7 +9,7 @@ function fixture(){
   sources.set(id,{read:{pages:[{needsOcr:false}]},extraction:{identity:{iin:'test-client'},kind,issuedAt,findings:[],credits:[{contractNumber:'CONTRACT1',facts:[{key:'creditor',value:'TEST BANK'},{key:'monthlyPayment',value:amount}]}]}});
  }
  const repository={document:async(caseId,id)=>sources.has(id)?{id,original_sha256:id}:null,cached:async(caseId,hash,version)=>{reads++;assert.equal(version,'current');return sources.get(hash)?{result:sources.get(hash),extraction:{id:hash}}:null;}};
- return{payload,add,sources,reads:()=>reads,run:()=>checkDocumentPackage(repository,{id:'case',client_iin:'test-client'},payload,'2026-09-10')};
+ return{payload,add,sources,repository,reads:()=>reads,run:()=>checkDocumentPackage(repository,{id:'case',client_iin:'test-client'},payload,'2026-09-10')};
 }
 test('contract document list excludes handoff files and retains conditional salary/benefit documents',async()=>{assert.equal(REQUIRED_DOCUMENTS.length,6);assert.equal(REQUIRED_DOCUMENTS.includes('ЭЦП файл'),false);assert.equal(REQUIRED_DOCUMENTS.includes('Доверенность'),false);const s=fixture();s.payload.docContext={social:'1',salary:'1'};const r=await s.run();assert.equal(r.required.length,8);assert.ok(r.missing.includes('Выписка зарплатного банка'));assert.equal(r.packageReady,false);assert.equal(r.issues.some(i=>i.code==='EDS_SEPARATE_UPLOAD_REQUIRED'),false);});
 test('GKB exactly thirty days old passes structure, thirty-one and future dates fail',async()=>{for(const [date,valid]of[['2026-08-11',true],['2026-08-10',false],['2026-09-11',false]]){const s=fixture();s.add('doc','ГКБ — полный отчёт','gkb_full','10.00',date);const r=await s.run();assert.equal(r.structurallyChecked.includes('ГКБ — полный отчёт'),valid);}});
@@ -34,6 +34,18 @@ test('saved document reads run in bounded parallel groups and keep deterministic
 });
 test('recognized non-GKB is not claimed fully validated while its rules are unfinished',async()=>{const s=fixture();s.add('id','Удостоверение личности','identity');const r=await s.run();assert.ok(r.issues.some(i=>i.code==='DOCUMENT_RULES_PENDING'));assert.equal(r.structurallyChecked.length,0);assert.equal(r.authenticity,'not_verified');});
 test('recognized ENPF asks for period inspection without a false document-type warning',async()=>{const s=fixture();s.add('enpf','Справка ЕНПФ','enpf');const r=await s.run();assert.ok(r.issues.some(i=>i.code==='ENPF_PERIOD_UNVERIFIED'));assert.equal(r.issues.some(i=>i.code==='DOCUMENT_TYPE_UNVERIFIED'),false);});
+test('saved all-history ENPF works without reprocessing; identity and unreadable-page gates remain',async()=>{
+ for(const problem of [null,'identity','unreadable','unlabelled','future']){
+  const s=fixture();s.add('enpf','Справка ЕНПФ','enpf');const analysis=s.sources.get('enpf');
+  analysis.extraction.coverage={from:null,to:null};analysis.read.pages[0].text='Барлық кезең / Весь период\nПериод:';
+  if(problem==='identity')analysis.extraction.identity.iin='other';
+  if(problem==='unreadable')analysis.read.pages[0].needsOcr=true;
+  if(problem==='unlabelled')analysis.read.pages[0].text='Весь период';
+  if(problem==='future')analysis.extraction.issuedAt='2026-09-11';
+  const result=await s.run();assert.equal(result.structurallyChecked.includes('Справка ЕНПФ'),problem===null,problem);
+  assert.equal(analysis.extraction.coverage.from,null);
+ }
+});
 test('short report review tells staff when contract numbers are shortened',async()=>{
  const s=fixture();s.add('short','ГКБ — краткий отчёт','gkb_short');s.sources.get('short').extraction.findings=['SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED'];
  const r=await s.run();assert.equal(r.structurallyChecked.length,0);assert.match(r.issues.find(i=>i.code==='SHORT_CREDIT_REVIEW_REQUIRED').message,/сокращены номера договоров/);
@@ -85,5 +97,22 @@ test('a readable annual ENPF and a salary statement covering the year pass the d
   const s=fixture();s.add('doc',type,kind);s.sources.get('doc').extraction.coverage={from,to:'2026-09-10'};
   assert.ok((await s.run()).structurallyChecked.includes(type));
   s.sources.get('doc').extraction.coverage.from='2025-10-01';assert.equal((await s.run()).structurallyChecked.includes(type),false);
+ }
+});
+
+test('a duplicate with the wrong type cannot hide the saved ID inspection or approve that wrong type',async()=>{
+ for(const reverse of [false,true]){
+  const s=fixture();s.add('same-pdf','ГКБ — краткий отчёт','unknown');
+  s.payload.documents.push({documentId:'same-pdf',type:'Удостоверение личности',person:'Клиент'});
+  if(reverse)s.payload.documents.reverse();
+  s.sources.get('same-pdf').extraction.identity.iin=null;
+  s.repository.review=async(record,id,extractionId,analysis,types)=>{
+   assert.ok(types.includes('Удостоверение личности'));
+   return {id:'saved-id-review',actorId:'worker:test',reviewedAt:'2026-09-10',value:{type:'Удостоверение личности'}};
+  };
+  const result=await s.run();assert.equal(result.packageReady,false);
+  assert.ok(result.issues.some(i=>i.code==='DUPLICATE_DOCUMENT_SELECTION'));
+  assert.equal(result.manuallyReviewed.length,1);assert.equal(result.manuallyReviewed[0].type,'Удостоверение личности');
+  assert.equal(result.manuallyReviewed[0].reviewId,'saved-id-review');
  }
 });

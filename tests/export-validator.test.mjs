@@ -38,3 +38,17 @@ test('offline bundle validates bytes and rejects missing, truncated, corrupted a
   await assert.rejects(validateAssessmentBundle(text,dir),/EXPORT_ORIGINAL_UNAVAILABLE/);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test('title repair exports retain independent uncertain intent and reject changed targets or receipts',()=>{
+ const rows=fixture();rows[0].case.external_id='900001';
+ const payload={values:{iin:'000000000001',fio:'Синтетический Клиент',procedure:'199'}};
+ const intent={version:1,requestId:'12345678-1234-1234-1234-123456789abc',actorId:'worker:ali',authentication:'test',caseId:'case',identityRevision:1,submissionId:'s',submissionRequestId:'saved',submissionHash:'a'.repeat(64),createdAt:'2026-09-23T12:00:00.000Z',policy:'VP_FIO_1',before:{dealId:'900001',iin:payload.values.iin,fio:payload.values.fio,procedure:'199',categoryId:'1',stageId:'C1:NEW',title:'Client - [whatcrm] line #21'},desiredTitle:'ВП '+payload.values.fio};
+ intent.proposalHash=createHash('sha256').update(JSON.stringify({version:1,caseId:intent.caseId,identityRevision:intent.identityRevision,submissionId:intent.submissionId,submissionHash:intent.submissionHash,policy:intent.policy,before:intent.before,desiredTitle:intent.desiredTitle})).digest('hex');
+ const submission={type:'assessment-submission',id:'s',case_id:'case',sequence:1,request_id:'saved',payload_hash:intent.submissionHash,identity_revision:1,payload,title_repair_json:JSON.stringify(intent),title_repair_state:'uncertain',title_repair_updated_at:intent.createdAt};
+ rows.splice(-1,0,submission);rows.at(-1).submissions=1;
+ const before=JSON.stringify(rows);assert.equal(validate(rows).externalWritesReplayed,false);assert.equal(JSON.stringify(rows),before);
+ for(const modify of [s=>s.title_repair_json=null,s=>s.title_repair_state='unknown',s=>s.title_repair_updated_at=null,s=>s.payload_hash='b'.repeat(64),s=>s.title_repair_json=s.title_repair_json.replace('ВП ','СБ '),s=>s.title_repair_json=s.title_repair_json.replace('C1:NEW','C1:NEXT'),s=>s.title_repair_json=s.title_repair_json.replace('worker:ali','worker:other')]){
+  const invalid=structuredClone(rows);modify(invalid.at(-2));assert.throws(()=>validate(invalid),/EXPORT_TITLE_REPAIR_RECEIPT/);
+ }
+ for(const state of ['prepared','writing','verified','cancelled']){const copy=structuredClone(rows);copy.at(-2).title_repair_state=state;assert.equal(validate(copy).counts.submissions,1);}
+});

@@ -24,7 +24,7 @@ with sync_playwright() as p:
           else if(path==='/api/assessment/900001')data={caseId:'synthetic',identityRevision:1,assessmentDay:'2026-09-17',client:{title:'SYNTHETIC',iin:'000000000010',external:{dealId:'900001',system:'bitrix'}}};
           else if(path.endsWith('/draft'))data={draft:null};
           else if(path.endsWith('/credentials'))data={credentials:{verified:false},identityRevision:1};
-          else if(path.endsWith('/handoff'))data={handoff:null,destination:{fromStageName:'Договор',stageName:'Успех'},stageError:null};
+          else if(path.endsWith('/handoff'))data={handoff:null,destination:{fromStageName:'Договор',stageName:'Успех'},stageError:null,delivery:{ready:true}};
           else if(path.endsWith('/uploads'))data={unsent:null};
           else if(path.endsWith('/submission'))data={submission:null};
           else if(path.endsWith('/crm-intake'))data={documents:[]};

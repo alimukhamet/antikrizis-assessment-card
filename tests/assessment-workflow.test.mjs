@@ -5,11 +5,12 @@ import vm from 'node:vm';
 import {JSDOM} from 'jsdom';
 
 const html=fs.readFileSync('public/questionnaire.html','utf8');
-function setup(t){
+function setup(t,viewer=null){
  const dom=new JSDOM(html,{url:'https://assessment.example/questionnaire.html',runScripts:'outside-only',pretendToBeVisual:true});
  const w=dom.window,d=w.document,run=code=>vm.runInContext(code,dom.getInternalVMContext());
  w.HTMLElement.prototype.getClientRects=function(){return this.isConnected&&!this.closest('.hidden,[data-step-current="false"]')?[{}]:[];};
  w.HTMLElement.prototype.scrollIntoView=function(){};
+ w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};w.HTMLDialogElement.prototype.close=function(){this.open=false;};
  const calls=[];
  w.fetch=async(path,options={})=>{
   calls.push({path,method:options.method||'GET'});
@@ -22,7 +23,8 @@ function setup(t){
   throw Error('Unexpected test request: '+path);
  };
  for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))run(match[1]);
- for(const name of ['loan-status','money-input','hosted-assessment','assessment-review','server-drafts','document-review','document-upload','credential-upload','submission-flow','server-answer-check','client-confirmed-amount','required-answers','document-replacement'])run(fs.readFileSync('public/'+name+'.js','utf8'));
+ w.TestPdfViewer=viewer;
+ for(const name of ['loan-status','money-input','hosted-assessment','assessment-review','intake-data','enforcement-editor','server-drafts','loan-duplicates','document-review','document-upload','credential-upload','submission-flow','server-answer-check','client-confirmed-amount','required-answers','document-replacement','benefit-evidence']){let code=fs.readFileSync('public/'+name+'.js','utf8');if(name==='assessment-review'&&viewer)code=code.replace("import('/pdf-preview.mjs')",'Promise.resolve(window.TestPdfViewer)');run(code);}
  t.after(async()=>{await new Promise(resolve=>setTimeout(resolve,0));dom.window.close();});
  const capture=()=>JSON.parse(JSON.stringify(w.ServerDrafts.capture()));
  return{w,d,run,calls,capture,mount(){run(fs.readFileSync('public/assessment-workflow.js','utf8'));},async load(){d.getElementById('hostDealId').value='11665';await d.getElementById('hostLoadDeal').onclick();await new Promise(resolve=>setTimeout(resolve,0));}};
@@ -107,6 +109,25 @@ test('hidden workflow steps retain missing answers and pending sources while con
  assert.equal(s.run('afLogicalVisible(document.getElementById("partnerKaspiAnnual"))'),true);
  marital.value='Холост / не замужем';marital.dispatchEvent(new s.w.Event('change',{bubbles:true}));
  assert.equal(s.run('afLogicalVisible(document.getElementById("partnerKaspiAnnual"))'),false);
+});
+
+test('new report imports reuse MFO and bank spelling aliases while restored manual duplicates stay intact',async t=>{
+ for(const [shortName,fullName] of [['ТОО Микрофинансовая организация «Synthetic Finance»','ТОО «МФО «Synthetic Finance»'],['АО "Народный банк Казахстана"','"Народный банк Казахстана"']]){
+  const s=setup(t);await s.load();
+  s.run(`af.client='991231300003';var shortName=${JSON.stringify(shortName)},fullName=${JSON.stringify(fullName)};var first=afRow('creditors',af.client+'|'+shortName+'|TEST-1');afRowFields(first,{n8038:shortName,n8040:'100'},{fileId:'short'});var loan={aliases:[fullName+'|TEST-1'],fields:{n8038:fullName,loanContractId:'TEST-1',n8040:'100',n8041:'10'}};var merged=afRow('creditors',af.client+'|'+fullName+'|TEST-1',loan);afRowFields(merged,loan.fields,{fileId:'full'});`);
+  assert.equal(s.run('first===merged'),true);assert.equal(s.d.querySelectorAll('#creditors > .repeat-rows > .repeat-item').length,1);assert.equal(s.run('af.conflicts.length'),0);
+  s.run(`var extra=add(document.getElementById('creditors'));extra.id='manual-alias';afRowFields(extra,{n8038:fullName,loanContractId:'TEST-1',n8040:'100',n8041:'20'},{fileId:'full'});af.rowKeys.set('creditors|'+af.client+'|'+fullName+'|TEST-1',extra.id);af.restoringEvidence=true;`);
+  const before=s.capture();assert.equal(s.run(`afRow('creditors',af.client+'|'+fullName+'|TEST-1',loan)`),null);assert.deepEqual(s.capture(),before);assert.equal(s.d.querySelectorAll('#creditors > .repeat-rows > .repeat-item').length,2);
+ }
+});
+
+test('a duplicate warning opens both records instead of an already-filled number, even with duplicate evidence issues',async t=>{
+ const s=setup(t);await s.load();collect(s);s.mount();
+ s.run(`var g=document.getElementById('creditors');g.querySelector('.repeat-rows').replaceChildren();for(var i=0;i<2;i++){var row=add(g);row.id='duplicate-'+i;row.querySelector('[id^="n8038_"]').value='SYNTHETIC BANK';row.querySelector('[id^="loanContractId_"]').value='LOAN-A';row.querySelector('[id^="n8040_"]').value='100';row.querySelector('[id^="n8041_"]').value=i?'20':'10';}`);
+ s.w.afEnsureIdentity=async()=>true;s.w.afConfirmPending=async()=>true;
+ const loan={creditor:'SYNTHETIC BANK',contractNumber:'LOAN-A',aliases:['LOAN-A'],rows:[0,1],duplicateRows:[0,1],documentId:'synthetic',page:3,status:'duplicate'};
+ s.w.fetch=async()=>({ok:true,json:async()=>({answersComplete:false,readyToSubmit:false,issues:[{group:'creditors',row:0,key:'loanContractId',code:'ACTIVE_LOAN_DUPLICATE',label:'SYNTHETIC BANK — повтор'}],documents:{issues:[],manuallyReviewed:[],loanCoverage:{expected:1,present:0,missing:0,duplicates:1,rows:[loan],complete:false}},evidence:{issues:[{code:'REVIEW_LOAN_DUPLICATE'}]}})});
+ const before=s.capture();await s.w.AssessmentCheck.run();assert.equal(s.d.querySelectorAll('.loan-duplicate-card').length,2);assert.match(s.d.querySelector('#answerCheckIssues').textContent,/Кредит 1 —.*Сравнить записи/);assert.doesNotMatch(s.d.querySelector('#answerCheckIssues').textContent,/обязательство 1/);assert.deepEqual(s.capture(),before);
 });
 
 test('navigation and source shortcuts reveal their fields without mutating the draft or authorizing writes',async t=>{
@@ -213,7 +234,7 @@ test('package status separates an unfinished upload from missing files and keeps
  s.run('af.busy=true');s.w.AssessmentWorkflow.refresh();assert.match(notice.textContent,/Получаем список документов/);assert.equal(notice.querySelectorAll('button').length,0);
  s.run(`af.busy=false;selectedFiles[0].storedDocumentId='uploaded-original';af.results.delete(selectedFiles[0].id);`);
  s.d.dispatchEvent(new s.w.Event('assessment-analysis-complete'));
- assert.equal(s.w.AssessmentWorkflow.collection().ready,true);assert.equal(notice.hidden,false);assert.match(notice.textContent,/Проверьте замечания · 1/);assert.match(notice.textContent,/8 из 8/);
+ assert.equal(s.w.AssessmentWorkflow.collection().ready,true);assert.equal(notice.hidden,false);assert.match(notice.textContent,/Нужно проверить · 1/);assert.match(notice.textContent,/8 из 8/);
 });
 
 test('the missing package list updates with benefit and salary answers and after draft restoration',async t=>{
@@ -349,8 +370,8 @@ test('replacement keeps typed answers and persists the retired source as a final
 test('an unreadable stored scan stays openable without document-condition answers',async t=>{
  const s=setup(t);await s.load();s.mount();
  s.run(`selectedFiles=[{id:1,type:'Удостоверение личности',person:'Клиент',storedDocumentId:'scan',file:{name:'scan.pdf'}}];af.results.set(1,{kind:'other',blocked:true,notes:['Тип документа не установлен по содержимому.']});afRenderResults();`);
- const row=s.d.querySelector('.af-file');assert.match(row.querySelector('summary').textContent,/Удостоверение.*Сверить вручную/);assert.ok(!row.querySelector('summary .needs-review'));
- assert.ok([...row.querySelectorAll('button')].some(b=>b.textContent==='Открыть документ'));const replacement=row.closest('.af-file-entry').querySelector('.af-replace-document');assert.ok(replacement);assert.equal(replacement.closest('details.af-file'),null);assert.equal(row.querySelector('.af-document-notes').open,false);
+ const row=s.d.querySelector('.af-file');assert.match(row.querySelector('summary').textContent,/Тип не определён.*Нужно проверить/);assert.ok(row.querySelector('summary .needs-review'));assert.match(row.textContent,/Выбран как: Удостоверение личности/);
+ assert.ok([...row.querySelectorAll('button')].some(b=>b.textContent==='Открыть документ'));const replacement=row.closest('.af-file-entry').querySelector('.af-replace-document');assert.ok(replacement);assert.equal(replacement.closest('details.af-file'),row);assert.equal(row.querySelector('.af-document-notes').open,false);
 });
 test('replacement actions become enabled when restored documents finish reading',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();
@@ -369,13 +390,13 @@ test('first intake requires the two context answers before any file analysis or 
  s.d.getElementById('needsSocialDoc').value='0';s.w.AssessmentWorkflow.refresh();assert.equal(choose.disabled,true);
  s.d.getElementById('needsSalaryDoc').value='none';s.w.AssessmentWorkflow.refresh();assert.equal(choose.disabled,false);assert.equal(s.d.getElementById('importCrmDocuments').disabled,false);
 });
-test('finished package exposes the exact attention message and jumps to the affected document',async t=>{
+test('finished package offers the loan comparison directly for shortened IDs',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();
  s.run("af.results.set(1,{blocked:true,findings:['SHORT_CONTRACT_ID_TRUNCATED'],identity:{iin:'991231300003'},server:{dealId:'11665',documentId:'synthetic-0'}});afRenderResults();afRefresh();");
- const notice=s.d.getElementById('workflowCollection');assert.match(notice.textContent,/сокращён номер договора/);
- notice.querySelector('[data-package-attention="1"] button').click();assert.equal(s.d.querySelector('.af-file[data-file-id="1"]').open,true);
+ let comparisons=0;s.w.GkbComparison={open(){comparisons++;},statusButton(){return s.d.createElement('button');}};const notice=s.d.getElementById('workflowCollection');assert.match(notice.textContent,/Сверьте кредиты/);
+ const compare=notice.querySelector('[data-package-attention="1"] button');assert.equal(compare.textContent,'Сверить кредиты');compare.click();assert.equal(comparisons,1);
  s.run("af.busy=true;afAnalysisProgress(2,7)");assert.match(notice.textContent,/Прочитано документов · 2 из 7/);assert.equal(notice.querySelector('[data-package-attention]'),null);
- s.run("af.busy=false;af.progress=null;document.dispatchEvent(new CustomEvent('assessment-analysis-complete',{detail:{showPackageSummary:true}}))");assert.equal(s.d.activeElement.id,'workflowCollection');assert.match(notice.textContent,/сокращён номер договора/);
+ s.run("af.busy=false;af.progress=null;document.dispatchEvent(new CustomEvent('assessment-analysis-complete',{detail:{showPackageSummary:true}}))");assert.equal(s.d.activeElement.id,'workflowCollection');assert.match(notice.textContent,/Сверьте кредиты/);
 });
 test('an unreadable ENPF period offers direct manual review',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();let opened=null;s.w.DocumentReview.open=async id=>{opened=id;};
@@ -394,7 +415,7 @@ test('automatic analysis requests only the new document and retains the stored r
 });
 
 
-test('the document next action targets the missing EDS step and checks once before opening answers',async t=>{
+test('document navigation targets missing EDS steps but never confirms documents or submits data',async t=>{
  const s=setup(t);await s.load();const collected=s.w.CredentialUpload.collected;collect(s);s.w.CredentialUpload.collected=collected;
  s.run("selectedFiles.push({id:99,type:'ЭЦП файл',person:'Клиент',file:new File(['SYNTHETIC KEY'],'synthetic.p12')})");s.mount();
  const password=s.d.getElementById('previewEdsPassword'),owner=password.closest('.field').querySelector('input[type=checkbox]'),next=s.d.querySelector('.wf-bottom-nav .btn-main');
@@ -402,8 +423,8 @@ test('the document next action targets the missing EDS step and checks once befo
  password.value='SYNTHETIC-SECRET';password.dispatchEvent(new s.w.Event('input',{bubbles:true}));await Promise.resolve();
  assert.equal(next.textContent,'Подтвердить владельца ЭЦП');next.click();assert.equal(s.d.activeElement,owner);
  owner.checked=true;owner.dispatchEvent(new s.w.Event('change',{bubbles:true}));await Promise.resolve();
- assert.equal(next.textContent,'Проверить и продолжить →');next.click();next.click();await new Promise(resolve=>setTimeout(resolve,0));
- assert.equal(s.d.body.dataset.assessmentWorkflow,'answers');assert.equal(s.calls.filter(c=>c.path.endsWith('/check')).length,1);
+ assert.equal(next.textContent,'К ответам →');next.click();await new Promise(resolve=>setTimeout(resolve,0));
+ assert.equal(s.d.body.dataset.assessmentWorkflow,'answers');assert.equal(s.calls.filter(c=>c.path.endsWith('/check')).length,0);assert.equal(s.calls.some(c=>c.method==='POST'&&/document-reviews|gkb-reviews|submission/.test(c.path)),false);
  assert.equal(s.calls.filter(c=>c.method==='POST'&&c.path.endsWith('/credentials')).length,0);
  assert.doesNotMatch(JSON.stringify(s.capture()),/SYNTHETIC-SECRET|SYNTHETIC KEY/);
 });
@@ -416,19 +437,21 @@ test('loan status hides monthly payment for default and keeps identifiers visibl
  find('loanStatus').value='Платится по графику';find('loanStatus').dispatchEvent(new s.w.Event('change',{bubbles:true}));await Promise.resolve();assert.equal(find('n8041').required,true);assert.equal(find('n8041').closest('.field').classList.contains('hidden'),false);
 });
 
-test('a failed document check stays on documents and displays an actionable error',async t=>{
+test('explicit document checking still reports failure without approving documents',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();const fetch=s.w.fetch;
  s.w.fetch=async(path,options)=>path.endsWith('/check')?{ok:false,json:async()=>({})}:fetch(path,options);
- s.d.querySelector('.wf-bottom-nav .btn-main').click();await new Promise(resolve=>setTimeout(resolve,0));
+ s.d.querySelector('.wf-review-details').open=true;s.d.getElementById('checkDocuments').click();await new Promise(resolve=>setTimeout(resolve,0));
  assert.equal(s.d.body.dataset.assessmentWorkflow,'documents');assert.equal(s.d.querySelector('.wf-review-details').open,true);
- assert.match(s.d.getElementById('documentCheckStatus').textContent,/Не удалось/);assert.equal(s.d.querySelector('.wf-bottom-nav .btn-main').textContent,'Проверить и продолжить →');
+ assert.match(s.d.getElementById('documentCheckStatus').textContent,/Не удалось/);assert.equal(s.d.querySelector('.wf-bottom-nav .btn-main').textContent,'К ответам →');
 });
 
-test('check and continue opens unresolved document inspection before advancing to answers',async t=>{
+test('document navigation leaves issues unresolved and final download returns to their inspection',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();const fetch=s.w.fetch;
  const selected=s.capture().documents.find(item=>item.type==='Справка ЕНПФ');
  s.w.fetch=async(path,options)=>path.endsWith('/check')?{ok:true,json:async()=>({identityRevision:1,answersComplete:true,readyToSubmit:false,issues:[],evidence:{issues:[]},documents:{issues:[{code:'ENPF_PERIOD_UNVERIFIED',documentId:selected.documentId,message:'Сверьте период по оригиналу.'}],manuallyReviewed:[]}})}:fetch(path,options);
  s.d.querySelector('.wf-bottom-nav .btn-main').click();await new Promise(resolve=>setTimeout(resolve,0));
+ assert.equal(s.d.body.dataset.assessmentWorkflow,'answers');
+ const result=await s.w.AssessmentCheck.documents();s.d.dispatchEvent(new s.w.CustomEvent('assessment-submission-blocked',{detail:{reason:'documents',result}}));
  const review=s.d.querySelector(`[data-review-document-id="${selected.documentId}"]`);
  assert.equal(s.d.body.dataset.assessmentWorkflow,'documents');assert.equal(review.open,true);assert.equal(s.d.activeElement,review.querySelector('summary'));assert.match(review.textContent,/Сверьте период по оригиналу/);
  assert.equal(s.calls.some(call=>call.method==='POST'&&call.path.endsWith('/submission')),false);
@@ -445,4 +468,33 @@ test('a confirmed replacement EDS key clears only obsolete key reminders in the 
  assert.deepEqual(s.capture().pendingFiles,['missing-synthetic.pdf','replacement.p12']);
  assert.doesNotMatch(JSON.stringify(s.capture()),/SYNTHETIC SECRET|SYNTHETIC KEY/);
  s.run("selectedFiles[0].person='Супруг(а)'");assert.ok(s.capture().pendingFiles.includes('old-synthetic.p12'));
+});
+
+
+test('duplicate PDF selections merge only after their types agree and answer sources remain attached',async t=>{
+ const s=setup(t);await s.load();
+ s.run(`selectedFiles=[{id:1,type:'ГКБ — краткий отчёт',person:'Клиент',storedDocumentId:'same',file:{name:'statement.pdf'}},{id:2,type:'Выписка Kaspi Gold',person:'Клиент',storedDocumentId:'same',file:{name:'statement.pdf'}}];af.results.set(1,{kind:'other'});af.results.set(2,{kind:'kaspi'});af.sources.set('kaspiAnnual',{fileId:2});afMergeDuplicateSelections();`);
+ assert.equal(s.run('selectedFiles.length'),2);
+ s.run(`selectedFiles[0].type='Выписка Kaspi Gold';afMergeDuplicateSelections();`);
+ assert.equal(s.run('selectedFiles.length'),1);assert.equal(s.run("af.sources.get('kaspiAnnual').fileId"),1);assert.equal(s.run('selectedFiles[0].storedDocumentId'),'same');
+});
+
+test('source close and Escape preserve answers, cancel loading, and ignore a late close after reopening',async t=>{
+ let disposed=0;const pending=[];
+ const viewer={mount:async(preview,options)=>{preview.textContent='Loading synthetic PDF';preview.pdfDispose=()=>{disposed++;};await new Promise(resolve=>pending.push(()=>{options.onPage(1);resolve();}));}};
+ const s=setup(t,viewer);await s.load();collect(s);const before=s.capture();
+ const opener=s.d.createElement('button');opener.textContent='Open synthetic source';s.d.body.append(opener);opener.focus();assert.equal(s.d.activeElement,opener);
+ const first=s.run('afSource({fileId:1,page:1})');await new Promise(r=>setTimeout(r,0));
+ const dialog=s.d.getElementById('afSourceDialog'),preview=s.d.getElementById('afPreview');
+ s.d.getElementById('afSourceClose').click();assert.equal(dialog.open,false);assert.equal(disposed,1);assert.equal(preview.childNodes.length,0);assert.equal(s.d.activeElement,opener);assert.deepEqual(s.capture(),before);
+ const second=s.run('afSource({fileId:2,page:2,returnLabel:"← К сверке"})');await new Promise(r=>setTimeout(r,0));
+ dialog.dispatchEvent(new s.w.Event('close'));assert.equal(dialog.open,true);assert.equal(disposed,1);assert.match(preview.textContent,/Loading/);
+ const currentText=s.d.getElementById('afSourceText').textContent;pending[0]();await first;assert.equal(s.d.getElementById('afSourceText').textContent,currentText);
+ dialog.dispatchEvent(new s.w.Event('cancel',{cancelable:true}));assert.equal(dialog.open,false);assert.equal(disposed,2);pending[1]();await second;assert.deepEqual(s.capture(),before);
+});
+test('a failed PDF cleanup cannot prevent closing or leave an old client document open',async t=>{
+ const viewer={async mount(preview){preview.pdfDispose=()=>{throw Error('Interrupted PDF worker');};preview.textContent='Synthetic PDF';}};
+ const s=setup(t,viewer);await s.load();collect(s);const before=s.capture();
+ await s.run('afSource({fileId:1,page:1})');s.d.getElementById('afSourceClose').click();assert.equal(s.d.getElementById('afSourceDialog').open,false);assert.equal(s.d.getElementById('afPreview').textContent,'');
+ await s.run('afSource({fileId:1,page:1})');s.d.dispatchEvent(new s.w.Event('assessment-case-opened'));assert.equal(s.d.getElementById('afSourceDialog').open,false);assert.equal(s.d.getElementById('afPreview').textContent,'');assert.deepEqual(s.capture(),before);
 });

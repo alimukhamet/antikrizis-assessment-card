@@ -1,14 +1,15 @@
+import * as intake from '../public/intake-data.mjs';
 import * as participants from '../public/loan-participants.mjs';
 import {test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import vm from'node:vm';import ts from'typescript';import * as schedule from'../public/payment-schedule.mjs';
-function load(path,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+path,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>imports[n],Date,Map,Set,TextEncoder});return exports;}
+function load(path,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+path,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>n==='../../public/intake-data.mjs'?intake:imports[n],Date,Map,Set,TextEncoder});return exports;}
 const json=path=>JSON.parse(fs.readFileSync(new URL('../'+path,import.meta.url),'utf8'));
 const schema=json('lib/questionnaire/schema.json'),native=load('lib/documents/extract-native.ts',{'./power-of-attorney':load('lib/documents/power-of-attorney.ts'),'./kz-labels.json':json('lib/documents/kz-labels.json')});
 const {checkAnswers}=load('lib/questionnaire/check-answers.ts',{'./schema.json':schema,'../documents/extract-native':native,'../../public/payment-schedule.mjs':schedule,'../../public/loan-participants.mjs':participants});
 const {validateDraft}=load('lib/questionnaire/draft.ts',{'./schema.json':schema,'./draft-recovery':load('lib/questionnaire/draft-recovery.ts'),'../documents/repository':load('lib/documents/repository.ts')});
 const iin='000000000010';
-function fixture(){const values={fio:'SYNTHETIC ONLY',enforcementDetails:'Нет',guarantors:'Нет',iin,dognum:'TEST',marital:'Холост / не замужем',dependents:'0',childrenTotal:'0',procedure:'199','count-clientjobs':'0','count-clientunofficial':'0',clientBenefitsCount:'0',c8037:'0',hardshipReason:'Платежи вношу, трудностей нет',kaspiAnnual:'0',gamblingTransfers:'no',lawyerNotesStatus:'no',n8044:'0',summa:'500000',contractDate:'2026-09-10',months:'5',payDay:'7',grafType:'423'};
+function fixture(){const values={fio:'SYNTHETIC ONLY',enforcementStatus:'no',enforcementDetails:'Нет',guarantors:'Нет',iin,dognum:'TEST',marital:'Холост / не замужем',dependents:'0',childrenTotal:'0',procedure:'199','count-clientjobs':'0','count-clientunofficial':'0',clientBenefitsCount:'0',c8037:'0',hardshipReason:'Платежи вношу, трудностей нет',kaspiAnnual:'0',gamblingTransfers:'no',lawyerNotesStatus:'no',n8044:'0',summa:'500000',contractDate:'2026-09-10',months:'5',payDay:'7',grafType:'423'};
  const credit={n8038:'TEST BANK',loanContractId:'TEST-001',n8038Start:'2025-01',n8039:'Потребительский кредит',loanStatus:'Платится по графику',n8040:'100.25',n8041:'20.00',n8042:'0',n8043:'Жильё',loanParticipants:'Нет'};
- return {schemaVersion:1,answers:schema.scalar.map(f=>({key:f.key,value:values[f.key]||'',checked:['choice:socialStatus:Нет','holding:client:none','choice:debtPurpose:Жильё'].includes(f.key)})),groups:schema.groups.map(g=>({id:g.id,rows:g.id==='creditors'?[g.fields.map(f=>({key:f.key,value:credit[f.key]||'',checked:false}))]:[],rowKeys:g.id==='creditors'?[null]:[]})),docContext:{social:'0',salary:'0'},documents:[],pendingFiles:[]};}
+ return {schemaVersion:1,answers:schema.scalar.map(f=>({key:f.key,value:values[f.key]||'',checked:['choice:socialStatus:Нет','holding:client:none','holding:client:businessNone','choice:debtPurpose:Жильё'].includes(f.key)})),groups:schema.groups.map(g=>({id:g.id,rows:g.id==='creditors'?[g.fields.map(f=>({key:f.key,value:credit[f.key]||'',checked:false}))]:[],rowKeys:g.id==='creditors'?[null]:[]})),docContext:{social:'0',salary:'0'},documents:[],pendingFiles:[]};}
 const set=(p,key,value,checked)=>{const a=p.answers.find(a=>a.key===key);a.value=value;if(checked!==undefined)a.checked=checked;};
 const run=p=>checkAnswers(validateDraft(p),iin);
 const has=(result,key,code)=>result.issues.some(i=>i.key===key&&(!code||i.code===code));
@@ -63,17 +64,17 @@ const {contractData}=load('lib/questionnaire/contract-data.ts',{'./compile-asses
 test('new questionnaire produces canonical contract slots and exact payment totals',()=>{const data=contractData(fixture(),iin);assert.equal(data.company_name,'ТОО «Aplus Corporation»');assert.equal(data.total_debt,'100,25');assert.equal(data.contract_date_full,'10.09.2026');assert.equal(data.service_price_words,'пятьсот тысяч');assert.equal(data.payments.length,5);assert.equal(data.payments[0].date,'07 декабря 2026 г.');assert.equal(data.spouse_property,'не применимо');assert.equal(data.enforcement,'Нет');assert.equal(data.guarantors,'Нет');});
 
 test('participants require a separate answer for each loan; legacy answers cannot fill them',()=>{
- const p=fixture();set(p,'enforcementDetails','');set(p,'guarantors','LEGACY PERSON');
+ const p=fixture();set(p,'enforcementStatus','');set(p,'enforcementDetails','');set(p,'guarantors','LEGACY PERSON');
  const group=p.groups.find(g=>g.id==='creditors'),first=group.rows[0];first.find(a=>a.key==='loanParticipants').value='';
  const second=structuredClone(first);second.find(a=>a.key==='loanParticipants').value='SECOND PERSON — Гарант';group.rows.push(second);group.rowKeys.push(null);
- const incomplete=run(p);assert.ok(has(incomplete,'enforcementDetails'));assert.ok(incomplete.issues.some(i=>i.key==='loanParticipants'&&i.row===0));assert.ok(!incomplete.issues.some(i=>i.key==='loanParticipants'&&i.row===1));
+ const incomplete=run(p);assert.ok(has(incomplete,'enforcementStatus'));assert.ok(incomplete.issues.some(i=>i.key==='loanParticipants'&&i.row===0));assert.ok(!incomplete.issues.some(i=>i.key==='loanParticipants'&&i.row===1));
  set(p,'unknown:enforcementDetails','on',true);first.find(a=>a.key==='unknown:loanParticipants').checked=true;
- assert.ok(run(p).issues.some(i=>i.key==='loanParticipants'&&i.row===0));first.find(a=>a.key==='loanParticipants').value='Нет';assert.ok(has(run(p),'enforcementDetails','ANSWER_REQUIRED'));set(p,'unknown:enforcementDetails','on',false);set(p,'enforcementDetails','Нет');assert.equal(run(p).answersComplete,true);const data=contractData(p,iin);assert.equal(data.enforcement,'Нет');assert.match(data.guarantors,/Кредит 1 .*Нет/);assert.match(data.guarantors,/Кредит 2 .*SECOND PERSON — Гарант/);assert.doesNotMatch(data.guarantors,/LEGACY PERSON/);
+ assert.ok(run(p).issues.some(i=>i.key==='loanParticipants'&&i.row===0));first.find(a=>a.key==='loanParticipants').value='Нет';assert.ok(has(run(p),'enforcementStatus','ANSWER_REQUIRED'));set(p,'unknown:enforcementDetails','on',false);set(p,'enforcementDetails','Нет');set(p,'enforcementStatus','no');assert.equal(run(p).answersComplete,true);const data=contractData(p,iin);assert.equal(data.enforcement,'Нет');assert.match(data.guarantors,/Кредит 1 .*Нет/);assert.match(data.guarantors,/Кредит 2 .*SECOND PERSON — Гарант/);assert.doesNotMatch(data.guarantors,/LEGACY PERSON/);
  assert.doesNotMatch(compileAssessment(p,iin).lawyerCard,/LEGACY PERSON/);assert.equal(validateDraft(p).answers.find(a=>a.key==='guarantors').value,'LEGACY PERSON');
 });
 
 test('contract retains other property, separates business categories and names ownership',()=>{
- const p=fixture();set(p,'holding:client:none','none',false);set(p,'holding:client:other','other',true);set(p,'n8017','SYNTHETIC OTHER ASSET');set(p,'holding:client:ip','ip',true);
+ const p=fixture();set(p,'holding:client:none','none',false);set(p,'holding:client:other','other',true);set(p,'n8017','SYNTHETIC OTHER ASSET');set(p,'holding:client:ip','ip',true);set(p,'holding:client:businessNone','businessNone',false);
  const group=p.groups.find(g=>g.id==='clientip');group.rows=[schema.groups.find(g=>g.id==='clientip').fields.map(f=>({key:f.key,value:f.key==='n8010'?'Да':'12345',checked:false}))];group.rowKeys=[null];
  const c=contractData(p,iin);assert.match(c.property,/SYNTHETIC OTHER ASSET/);assert.match(c.ip_status,/12345/);assert.equal(c.legal_entities,'Нет');
  set(p,'holding:client:real','real',true);const real=p.groups.find(g=>g.id==='clientreal');const values={n8003:'Квартира',n8004Kind:'share',n8004:'25',n8005:'10000000',n8006:'Нет'};real.rows=[schema.groups.find(g=>g.id==='clientreal').fields.map(f=>({key:f.key,value:values[f.key]||'',checked:false}))];real.rowKeys=[null];
@@ -109,7 +110,7 @@ test('pension-only contract includes actual benefits and preserves every payment
 });
 test('contract includes spouse benefits only while spouse answers apply',()=>{
  const p=fixture();benefits(p,'partner','Единовременно','345678');assert.doesNotMatch(contractData(p,iin).official_income,/345678/);
- set(p,'marital','В браке');for(const key of ['count-partnerjobs','count-partnerunofficial','partnerKaspiAnnual'])set(p,key,'0');set(p,'holding:partner:none','none',true);
+ set(p,'marital','В браке');for(const key of ['count-partnerjobs','count-partnerunofficial','partnerKaspiAnnual'])set(p,key,'0');set(p,'holding:partner:none','none',true);set(p,'holding:partner:businessNone','businessNone',true);
  assert.equal(run(p).answersComplete,true,JSON.stringify(run(p).issues));const income=contractData(p,iin).official_income;assert.match(income,/Супруг\(а\)/);assert.match(income,/345678/);assert.match(income,/Единовременно/);
 });
 test('benefit answers cannot silently contradict the document-step answer',()=>{
@@ -155,4 +156,46 @@ test('claim inclusion defaults to yes for legacy loans; exclusion reaches the la
  c=compileAssessment(p,iin);assert.equal(c.values.debt,'300.75');assert.match(c.lawyerCard,/НЕ ВКЛЮЧАТЬ В ИСК\n• Кредит 1: TEST BANK · 100.25 ₸/);assert.doesNotMatch(c.lawyerCard.split('ОБЩИЕ СВЕДЕНИЯ')[0],/SECOND BANK/);assert.match(c.lawyerCard,/Включить в иск: Нет/);assert.match(c.fullCard,/НЕ ВКЛЮЧАТЬ В ИСК/);assert.equal(validateDraft(p).groups.find(g=>g.id==='creditors').rows[0].find(a=>a.key==='loanClaimIncluded').checked,false);
  assert.equal(contractData(p,iin).total_debt,'300,75');
  group.rows[0].find(a=>a.key==='loanParticipants').value='';assert.equal(run(p).answersComplete,false);
+});
+
+test('property and business choices are independent and each requires an explicit answer',()=>{
+ const p=fixture();set(p,'holding:client:businessNone','businessNone',false);assert.ok(has(run(p),'holding:client:business','CHOICE_REQUIRED'));
+ set(p,'holding:client:ip','ip',true);const group=p.groups.find(g=>g.id==='clientip');group.rows=[schema.groups.find(g=>g.id==='clientip').fields.map(f=>({key:f.key,value:f.key==='n8010'?'Нет':'0',checked:false}))];group.rowKeys=[null];
+ assert.equal(run(p).answersComplete,true,JSON.stringify(run(p).issues));assert.equal(contractData(p,iin).property,'Нет');assert.match(contractData(p,iin).ip_status,/0/);
+ set(p,'holding:client:businessNone','businessNone',true);assert.ok(has(run(p),'holding:client:business','CONFLICTING_CHOICES'));assert.ok(!has(run(p),'holding:client:','CONFLICTING_CHOICES'));
+});
+test('enforcement records require creditor and exact amount, persist zero and never double the debt',()=>{
+ const p=fixture();set(p,'enforcementStatus','yes');assert.ok(has(run(p),'enforcements','ROW_REQUIRED'));
+ const group=p.groups.find(g=>g.id==='enforcements');group.rows=[schema.groups.find(g=>g.id==='enforcements').fields.map(f=>({key:f.key,value:'',checked:false}))];group.rowKeys=[null];
+ assert.ok(has(run(p),'enforcementCreditor'));assert.ok(has(run(p),'enforcementAmount'));
+ group.rows[0].find(a=>a.key==='enforcementCreditor').value='SYNTHETIC BANK';group.rows[0].find(a=>a.key==='enforcementAmount').value='0';
+ assert.equal(run(p).answersComplete,true);assert.match(contractData(p,iin).enforcement,/SYNTHETIC BANK — 0 ₸/);
+ group.rows[0].find(a=>a.key==='enforcementAmount').value='500.25';assert.equal(contractData(p,iin).total_debt,'100,25');assert.match(compileAssessment(p,iin).lawyerCard,/Взыскание 1/);
+ set(p,'enforcementStatus','no');assert.equal(contractData(p,iin).enforcement,'Нет');assert.doesNotMatch(compileAssessment(p,iin).lawyerCard,/SYNTHETIC BANK/);assert.equal(validateDraft(p).groups.find(g=>g.id==='enforcements').rows.length,1);
+});
+test('legacy enforcement notes remain usable without inventing structured facts',()=>{
+ const p=fixture();p.answers=p.answers.filter(a=>a.key!=='enforcementStatus'&&!a.key.endsWith(':businessNone'));
+ set(p,'enforcementDetails','  нет  ');assert.equal(run(p).answersComplete,true);assert.equal(contractData(p,iin).enforcement,'Нет');
+ set(p,'enforcementDetails','Original creditor notes without a known amount');const saved=validateDraft(p);assert.equal(saved.answers.find(a=>a.key==='enforcementStatus').value,'legacy');assert.equal(saved.groups.find(g=>g.id==='enforcements').rows.length,0);assert.equal(contractData(p,iin).enforcement,'Original creditor notes without a known amount');
+ set(p,'unknown:enforcementDetails','on',true);assert.ok(has(run(p),'enforcementStatus'));
+});
+
+test('land has separate repeated details, validates shares and reaches the contract and lawyer card',()=>{
+ const p=fixture();set(p,'holding:client:none','none',false);set(p,'holding:client:land','land',true);
+ assert.ok(has(run(p),'clientland','ROW_REQUIRED'));
+ const group=p.groups.find(g=>g.id==='clientland'),definition=schema.groups.find(g=>g.id==='clientland');
+ const values={clientLandDescription:'SYNTHETIC LAND 1',clientLandOwnership:'share',clientLandShare:'25',clientLandValue:'0',clientLandPledged:'Нет'};
+ group.rows=[definition.fields.map(f=>({key:f.key,value:values[f.key]||'',checked:false}))];group.rowKeys=[null];
+ assert.equal(run(p).answersComplete,true,JSON.stringify(run(p).issues));
+ const second=structuredClone(group.rows[0]);second.find(a=>a.key==='clientLandDescription').value='SYNTHETIC LAND 2';second.find(a=>a.key==='clientLandOwnership').value='sole';second.find(a=>a.key==='clientLandShare').value='';group.rows.push(second);group.rowKeys.push(null);
+ for(const text of [contractData(p,iin).property,compileAssessment(p,iin).lawyerCard]){assert.match(text,/SYNTHETIC LAND 1/);assert.match(text,/SYNTHETIC LAND 2/);assert.match(text,/Долевая собственность/);}
+ const share=group.rows[0].find(a=>a.key==='clientLandShare');share.value='';assert.ok(has(run(p),'clientLandShare','ANSWER_REQUIRED'));share.value='101';assert.ok(has(run(p),'clientLandShare','INVALID_NUMBER'));
+ set(p,'holding:client:none','none',true);assert.ok(has(run(p),'holding:client:','CONFLICTING_CHOICES'));
+});
+test('legacy land remains in the original property group and spouse land is conditional on marriage',()=>{
+ const p=fixture();p.answers=p.answers.filter(a=>!a.key.endsWith(':land'));p.groups=p.groups.filter(g=>!g.id.endsWith('land'));
+ set(p,'holding:client:none','none',false);set(p,'holding:client:real','real',true);const g=p.groups.find(g=>g.id==='clientreal'),values={n8003:'Земельный участок',n8004Kind:'sole',n8005:'10000',n8006:'Нет'};
+ g.rows=[schema.groups.find(g=>g.id==='clientreal').fields.map(f=>({key:f.key,value:values[f.key]||'',checked:false}))];g.rowKeys=['clientreal|SYNTHETIC EXISTING LAND'];
+ const restored=validateDraft(p);assert.equal(JSON.stringify(restored.groups),JSON.stringify(p.groups));assert.match(contractData(restored,iin).property,/Земельный участок/);
+ p.answers.push({key:'holding:partner:land',value:'land',checked:true});assert.ok(!has(run(p),'partnerland','ROW_REQUIRED'));set(p,'marital','В браке');assert.ok(has(run(p),'partnerland','ROW_REQUIRED'));
 });

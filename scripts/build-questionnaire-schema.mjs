@@ -1,3 +1,4 @@
+import {build} from 'esbuild';
 import fs from 'node:fs/promises';import {JSDOM}from'jsdom';
 const html=await fs.readFile('public/questionnaire.html','utf8'),dom=new JSDOM(html,{runScripts:'outside-only'});dom.window.eval(await fs.readFile('public/loan-status.js','utf8'));const doc=dom.window.document,root=doc.getElementById('questionnaireStep');
 function key(e){if(e.type==='checkbox'){if(e.dataset.holding)return `holding:${e.dataset.owner}:${e.dataset.holding}`;if(e.dataset.unknown)return `unknown:${e.dataset.unknown}`;if(e.dataset.legacyUnknown)return `unknown:${e.dataset.legacyUnknown}`;if(e.name)return `choice:${e.name}:${e.value}`;}return e.id.replace(/_r\d+$/,'');}
@@ -8,3 +9,5 @@ for(const f of [...scalar])if(f.compactCount)scalar.push({key:'exact:'+f.key,typ
 const groups=[...root.querySelectorAll('.repeat')].map(g=>({id:g.id,conditions:conditions(g),fields:[...g.querySelector('template').content.querySelectorAll('input,select,textarea')].map(field)}));
 for(const fields of [scalar,...groups.map(g=>g.fields)])if(fields.some(f=>!f.key)||new Set(fields.map(f=>f.key)).size!==fields.length)throw Error('Missing or duplicate questionnaire field key');
 const schema={version:1,scalar,groups};await fs.writeFile('lib/questionnaire/schema.json',JSON.stringify(schema,null,2)+'\n');await fs.writeFile('public/questionnaire-schema.json',JSON.stringify(schema));console.log('Questionnaire schema:',scalar.length,'scalar controls,',groups.length,'repeat groups');
+
+await build({entryPoints:['public/intake-data.mjs'],outfile:'public/intake-data.js',bundle:true,format:'iife',globalName:'window.IntakeData'});

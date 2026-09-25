@@ -1,17 +1,42 @@
 import type {Analysis} from './analysis-service';
 import {gkbFreshness} from './policy';
+import {creditorKey} from './loan-identity';
 
 export type CreditMatch={shortIndex:number;fullIndex:number;shortNumber:string;fullNumber:string;shortPage:number;fullPage:number};
-const normalized=(value:string)=>value.normalize('NFKC').replace(/\s+/g,' ').trim().toLocaleUpperCase('ru');
-// Renamed creditors keep old names in some GKB sections. Only documented renames:
-// SB Sberbank Russia JSC (Kazakhstan) became Bereke Bank JSC in 2022.
-const RENAMED_CREDITORS:Array<[RegExp,string]>=[[/BEREKE\s*BANK|СБЕРБАНК\s+РОССИИ/u,'BEREKE BANK']];
-const creditorName=(value:string)=>{const name=normalized(value);return RENAMED_CREDITORS.find(([pattern])=>pattern.test(name))?.[1]??name;};
 function amount(value:string|undefined){
  if(!value||!/^\d+(?:\.\d{1,2})?$/.test(value))return null;
  const [whole,fraction='']=value.split('.');return BigInt(whole)*BigInt(100)+BigInt(fraction.padEnd(2,'0'));
 }
+function balanceReviewReason(credit:Analysis['extraction']['credits'][number],shortDebt:bigint){
+ if(credit.facts.some(f=>f.key==='debtOutstanding')||credit.comparisonDebt)return null;
+ const components=credit.components;
+ if(components?.remaining===null&&amount(components.arrears??undefined)===BigInt(0)&&amount(components.penalty??undefined)===BigInt(0)&&['interest','fine'].every(key=>components[key]===null||components[key]===undefined||amount(components[key])===BigInt(0)))return 'MISSING_BALANCE';
+ // Pawnshop loans can print only the overdue part and no used/outstanding amount.
+ // When every printed component is known and does not exceed the short-report
+ // debt, the short-report amount may be offered to the employee as a source choice.
+ if(components?.remaining===null&&components.penalty!==null){
+  let known=BigInt(0);
+  for(const key of ['arrears','penalty','interest','fine']){
+   if(components[key]===null||components[key]===undefined){if(key==='arrears'||key==='penalty')return null;continue;}
+   const value=amount(components[key]??undefined);if(value===null)return null;known+=value;
+  }
+  if(known>BigInt(0)&&known<=shortDebt)return 'OVERDUE_ONLY';
+ }
+ // An unknown penalty is still unknown. Equality only makes the short-report
+ // amount eligible for an employee's source choice; it never creates a full
+ // report total or substitutes zero for the unreported component.
+ if(components?.penalty!==null)return null;
+ const remaining=amount(components.remaining??undefined),arrears=amount(components.arrears??undefined);
+ if(remaining===null||arrears===null)return null;
+ let known=remaining+arrears;
+ for(const key of ['interest','fine']){
+  if(components[key]===null||components[key]===undefined)continue;
+  const value=amount(components[key]);if(value===null)return null;known+=value;
+ }
+ return known===shortDebt?'FULL_TOTAL_UNCONFIRMED':null;
+}
 function numberMatches(short:string,full:string){
+ short=short.trim();full=full.trim();
  if(/\.\.|…/.test(full))return false;
  if(!/\.\.|…/.test(short))return short===full;
  const pieces=short.split(/\.{2,}|…/).map(piece=>piece.trim());
@@ -20,28 +45,47 @@ function numberMatches(short:string,full:string){
  return full.length>pieces[0].length+pieces[1].length&&full.startsWith(pieces[0])&&full.endsWith(pieces[1]);
 }
 /** Cross-check only. Never replaces extracted IDs or approves short-report facts. */
-export function matchShortReport(short:Analysis,full:Analysis,clientIin:string|null,day:string):CreditMatch[]|null{
+function matchReportLoans(short:Analysis,full:Analysis,clientIin:string|null,day:string,allowMissingBalance=false):CreditMatch[]|null{
  const s=short.extraction,f=full.extraction;
  if(!clientIin||s.identity.iin!==clientIin||f.identity.iin!==clientIin||s.kind!=='gkb_short'||f.kind!=='gkb_full')return null;
  if(!s.issuedAt||s.issuedAt!==f.issuedAt||gkbFreshness(s.issuedAt,day).length)return null;
  if(!short.read.pages.length||!full.read.pages.length)return null;
  if(short.read.pages.some(p=>p.needsOcr)||full.read.pages.some(p=>p.needsOcr))return null;
- if(f.findings.length||!s.findings.includes('SHORT_CONTRACT_ID_TRUNCATED')||s.findings.some(v=>!['SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED'].includes(v)))return null;
- if(!s.credits.length||s.credits.length!==f.credits.length)return null;
+ if(f.findings.some(v=>!allowMissingBalance||v!=='TOTAL_DEBT_REQUIRES_RECONCILIATION')||!s.findings.includes('SHORT_CONTRACT_ID_TRUNCATED')||s.findings.some(v=>!['SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED'].includes(v)))return null;
+ if(!s.credits.length||s.credits.length>f.credits.length)return null;
  const used=new Set<number>(),matches:CreditMatch[]=[];
  for(const [shortIndex,credit] of s.credits.entries()){
   const sf=Object.fromEntries(credit.facts.map(v=>[v.key,v.value])),debt=amount(sf.debtOutstanding);
   if(!sf.creditor||debt===null||!/^\d+$/.test(sf.overdueDays||''))return null;
   const candidates=f.credits.flatMap((other,fullIndex)=>{
    const ff=Object.fromEntries(other.facts.map(v=>[v.key,v.value]));
-   return ff.creditor&&creditorName(sf.creditor)===creditorName(ff.creditor)&&[other.contractNumber,other.contractCode].some(number=>number&&numberMatches(credit.contractNumber,number))&&debt===amount(ff.debtOutstanding)&&/^\d+$/.test(ff.overdueDays||'')&&BigInt(sf.overdueDays)===BigInt(ff.overdueDays)?[fullIndex]:[];
+   return ff.creditor&&creditorKey(sf.creditor)===creditorKey(ff.creditor)&&[other.contractNumber,other.contractCode].some(number=>number&&numberMatches(credit.contractNumber,number))?[fullIndex]:[];
   });
   // Demand unique matches before consuming rows; never resolve ambiguity by order.
   if(candidates.length!==1||used.has(candidates[0]))return null;
-  const fullIndex=candidates[0],other=f.credits[fullIndex];used.add(fullIndex);
+  const fullIndex=candidates[0],other=f.credits[fullIndex],ff=Object.fromEntries(other.facts.map(v=>[v.key,v.value]));
+  const missingBalance=allowMissingBalance&&balanceReviewReason(other,debt)!==null;
+  if(!missingBalance&&debt!==amount(ff.debtOutstanding)||!/^\d+$/.test(ff.overdueDays||'')||BigInt(sf.overdueDays)!==BigInt(ff.overdueDays))return null;
+  used.add(fullIndex);
   matches.push({shortIndex,fullIndex,shortNumber:credit.contractNumber,fullNumber:other.contractNumber,shortPage:credit.page,fullPage:other.page});
  }
+ // The short report explicitly omits unused active limits. Keep them in the
+ // full report and questionnaire; only an explicit zero debt AND zero arrears qualifies.
+ if(f.credits.some((credit,index)=>{const values=Object.fromEntries(credit.facts.map(v=>[v.key,v.value]));return !used.has(index)&&(amount(values.debtOutstanding)!==BigInt(0)||!/^0+$/.test(values.overdueDays||''));}))return null;
  return matches;
+}
+export function matchShortReport(short:Analysis,full:Analysis,clientIin:string|null,day:string){return matchReportLoans(short,full,clientIin,day);}
+
+/** A proposal for an employee, never an automatic match or a zero-balance inference. */
+export function shortBalanceReviewPlan(short:Analysis,full:Analysis,clientIin:string|null,day:string){
+ const s=short.extraction,f=full.extraction;
+ if(!f.creditList?.complete||s.creditList?.declared!==s.credits.length||!f.findings.includes('TOTAL_DEBT_REQUIRES_RECONCILIATION'))return null;
+ const matches=matchReportLoans(short,full,clientIin,day,true);if(!matches)return null;
+ const balances=matches.filter(m=>!f.credits[m.fullIndex].facts.some(f=>f.key==='debtOutstanding')).map(m=>{
+  const a=s.credits[m.shortIndex],b=f.credits[m.fullIndex],fact=a.facts.find(f=>f.key==='debtOutstanding')!,cents=amount(fact.value)!;
+  return {...m,creditor:b.facts.find(f=>f.key==='creditor')!.value,contractNumber:b.contractCode||b.contractNumber,aliases:[...new Set([b.contractNumber,b.contractCode].filter((v):v is string=>!!v))],amount:`${cents/BigInt(100)}.${String(cents%BigInt(100)).padStart(2,'0')}`,shortPage:fact.page||a.page,fullPage:b.page,...(()=>{const why=balanceReviewReason(b,cents);return why==='FULL_TOTAL_UNCONFIRMED'||why==='OVERDUE_ONLY'?{reason:why}:{};})()};
+ });
+ return balances.length?{matches,balances,activeLoans:f.credits.length,issuedAt:s.issuedAt!}:null;
 }
 
 /** Explain why staff need another report or reconciliation; never grants approval. */
@@ -52,6 +96,15 @@ export function shortReportMismatchReasons(short:Analysis,full:Analysis,day:stri
  if(s.credits.length!==f.credits.length)reasons.push(`Прочитано обязательств: краткий ГКБ — ${s.credits.length}, полный — ${f.credits.length}. Сверьте каждый договор: краткий отчёт может не включать кредитные карты и кредитные лимиты без задолженности и просрочки. Разница в количестве сама по себе не подтверждает ошибку. Не исключайте договор без проверки полного отчёта.`);
  if(f.findings.includes('TOTAL_DEBT_REQUIRES_RECONCILIATION'))reasons.push('В полном ГКБ итог долга не подтверждён: нужно сверить остаток, просрочку и дополнительные начисления.');
  if(short.read.pages.some(p=>p.needsOcr)||full.read.pages.some(p=>p.needsOcr)||[...s.findings,...f.findings].some(v=>['PAGE_COMPLETENESS_UNVERIFIED','SHORT_CREDIT_COUNT_MISMATCH','SHORT_TOTAL_MISMATCH','SHORT_SUMMARY_MISSING','SHORT_DUPLICATE_CREDIT','CONTRACT_LIST_INCOMPLETE_OR_OTHER_ROLES'].includes(v)))reasons.push('Не подтверждена полнота или читаемость отчётов. Проверьте страницы и итоговые строки.');
- if(!reasons.length)reasons.push('Не удалось однозначно сопоставить кредитора, номер договора, сумму и дни просрочки. Сверьте оба источника; не подставляйте номер по предположению.');
+ if(!reasons.length)for(const credit of s.credits){
+  const sf=Object.fromEntries(credit.facts.map(v=>[v.key,v.value]));
+  const candidates=f.credits.filter(other=>creditorKey(sf.creditor||'')===creditorKey(other.facts.find(v=>v.key==='creditor')?.value||'')&&[other.contractNumber,other.contractCode].some(number=>number&&numberMatches(credit.contractNumber,number)));
+  const label=`${sf.creditor||'Кредитор не прочитан'} · № ${credit.contractNumber} · краткий ГКБ, стр. ${credit.page}`;
+  if(candidates.length!==1){reasons.push(`${label}: ${candidates.length?'подходят несколько договоров':'не найден однозначный договор в полном ГКБ'}. Откройте «Сверить кредиты», сравните исходные страницы. Если договор отсутствует, запросите полный отчёт на ту же дату; не удаляйте кредит из анкеты.`);continue;}
+  const ff=Object.fromEntries(candidates[0].facts.map(v=>[v.key,v.value]));
+  const fields=[];if(amount(sf.debtOutstanding)!==amount(ff.debtOutstanding)||amount(sf.debtOutstanding)===null)fields.push('сумма долга');if(!/^\d+$/.test(sf.overdueDays||'')||!/^\d+$/.test(ff.overdueDays||'')||BigInt(sf.overdueDays)!==BigInt(ff.overdueDays))fields.push('дни просрочки');
+  if(fields.length)reasons.push(`${label}: требуют сверки ${fields.join(' и ')}. Нажмите «Сверить кредиты»: рядом показаны оба значения и страницы источников. Уточните расхождение по актуальному отчёту.`);
+ }
+ if(!reasons.length)reasons.push('Проверьте владельца, читаемость и полноту обоих ГКБ. Нажмите «Сверить кредиты», чтобы увидеть каждый договор и обе исходные страницы.');
  return reasons;
 }

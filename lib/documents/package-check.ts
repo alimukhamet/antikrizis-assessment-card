@@ -4,7 +4,9 @@ import {gkbFreshness,requiresDocumentValidation,statementPeriod,salaryStatementP
 import type {DraftPayload} from '../questionnaire/draft';
 import {currentDocumentReview,MANUAL_DOCUMENT_TYPES} from './document-review';
 import {checkPowerTemplate} from './power-validation';
-import {matchShortReport,shortReportMismatchReasons,type CreditMatch} from './credit-report-match';
+import {matchShortReport,shortReportMismatchReasons,shortBalanceReviewPlan,type CreditMatch} from './credit-report-match';
+import {inspectGkbBalanceReview,gkbBalanceRows,gkbBalanceEvidence} from './gkb-balance-review';
+import type {ApprovedAnswerEvidence} from '../questionnaire/review-bindings';
 import {creditorKey,loanRowKey} from './loan-identity';
 // Contract preparation and lawyer handoff have independent document requirements.
 export const REQUIRED_DOCUMENTS=['ГКБ — краткий отчёт','ГКБ — полный отчёт','Справка ЕНПФ','Ф6 об отсутствии имущества','Удостоверение личности','Выписка Kaspi Gold'];
@@ -16,11 +18,15 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
  const benefitCount=payload.answers?.find(a=>a.key==='clientBenefitsCount')?.value||'';
  if(scope==='contract'&&(payload.docContext.social==='1'||Number(benefitCount)>0||payload.groups?.some(g=>g.id==='clientbenefits'&&g.rows.length>0)))required.push('Справка по выплатам пенсии и пособий');
  if(scope==='contract'&&payload.docContext.salary==='1')required.push('Выписка зарплатного банка');
+ // Pensioners without an ENPF account: the pension/benefits certificate stays required instead.
+ if(scope==='contract'&&payload.docContext.social==='1'&&payload.docContext.enpf==='none')required.splice(required.indexOf('Справка ЕНПФ'),1);
  if(scope==='contract'&&(!payload.docContext.social||!payload.docContext.salary))issues.push({code:'DOCUMENT_CONTEXT_REQUIRED',message:'Укажите, получает ли клиент пенсию или пособия и в какой банк поступает зарплата.'});
  if(scope==='contract'&&payload.pendingFiles.filter(name=>! /\.(p12|pfx|key|jks)$/i.test(name)).length)issues.push({code:'DOCUMENT_UPLOAD_PENDING',message:'Есть выбранные файлы, ещё не сохранённые для проверки.'});
  const manuallyReviewed:Array<{documentId:string;reviewId:string;type:string;actorId:string;reviewedAt:string}>=[];
  const pendingShort:Array<{documentId:string;type:string;analysis:Analysis;message:string}>=[],fullReports:Array<{documentId:string;analysis:Analysis}>=[];
  const matchedShortReports:Array<{documentId:string;fullDocumentId:string;matches:CreditMatch[]}>=[];
+ const gkbReconciliations:Array<{documentId:string;fullDocumentId:string;reviewId:string;reviewedAt:string}>=[],gkbEvidence:ApprovedAnswerEvidence[]=[];
+ const coverageReports:Array<{documentId:string;analysis:Analysis}>=[];
  const seen=new Set<string>(),available=new Set<string>();
  const credits=new Map<string,Array<{documentId:string;creditor:string;issuedAt:string|null;values:Record<string,string>;pages:Record<string,number>}>>();
  const selectedDocuments=payload.documents.filter(document=>scope==='handoff'?document.type==='Доверенность':!['Доверенность','Подписанный договор'].includes(document.type));
@@ -28,21 +34,26 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
  const loaded=new Map<string,{document:Awaited<ReturnType<EvidenceRepository['document']>>;cached:Awaited<ReturnType<EvidenceRepository['cached']>>;review:Awaited<ReturnType<typeof currentDocumentReview>>}>();
  const ids=[...new Set(selectedDocuments.map(d=>d.documentId))];let nextDocument=0;
  await Promise.all(Array.from({length:Math.min(4,ids.length)},async()=>{while(nextDocument<ids.length){
-  const id=ids[nextDocument++],selected=selectedDocuments.find(d=>d.documentId===id)!,document=await repository.document(record.id,id);
+  const id=ids[nextDocument++],types=selectedDocuments.filter(d=>d.documentId===id&&d.person==='Клиент'&&MANUAL_DOCUMENT_TYPES[d.type]).map(d=>d.type),document=await repository.document(record.id,id);
   const cached=document?await repository.cached(record.id,document.original_sha256,analysisVersion):null;
-  const review=cached&&selected.person==='Клиент'&&MANUAL_DOCUMENT_TYPES[selected.type]?await currentDocumentReview(repository,record,id,cached.extraction.id,cached.result as Analysis,selected.type,day):null;
+  const review=cached&&types.length?await currentDocumentReview(repository,record,id,cached.extraction.id,cached.result as Analysis,types,day):null;
   loaded.set(id,{document,cached,review});
  }}));
  for(const selected of selectedDocuments){
   const issue=(code:string,message:string)=>issues.push({code,message,documentId:selected.documentId,type:selected.type});
-  if(seen.has(selected.documentId)){issue('DUPLICATE_DOCUMENT_SELECTION','Один файл выбран несколько раз.');continue;}seen.add(selected.documentId);
   const {document,cached,review}=loaded.get(selected.documentId)!;
+  const approved=selected.person==='Клиент'&&review?.value.type===selected.type;
+  if(seen.has(selected.documentId)){
+   issue('DUPLICATE_DOCUMENT_SELECTION','Один файл выбран несколько раз. Уберите лишнюю запись из списка файлов. Сохранённый оригинал и его проверка останутся.');
+   if(approved&&document){available.add(selected.type);manuallyReviewed.push({documentId:document.id,reviewId:review.id,type:selected.type,actorId:review.actorId,reviewedAt:review.reviewedAt});}
+   continue;
+  }seen.add(selected.documentId);
   if(!document){issue('DOCUMENT_NOT_IN_CASE','Файл не принадлежит этой оценке.');continue;}
   if(!cached){issue('DOCUMENT_PROCESSING_REQUIRED','Запустите обработку сохранённого файла.');continue;}
   const {extraction:parsed,read}=cached.result as Analysis;
   if(selected.person!=='Клиент'){issue('FAMILY_IDENTITY_VALIDATION_REQUIRED','Для документа родственника ещё нужна проверка владельца и родства.');continue;}
   if(MANUAL_DOCUMENT_TYPES[selected.type]){
-   if(review){available.add(selected.type);manuallyReviewed.push({documentId:document.id,reviewId:review.id,type:selected.type,actorId:review.actorId,reviewedAt:review.reviewedAt});continue;}
+   if(approved){available.add(selected.type);manuallyReviewed.push({documentId:document.id,reviewId:review.id,type:selected.type,actorId:review.actorId,reviewedAt:review.reviewedAt});continue;}
   }
   if(!record.client_iin||parsed.identity.iin!==record.client_iin){issue('DOCUMENT_CLIENT_UNVERIFIED','Владелец документа не подтверждён как клиент этой сделки.');continue;}
   if(!kinds[selected.type]||parsed.kind!==kinds[selected.type]){issue('DOCUMENT_TYPE_UNVERIFIED','Содержимое пока не подтверждает выбранный тип документа.');continue;}
@@ -61,6 +72,7 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
   if(parsed.kind.startsWith('gkb_')){
    if(gkbFreshness(parsed.issuedAt||'',day).length){issue('GKB_DATE_NOT_ACCEPTABLE','ГКБ должен быть выдан не более 30 дней назад и не иметь будущую дату.');continue;}
    if(parsed.findings.includes('CONTRACT_LIST_INCOMPLETE_OR_OTHER_ROLES'))issue('CREDIT_LIST_REVIEW_REQUIRED','Нужно сверить полноту обязательств и роль клиента.');
+   if(parsed.kind==='gkb_full'&&parsed.creditList?.complete)coverageReports.push({documentId:document.id,analysis:cached.result as Analysis});
    for(const credit of parsed.credits){
     const creditor=credit.facts.find(f=>f.key==='creditor')?.value;
     if(!creditor||!credit.contractNumber){issue('CREDIT_IDENTITY_UNVERIFIED','Не удалось однозначно определить кредитора и номер обязательства.');continue;}
@@ -75,8 +87,8 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
    else if(statementPeriod(parsed.bankStatement.from,parsed.bankStatement.to,day).length)issue('STATEMENT_PERIOD_NOT_ACCEPTABLE','Нужна выписка за последние 12 месяцев (полный год до даты выписки).');
    else available.add(selected.type);
   }else if(parsed.kind==='enpf'||parsed.kind==='salary'){
-   const problems=parsed.kind==='enpf'?enpfPeriod(parsed.coverage?.from||null,parsed.coverage?.to||null,parsed.issuedAt,day):salaryStatementPeriod(parsed.coverage?.from||null,parsed.coverage?.to||null,day);
-   if(problems.length)issue(problems[0].code,parsed.kind==='enpf'?'Нужна справка ЕНПФ за 12 месяцев до даты выдачи. Сверьте указанный период.':'Нужна зарплатная выписка, охватывающая последние 12 месяцев. Сверьте указанный период.');
+   const problems=parsed.kind==='enpf'?enpfPeriod(parsed.coverage?.from||null,parsed.coverage?.to||null,parsed.issuedAt,day,read.pages?.[0]?.text||''):salaryStatementPeriod(parsed.coverage?.from||null,parsed.coverage?.to||null,day);
+   if(problems.length)issue(problems[0].code,parsed.kind==='enpf'?(problems[0].code==='ENPF_PERIOD_UNVERIFIED'?'Не удалось прочитать период ЕНПФ. Сверьте его по оригиналу.':'Нужна справка ЕНПФ за последние 12 месяцев или за весь период. Сверьте даты по оригиналу.'):'Нужна зарплатная выписка, охватывающая последние 12 месяцев. Сверьте указанный период.');
    else available.add(selected.type);
   }else issue('DOCUMENT_RULES_PENDING','Сверьте владельца, даты и содержание документа по оригиналу.');
  }
@@ -84,6 +96,19 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
   const candidates=fullReports.flatMap(full=>{const matches=matchShortReport(short.analysis,full.analysis,record.client_iin,day);return matches?[{documentId:short.documentId,fullDocumentId:full.documentId,matches}]:[];});
   if(candidates.length===1){matchedShortReports.push(candidates[0]);available.add(short.type);}
   else {
+   if(fullReports.length===1&&pendingShort.length===1){
+    const full=fullReports[0];
+    if(shortBalanceReviewPlan(short.analysis,full.analysis,record.client_iin,day)){
+     const a=loaded.get(short.documentId)!,b=loaded.get(full.documentId)!;
+     const shortStored={...a.cached!,document:a.document!},fullStored={...b.cached!,document:b.document!};
+     const inspection=await inspectGkbBalanceReview(repository,record,shortStored,fullStored,day);
+     if(inspection?.review&&gkbBalanceRows(payload,inspection).every(r=>r.approved&&r.matches)){
+      available.add(short.type);for(const decision of inspection.decisions)if(!gkbReconciliations.some(r=>r.reviewId===decision.reviewId))gkbReconciliations.push({documentId:short.documentId,fullDocumentId:full.documentId,reviewId:decision.reviewId,reviewedAt:decision.reviewedAt});
+      gkbEvidence.push(...gkbBalanceEvidence(payload,inspection,shortStored));continue;
+     }
+     issues.push({code:'SHORT_CREDIT_REVIEW_REQUIRED',documentId:short.documentId,type:short.type,message:inspection?.review?'Подтверждённые суммы отличаются от ответов в анкете. Откройте «Сверить кредиты» и сохраните нужную сумму в каждом отмеченном кредите.':'Откройте «Сверить кредиты»: по каждому отмеченному кредиту выберите «Верно» или «Исправить сумму» и сохраните решение. Все активные кредиты должны остаться в анкете.'});continue;
+    }
+   }
    const reasons=candidates.length>1?['Подходят несколько полных отчётов. Оставьте один актуальный полный ГКБ для сверки.']:fullReports.length?fullReports.flatMap(full=>shortReportMismatchReasons(short.analysis,full.analysis,day)):['Выберите и обработайте полный ГКБ этого клиента.'];
    issues.push({code:'SHORT_CREDIT_REVIEW_REQUIRED',documentId:short.documentId,type:short.type,message:short.message+' '+[...new Set(reasons)].join(' ')});
   }
@@ -95,6 +120,30 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
   for(const field of fields){const found=sources.filter(s=>s.values[field]!==undefined);const values=[...new Set(found.map(s=>s.values[field]))];if(values.length>1)conflicts.push({documentIds:found.map(s=>s.documentId),field,values,issuedAt:found.map(s=>s.issuedAt),creditor,contractNumber,sources:found.map(s=>({documentId:s.documentId,issuedAt:s.issuedAt,value:s.values[field],page:Number.isInteger(s.pages[field])&&s.pages[field]>0?s.pages[field]:null}))});}
  }
  const creditGroup=payload.groups?.find(g=>g.id==='creditors');
+ // Check actual saved answers, not stale row keys or an editable total/count.
+ // Every active borrower obligation remains required, including explicit zero balances.
+ const expectedLoans=new Map<string,{creditor:string;contractNumber:string;aliases:string[];documentId:string;page:number}>();
+ for(const report of coverageReports)for(const credit of report.analysis.extraction.credits){
+  const creditor=credit.facts.find(f=>f.key==='creditor')?.value||'',aliases=[credit.contractCode,credit.contractNumber].filter((v):v is string=>!!v).map(v=>v.trim());
+  const key=JSON.stringify([creditorKey(creditor),aliases[0]]);
+  if(!expectedLoans.has(key))expectedLoans.set(key,{creditor,contractNumber:aliases[0],aliases,documentId:report.documentId,page:credit.page});
+ }
+ const coverageRows=[...expectedLoans.values()].map(loan=>{
+  const rows=(creditGroup?.rows||[]).flatMap((row,index)=>{const values=Object.fromEntries(row.map(a=>[a.key,a.value]));return creditorKey(values.n8038||'')===creditorKey(loan.creditor)&&loan.aliases.includes((values.loanContractId||'').trim())?[index]:[];});
+  // A saved source key can locate an edited number for the employee, but can
+  // never satisfy coverage in place of the actual answer above.
+  const expectedKeys=loan.aliases.map(number=>loanRowKey(`creditors|${record.client_iin}|${loan.creditor}|${number}`));
+  const numberReviewRows=(creditGroup?.rows||[]).flatMap((row,index)=>!rows.includes(index)&&creditorKey(row.find(a=>a.key==='n8038')?.value||'')===creditorKey(loan.creditor)&&expectedKeys.includes(loanRowKey(creditGroup?.rowKeys[index]))?[index]:[]);
+  // Typing another lender's number into an old source row cannot hide a
+  // duplicate. Only a different actual loan in the full report supersedes a
+  // stale source key; a source key alone never establishes coverage.
+  const unmatchedSourceRows=numberReviewRows.filter(index=>{const number=(creditGroup?.rows[index].find(a=>a.key==='loanContractId')?.value||'').trim();return ![...expectedLoans.values()].some(other=>creditorKey(other.creditor)===creditorKey(loan.creditor)&&other.aliases.includes(number));});
+  const duplicateRows=[...rows,...unmatchedSourceRows].sort((a,b)=>a-b);
+  return {...loan,rows,numberReviewRows,duplicateRows,status:rows.length===1&&!unmatchedSourceRows.length?'present':rows.length?'duplicate':'missing'};
+ });
+ // One questionnaire row cannot account for two different source obligations.
+ for(const loan of coverageRows)if(loan.rows.some(row=>coverageRows.filter(other=>other.rows.includes(row)).length>1))loan.status='duplicate';
+ const loanCoverage=coverageReports.length?{expected:coverageRows.length,present:coverageRows.filter(r=>r.status==='present').length,missing:coverageRows.filter(r=>r.status==='missing').length,duplicates:coverageRows.filter(r=>r.status==='duplicate').length,rows:coverageRows,complete:coverageRows.every(r=>r.status==='present')}:null;
  for(const conflict of conflicts){
   if(conflict.field!=='debtOutstanding'||!creditGroup)continue;
   const expected=loanRowKey(`creditors|${record.client_iin}|${conflict.creditor}|${conflict.contractNumber}`);
@@ -109,5 +158,5 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
  // Credentials remain in the existing separate upload flow, never in extraction/drafts.
  const credentials=await repository.credentialStatus?.(record);
  // The handoff service separately verifies the saved key and signed contract.
- return {required,missing,matchedShortReports,manuallyReviewed,credentials:credentials??null,structurallyChecked:[...available],issues,conflicts,packageReady:issues.length===0,authenticity:'not_verified'};
+ return {required,missing,matchedShortReports,gkbReconciliations,gkbEvidence,loanCoverage,manuallyReviewed,credentials:credentials??null,structurallyChecked:[...available],issues,conflicts,packageReady:issues.length===0,authenticity:'not_verified'};
 }

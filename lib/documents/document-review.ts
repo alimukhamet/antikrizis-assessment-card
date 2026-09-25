@@ -3,9 +3,9 @@ import type {Actor} from '../worker-session';
 import type {Analysis} from './analysis-service';
 import {analysisVersion} from './analysis-version';
 import {checkPowerRepresentative} from './power-validation';
-import {statementPeriod,salaryStatementPeriod,enpfPeriod,gkbFreshness,type Representative} from './policy';
+import {statementPeriod,salaryStatementPeriod,enpfPeriod,enpfAllHistory,type Representative} from './policy';
 export const DOCUMENT_REVIEW_KEY='document.manual-check.v1';
-export const MANUAL_DOCUMENT_TYPES:Record<string,string>={'Удостоверение личности':'identity','Ф6 об отсутствии имущества':'property','Справка ЕНПФ':'enpf','Справка по выплатам пенсии и пособий':'benefits','Выписка Kaspi Gold':'kaspi','Выписка зарплатного банка':'salary','Доверенность':'power_of_attorney','ГКБ — краткий отчёт':'gkb_short','ГКБ — полный отчёт':'gkb_full'};
+export const MANUAL_DOCUMENT_TYPES:Record<string,string>={'Удостоверение личности':'identity','Ф6 об отсутствии имущества':'property','Справка ЕНПФ':'enpf','Справка по выплатам пенсии и пособий':'benefits','Выписка Kaspi Gold':'kaspi','Выписка зарплатного банка':'salary','Доверенность':'power_of_attorney'};
 type ManualCheck={version:1;type:string;iin:string;pages:number;complete:true;contentMatches:true;periodChecked:true;reason:string;issuedAt:string;expiresAt:string;from:string;to:string;representative:Representative|null;authorityChecked:boolean};
 function day(value:string){const d=new Date(value+'T00:00:00Z');return /^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(d.getTime())&&d.toISOString().slice(0,10)===value;}
 /** Human inspection is recorded separately from extraction and never proves authenticity. */
@@ -23,14 +23,10 @@ export function validateDocumentReview(raw:unknown,analysis:Analysis,record:Case
  if(!day(today)||issuedAt&&(!day(issuedAt)||issuedAt>today)||expiresAt&&(!day(expiresAt)||expiresAt<today)||issuedAt&&expiresAt&&issuedAt>expiresAt)throw new RepositoryError('DOCUMENT_DATE_NOT_ACCEPTABLE');
  // Annual ENPF coverage is sufficient under the current intake rule.
  if(type==='Справка ЕНПФ'){
-  if(enpfPeriod(from,to,issuedAt,today).length)throw new RepositoryError('ENPF_PERIOD_NOT_ACCEPTABLE');
+  const firstPage=parsed.kind==='enpf'?analysis.read.pages?.[0]?.text||'':'';
+  if(enpfPeriod(from,to,issuedAt,today,firstPage).length)throw new RepositoryError('ENPF_PERIOD_NOT_ACCEPTABLE');
+  if(enpfAllHistory(firstPage)&&!parsed.coverage?.from&&parsed.issuedAt!==issuedAt)throw new RepositoryError('ENPF_PERIOD_NOT_ACCEPTABLE');
   if(parsed.coverage?.from&&parsed.coverage?.to&&(parsed.coverage.from!==from||parsed.coverage.to!==to||parsed.issuedAt!==issuedAt))throw new RepositoryError('ENPF_PERIOD_NOT_ACCEPTABLE');
- }
- // Staff confirm GKB reconciliation by hand when automatic short/full matching cannot.
- // The 30-day rule still applies and is re-checked every time the review is read.
- if(type==='ГКБ — краткий отчёт'||type==='ГКБ — полный отчёт'){
-  if(!issuedAt||gkbFreshness(issuedAt,today).length)throw new RepositoryError('GKB_DATE_NOT_ACCEPTABLE');
-  if(parsed.issuedAt&&parsed.issuedAt!==issuedAt)throw new RepositoryError('GKB_DATE_NOT_ACCEPTABLE');
  }
  if(type==='Удостоверение личности'&&!expiresAt)throw new RepositoryError('DOCUMENT_EXPIRY_REQUIRED',400);
  if(type==='Выписка зарплатного банка'&&(salaryStatementPeriod(from,to,today).length||parsed.coverage&&(parsed.coverage.from!==from||parsed.coverage.to!==to)))throw new RepositoryError('STATEMENT_PERIOD_NOT_ACCEPTABLE');
@@ -59,10 +55,10 @@ export async function reviewDocument(repository:EvidenceRepository,record:CaseRo
  const value=validateDocumentReview(raw,cached.result as Analysis,record,today);
  return repository.appendReview({caseId:record.id,documentId:doc.id,extractionId:cached.extraction.id,identityRevision,requestId,factKey:DOCUMENT_REVIEW_KEY,value,disposition:'confirmed',reason:value.reason},actor);
 }
-export async function currentDocumentReview(repository:EvidenceRepository,record:CaseRow,documentId:string,extractionId:string,analysis:Analysis,type:string,today:string){
+export async function currentDocumentReview(repository:EvidenceRepository,record:CaseRow,documentId:string,extractionId:string,analysis:Analysis,type:string|string[],today:string){
  const reviews=await repository.currentReviews(record.id,documentId,extractionId,record.identity_revision);
  const review=reviews.find(r=>r.fact_key===DOCUMENT_REVIEW_KEY);if(!review)return null;
- try{const value=validateDocumentReview(JSON.parse(review.value_json),analysis,record,today);return value.type===type?{id:review.id,actorId:review.actor_id,reviewedAt:review.created_at,value}:null;}catch(error){if(error instanceof RepositoryError||error instanceof SyntaxError)return null;throw error;}
+ try{const value=validateDocumentReview(JSON.parse(review.value_json),analysis,record,today);return (Array.isArray(type)?type.includes(value.type):value.type===type)?{id:review.id,actorId:review.actor_id,reviewedAt:review.created_at,value}:null;}catch(error){if(error instanceof RepositoryError||error instanceof SyntaxError)return null;throw error;}
 }
 
 /** Append a withdrawal; retain the original inspection and reject stale concurrent withdrawals. */

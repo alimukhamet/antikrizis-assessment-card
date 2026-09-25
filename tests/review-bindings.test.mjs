@@ -8,10 +8,10 @@ function setup(){
  const doc={id:'doc',case_id:'case',original_sha256:'test-hash'},extraction={id:'ext',document_id:'doc',version:'current'};
  const result={extraction:{identity:{iin:'test-client'},kind:'gkb_full',issuedAt:'2026-09-10',findings:[],facts:[],credits:[{contractNumber:'LOAN1',facts:[{key:'creditor',value:'TEST BANK',page:1,source:'TEST'},{key:'monthlyPayment',value:'10.00',page:2,source:'TEST PAYMENT'},{key:'debtOutstanding',value:'100.00',page:2,source:'TEST DEBT'}]}]}};
  let reads=0;const current=[{id:'review',fact_key:'credits.0.monthlyPayment',value_json:'"12.00"',disposition:'corrected',reason:'TEST correction'}];
- const repository={document:async(caseId,id)=>caseId==='case'&&id==='doc'?doc:null,extraction:async()=>extraction,readResult:async()=>{reads++;return result;},currentReviews:async()=>current};
+ const repository={cached:async()=>null,document:async(caseId,id)=>caseId==='case'&&id==='doc'?doc:null,extraction:async()=>extraction,readResult:async()=>{reads++;return result;},currentReviews:async()=>current};
  const payload={groups:[{id:'creditors',rowKeys:['creditors|test-client|TEST BANK|LOAN1']}]},active=[{key:'n8041',group:'creditors',row:0,value:'12.00'}];
  const binding={key:'n8041',group:'creditors',row:0,documentId:'doc',extractionId:'ext',factKey:'credits.0.monthlyPayment',reviewId:'review'};
- return{record,doc,extraction,result,current,payload,active,binding,reads:()=>reads,run:async(bs=[binding])=>checkReviewBindings(repository,record,payload,active,bs,'2026-09-10')};
+ return{repository,record,doc,extraction,result,current,payload,active,binding,reads:()=>reads,run:async(bs=[binding])=>checkReviewBindings(repository,record,payload,active,bs,'2026-09-10')};
 }
 test('review links corrected value to its exact loan field and original source',async()=>{const s=setup(),r=await s.run();assert.equal(r.issues.length,0);assert.equal(r.approved[0].value,'12.00');assert.equal(r.approved[0].page,2);assert.equal(r.approved[0].documentSha256,'test-hash');});
 test('review accepts the printed contract code but prevents counting both aliases as separate loans',async()=>{
@@ -55,5 +55,12 @@ test('normalized duplicate aliases are rejected without conflating client or con
 test('form and server loan identity rules stay in parity',()=>{
  const {loanRowKey}=load('lib/documents/loan-identity.ts'),script=fs.readFileSync(new URL('../public/assessment-review.js',import.meta.url),'utf8');
  const start=script.indexOf('const afCreditorKey='),end=script.indexOf('\nfunction afRow(',start);assert.ok(start>=0&&end>start);
- for(const key of ['creditors|123|TEST  BANK|Code1','creditors|123|ＴＥＳＴ\u00a0ＢＡＮＫ|Code1','creditors|123|АО "Банк Центр Кредит"|12-A','creditors|123|АО "Банк ЦентрКредит"| 12-A ','creditors|OTHER|testbank|code1','manual-row'])assert.equal(vm.runInNewContext(script.slice(start,end)+`;afLoanRowKey(${JSON.stringify(key)})`),loanRowKey(key));
+ for(const key of ['creditors|123|TEST  BANK|Code1','creditors|123|ＴＥＳＴ\u00a0ＢＡＮＫ|Code1','creditors|123|АО "Банк Центр Кредит"|12-A','creditors|123|АО "Банк ЦентрКредит"| 12-A ','creditors|OTHER|testbank|code1','creditors|123|Акционерное общество «Example Bank»|Code1','creditors|123|АО “Example Bank”|Code1','manual-row'])assert.equal(vm.runInNewContext(script.slice(start,end)+`;afLoanRowKey(${JSON.stringify(key)})`),loanRowKey(key));
+});
+
+test('final check preserves a compatible original review but rejects replacement and changed values',async()=>{
+ const s=setup();s.extraction.version='previous-compatible';s.repository.cached=async()=>({extraction:s.extraction});
+ const r=await s.run();assert.equal(r.issues.length,0);assert.equal(r.approved[0].reviewId,'review');assert.equal(r.approved[0].extractionId,'ext');assert.equal(r.approved[0].value,'12.00');
+ s.repository.cached=async()=>({extraction:{id:'replacement'}});assert.equal((await s.run()).issues[0].code,'EXTRACTION_VERSION_CHANGED');
+ s.repository.cached=async()=>({extraction:s.extraction});s.active[0].value='13.00';assert.equal((await s.run()).issues[0].code,'REVIEW_VALUE_CHANGED');
 });

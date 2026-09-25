@@ -2,7 +2,8 @@ import { getDocumentProxy, getResolvedPDFJS } from 'unpdf';
 
 export const PDF_READER_VERSION = 'native-pdf-3';
 export const MAX_DOCUMENT_BYTES = 35 * 1024 * 1024;
-export const MAX_DOCUMENT_PAGES = 300;
+// Full GKB reports for clients with long histories exceed 500 pages.
+export const MAX_DOCUMENT_PAGES = 1000;
 export type PageText = { page: number; text: string; layoutText?: string; nativeCharacters: number; needsOcr: boolean };
 export class DocumentReadError extends Error { constructor(public code: string, public status = 422) { super(code); } }
 const prefix = new TextEncoder().encode('%PDF');

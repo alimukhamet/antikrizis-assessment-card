@@ -6,3 +6,10 @@ test('money controls group large amounts while preserving exact numeric values',
  editor.value='2 345 678,90';editor.dispatchEvent(new w.Event('input',{bubbles:true}));assert.equal(source.value,'2345678.90');editor.dispatchEvent(new w.Event('blur'));assert.equal(editor.value,'2 345 678,90');
  run("add(document.getElementById('creditors'))");await Promise.resolve();const added=[...w.document.querySelectorAll('#creditors input[id^="n8041"]')].at(-1);assert.equal(added.nextElementSibling.tagName,'MONEY-INPUT');
 });
+
+test('focusing a formatted money value preserves its saved precision and does not invalidate checks',t=>{
+ const dom=new JSDOM('<section id="questionnaireStep"><div class="field"><label class="lbl">Сумма ₸</label><input type="number" id="amount" step="0.01" value="1806000.00"></div></section>',{runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window;t.after(()=>w.close());w.eval(fs.readFileSync('public/money-input.js','utf8'));
+ const source=w.document.getElementById('amount'),editor=source.nextElementSibling.shadowRoot.querySelector('input');let changes=0;source.addEventListener('change',()=>changes++);
+ editor.focus();editor.blur();assert.equal(source.value,'1806000.00');assert.equal(changes,0);
+ editor.focus();editor.value='2 000 000,50';editor.dispatchEvent(new w.Event('input',{bubbles:true}));editor.blur();assert.equal(source.value,'2000000.50');assert.equal(changes,1);
+});

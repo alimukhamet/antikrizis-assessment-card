@@ -10,27 +10,47 @@ import {completeContractOperation} from '../../../../../lib/questionnaire/contra
 import {createAssessmentHistoryAdapter} from '../../../../../lib/crm/assessment-history';
 import {createAssessmentAdapter,AssessmentWriteError} from '../../../../../lib/crm/assessment-write';
 import {syncAssessmentIntake,type AssessmentIntakeSyncResult} from '../../../../../lib/crm/assessment-intake-sync';
+import {authorizeSubmissionRecovery} from '../../../../../lib/questionnaire/submission-recovery';
+import {DraftRepository} from '../../../../../lib/questionnaire/repository';
+import {OperationsRepository} from '../../../../../lib/operations-monitor';
+import release from '../../../../../lib/assessment-release.json';
 export async function POST(request:Request,context:{params:Promise<{dealId:string}>}){
  const denied=await requireStaffRequest(request);if(denied)return denied;
  try{
   const body=await boundedJson(request,256000);
-  if(typeof body.requestId!=='string'||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.requestId)||!['prepare','complete','commit','reconcile','cancel','history','contract'].includes(String(body.action)))throw new RepositoryError('INVALID_SUBMISSION_REQUEST',400);
+  if(typeof body.requestId!=='string'||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.requestId)||!['prepare','complete','recover','commit','reconcile','cancel','history','contract','sync-intake'].includes(String(body.action)))throw new RepositoryError('INVALID_SUBMISSION_REQUEST',400);
   const {dealId}=await context.params,{record,repository,actor}=await evidenceContext(request,dealId);
   const {env}=await import('cloudflare:workers');
   const runtime=env as typeof env & {DB?:D1Database};
   if(!runtime.DB)throw new RepositoryError('EVIDENCE_STORAGE_NOT_CONFIGURED',503);
-  if(['prepare','complete','commit','history'].includes(String(body.action)))assertSubmissionDestination(record,body.destination);
+  if(['prepare','complete','recover','commit','history'].includes(String(body.action)))assertSubmissionDestination(record,body.destination);
   const submissions=new SubmissionRepository(runtime.DB),adapter=createAssessmentAdapter(process.env.BITRIX_WEBHOOK??'');
   if(body.action==='contract')return Response.json({contract:await savedContract(submissions,record,actor,body.requestId)},{headers:{'cache-control':'no-store'}});
-  if(body.action==='complete'){
+  if(body.action==='sync-intake'){
+   const row=await submissions.get(record.id,body.requestId);
+   if(!row||row.actor_id!==actor.id)throw new RepositoryError('SUBMISSION_NOT_FOUND',404);
+   if(row.identity_revision!==record.identity_revision)throw new RepositoryError('CASE_IDENTITY_CHANGED',409);
+   if(row.state!=='verified'||row.history_state!=='verified')throw new RepositoryError('ASSESSMENT_NOT_READY',409);
+   const assessmentIntakeSync=await boundedVerifiedAssessmentIntakeSync(repository,dealId,row);
+   return Response.json(present(row,assessmentIntakeSync),{headers:{'cache-control':'no-store'}});
+  }
+  if(body.action==='complete'||body.action==='recover'){
+   const recovery=body.action==='recover';
+   const operationActor=recovery?await authorizeSubmissionRecovery({actor,record,row:await submissions.get(record.id,body.requestId),expectedHash:body.expectedHash,latestDraft:await new DraftRepository(runtime.DB).latest(record.id),repository}):actor;
+   if(recovery){
+    // Must persist owner attribution before continuing another worker's intent.
+    const recorded=await new OperationsRepository(runtime.DB).record({id:crypto.randomUUID(),dealId,action:'contract',code:'OWNER_SUBMISSION_RECOVERY',clientVersion:release.version,status:0,asset:null,line:null},actor.id);
+    if(!recorded)throw new RepositoryError('RECOVERY_AUDIT_UNAVAILABLE',503);
+   }
    const signal=AbortSignal.timeout(90_000);
-   const result=await completeContractOperation({repository,submissions,record,actor,requestId:body.requestId,day:operatingDay(),signal,
+   const result=await completeContractOperation({repository,submissions,record,actor:operationActor,requestId:body.requestId,day:operatingDay(),signal,
     adapter:createAssessmentAdapter(process.env.BITRIX_WEBHOOK??'',fetch,signal),
     historyAdapter:createAssessmentHistoryAdapter(process.env.BITRIX_WEBHOOK??'',fetch,signal),
     currentRecord:async()=>{
      const fresh=await evidenceContext(request,dealId);
      if(fresh.actor.id!==actor.id)throw new RepositoryError('SUBMISSION_ACTOR_OR_IDENTITY_CHANGED');
      assertSubmissionDestination(fresh.record,body.destination);
+     if(recovery)await authorizeSubmissionRecovery({actor:fresh.actor,record:fresh.record,row:await submissions.get(record.id,body.requestId as string),expectedHash:body.expectedHash,latestDraft:await new DraftRepository(runtime.DB!).latest(record.id),repository});
      return fresh.record;
     },
    }).catch(error=>{if(signal.aborted)throw new RepositoryError('CONTRACT_OPERATION_TIMEOUT',503);throw error;});
@@ -75,7 +95,10 @@ export async function GET(request:Request,context:{params:Promise<{dealId:string
  try{
   const {dealId}=await context.params,{record,actor}=await evidenceContext(request,dealId);
   const {env}=await import('cloudflare:workers');const runtime=env as typeof env&{DB?:D1Database};if(!runtime.DB)throw new RepositoryError('EVIDENCE_STORAGE_NOT_CONFIGURED',503);
-  const row=await new SubmissionRepository(runtime.DB).latest(record.id,actor.id);
+  const submissions=new SubmissionRepository(runtime.DB),params=new URL(request.url).searchParams,requestId=params.get('requestId');
+  if(params.get('scope')==='case'&&actor.worker!=='ali')throw new RepositoryError('OWNER_REQUIRED',403);
+  const row=requestId?await submissions.get(record.id,requestId):params.get('scope')==='case'?await submissions.latestForCase(record.id):await submissions.latest(record.id,actor.id);
+  if(row&&row.actor_id!==actor.id&&actor.worker!=='ali')throw new RepositoryError('SUBMISSION_NOT_FOUND',404);
   return Response.json({submission:row?present(row):null},{headers:{'cache-control':'no-store'}});
  }catch(error){return evidenceError(error);}
 }

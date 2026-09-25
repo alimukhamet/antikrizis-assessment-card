@@ -34,6 +34,26 @@ export function validateAssessmentExport(text){
  for(const row of groups.review){const extraction=seen.get('extraction:'+row.extraction_id);if(!seen.has('document:'+row.document_id)||!extraction||extraction.document_id!==row.document_id)fail('EXPORT_REVIEW_REFERENCE');}
  for(const row of groups.document)if(!/^[a-f0-9]{64}$/.test(row.original_sha256)||!Number.isSafeInteger(row.byte_size)||row.byte_size<=0||typeof row.downloadPath!=='string')fail('EXPORT_DOCUMENT_METADATA');
  for(const type of ['questionnaire-draft','assessment-submission'])for(const row of groups[type])if(!Object.hasOwn(row,'payload'))fail('EXPORT_MISSING_PAYLOAD');
+ for(const row of groups['assessment-submission']){
+  const fields=[row.title_repair_json,row.title_repair_state,row.title_repair_updated_at];
+  if(fields.every(value=>value==null))continue;
+  if(!['prepared','writing','uncertain','verified','cancelled'].includes(row.title_repair_state)||
+     typeof row.title_repair_updated_at!=='string'||!Number.isFinite(Date.parse(row.title_repair_updated_at)))fail('EXPORT_TITLE_REPAIR_RECEIPT');
+  let intent;try{intent=JSON.parse(row.title_repair_json);}catch{fail('EXPORT_TITLE_REPAIR_RECEIPT');}
+  if(!intent||intent.version!==1||intent.policy!=='VP_FIO_1'||intent.caseId!==row.case_id||
+     intent.submissionId!==row.id||intent.submissionRequestId!==row.request_id||intent.submissionHash!==row.payload_hash||
+     intent.identityRevision!==row.identity_revision||intent.actorId!=='worker:ali'||
+     typeof intent.authentication!=='string'||!intent.authentication||!Number.isFinite(Date.parse(intent.createdAt))||
+     !/^[a-f0-9]{64}$/.test(intent.proposalHash)||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(intent.requestId)||
+     intent.before?.dealId!==first.case.external_id||intent.before.iin!==row.payload.values?.iin||
+     intent.before.fio!==row.payload.values?.fio||intent.before.procedure!=='199'||row.payload.values?.procedure!=='199'||
+     intent.before.categoryId!=='1'||intent.before.stageId!=='C1:NEW'||typeof intent.before.title!=='string'||
+     typeof intent.before.fio!=='string'||!intent.before.fio.trim()||
+     intent.desiredTitle!=='ВП '+intent.before.fio.replace(/\s+/gu,' ').trim())fail('EXPORT_TITLE_REPAIR_RECEIPT');
+  const proposal={version:1,caseId:intent.caseId,identityRevision:intent.identityRevision,submissionId:intent.submissionId,
+   submissionHash:intent.submissionHash,policy:intent.policy,before:intent.before,desiredTitle:intent.desiredTitle};
+  if(createHash('sha256').update(JSON.stringify(proposal)).digest('hex')!==intent.proposalHash)fail('EXPORT_TITLE_REPAIR_RECEIPT');
+ }
  for(const row of groups['document-upload']){
   if(!Array.isArray(row.manifest?.files)||!row.manifest.files.length)fail('EXPORT_UPLOAD_MANIFEST');
   for(const file of row.manifest.files){if(row.manifest.scope==='credentials'){if(file.documentId!=='eds:'+file.sha256||!/^[a-f0-9]{64}$/.test(file.sha256))fail('EXPORT_UPLOAD_REFERENCE');}else if(!seen.has('document:'+file.documentId))fail('EXPORT_UPLOAD_REFERENCE');}

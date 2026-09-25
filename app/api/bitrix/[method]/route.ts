@@ -6,10 +6,7 @@ const JSON_HEADERS = {
 
 const ASSESSMENT_METHODS = new Set([
   "crm.deal.get",
-  "crm.deal.update",
-  "crm.timeline.comment.add",
   "crm.item.get",
-  "crm.item.update",
 ]);
 
 export async function POST(
@@ -19,14 +16,6 @@ export async function POST(
   const denied = await requireStaffRequest(request);
   if (denied) return denied;
 
-  const configuredWebhook = process.env.BITRIX_WEBHOOK;
-  if (!configuredWebhook) {
-    return Response.json(
-      { error: "BITRIX_NOT_CONFIGURED", error_description: "Bitrix не настроен." },
-      { status: 503, headers: JSON_HEADERS },
-    );
-  }
-
   const { method: rawMethod } = await context.params;
   const method = rawMethod.replace(/\.json$/i, "");
   if (!/^[a-z0-9_.]+$/i.test(method)) {
@@ -35,6 +24,13 @@ export async function POST(
       { status: 400, headers: JSON_HEADERS },
     );
   }
+  if (["crm.deal.update", "crm.timeline.comment.add", "crm.item.update"].includes(method.toLowerCase())) {
+    return Response.json({
+      error: "OLD_TOOL_RETIRED",
+      error_description: "Инструменты 01 и 02 закрыты. Откройте «Подготовить договор» или «Передать юристам». Сохранённые данные остаются в Bitrix.",
+      replacement: "/assessment-review",
+    }, { status: 410, headers: JSON_HEADERS });
+  }
   if (!ASSESSMENT_METHODS.has(method.toLowerCase())) {
     return Response.json(
       {
@@ -42,6 +38,14 @@ export async function POST(
         error_description: "Этот метод Bitrix недоступен из карточки оценки.",
       },
       { status: 403, headers: JSON_HEADERS },
+    );
+  }
+
+  const configuredWebhook = process.env.BITRIX_WEBHOOK;
+  if (!configuredWebhook) {
+    return Response.json(
+      { error: "BITRIX_NOT_CONFIGURED", error_description: "Bitrix не настроен." },
+      { status: 503, headers: JSON_HEADERS },
     );
   }
 
