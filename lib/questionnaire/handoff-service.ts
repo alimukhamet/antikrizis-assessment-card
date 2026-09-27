@@ -95,17 +95,23 @@ function assertTitleSource(payload:HandoffPayload,source:HandoffTitleSource){
  if(payload.titlePlan&&(!frozen||frozen.requestId!==source.requestId||frozen.payloadHash!==source.payloadHash||frozen.fio!==source.fio||frozen.procedure!==source.procedure))throw new RepositoryError('HANDOFF_ASSESSMENT_CHANGED');
 }
 type Dependencies=DeliveryDependencies&{repository:EvidenceRepository;handoffs:HandoffRepository;manifests:UploadManifestRepository;upload:ReturnType<typeof createDocumentUploadAdapter>;stages:ReturnType<typeof createHandoffAdapter>};
+/** Verify an already claimed operation. This path has no CRM write capability. */
+export async function reconcileHandoffOutcome(deps:{handoffs:Pick<HandoffRepository,'finish'>;stages:Pick<ReturnType<typeof createHandoffAdapter>,'reconcile'>},record:CaseRow,row:HandoffRow){
+ if(row.case_id!==record.id||row.identity_revision!==record.identity_revision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
+ if(row.state==='verified')return row;
+ if(!['writing','uncertain'].includes(row.state))throw new RepositoryError('HANDOFF_NOT_STARTED');
+ const payload=JSON.parse(row.payload_json) as HandoffPayload;
+ let verified=false,code='HANDOFF_OUTCOME_UNCERTAIN';
+ try{verified=await deps.stages.reconcile(record.external_id,record.client_iin!,payload.destination,row.created_at,payload.titlePlan);}catch(error){if(error instanceof HandoffMoveError)code=error.code;}
+ return deps.handoffs.finish(record,row,verified?'verified':'uncertain',verified?(payload.titlePlan?'STAGE_AND_TITLE_READBACK_VERIFIED':'STAGE_READBACK_VERIFIED'):code);
+}
 /** A timeout never authorizes a second stage update. All recovery after claim is read-only. */
 export async function runHandoff(deps:Dependencies,record:CaseRow,actor:Actor,row:HandoffRow,day:string){
  const {repository,handoffs,manifests,upload,stages}=deps,payload=JSON.parse(row.payload_json) as HandoffPayload;
  if(row.identity_revision!==record.identity_revision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
  if(row.state==='verified')return row;
  if(row.actor_id!==actor.id)throw new RepositoryError('HANDOFF_OWNED_BY_ANOTHER_WORKER');
- if(row.state==='writing'||row.state==='uncertain'){
-  let verified=false,code='HANDOFF_OUTCOME_UNCERTAIN';
-  try{verified=await stages.reconcile(record.external_id,record.client_iin!,payload.destination,row.created_at,payload.titlePlan);}catch(error){if(error instanceof HandoffMoveError)code=error.code;}
-  return handoffs.finish(record,row,verified?'verified':'uncertain',verified?(payload.titlePlan?'STAGE_AND_TITLE_READBACK_VERIFIED':'STAGE_READBACK_VERIFIED'):code);
- }
+ if(row.state==='writing'||row.state==='uncertain')return reconcileHandoffOutcome(deps,record,row);
  if(row.state!=='prepared')throw new RepositoryError('HANDOFF_CANCELLED');
  const delivered=await verifiedDelivery(deps,record);
  assertTitleSource(payload,delivered.titleSource);

@@ -88,3 +88,37 @@ test('v21 refreshes bank statements misidentified by transfer recipients without
   assert.equal(await repo.cached(c.id,old.document.original_sha256,'different-reader:rules-native-21'),null);
  }
 });
+
+test('v22 preserves unaffected evidence and review IDs, but refreshes Latin short-report lenders',async()=>{
+ const {repo,sqlite}=setup(),c=await repo.syncCase(client());
+ for(const [index,kind,text,layoutText,compatible] of [
+  [71,'gkb_short','АО Банк\nТОО Ломбард','',true],
+  [72,'gkb_short','AO Bank','',false],
+  [73,'gkb_short','text','TOO Lender',false],
+  [74,'gkb_full','TOO Lender','',true],
+  [75,'identity','identity card','',true],
+  [76,'salary','salary bank','',true],
+  [77,'kaspi','Kaspi ВЫПИСКА','',true],
+  [78,'power_of_attorney','power','',true],
+ ]){
+  const old=await repo.store(c.id,new Uint8Array([index]),'synthetic.pdf',actor,'pdf-test:rules-native-21',{read:{pages:[{text,layoutText}]},extraction:{kind}});
+  const review=await repo.appendReview({caseId:c.id,documentId:old.document.id,extractionId:old.extraction.id,identityRevision:1,requestId:'v22-'+index,factKey:'synthetic',value:'confirmed fact',disposition:'confirmed',reason:''},actor);
+  const cached=await repo.cached(c.id,old.document.original_sha256,'pdf-test:rules-native-22');
+  assert.equal(Boolean(cached),compatible);
+  if(compatible){assert.equal(cached.extraction.id,old.extraction.id);assert.equal((await repo.currentReviews(c.id,old.document.id,cached.extraction.id,1))[0].id,review.id);}
+  assert.ok(await repo.extraction(c.id,old.document.id,old.extraction.id));
+  assert.equal(await repo.cached(c.id,old.document.original_sha256,'different-reader:rules-native-22'),null);
+ }
+ assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_extractions').get().n,8);
+ assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_reviews').get().n,8);
+});
+
+test('v22 retains older compatibility exclusions and prefers a new extraction when present',async()=>{
+ const {repo}=setup(),c=await repo.syncCase(client());
+ const wrong=await repo.store(c.id,new Uint8Array([81]),'bank.pdf',actor,'pdf-test:rules-native-20',{read:{pages:[{text:'АО "Евразийский Банк"\nwww.eubank.kz БИК EURIKZKA\nВыписка по счёту\nПеревод Kaspi'}]},extraction:{kind:'kaspi'}});
+ assert.equal(await repo.cached(c.id,wrong.document.original_sha256,'pdf-test:rules-native-22'),null);
+ const old=await repo.store(c.id,new Uint8Array([82]),'short.pdf',actor,'pdf-test:rules-native-21',{read:{pages:[{text:'АО Банк'}]},extraction:{kind:'gkb_short'}});
+ const current=await repo.store(c.id,new Uint8Array([82]),'short.pdf',actor,'pdf-test:rules-native-22',{read:{pages:[{text:'АО Банк'}]},extraction:{kind:'gkb_short'}});
+ assert.equal((await repo.cached(c.id,old.document.original_sha256,'pdf-test:rules-native-22')).extraction.id,current.extraction.id);
+ assert.notEqual(old.extraction.id,current.extraction.id);
+});

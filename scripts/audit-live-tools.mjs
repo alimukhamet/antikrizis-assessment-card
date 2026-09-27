@@ -125,6 +125,21 @@ try{
      }
     }else if(route==='submission'){
      const s=data.submission;item.submission=s?{state:s.state,outcomeCode:s.outcomeCode,historyState:s.historyState,historyOutcomeCode:s.historyOutcomeCode}:null;
+     if(id===diagnosticId&&s?.assessmentSaved){
+      const crm=await request('/api/bitrix/crm.deal.get',{id}),deal=crm.result;
+      if(!deal||String(deal.ID)!==id)throw Error('HANDOFF_NAMING_READ_UNVERIFIED');
+      const fio=String(s.clientName||''),normalize=value=>value.replace(/\s+/gu,' ').trim(),desired='ВП '+normalize(fio),title=String(deal.TITLE||'');
+      item.namingDiagnostics={
+       categoryId:String(deal.CATEGORY_ID),stageId:String(deal.STAGE_ID),
+       identityMatches:deal.UF_CRM_AI_IIN===assessment.client.iin,
+       sourceNameMatches:deal.UF_CRM_1773669702495===fio,
+       sourceProcedureMatches:String(deal.UF_CRM_1773655613972)==='199',
+       titleExact:title===desired,titleWhitespaceOnly:normalize(title)===desired,
+       titleCaseOnly:normalize(title).toLocaleLowerCase('ru')===desired.toLocaleLowerCase('ru'),
+       titleFioOnly:normalize(title)===normalize(fio),intakeStyle:/\[whatcrm\]/i.test(title),
+       desiredWithSeparator:/^ВП\s*[-–—:]\s*/u.test(title)&&normalize(title.replace(/^ВП\s*[-–—:]\s*/u,''))===normalize(fio),
+      };
+     }
      if(s?.assessmentSaved&&s?.historySaved){const contract=await request(root+'/submission',{action:'contract',requestId:s.requestId});item.savedContract={available:!!contract.contract?.data,rendererVersion:contract.contract?.rendererVersion};}
     }else if(route==='handoff'){item.handoff={state:data.handoff?.state||null,stageError:data.stageError,destination:data.destination,delivery:data.delivery};}
     else if(route==='crm-documents'){item.crmDocuments={count:data.files?.length,types:data.files?.map(v=>({field:v.field,kind:v.kind}))};}

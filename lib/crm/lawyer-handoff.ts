@@ -79,7 +79,9 @@ export function createHandoffAdapter(webhook:string,send:typeof fetch=fetch){
   const history=await call('crm.stagehistory.list',{entityTypeId:2,filter:{OWNER_ID:dealId,CATEGORY_ID:Number(destination.categoryId),STAGE_ID:destination.stageId,'>=CREATED_TIME':since},order:{ID:'DESC'},select:['ID','OWNER_ID','CATEGORY_ID','STAGE_ID','CREATED_TIME'],start:0});
   stageVerified=isRecord(history)&&Array.isArray(history.items)&&history.items.some((row:unknown)=>isRecord(row)&&typeof row.CREATED_TIME==='string'&&String(row.OWNER_ID)===dealId&&String(row.CATEGORY_ID)===destination.categoryId&&row.STAGE_ID===destination.stageId&&Number.isFinite(Date.parse(row.CREATED_TIME))&&Date.parse(row.CREATED_TIME)>=Math.floor(Date.parse(since)/1000)*1000);
   }
-  if(stageVerified&&plan&&(!validTitlePlan(plan)||!titleMatchesSource(deal,plan.source)||deal.TITLE!==plan.desiredTitle))throw new HandoffMoveError('HANDOFF_TITLE_UNVERIFIED');
+  // Bitrix can return the correctly applied title with outer whitespace. Keep
+  // the frozen source and all title characters exact; only trim the boundary.
+  if(stageVerified&&plan&&(!validTitlePlan(plan)||!titleMatchesSource(deal,plan.source)||typeof deal.TITLE!=='string'||deal.TITLE.trim()!==plan.desiredTitle))throw new HandoffMoveError('HANDOFF_TITLE_UNVERIFIED');
   return stageVerified;
  }
  async function move(dealId:string,iin:string,destination:HandoffDestination,since:string,plan?:HandoffTitlePlan){
