@@ -2,7 +2,7 @@ import {RepositoryError,sha256,type CaseRow} from '../documents/repository';
 import type {Actor} from '../worker-session';
 import type {HandoffDestination,HandoffTitlePlan} from '../crm/lawyer-handoff';
 export type HandoffPayload={destination:HandoffDestination;titlePlan?:HandoffTitlePlan;powerId:string;signedId:string;credentialRequestId:string;reviewIds:string[];signedConfirmed:true;confirmedAt:string};
-export type HandoffRow={id:string;case_id:string;request_id:string;identity_revision:number;actor_id:string;payload_json:string;state:'prepared'|'writing'|'uncertain'|'verified'|'cancelled';outcome_code:string|null;created_at:string;updated_at:string};
+export type HandoffRow={id:string;case_id:string;request_id:string;identity_revision:number;actor_id:string;payload_json:string;payload_hash:string;state:'prepared'|'writing'|'uncertain'|'verified'|'cancelled';outcome_code:string|null;created_at:string;updated_at:string};
 export class HandoffRepository{
  constructor(private db:D1Database){}
  active(caseId:string){return this.db.prepare("SELECT * FROM assessment_handoffs WHERE case_id=? AND state<>'cancelled' ORDER BY rowid DESC LIMIT 1").bind(caseId).first<HandoffRow>();}

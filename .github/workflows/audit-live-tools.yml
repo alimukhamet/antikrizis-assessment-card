@@ -6,6 +6,14 @@ on:
         description: 'Optional additional deal: read saved document diagnostics, with no draft or CRM writes'
         type: string
         default: ''
+      reconcile_handoff_request_id:
+        description: 'Read-only Bitrix reconciliation of this exact existing handoff; never sends files or stages'
+        type: string
+        default: ''
+      reconcile_handoff_expected_hash:
+        description: 'Required immutable handoff payload hash for owner reconciliation'
+        type: string
+        default: ''
       recovery_repair_transport:
         description: 'Separate guarded repair of the diagnosed 11727 transfer; reconciles first'
         type: boolean
@@ -94,6 +102,14 @@ jobs:
           PREVIEW_NATIVE_ANALYSIS: '1'
           AUDIT_DEAL_ID: ${{ inputs.deal_id }}
         run: node scripts/audit-live-tools.mjs
+      - name: Reconcile the exact existing handoff without Bitrix writes
+        if: inputs.reconcile_handoff_request_id != ''
+        env:
+          ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
+          AUDIT_DEAL_ID: ${{ inputs.deal_id }}
+          RECONCILE_HANDOFF_REQUEST_ID: ${{ inputs.reconcile_handoff_request_id }}
+          RECONCILE_HANDOFF_EXPECTED_HASH: ${{ inputs.reconcile_handoff_expected_hash }}
+        run: node scripts/reconcile-handoff.mjs
       - uses: actions/upload-artifact@v4
         if: always() && inputs.audit_lawyer_names != true && inputs.repair_title_deal_id == ''
         with:
@@ -101,6 +117,7 @@ jobs:
           path: |
             live-tools-audit.json
             assessment-recovery.json
+            handoff-reconciliation.json
           retention-days: 1
       - uses: actions/upload-artifact@v4
         if: always() && inputs.audit_lawyer_names == true

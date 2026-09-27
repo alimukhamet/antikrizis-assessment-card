@@ -149,7 +149,7 @@ test('status inspection verifies assessment and current original refs without do
 });
 test('writing and uncertain operations reconcile read-only even if current delivery is missing',async()=>{
  for(const state of ['writing','uncertain']){
-  let reconciles=0;const row={state,actor_id:actor.id,identity_revision:1,payload_json:JSON.stringify({destination}),created_at:'2026-09-16T08:00:00Z'};
+  let reconciles=0;const row={state,case_id:record.id,actor_id:actor.id,identity_revision:1,payload_json:JSON.stringify({destination}),created_at:'2026-09-16T08:00:00Z'};
   const result=await service.runHandoff({submissions:{latestForCase:async()=>{throw Error('delivery guard must not replay claimed operations');}},handoffs:{finish:async(record,row,state)=>({state})},stages:{reconcile:async()=>{reconciles++;return false;}}},record,actor,row,'2026-09-16');assert.equal(result.state,'uncertain');assert.equal(reconciles,1);
  }
 });
@@ -275,4 +275,33 @@ test('legacy claimed handoffs retain stage-only recovery even when their current
   s.deps.submissions.latestForCase=async()=>{throw Error('Legacy claimed operation must reconcile without new delivery obligations');};
   const done=await service.runHandoff(s.deps,record,actor,row,'2026-09-16');assert.equal(done.state,'verified');assert.equal(done.outcome_code,'STAGE_READBACK_VERIFIED');assert.equal(remote.writes.length,0);assert.equal(s.counts.uploads,0);
  }finally{s.sql.close();}
+});
+
+test('outer title whitespace reconciles a persisted uncertain handoff without resending anything',async()=>{
+ const s=await plannedHandoff();try{
+  await s.handoffs.claim(record,s.row);
+  const pending=await s.handoffs.finish(record,s.row,'uncertain','HANDOFF_TITLE_UNVERIFIED');
+  s.remote.deal.CATEGORY_ID='1';s.remote.deal.STAGE_ID='C1:LATER';
+  s.remote.deal.TITLE=' '+s.plan.desiredTitle+'\u00a0';
+  s.remote.history=[{OWNER_ID:record.external_id,CATEGORY_ID:13,STAGE_ID:'C13:WON',CREATED_TIME:new Date().toISOString()}];
+  const result=await service.reconcileHandoffOutcome({handoffs:new HandoffRepository(s.db),stages:s.deps.stages},record,pending);
+  assert.equal(result.state,'verified');assert.equal(result.outcome_code,'STAGE_AND_TITLE_READBACK_VERIFIED');
+  for(const key of ['payload_json','payload_hash','actor_id','authentication','created_at'])assert.equal(result[key],pending[key]);
+  assert.equal(s.remote.writes.length,0);assert.equal(s.counts.uploads,0);
+  assert.equal((await service.reconcileHandoffOutcome(s.deps,record,result)).state,'verified');
+  assert.equal(s.remote.writes.length,0);
+ }finally{s.sql.close();}
+});
+
+test('title reconciliation rejects changed characters, identity, source or missing stage proof',async()=>{
+ for(const alter of [s=>s.remote.deal.TITLE='ВП OTHER NAME',s=>s.remote.deal.TITLE=s.plan.desiredTitle.toLowerCase(),s=>s.remote.deal.UF_CRM_1773669702495='OTHER NAME',s=>s.remote.deal.UF_CRM_1773655613972='201',s=>s.remote.deal.UF_CRM_AI_IIN='000000000028',s=>s.remote.history=[]]){
+  const s=await plannedHandoff();try{
+   await s.handoffs.claim(record,s.row);const pending=await s.handoffs.get(record.id,s.row.request_id);
+   s.remote.deal.CATEGORY_ID='1';s.remote.deal.STAGE_ID='C1:LATER';s.remote.deal.TITLE=' '+s.plan.desiredTitle;
+   s.remote.history=[{OWNER_ID:record.external_id,CATEGORY_ID:13,STAGE_ID:'C13:WON',CREATED_TIME:new Date().toISOString()}];alter(s);
+   assert.equal((await service.reconcileHandoffOutcome(s.deps,record,pending)).state,'uncertain');
+   assert.equal(s.remote.writes.length,0);assert.equal(s.counts.uploads,0);
+  }finally{s.sql.close();}
+ }
+ const s=await plannedHandoff();try{await assert.rejects(service.reconcileHandoffOutcome(s.deps,record,s.row),/HANDOFF_NOT_STARTED/);assert.equal(s.remote.writes.length,0);}finally{s.sql.close();}
 });

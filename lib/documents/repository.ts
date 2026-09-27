@@ -58,10 +58,21 @@ export class EvidenceRepository {
   if(bytes.byteLength!==document.byte_size||await sha256(bytes)!==document.original_sha256)throw new RepositoryError('ORIGINAL_INTEGRITY_FAILED',503);
   return new ReadableStream<Uint8Array>({start(controller){controller.enqueue(bytes);controller.close();}});
  }
- async cached(caseId:string,originalHash:string,version:string){
+ async cached(caseId:string,originalHash:string,version:string):Promise<{document:DocumentRow;extraction:ExtractionRow;result:unknown}|null>{
   const document=await this.db.prepare('SELECT * FROM assessment_documents WHERE case_id=? AND original_sha256=?').bind(caseId,originalHash).first<DocumentRow>();if(!document)return null;
   let extraction=await this.db.prepare('SELECT * FROM assessment_extractions WHERE document_id=? AND version=?').bind(document.id,version).first<ExtractionRow>();
   if(extraction)return {document,extraction,result:await this.readResult(extraction)};
+  // v22 only adds Latin AO/TOO lenders to short GKB rows. Reuse the v21
+  // compatibility rules and immutable evidence IDs for unaffected originals.
+  // Do not transplant reviews onto new extraction IDs or weaken live checks.
+  if(version.endsWith(':rules-native-22')){
+   const previous=await this.cached(caseId,originalHash,version.replace(/:rules-native-22$/,':rules-native-21'));
+   if(!previous)return null;
+   const result=previous.result as {extraction?:{kind?:string};read?:{pages?:Array<{text:string;layoutText?:string}>}};
+   if(!result.extraction?.kind)return null;
+   if(result.extraction.kind==='gkb_short'&&(!result.read?.pages?.length||result.read.pages.some(page=>/(?:^|\s)(?:AO|TOO)\s/u.test((page.text||'')+'\n'+(page.layoutText||'')))))return null;
+   return previous;
+  }
   // Preserve compatible evidence and its review identity through the bilingual
   // reader updates. Only affected, unreviewed originals need another analysis.
   if(!/:rules-native-(?:19|20|21)$/.test(version))return null;
