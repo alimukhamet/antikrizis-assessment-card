@@ -42,6 +42,11 @@ function isAssessmentIntakeMachineRequest(request: Request, url: URL): boolean {
   return manifest || original;
 }
 
+/** Platform CRM profile feed: bearer-token checked in the route; GET of one exact deal only. */
+function isProfileFeedMachineRequest(request: Request, url: URL): boolean {
+  return request.method === 'GET' && /^\/api\/profile-feed\/[1-9]\d{0,11}$/.test(url.pathname);
+}
+
 // Image security config. SVG sources with .svg extension auto-skip the
 // optimization endpoint on the client side (served directly, no proxy).
 // To route SVGs through the optimizer (with security headers), set
@@ -54,7 +59,7 @@ const worker = {
     // These two exact paths perform their own dedicated HMAC, timestamp,
     // replay and origin checks in the route handlers. Keep the exception
     // narrow so every other API endpoint remains staff-session protected.
-    if (isAssessmentIntakeMachineRequest(request, url)) {
+    if (isAssessmentIntakeMachineRequest(request, url) || isProfileFeedMachineRequest(request, url)) {
       const response = await handler.fetch(request, env, ctx);
       const secured = new Response(response.body, response);
       secured.headers.set('cache-control', 'no-store');
