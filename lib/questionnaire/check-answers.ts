@@ -38,6 +38,8 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   if(['partnerIncome','partnerAssets','partnerBusiness','partnerKaspi'].includes(c))return married;
   if(c==='childrenUnder18Field')return !checked('unknown:childrenTotal')&&Number(value('childrenTotal'))>0;
   if(c==='socialOtherField')return checked('choice:socialStatus:Другое');
+  if(c==='partnerSocialStatus'||c==='partnerSocialStatusField')return married;
+  if(c==='partnerSocialOtherField')return married&&checked('choice:partnerSocialStatus:Другое');
   if(c==='enforcementRecords')return value('enforcementStatus')==='yes';
   if(c==='lawyerNotesDetails')return value('lawyerNotesStatus')==='yes';
   if(c==='debtPurposeOtherField')return checked('choice:debtPurpose:Другое');
@@ -109,13 +111,18 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   });
  }
  const choices=[{prefix:'choice:socialStatus:',kinds:null as string[]|null,none:'Нет',key:'choice:socialStatus:',label:'Социальный статус'}];
+ if(profile&&married)choices.push({prefix:'choice:partnerSocialStatus:',kinds:null,none:'Нет',key:'choice:partnerSocialStatus:',label:'Социальный статус супруга(и)'});
  for(const owner of ['client',...(married?['partner']:[])]){
   choices.push({prefix:`holding:${owner}:`,kinds:['real','land','car','other','none','unknown'],none:'none',key:`holding:${owner}:`,label:owner==='client'?'Имущество клиента':'Имущество супруга(и)'});
   choices.push({prefix:`holding:${owner}:`,kinds:['ip','too','kh','businessNone'],none:'businessNone',key:`holding:${owner}:business`,label:owner==='client'?'Бизнес и регистрация клиента':'Бизнес и регистрация супруга(и)'});
  }
  for(const choice of choices){
   const selected=payload.answers.filter(a=>a.key.startsWith(choice.prefix)&&a.checked).map(a=>a.key.slice(choice.prefix.length)).filter(k=>!choice.kinds||choice.kinds.includes(k));
-  if(!selected.length||selected.includes('unknown'))issue(choice.key,'CHOICE_REQUIRED','Выберите ответ: '+choice.label);
+  if(!selected.length)issue(choice.key,'CHOICE_REQUIRED','Выберите ответ: '+choice.label);
+  if(selected.includes('unknown')){
+   if(selected.length===1&&profile&&choice.prefix==='choice:partnerSocialStatus:')unresolved.push({key:choice.prefix+'unknown',label:choice.label,value:'Неизвестно — уточнить'});
+   else if(selected.length===1)issue(choice.key,'CHOICE_REQUIRED','Выберите ответ: '+choice.label);
+  }
   if(selected.length>1&&selected.some(v=>[choice.none,'unknown'].includes(v)))issue(choice.key,'CONFLICTING_CHOICES','Несовместимые ответы: '+choice.label);
  }
  if(!trustedIin)issue('iin','DEAL_IDENTITY_UNVERIFIED','Сначала подтвердите клиента сделки');
