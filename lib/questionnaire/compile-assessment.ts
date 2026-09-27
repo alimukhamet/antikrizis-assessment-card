@@ -13,6 +13,7 @@ export function displayAnswer(answer:DisplayAnswer){
  if(['n8004Kind','n8019Kind','clientLandOwnership','partnerLandOwnership'].includes(answer.key))return ({sole:'Единоличная собственность',joint:'Совместная собственность',share:'Долевая собственность'} as Record<string,string>)[answer.value]||answer.value;
  if(answer.key.startsWith('holding:'))return holdings[answer.value]||answer.value;
  if(answer.key==='procedure')return procedures[answer.value]||answer.value;
+ if(answer.key==='registrationChangePosition')return ({agrees:'Согласен(на)',refuses:'Отказывается',undecided:'Не определился(лась)'} as Record<string,string>)[answer.value]||answer.value;
  if(answer.key==='grafType')return PAYMENT_TYPES[answer.value as keyof typeof PAYMENT_TYPES]||answer.value;
  if(answer.value==='unknown')return 'Неизвестно — уточнить';
  if(answer.key==='c8037')return answer.value==='1'?'Да':answer.value==='0'?'Нет':answer.value;

@@ -18,13 +18,14 @@ const {checkAnswers,SALES_ONLY_KEYS}=load('lib/questionnaire/check-answers.ts',{
 const {validateDraft}=load('lib/questionnaire/draft.ts',{'./schema.json':schema,'./draft-recovery':load('lib/questionnaire/draft-recovery.ts'),'../documents/repository':repository});
 const compileAssessmentModule=load('lib/questionnaire/compile-assessment.ts',{'./draft':{validateDraft},'./check-answers':{checkAnswers},'../documents/repository':repository,'../../public/payment-schedule.mjs':schedule,'../../public/loan-participants.mjs':participants});
 const {compileProfile,PROFILE_SCHEMA}=load('lib/questionnaire/compile-profile.ts',{'./draft':{validateDraft},'./check-answers':{checkAnswers,SALES_ONLY_KEYS},'./compile-assessment':compileAssessmentModule,'../documents/repository':repository});
+const {compileAssessment}=compileAssessmentModule;
 const fields=load('lib/crm/profile-fields.ts');
 const {createProfileAdapter}=load('lib/crm/profile-write.ts',{'./profile-fields':fields});
 const {sortProfileQueue}=load('lib/crm/profile-queue.ts',{'./profile-fields':fields});
 
 const iin='000000000010';
-const salesValues={fio:'SYNTHETIC ONLY',enforcementStatus:'no',enforcementDetails:'Нет',guarantors:'Нет',iin,dognum:'TEST',marital:'Холост / не замужем',dependents:'0',childrenTotal:'0',procedure:'199','count-clientjobs':'0','count-clientunofficial':'0',clientBenefitsCount:'0',c8037:'0',hardshipReason:'Платежи вношу, трудностей нет',kaspiAnnual:'0',gamblingTransfers:'no',lawyerNotesStatus:'no',n8044:'0',summa:'500000',contractDate:'2026-09-10',months:'5',payDay:'7',grafType:'423'};
-const profileValues={regAddress:'TEST CITY, TEST STREET 1',factAddressSame:'same',clientPhone:'+7 700 000 00 00',contactChannel:'WhatsApp','count-profilefamily':'1'};
+const salesValues={fio:'SYNTHETIC ONLY',enforcementStatus:'no',enforcementDetails:'Нет',guarantors:'Нет',iin,dognum:'TEST',marital:'Холост / не замужем',regAddress:'TEST CITY, TEST STREET 1',factAddressSame:'same',recommendedDistrict:'Алматы',recommendedCourt:'Рекомендация продаж',clientRequestedDistrict:'Алматы',clientRequestedCourt:'Алматинский суд',registrationChangePosition:'undecided',dependents:'0',childrenTotal:'0',procedure:'199','count-clientjobs':'0','count-clientunofficial':'0',clientBenefitsCount:'0',c8037:'0',hardshipReason:'Платежи вношу, трудностей нет',kaspiAnnual:'0',gamblingTransfers:'no',lawyerNotesStatus:'no',n8044:'0',summa:'500000',contractDate:'2026-09-10',months:'5',payDay:'7',grafType:'423'};
+const profileValues={regAddress:'TEST CITY, TEST STREET 1',factAddressSame:'same',clientPhone:'+7 700 000 00 00',contactChannel:'WhatsApp',filingDestination:'Алматинский районный суд','count-profilefamily':'1'};
 const credit={n8038:'TEST BANK',loanContractId:'TEST-001',n8038Start:'2025-01',n8039:'Потребительский кредит',loanStatus:'Платится по графику',n8040:'100.25',n8041:'20.00',n8042:'0',n8043:'Жильё',loanParticipants:'Нет'};
 const member={familyName:'SYNTHETIC CHILD',familyRelation:'Сын',familyBirthDate:'01.02.2015',familyDependent:'Да, полностью',familyStudy:''};
 function fixture({profile=false}={}){
@@ -40,19 +41,23 @@ const cell=(p,group,key)=>p.groups.find(g=>g.id===group).rows[0].find(a=>a.key==
 const has=(result,key,code)=>result.issues.some(i=>i.key===key&&(!code||i.code===code));
 const author={name:'Synthetic Worker',at:'2026-09-25T10:00:00.000Z'};
 
-test('sales flow is unchanged: profile questions are inactive and employer names optional',()=>{
+test('sales flow asks for registration and factual residence while profile-only questions stay inactive',()=>{
  const result=checkAnswers(validateDraft(fixture()),iin);
  assert.equal(result.answersComplete,true,JSON.stringify(result.issues));
  assert.ok(result.schedule);
- for(const key of ['regAddress','clientPhone','count-profilefamily','n8001Employer'])assert.ok(!has(result,key),key);
+ assert.ok(!result.displayAnswers.some(answer=>answer.key==='filingDestination'));
+ assert.doesNotMatch(compileAssessment(fixture(),iin).lawyerCard,/Куда направляем дело/);
+ for(const key of ['regAddress','factAddressSame','recommendedDistrict','registrationChangePosition'])assert.ok(!has(result,key),key);
+ for(const key of ['postAddress','clientPhone','count-profilefamily','n8001Employer'])assert.ok(!has(result,key),key);
 });
 
-test('profile mode skips contract answers and asks for addresses, phone and family',()=>{
+test('profile mode skips contract answers and keeps sales address facts while asking for delivery, phone and family',()=>{
  const p=fixture();for(const key of SALES_ONLY_KEYS)set(p,key,'');
  const result=checkAnswers(validateDraft(p),iin,'2026-09-25',{profile:true});
  assert.equal(result.schedule,null);
  for(const key of SALES_ONLY_KEYS)assert.ok(!has(result,key),key);
- for(const key of ['regAddress','factAddressSame','clientPhone','contactChannel','count-profilefamily'])assert.ok(has(result,key,'ANSWER_REQUIRED'),key);
+ for(const key of ['regAddress','factAddressSame','recommendedDistrict','registrationChangePosition'])assert.ok(!has(result,key),key);
+ for(const key of ['clientPhone','contactChannel','count-profilefamily'])assert.ok(has(result,key,'ANSWER_REQUIRED'),key);
 });
 
 test('profile mode: complete answers pass, «Не знаю» becomes an open question, fact address is conditional',()=>{
@@ -70,6 +75,19 @@ test('profile mode: complete answers pass, «Не знаю» becomes an open que
  assert.ok(!checkAnswers(validateDraft({...fixture(),answers:fixture().answers.map(a=>a.key==='hardshipReason'?{...a,value:'Не знаю'}:a)}),iin).answersComplete);
 });
 
+test('married profile keeps spouse social status explicit, including unknown',()=>{
+ const p=fixture({profile:true});set(p,'marital','В браке');
+ for(const [key,value] of [['count-partnerjobs','0'],['count-partnerunofficial','0'],['partnerBenefitsCount','0'],['partnerKaspiAnnual','0']])set(p,key,value);
+ set(p,'holding:partner:none','none',true);set(p,'holding:partner:businessNone','businessNone',true);
+ set(p,'choice:partnerSocialStatus:unknown','unknown',true);
+ const result=checkAnswers(validateDraft(p),iin,'2026-09-25',{profile:true});
+ assert.equal(result.answersComplete,true,JSON.stringify(result.issues));
+ assert.ok(result.unresolved.some(answer=>answer.key==='choice:partnerSocialStatus:unknown'));
+ const known=structuredClone(p);set(known,'choice:partnerSocialStatus:unknown','unknown',false);set(known,'choice:partnerSocialStatus:Пенсионер','Пенсионер',true);
+ const knownResult=checkAnswers(validateDraft(known),iin,'2026-09-25',{profile:true});
+ assert.equal(knownResult.answersComplete,true,JSON.stringify(knownResult.issues));
+});
+
 test('profile mode validates birth dates and requires employer names for listed jobs',()=>{
  const p=fixture({profile:true});
  for(const bad of ['2015-02-01','31.02.2015','01.01.2099']){cell(p,'profilefamily','familyBirthDate').value=bad;assert.ok(has(checkAnswers(validateDraft(p),iin,'2026-09-25',{profile:true}),'familyBirthDate','INVALID_DATE'),bad);}
@@ -85,9 +103,10 @@ test('compiled profile carries no contract data, lists open questions and keeps 
  const p=fixture({profile:true});set(p,'clientPhone','Не знаю');
  const compiled=compileProfile(p,iin,'11665',author,'2026-09-25');
  assert.match(compiled.card,/^ПРОФИЛЬ КЛИЕНТА/);assert.match(compiled.card,/ТРЕБУЕТ УТОЧНЕНИЯ/);assert.match(compiled.card,/SYNTHETIC CHILD/);
- assert.doesNotMatch(compiled.card,/• Номер договора:|Сумма контракта|Всего платежей/);assert.match(compiled.card,/Где клиент живёт фактически\?: По адресу прописки/);
+ assert.doesNotMatch(compiled.card,/• Номер договора:|Сумма контракта|Всего платежей/);assert.match(compiled.card,/Где клиент живёт фактически\?: По адресу регистрации/);assert.match(compiled.card,/Рекомендованный район \/ территория суда: Алматы/);assert.match(compiled.card,/Куда направляем дело: Алматинский районный суд/);assert.match(compiled.card,/Позиция клиента по смене регистрации: Не определился\(лась\)/);
  const data=JSON.parse(compiled.values.profileJson);
  assert.equal(data.schema,PROFILE_SCHEMA);assert.equal(data.iin,iin);assert.equal(data.totalDebt,'100.25');assert.equal(data.debtComplete,true);
+ assert.ok(data.answers.some(answer=>answer.key==='filingDestination'&&answer.value==='Алматинский районный суд'));
  assert.ok(!data.answers.some(a=>SALES_ONLY_KEYS.has(a.key)));
  assert.deepEqual(Object.keys(compiled.values).sort(),['debt','fio','marital','profileAt','profileCard','profileJson']);
  const unknownDebt=fixture({profile:true});unknownDebt.groups.find(g=>g.id==='creditors').rows[0].find(a=>a.key==='n8040').value='';

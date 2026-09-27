@@ -24,7 +24,7 @@ export type ProfileJson = {
 };
 
 const clean = (label: string) => label.replace(/\*/g, '').trim();
-const FACT_ADDRESS: Record<string, string> = { same: 'По адресу прописки', other: 'По другому адресу' };
+const FACT_ADDRESS: Record<string, string> = { same: 'По адресу регистрации', other: 'По другому адресу' };
 const show = (a: DisplayAnswer) => a.key === 'factAddressSame' ? FACT_ADDRESS[a.value] || displayAnswer(a) : displayAnswer(a);
 
 /** Sum only amounts that are known. Unknown amounts are listed separately, never guessed. */

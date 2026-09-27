@@ -189,11 +189,9 @@
     {
       "key": "regAddress",
       "type": "text",
-      "label": "Адрес прописки*",
+      "label": "Адрес регистрации*",
       "required": true,
-      "conditions": [
-        "profileOnly"
-      ]
+      "conditions": []
     },
     {
       "key": "factAddressSame",
@@ -206,19 +204,57 @@
         "unknown"
       ],
       "required": true,
-      "conditions": [
-        "profileOnly"
-      ]
+      "conditions": []
     },
     {
       "key": "factAddress",
       "type": "text",
-      "label": "Фактический адрес*",
+      "label": "Фактический адрес проживания*",
       "required": true,
       "conditions": [
-        "factAddressField",
-        "profileOnly"
+        "factAddressField"
       ]
+    },
+    {
+      "key": "recommendedDistrict",
+      "type": "text",
+      "label": "Рекомендованный район / территория суда",
+      "required": false,
+      "conditions": []
+    },
+    {
+      "key": "recommendedCourt",
+      "type": "text",
+      "label": "Рекомендованный суд",
+      "required": false,
+      "conditions": []
+    },
+    {
+      "key": "clientRequestedDistrict",
+      "type": "text",
+      "label": "Пожелание клиента: район / территория суда",
+      "required": false,
+      "conditions": []
+    },
+    {
+      "key": "clientRequestedCourt",
+      "type": "text",
+      "label": "Пожелание клиента: суд",
+      "required": false,
+      "conditions": []
+    },
+    {
+      "key": "registrationChangePosition",
+      "type": "select-one",
+      "label": "Позиция клиента по смене регистрации",
+      "options": [
+        "",
+        "agrees",
+        "refuses",
+        "undecided"
+      ],
+      "required": false,
+      "conditions": []
     },
     {
       "key": "postAddress",
@@ -252,6 +288,115 @@
       ],
       "required": true,
       "conditions": [
+        "profileOnly"
+      ]
+    },
+    {
+      "key": "filingDestination",
+      "type": "text",
+      "label": "Куда направляем дело",
+      "required": false,
+      "conditions": [
+        "profileOnly"
+      ]
+    },
+    {
+      "key": "choice:partnerSocialStatus:Нет",
+      "type": "checkbox",
+      "label": "Социальный статус супруга(и) — отметьте подходящее*",
+      "required": false,
+      "conditions": [
+        "partnerSocialStatusField",
+        "profileOnly"
+      ]
+    },
+    {
+      "key": "choice:partnerSocialStatus:Пенсионер",
+      "type": "checkbox",
+      "label": "Социальный статус супруга(и) — отметьте подходящее*",
+      "required": false,
+      "conditions": [
+        "partnerSocialStatusField",
+        "profileOnly"
+      ]
+    },
+    {
+      "key": "choice:partnerSocialStatus:Инвалид 1 группы",
+      "type": "checkbox",
+      "label": "Социальный статус супруга(и) — отметьте подходящее*",
+      "required": false,
+      "conditions": [
+        "partnerSocialStatusField",
+        "profileOnly"
+      ]
+    },
+    {
+      "key": "choice:partnerSocialStatus:Инвалид 2 группы",
+      "type": "checkbox",
+      "label": "Социальный статус супруга(и) — отметьте подходящее*",
+      "required": false,
+      "conditions": [
+        "partnerSocialStatusField",
+        "profileOnly"
+      ]
+    },
+    {
+      "key": "choice:partnerSocialStatus:Инвалид 3 группы",
+      "type": "checkbox",
+      "label": "Социальный статус супруга(и) — отметьте подходящее*",
+      "required": false,
+      "conditions": [
+        "partnerSocialStatusField",
+        "profileOnly"
+      ]
+    },
+    {
+      "key": "choice:partnerSocialStatus:Многодетный(ая)",
+      "type": "checkbox",
+      "label": "Социальный статус супруга(и) — отметьте подходящее*",
+      "required": false,
+      "conditions": [
+        "partnerSocialStatusField",
+        "profileOnly"
+      ]
+    },
+    {
+      "key": "choice:partnerSocialStatus:Получает соц. выплаты",
+      "type": "checkbox",
+      "label": "Социальный статус супруга(и) — отметьте подходящее*",
+      "required": false,
+      "conditions": [
+        "partnerSocialStatusField",
+        "profileOnly"
+      ]
+    },
+    {
+      "key": "choice:partnerSocialStatus:Другое",
+      "type": "checkbox",
+      "label": "Социальный статус супруга(и) — отметьте подходящее*",
+      "required": false,
+      "conditions": [
+        "partnerSocialStatusField",
+        "profileOnly"
+      ]
+    },
+    {
+      "key": "choice:partnerSocialStatus:unknown",
+      "type": "checkbox",
+      "label": "Социальный статус супруга(и) — отметьте подходящее*",
+      "required": false,
+      "conditions": [
+        "partnerSocialStatusField",
+        "profileOnly"
+      ]
+    },
+    {
+      "key": "partnerSocialOther",
+      "type": "text",
+      "label": "Какое другое обстоятельство важно для супруга(и)?*",
+      "required": true,
+      "conditions": [
+        "partnerSocialOtherField",
         "profileOnly"
       ]
     },
