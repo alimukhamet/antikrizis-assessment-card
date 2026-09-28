@@ -6,6 +6,12 @@ const record={id:'case',client_iin:'test-client',identity_revision:2};
 const analysis={read:{totalPages:2,pages:[{needsOcr:true},{needsOcr:true}]},extraction:{kind:'unknown',identity:{iin:null}}};
 const input=()=>({type:'Удостоверение личности',iin:'test-client',pages:2,complete:true,contentMatches:true,periodChecked:true,reason:'Synthetic inspection of all pages',issuedAt:'2020-01-01',expiresAt:'2030-01-01',from:'',to:''});
 const check=v=>review.validateDocumentReview(v,analysis,record,'2026-09-10');
+test('property-rights inspection cannot substitute for an F6 certificate',()=>{
+ const rights={...analysis,extraction:{kind:'encumbrance',identity:{iin:'test-client'},issuedAt:'2026-08-01'}};
+ const v={...input(),type:'Сведения об обременениях',issuedAt:'2026-08-01',expiresAt:''};
+ assert.equal(review.validateDocumentReview(v,rights,record,'2026-09-10').type,v.type);
+ assert.throws(()=>review.validateDocumentReview({...v,type:'Ф6 об отсутствии имущества'},rights,record,'2026-09-10'),/DOCUMENT_TYPE_CONFLICT/);
+});
 test('all-history review uses the original label and date, never a caller-supplied all-history claim',()=>{
  const original={read:{totalPages:1,pages:[{text:'Период: Барлық кезең / Весь период'}]},extraction:{kind:'enpf',identity:{iin:'test-client'},issuedAt:'2026-09-10',coverage:{from:null,to:null}}};
  const v={...input(),type:'Справка ЕНПФ',pages:1,issuedAt:'2026-09-10',expiresAt:'',from:'',to:'2026-09-10'};

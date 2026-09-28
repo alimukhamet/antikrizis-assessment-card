@@ -5,7 +5,7 @@ import {analysisVersion} from './analysis-version';
 import {checkPowerRepresentative} from './power-validation';
 import {statementPeriod,salaryStatementPeriod,enpfPeriod,enpfAllHistory,type Representative} from './policy';
 export const DOCUMENT_REVIEW_KEY='document.manual-check.v1';
-export const MANUAL_DOCUMENT_TYPES:Record<string,string>={'Удостоверение личности':'identity','Ф6 об отсутствии имущества':'property','Справка ЕНПФ':'enpf','Справка по выплатам пенсии и пособий':'benefits','Выписка Kaspi Gold':'kaspi','Выписка зарплатного банка':'salary','Доверенность':'power_of_attorney'};
+export const MANUAL_DOCUMENT_TYPES:Record<string,string>={'Удостоверение личности':'identity','Ф6 об отсутствии имущества':'property','Сведения об обременениях':'encumbrance','Справка ЕНПФ':'enpf','Справка по выплатам пенсии и пособий':'benefits','Выписка Kaspi Gold':'kaspi','Выписка зарплатного банка':'salary','Доверенность':'power_of_attorney'};
 type ManualCheck={version:1;type:string;iin:string;pages:number;complete:true;contentMatches:true;periodChecked:true;reason:string;issuedAt:string;expiresAt:string;from:string;to:string;representative:Representative|null;authorityChecked:boolean};
 function day(value:string){const d=new Date(value+'T00:00:00Z');return /^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(d.getTime())&&d.toISOString().slice(0,10)===value;}
 /** Human inspection is recorded separately from extraction and never proves authenticity. */

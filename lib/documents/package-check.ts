@@ -10,7 +10,7 @@ import type {ApprovedAnswerEvidence} from '../questionnaire/review-bindings';
 import {creditorKey,loanRowKey} from './loan-identity';
 // Contract preparation and lawyer handoff have independent document requirements.
 export const REQUIRED_DOCUMENTS=['ГКБ — краткий отчёт','ГКБ — полный отчёт','Справка ЕНПФ','Ф6 об отсутствии имущества','Удостоверение личности','Выписка Kaspi Gold'];
-const kinds:Record<string,string>={'ГКБ — краткий отчёт':'gkb_short','ГКБ — полный отчёт':'gkb_full','Справка ЕНПФ':'enpf','Ф6 об отсутствии имущества':'property','Удостоверение личности':'identity','Доверенность':'power_of_attorney','Выписка Kaspi Gold':'kaspi','Справка по выплатам пенсии и пособий':'benefits','Выписка зарплатного банка':'salary'};
+const kinds:Record<string,string>={'ГКБ — краткий отчёт':'gkb_short','ГКБ — полный отчёт':'gkb_full','Справка ЕНПФ':'enpf','Ф6 об отсутствии имущества':'property','Сведения об обременениях':'encumbrance','Удостоверение личности':'identity','Доверенность':'power_of_attorney','Выписка Kaspi Gold':'kaspi','Справка по выплатам пенсии и пособий':'benefits','Выписка зарплатного банка':'salary'};
 export type PackageIssue={code:string;documentId?:string;type?:string;message:string};
 /** No OCR/AI is started here; absent/current-version cache requires explicit processing. */
 export async function checkDocumentPackage(repository:EvidenceRepository,record:CaseRow,payload:DraftPayload,day:string,scope:'contract'|'handoff'='contract'){

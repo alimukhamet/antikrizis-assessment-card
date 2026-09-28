@@ -22,6 +22,19 @@ function setup(){
  return{repo:new EvidenceRepository(db,files),sqlite,objects,db,files};
 }
 const client=(id='11665',iin='test-identity-one')=>({external:{system:'bitrix',dealId:id},iin,title:'SYNTHETIC ONLY'});
+test('v23 refreshes newly supported native layouts but preserves unrelated evidence and approvals',async()=>{
+ const {repo,sqlite}=setup(),c=await repo.syncCase(client());
+ const pension='Сведения об остатках и о движении денег на счете\nУсловный пенсионный счет\nВыписка с индивидуального пенсионного счета';
+ const rights='о зарегистрированных правах (обременениях)\nна недвижимое имущество и его технических характеристиках';
+ for(const [index,kind,text,compatible] of [[91,'unknown',pension,false],[92,'kaspi',pension,false],[93,'unknown',rights,false],[94,'gkb_full','Полный отчет',true],[95,'enpf','Старая поддерживаемая форма ЕНПФ',true],[96,'property','Ф6',true],[97,'unknown','Несвязанный документ',true]]){
+  const old=await repo.store(c.id,new Uint8Array([index]),'synthetic.pdf',actor,'pdf-test:rules-native-22',{read:{pages:[{text}]},extraction:{kind}});
+  const review=await repo.appendReview({caseId:c.id,documentId:old.document.id,extractionId:old.extraction.id,identityRevision:1,requestId:'v23-'+index,factKey:'synthetic',value:'saved fact',disposition:'confirmed',reason:''},actor);
+  const cached=await repo.cached(c.id,old.document.original_sha256,'pdf-test:rules-native-23');assert.equal(Boolean(cached),compatible);
+  if(compatible){assert.equal(cached.extraction.id,old.extraction.id);assert.equal((await repo.currentReviews(c.id,old.document.id,cached.extraction.id,1))[0].id,review.id);}
+  assert.ok(await repo.extraction(c.id,old.document.id,old.extraction.id));assert.equal(await repo.cached(c.id,old.document.original_sha256,'different-reader:rules-native-23'),null);
+ }
+ assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_reviews').get().n,7);assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_extractions').get().n,7);
+});
 test('identity changes increment revision; title refresh does not',async()=>{const {repo}=setup();const a=await repo.syncCase(client());const b=await repo.syncCase({...client(),title:'Changed test title'});assert.equal(a.id,b.id);assert.equal(b.identity_revision,1);const c=await repo.syncCase(client('11665','different-test-identity'));assert.equal(c.identity_revision,2)});
 test('same bytes/version reuse one document and extraction; another case remains isolated',async()=>{const {repo,sqlite}=setup();const c=await repo.syncCase(client()),bytes=new Uint8Array([1,2,3]);const a=await repo.store(c.id,bytes,'one.pdf',actor,'v1',{facts:[1]});const b=await repo.store(c.id,bytes,'renamed.pdf',actor,'v1',{facts:[1]});assert.equal(a.document.id,b.document.id);assert.equal(a.extraction.id,b.extraction.id);const d=await repo.syncCase(client('11666'));assert.equal(await repo.cached(d.id,a.document.original_sha256,'v1'),null);assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_documents').get().n,1);assert.deepEqual(await repo.original(a.document),bytes);});
 test('new extraction version preserves previous evidence and reviews',async()=>{const {repo}=setup();const c=await repo.syncCase(client()),bytes=new Uint8Array([1,2]);const a=await repo.store(c.id,bytes,'x.pdf',actor,'v1',{facts:['old']});const b=await repo.store(c.id,bytes,'x.pdf',actor,'v2',{facts:['new']});assert.notEqual(a.extraction.id,b.extraction.id);assert.equal((await repo.cached(c.id,a.document.original_sha256,'v1')).result.facts[0],'old');});

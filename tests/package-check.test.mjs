@@ -1,6 +1,6 @@
 import{test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import vm from'node:vm';import ts from'typescript';
 function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>imports[n],Date,Map,Set});return exports;}
-const policy=load('lib/documents/policy.ts'),{checkDocumentPackage,REQUIRED_DOCUMENTS}=load('lib/documents/package-check.ts',{'./loan-identity':load('lib/documents/loan-identity.ts'),'./analysis-service':{analysisVersion:'current'},'./policy':policy,'./credit-report-match':load('lib/documents/credit-report-match.ts',{'./policy':policy,'./loan-identity':load('lib/documents/loan-identity.ts')}),'./document-review':{MANUAL_DOCUMENT_TYPES:{'Удостоверение личности':'identity'},currentDocumentReview:async(repository,...args)=>repository.review?.(...args)||null}});
+const policy=load('lib/documents/policy.ts'),{checkDocumentPackage,REQUIRED_DOCUMENTS}=load('lib/documents/package-check.ts',{'./loan-identity':load('lib/documents/loan-identity.ts'),'./analysis-service':{analysisVersion:'current'},'./policy':policy,'./credit-report-match':load('lib/documents/credit-report-match.ts',{'./policy':policy,'./loan-identity':load('lib/documents/loan-identity.ts')}),'./document-review':{MANUAL_DOCUMENT_TYPES:{'Удостоверение личности':'identity','Сведения об обременениях':'encumbrance'},currentDocumentReview:async(repository,...args)=>repository.review?.(...args)||null}});
 function fixture(){
  const sources=new Map();let reads=0;
  const payload={documents:[],pendingFiles:[],docContext:{social:'0',salary:'0'}};
@@ -33,6 +33,13 @@ test('saved document reads run in bounded parallel groups and keep deterministic
  assert.deepEqual(Array.from(result.issues.filter(i=>i.documentId),i=>i.documentId),['0','1','2','3','4','5','6','7']);
 });
 test('recognized non-GKB is not claimed fully validated while its rules are unfinished',async()=>{const s=fixture();s.add('id','Удостоверение личности','identity');const r=await s.run();assert.ok(r.issues.some(i=>i.code==='DOCUMENT_RULES_PENDING'));assert.equal(r.structurallyChecked.length,0);assert.equal(r.authenticity,'not_verified');});
+test('property-rights inspection remains supplementary and cannot satisfy the separate F6 requirement',async()=>{
+ const s=fixture();s.add('rights','Сведения об обременениях','encumbrance');
+ let r=await s.run();assert.ok(r.issues.some(i=>i.code==='DOCUMENT_RULES_PENDING'));assert.equal(r.issues.some(i=>i.code==='DOCUMENT_TYPE_UNVERIFIED'),false);
+ s.repository.review=async()=>({id:'rights-review',actorId:'worker:test',reviewedAt:'2026-09-10',value:{type:'Сведения об обременениях'}});
+ r=await s.run();assert.ok(r.structurallyChecked.includes('Сведения об обременениях'));assert.ok(r.missing.includes('Ф6 об отсутствии имущества'));assert.equal(r.packageReady,false);
+ s.payload.documents[0].type='Ф6 об отсутствии имущества';r=await s.run();assert.ok(r.issues.some(i=>i.code==='DOCUMENT_TYPE_UNVERIFIED'));assert.equal(r.structurallyChecked.includes('Ф6 об отсутствии имущества'),false);
+});
 test('recognized ENPF asks for period inspection without a false document-type warning',async()=>{const s=fixture();s.add('enpf','Справка ЕНПФ','enpf');const r=await s.run();assert.ok(r.issues.some(i=>i.code==='ENPF_PERIOD_UNVERIFIED'));assert.equal(r.issues.some(i=>i.code==='DOCUMENT_TYPE_UNVERIFIED'),false);});
 test('saved all-history ENPF works without reprocessing; identity and unreadable-page gates remain',async()=>{
  for(const problem of [null,'identity','unreadable','unlabelled','future']){

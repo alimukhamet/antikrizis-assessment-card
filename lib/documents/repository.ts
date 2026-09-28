@@ -62,6 +62,21 @@ export class EvidenceRepository {
   const document=await this.db.prepare('SELECT * FROM assessment_documents WHERE case_id=? AND original_sha256=?').bind(caseId,originalHash).first<DocumentRow>();if(!document)return null;
   let extraction=await this.db.prepare('SELECT * FROM assessment_extractions WHERE document_id=? AND version=?').bind(document.id,version).first<ExtractionRow>();
   if(extraction)return {document,extraction,result:await this.readResult(extraction)};
+  // v23 recognizes pension-account and property-rights exports. Keep every
+  // unaffected extraction/review identity. Changed originals require explicit
+  // reprocessing; old results and approvals stay in their immutable history.
+  if(version.endsWith(':rules-native-23')){
+   const previous=await this.cached(caseId,originalHash,version.replace(/:rules-native-23$/,':rules-native-22'));
+   if(!previous)return null;
+   const result=previous.result as {extraction?:{kind?:string};read?:{pages?:Array<{text:string}>}};
+   if(!result.extraction?.kind)return null;
+   const pages=result.read?.pages??[],front=(pages[0]?.text||'').toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ');
+   const head=pages.map(p=>p.text).join('\n').slice(0,14000).toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ');
+   const pension=/сведения об остатках и о движении денег на счете/.test(front)&&/(?:условный|индивидуальный) пенсионный счет/.test(front)&&/выписка с (?:условного|индивидуального) пенсионного счета/.test(head);
+   const rights=/о зарегистрированных правах \(обременениях\)/.test(front)&&/на недвижимое имущество и его технических характеристиках/.test(front);
+   if(pension&&['unknown','kaspi','enpf'].includes(result.extraction.kind)||rights&&result.extraction.kind==='unknown')return null;
+   return previous;
+  }
   // v22 only adds Latin AO/TOO lenders to short GKB rows. Reuse the v21
   // compatibility rules and immutable evidence IDs for unaffected originals.
   // Do not transplant reviews onto new extraction IDs or weaken live checks.
