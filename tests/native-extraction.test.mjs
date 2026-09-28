@@ -2,6 +2,26 @@ import {test} from 'node:test';import assert from 'node:assert/strict';import fs
 import {httpHeaders} from './bitrix-headers-helper.mjs'; function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require(n){if(n==='./http-headers')return httpHeaders;if(n in imports)return imports[n];throw Error(n)},Date,AbortSignal,fetch,JSON});return exports;}
 const labels=JSON.parse(fs.readFileSync(new URL('../lib/documents/kz-labels.json',import.meta.url),'utf8'));const rules=load('lib/documents/extract-native.ts',{'./power-of-attorney':load('lib/documents/power-of-attorney.ts'),'./kz-labels.json':labels});const crm=load('lib/crm/bitrix.ts',{'../documents/extract-native':rules});
 const page=text=>[{page:1,text,nativeCharacters:text.length,needsOcr:false}];
+const pensionAccountPages=()=>[
+ ...page('Сведения об остатках и о движении денег на счете (-ах) по состоянию на 31.07.2026г.\nЖСН\nИИН   991231300003   ТАӘ\nФИО   СЫНАҚ ТЕСТОВ ТЕСТОВИЧ\nДата рождения 31.12.1999\nУсловный пенсионный счет для учета ОПВР\nПлательщик АО Kaspi Bank'),
+ {...page('Выписка с условного пенсионного счета (УПС) для учета обязательных пенсионных взносов\nработодателя за период с 01.08.2025г. по 30.07.2026г.\nИнвестиционный доход: 1000.00')[0],page:2},
+ {...page('Выписка с индивидуального пенсионного счета для учета обязательных пенсионных взносов\nза период с 01.08.2025г. по 30.07.2026г.')[0],page:3},
+];
+test('bilingual pension account exports read the owner and exact period without confusing payers with the issuer or inventing income',()=>{
+ const r=rules.extractNative(pensionAccountPages());assert.equal(r.kind,'enpf');assert.equal(r.identity.iin,'991231300003');assert.equal(r.identity.name,'СЫНАҚ ТЕСТОВ ТЕСТОВИЧ');assert.equal(r.issuedAt,'2026-07-31');
+ assert.deepEqual({...r.coverage},{from:'2025-08-01',to:'2026-07-30'});assert.ok(r.findings.includes('ENPF_ROWS_REVIEW_REQUIRED'));assert.equal(r.facts.some(f=>/income|salary|employment|benefits/.test(f.key)),false);
+});
+test('pension exports keep ambiguous coverage and invalid identity unresolved',()=>{
+ const pages=pensionAccountPages();pages[2].text=pages[2].text.replace('01.08.2025','01.09.2025');const r=rules.extractNative(pages);assert.deepEqual({...r.coverage},{from:null,to:null});
+ pages[0].text=pages[0].text.replace('991231300003','991231300004');assert.equal(rules.extractNative(pages).identity.iin,null);
+ assert.equal(rules.extractNative(page('Обычная банковская выписка. Условный пенсионный счет упомянут в переводе.')).kind,'unknown');
+});
+test('eGov property-rights certificates stay distinct from F6 and preserve their printed issue date',()=>{
+ const rights='Документ сформирован порталом электронного правительства\n01.08.2026 Дата получения\nна недвижимое имущество и его технических характеристиках\nСЫНАҚ ТЕСТОВ ТЕСТОВИЧ, 31.12.1999, ИИН 991231300003\nо зарегистрированных правах (обременениях)\nВыдана';
+ const r=rules.extractNative(page(rights));assert.equal(r.kind,'encumbrance');assert.equal(r.identity.iin,'991231300003');assert.equal(r.issuedAt,'2026-08-01');assert.equal(r.facts.some(f=>/property|absence|holding/.test(f.key)),false);
+ assert.equal(rules.extractNative(page('Справка об отсутствии (наличии) недвижимого имущества\nИИН 991231300003')).kind,'property');
+ assert.equal(rules.extractNative(page(rights.replace('01.08.2026 Дата получения','Дата рождения 31.12.1999'))).issuedAt,null);
+});
 const loan='Персональный кредитный отчет\nДата выдачи: 10.09.2026\nОбязательство 1\nРоль субъекта: Заёмщик\nКредитор: TEST BANK\nФаза контракта: Действующий\nНомер договора: SYNTHETIC 1\nДата начала срока действия контракта: 01.01.2025\nСумма ежемесячного платежа /валюта: 20.00 KZT\nСумма предстоящих платежей /валюта: 100.00 KZT\nСумма просроченных взносов /валюта: 5.00 KZT\nКоличество дней просрочки: 3\nСтраница 1 из 1';
 test('native rules preserve defaulted contract evidence and withhold ambiguous payment amounts',()=>{const r=rules.extractNative(page(loan));assert.equal(r.credits.length,1);assert.equal(r.credits[0].contractNumber,'SYNTHETIC 1');assert.equal(r.credits[0].facts.find(f=>f.key==='loanStatus').value,'В просрочке — требуют полную сумму');assert.equal(r.credits[0].facts.some(f=>f.key==='monthlyPayment'),false);assert.equal(r.credits[0].facts.some(f=>f.key==='debtOutstanding'),false);assert.ok(!r.findings.includes('PAGE_COMPLETENESS_UNVERIFIED'));});
 test('comparison can add explicit balance components without turning unknown penalties into zero',()=>{

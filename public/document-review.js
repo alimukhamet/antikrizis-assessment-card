@@ -41,7 +41,7 @@ window.DocumentReview={render(container,result,dealId,selection,onSaved){
   }section.append(list);
   const note=document.createElement('p');note.textContent=conflict.clientConfirmedAmount!==undefined?'Сумма для анкеты уточнена у клиента: '+conflict.clientConfirmedAmount+' ₸. Расхождение источников сохранено; это не подтверждение суммы по документам.':'Сверьте значения в исходных отчётах. Если выбран устаревший или неверный файл, уберите его из пакета и добавьте актуальный. Если актуальные отчёты противоречат друг другу, запросите уточнение у источника. Простое изменение ответа анкеты не снимает расхождение.';section.append(note);container.append(section);
  }
- const supported=['Удостоверение личности','Ф6 об отсутствии имущества','Справка ЕНПФ','Справка по выплатам пенсии и пособий','Выписка зарплатного банка','Выписка Kaspi Gold','Доверенность'];
+ const supported=['Удостоверение личности','Ф6 об отсутствии имущества','Сведения об обременениях','Справка ЕНПФ','Справка по выплатам пенсии и пособий','Выписка зарплатного банка','Выписка Kaspi Gold','Доверенность'];
  const files=typeof selectedFiles==='undefined'?[]:selectedFiles,results=typeof af==='undefined'?new Map():af.results;
  for(const item of files){const source=results.get(item.id);if(!source?.server)continue;source.documentReview=result.documents?.manuallyReviewed?.find(review=>review.documentId===source.server.documentId&&review.type===item.type)||null;}
  if(typeof afRenderResults==='function')afRenderResults();if(typeof refreshRequiredDocuments==='function')refreshRequiredDocuments();window.AssessmentWorkflow?.refresh();

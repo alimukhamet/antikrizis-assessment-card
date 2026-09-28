@@ -1,7 +1,7 @@
 import labels from './kz-labels.json';
 import type { PageText } from './read-pdf';
 import {extractPowerParties,type PowerParties} from './power-of-attorney';
-export const EXTRACTION_VERSION = 'rules-native-22';
+export const EXTRACTION_VERSION = 'rules-native-23';
 export type Fact = { key: string; value: string; page: number; source: string };
 export type Credit = { contractNumber: string; contractCode?: string; page: number; facts: Fact[]; components: Record<string, string | null>; comparisonDebt?:Fact; relatedPartiesNotice?: {page:number;source:string} };
 export type BankStatement={from:string|null;to:string|null;credits:string;topUps:string;topUpsVerified:boolean;debits:string;transactions:number;reconciled:boolean;rowsReadable:boolean;sourcePage:number;reconciliation?:string;gambling?:{total:string;matches:Array<{date:string;amount:string;description:string;page:number}>}};
@@ -72,12 +72,20 @@ export function extractNative(pages: PageText[]): NativeExtraction {
   // Identify the issuing bank before transaction counterparties. A transfer to
   // Kaspi must not turn a Eurasian account statement into a Kaspi statement.
   const statementFront=(pages[0]?.text||'').toLowerCase().replace(/ё/g,'е');
+  const compactFront=statementFront.replace(/\s+/g,' '),compactHead=head.replace(/\s+/g,' ');
+  const pensionAccount=/сведения об остатках и о движении денег на счете/.test(compactFront)
+    && /(?:условный|индивидуальный) пенсионный счет/.test(compactFront)
+    && /выписка с (?:условного|индивидуального) пенсионного счета/.test(compactHead);
+  const propertyRights=/о зарегистрированных правах \(обременениях\)/.test(compactFront)
+    && /на недвижимое имущество и его технических характеристиках/.test(compactFront);
   const eurasian=/^\s*ао\s*[«"“]?евразийский банк[»"”]?/u.test(statementFront)&&/выписка по сч[её]ту/u.test(statementFront)&&/eubank\.kz|eurikzka/u.test(statementFront);
   const halyk=/выписка по счету/.test(head)&&/тип счета\s*:[^\n]*зарплата/.test(head)&&/народный банк казахстана|halykbank\.kz/.test(head);
   const kind = credit ? /краткая форма|қысқаша/.test(head) ? 'gkb_short' : 'gkb_full'
     : eurasian||halyk ? 'salary'
+    : pensionAccount ? 'enpf'
     : /kaspi/.test(head) && /выписка|үзінді\s+көшірме/u.test(head) ? 'kaspi'
     : /об отсутствии \(наличии\) недвижимого имущества/.test(head) ? 'property'
+    : propertyRights ? 'encumbrance'
     : /информация о пенсионных выплатах и пособиях/.test(head) ? 'benefits'
     : /выдача\s+информации\s+о\s+поступлении\s+и\s+движении\s+средств\s+вкладчика\s+единого\s+накопительного\s+пенсионного\s+фонда/.test(head) ? 'enpf'
     : /удостоверение личности|жеке куәлік/.test(head)||/МИНИСТЕРСТВО ВНУТРЕННИХ ДЕЛ РК|(?:ҚАЗАҚСТАН РЕСПУБЛИКАСЫНЫҢ|ҚР)\s+ІШКІ ІСТЕР МИНИСТРЛІГІ/iu.test(raw)&&/^[A-Z]+<<[A-Z<]+$/m.test(raw)&&/^\d{12}\s*$/m.test(raw)||identityCardWithoutIssuer(raw,pages) ? 'identity'
@@ -108,7 +116,7 @@ export function extractNative(pages: PageText[]): NativeExtraction {
       output.identity.name=value(/ТАӘ:[ \t]*([^\n]+)/u,header);
       output.issuedAt=day(value(/БЕРІЛГЕН КҮНІ МЕН УАҚЫТЫ:[ \t]*(\d{2}\.\d{2}\.\d{4})/u,header));
     }
-  } else if (['kaspi','property','benefits','identity','salary'].includes(kind)) {
+  } else if (['kaspi','property','encumbrance','benefits','identity','salary'].includes(kind)) {
     const front = raw.slice(0,8000), iin = value(/(?:ИИН|ЖСН)\s*\/?\s*(?:ИИН)?\s*:?\s*(\d{12})\b/,front);
     if (validIin(iin)) output.identity.iin = iin;
     output.identity.name = kind === 'kaspi' ? (value(/подтверждает,\s*что\s+([\s\S]+?),\s*ИИН/i,front)||value(/«Kaspi\s+Bank»\s+АҚ\s+([^,]+),\s*ЖСН/u,front))?.replace(/\s+/g,' ') || null : kind === 'property' ? value(/Выдан[ао]:\s*([^,\n]+)/i,front) : null;
@@ -131,7 +139,25 @@ export function extractNative(pages: PageText[]): NativeExtraction {
     output.issuedAt=day(value(/(\d{2}\.\d{2}\.\d{4})\s+\d{2}:\d{2}:\d{2}\s+Алу\s+күні\/Дата\s+получения:/,raw));
     const period=/(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{2}\.\d{2}\.\d{4})\s+Период:/.exec(pages[0]?.text||'');
     output.coverage={from:day(period?.[1]||null),to:day(period?.[2]||null)};
-    extractEnpfPayers(pages,output);
+    if(pensionAccount){
+      const front=pages[0]?.text||'';
+      const ids=[...new Set([...front.matchAll(/(?:ИИН|ЖСН)\s*:?\s*(\d{12})\b/g)].map(m=>m[1]).filter(validIin))];
+      output.identity={iin:ids.length===1?ids[0]:null,name:value(/(?:^|\n)\s*ФИО[ \t:]+([^\n]+)/,front)};
+      output.issuedAt=day(value(/по состоянию на\s*(\d{2}\.\d{2}\.\d{4})/i,front));
+      const periods=[...raw.matchAll(/за\s+период\s+с\s*(\d{2}\.\d{2}\.\d{4})\s*г?\.?\s*по\s*(\d{2}\.\d{2}\.\d{4})/gi)];
+      const distinct=[...new Set(periods.map(m=>JSON.stringify([day(m[1]),day(m[2])])))]
+        .map(pair=>JSON.parse(pair) as [string|null,string|null]);
+      const period=distinct.length===1?distinct[0]:null;
+      output.coverage=period?.[0]&&period[1]&&period[0]<=period[1]?{from:period[0],to:period[1]}:{from:null,to:null};
+      // Account balances and pension contributions are not salary. This layout
+      // has no supported payer-table parser; keep employment answers for review.
+      output.findings.push('ENPF_ROWS_REVIEW_REQUIRED');
+    }else extractEnpfPayers(pages,output);
+  }
+  if(kind==='encumbrance'){
+    const front=pages[0]?.text||'';
+    output.issuedAt=day(value(/(?:Дата получения\s*:?\s*(\d{2}\.\d{2}\.\d{4}))/,front)
+      ||value(/(\d{2}\.\d{2}\.\d{4})\s+Дата получения/,front));
   }
   if(kind==='identity'&&!output.identity.iin){
     const card=identityCardHeader(raw);
