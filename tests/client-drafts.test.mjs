@@ -44,6 +44,52 @@ test('older drafts default an unassigned document to the client and retain all e
  assert.deepEqual(Array.from(s.w.ServerDrafts.capture().documents,d=>d.person),['Клиент','Супруг(а)','Ребёнок','Другое']);
  assert.equal(await s.w.ServerDrafts.save(),true);assert.deepEqual(s.store.payload.documents.map(d=>d.person),['Клиент','Супруг(а)','Ребёнок','Другое']);
 });
+test('restoring saved documents merges a generic selection by immutable ID and keeps same-name originals',async t=>{
+ const seed=await setup(t);await seed.load();seed.edit('fio','KEEP ANSWER');const payload=JSON.parse(JSON.stringify(seed.w.ServerDrafts.capture()));
+ payload.documents=[
+  {documentId:'same-source',originalName:'enpf.pdf',type:'Другой документ',person:''},
+  {documentId:'same-source',originalName:'enpf.pdf',type:'Справка ЕНПФ',person:'Клиент'},
+  {documentId:'different-source-a',originalName:'same-name.pdf',type:'Другой документ',person:'Клиент'},
+  {documentId:'different-source-b',originalName:'same-name.pdf',type:'Другой документ',person:'Клиент'},
+  {documentId:'conflicting-type',originalName:'conflict.pdf',type:'Справка ЕНПФ',person:'Клиент'},
+  {documentId:'conflicting-type',originalName:'conflict.pdf',type:'Удостоверение личности',person:'Клиент'},
+  {documentId:'conflicting-person',originalName:'person.pdf',type:'Справка ЕНПФ',person:'Клиент'},
+  {documentId:'conflicting-person',originalName:'person.pdf',type:'Справка ЕНПФ',person:'Супруг(а)'}
+ ];
+ payload.documentReviewDrafts=[{documentId:'same-source',type:'Справка ЕНПФ',values:{issuedAt:'2020-01-02'}}];
+ const s=await setup(t,{payload,revision:4});s.run('afAnalyze=async()=>{}');await s.load();
+ assert.equal(s.d.getElementById('fio').value,'KEEP ANSWER');assert.equal(s.w.ServerDrafts.isDirty(),true);
+ const selected=JSON.parse(JSON.stringify(s.run("selectedFiles.map(item=>({documentId:item.storedDocumentId,name:item.file.name,type:item.type,person:item.person}))")));
+ assert.equal(selected.filter(item=>item.documentId==='same-source').length,1);
+ assert.deepEqual(selected.find(item=>item.documentId==='same-source'),{documentId:'same-source',name:'enpf.pdf',type:'Справка ЕНПФ',person:'Клиент'});
+ assert.equal(selected.filter(item=>item.name==='same-name.pdf').length,2);
+ assert.equal(selected.filter(item=>item.documentId==='conflicting-type').length,2);
+ assert.equal(selected.filter(item=>item.documentId==='conflicting-person').length,2);
+ assert.equal(s.w.ServerDrafts.getDocumentReviewDraft('same-source','Справка ЕНПФ').issuedAt,'2020-01-02');
+ assert.equal(await s.w.ServerDrafts.save(),true);
+ const reopened=await setup(t,s.store);reopened.run('afAnalyze=async()=>{}');await reopened.load();
+ const reopenedDocs=JSON.parse(JSON.stringify(reopened.w.ServerDrafts.capture().documents));
+ assert.equal(reopened.d.getElementById('fio').value,'KEEP ANSWER');assert.equal(reopenedDocs.filter(item=>item.documentId==='same-source').length,1);assert.equal(reopenedDocs.filter(item=>item.documentId==='conflicting-type').length,2);assert.equal(reopenedDocs.filter(item=>item.documentId==='conflicting-person').length,2);assert.equal(reopened.w.ServerDrafts.getDocumentReviewDraft('same-source','Справка ЕНПФ').issuedAt,'2020-01-02');
+});
+test('dedup keeps the fresh result, never revives withdrawn approvals, and preserves answer provenance',async t=>{
+ for(const scenario of [{oldExtraction:'old',currentExtraction:'current',changed:true},{oldExtraction:'current',currentExtraction:'current',changed:false},{oldExtraction:'current',currentExtraction:'current',changed:false,approved:true}]){
+  const s=await setup(t);await s.load();s.edit('fio','KEEP EMPLOYEE ANSWER');
+  s.run(`selectedFiles=[{id:1,file:{name:'source.pdf'},type:'Другой документ',person:'Клиент',storedDocumentId:'shared-source'},{id:2,file:{name:'source.pdf'},type:'Справка ЕНПФ',person:'Клиент',storedDocumentId:'shared-source'}];
+   af.results.set(1,{server:{documentId:'shared-source',extractionId:${JSON.stringify(scenario.currentExtraction)},identityRevision:2},${scenario.approved?"documentReview:{type:'Справка ЕНПФ',reviewId:'current-review'},":''}});
+   af.results.set(2,{server:{documentId:'shared-source',extractionId:${JSON.stringify(scenario.oldExtraction)},identityRevision:2},documentReview:{type:'Справка ЕНПФ',reviewId:'old-review'}});
+   af.sources.set('fio',{fileId:1,value:'KEEP EMPLOYEE ANSWER',server:{documentId:'shared-source',extractionId:${JSON.stringify(scenario.oldExtraction)},identityRevision:2},reviewId:'answer-review',pending:false});afMergeDuplicateSelections(new Set([1]));`);
+  assert.equal(s.run('selectedFiles.length'),1);assert.equal(s.run('selectedFiles[0].type'),'Справка ЕНПФ');
+  assert.equal(s.run("af.sources.get('fio').fileId"),2);assert.equal(s.run("af.results.get(2).server.extractionId"),'current');
+  assert.equal(s.run("af.results.get(2).documentReview?.reviewId"),scenario.approved?'current-review':undefined);
+  assert.equal(s.run("Boolean(af.sources.get('fio').stale)"),scenario.changed);assert.equal(s.run("af.sources.get('fio').pending"),scenario.changed);
+  assert.equal(s.run("af.sources.get('fio').reviewId"),'answer-review');assert.equal(s.d.getElementById('fio').value,'KEEP EMPLOYEE ANSWER');
+ }
+});
+test('reload promotes an unclassified saved selection when the current cached result has a recognized type',async t=>{
+ const seed=await setup(t);await seed.load();const payload=JSON.parse(JSON.stringify(seed.w.ServerDrafts.capture()));payload.documents=[{documentId:'recognized-source',originalName:'source.pdf',type:'Другой документ',person:'Клиент'},{documentId:'explicit-source',originalName:'second.pdf',type:'Удостоверение личности',person:'Клиент'}];
+ const s=await setup(t,{payload,revision:2});s.w.HostedAssessment.analyzeFile=async(item)=>({client:s.w.HostedAssessment.getContext().client,identityRevision:1,assessmentDay:'2026-09-12',documentId:item.storedDocumentId,extractionId:'current-extraction',eligibleForAutofill:false,findings:[],document:{totalPages:1,pages:[{text:'SYNTHETIC ONLY'}],extraction:{kind:'enpf',identity:{iin:null,name:null},facts:[],credits:[]}}});await s.load();
+ assert.equal(s.run('selectedFiles[0].type'),'Справка ЕНПФ');assert.equal(s.run('selectedFiles[1].type'),'Удостоверение личности');assert.match(s.run('afDocumentAttention(selectedFiles[1]).message'),/Справка ЕНПФ/);
+});
 test('CRM import defaults new files to the client without changing an existing family assignment',async t=>{
  const s=await setup(t);await s.load();s.edit('needsSocialDoc','0');s.edit('needsSalaryDoc','none');s.mountWorkspace();
  s.run("selectedFiles=[{id:1,file:{name:'spouse.pdf'},type:'Другой документ',person:'Супруг(а)',storedDocumentId:'spouse-file'}];fileSequence=1;");
@@ -59,6 +105,25 @@ test('CRM import defaults new files to the client without changing an existing f
   assert.equal(docs.length,2);assert.equal(docs.find(d=>d.documentId==='new-file').person,'Клиент');assert.equal(docs.find(d=>d.documentId==='spouse-file').person,'Супруг(а)');
   assert.equal(s.run('af.sources.size'),0);assert.equal(s.run('missingDocuments().includes("ГКБ — полный отчёт")'),true);
  }
+});
+test('CRM import merges an existing generic row by document ID without merging a same-name original',async t=>{
+ const s=await setup(t);await s.load();s.edit('needsSocialDoc','0');s.edit('needsSalaryDoc','none');s.mountWorkspace();
+ s.run("selectedFiles=[{id:1,file:{name:'same.pdf',size:1,type:'application/pdf'},type:'Другой документ',person:'Клиент',storedDocumentId:'shared-import'},{id:2,file:{name:'same.pdf',size:1,type:'application/pdf'},type:'Справка ЕНПФ',person:'Клиент',storedDocumentId:'shared-import'}];fileSequence=2;");
+ const originalFetch=s.w.fetch, payload=documentId=>({client:s.w.HostedAssessment.getContext().client,identityRevision:1,assessmentDay:'2026-09-12',documentId,extractionId:documentId+'-extraction',originalName:'same.pdf',eligibleForAutofill:false,findings:[],document:{totalPages:1,pages:[{text:'SYNTHETIC ONLY'}],extraction:{kind:'enpf',identity:{iin:null,name:null},facts:[],credits:[]}}});
+ s.w.fetch=async(path,options={})=>{if(!path.endsWith('/crm-documents'))return originalFetch(path,options);if(options.method!=='POST')return{ok:true,json:async()=>({files:[{id:'1'},{id:'2'}]})};return{ok:true,json:async()=>payload(JSON.parse(options.body).fileId==='1'?'shared-import':'different-import')};};
+ await s.w.ClientWorkspace.importDocuments();
+ const selected=JSON.parse(JSON.stringify(s.run("selectedFiles.map(item=>({documentId:item.storedDocumentId,name:item.file.name,type:item.type,person:item.person}))")));
+ assert.equal(selected.filter(item=>item.documentId==='shared-import').length,1);
+ assert.equal(selected.filter(item=>item.documentId==='different-import').length,1);
+ assert.equal(selected.filter(item=>item.name==='same.pdf').length,2);
+ assert.equal(selected.find(item=>item.documentId==='shared-import').type,'Справка ЕНПФ');
+});
+test('CRM reimport preserves an explicit employee type and exposes a recognition conflict',async t=>{
+ const s=await setup(t);await s.load();s.edit('needsSocialDoc','0');s.edit('needsSalaryDoc','none');s.mountWorkspace();
+ s.run("selectedFiles=[{id:1,file:{name:'source.pdf',size:1,type:'application/pdf'},type:'Ф6 об отсутствии имущества',person:'Супруг(а)',storedDocumentId:'source'}];fileSequence=1;");
+ const originalFetch=s.w.fetch;
+ s.w.fetch=async(path,options={})=>{if(!path.endsWith('/crm-documents'))return originalFetch(path,options);if(options.method!=='POST')return{ok:true,json:async()=>({files:[{id:'1'}]})};return{ok:true,json:async()=>({client:s.w.HostedAssessment.getContext().client,identityRevision:1,assessmentDay:'2026-09-12',documentId:'source',extractionId:'current',originalName:'source.pdf',eligibleForAutofill:false,findings:[],document:{totalPages:1,pages:[{text:'SYNTHETIC ONLY'}],extraction:{kind:'enpf',identity:{iin:null,name:null},facts:[],credits:[]}}})};};
+ await s.w.ClientWorkspace.importDocuments();assert.equal(s.run('selectedFiles.length'),1);assert.equal(s.run('selectedFiles[0].type'),'Ф6 об отсутствии имущества');assert.equal(s.run('selectedFiles[0].person'),'Супруг(а)');assert.match(s.run('afDocumentAttention(selectedFiles[0]).message'),/Справка ЕНПФ/);
 });
 test('typing during a save remains dirty and the next save includes the newer value',async t=>{
  const s=await setup(t);await s.load();let finish;s.setWriteGate(new Promise(resolve=>finish=resolve));s.edit('fio','FIRST');const saving=s.w.ServerDrafts.save();await tick();s.edit('fio','SECOND');finish();await saving;

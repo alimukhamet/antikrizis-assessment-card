@@ -278,6 +278,7 @@ function afDocumentAttention(item){
  if(r.identity?.iin&&HostedAssessment.getContext()?.client.iin&&r.identity.iin!==HostedAssessment.getContext().client.iin&&item.person==='Клиент')return {kind:'error',message:'Другой владелец'+(r.identity.fio?': '+r.identity.fio:'')+'. Замените файл или укажите, чей он.'};
  if(r.error)return {kind:'error',message:r.error};
  if(r.documentReview?.type===item.type)return null;
+ if(!afSelectionTypeIsGeneric(item)&&r.type&&r.kind!=='other'&&r.type!==item.type)return {kind:'manual',message:'Распознан тип «'+r.type+'». Проверьте выбранный тип.'};
  const findings=r.findings||[];
  if(item.type==='ГКБ — краткий отчёт'&&window.GkbComparison?.resolved?.(item.id))return null;
  const powerReason=['POWER_DATES_UNVERIFIED','POWER_DATE_NOT_ACCEPTABLE','POWER_SCOPE_REVIEW_REQUIRED','REPRESENTATIVE_NOT_APPROVED','REPRESENTATIVE_IDENTITY_UNVERIFIED'].find(code=>findings.includes(code));
@@ -292,20 +293,68 @@ function afDocumentAttention(item){
 function afAnalysisProgress(done,total){
  af.progress={done,total};$af('afProgress').value=done;$af('afProgress').max=Math.max(1,total);window.AssessmentWorkflow?.refresh();
 }
-// Collapse repeated selections only after both refer to the same stored PDF and type.
-// The original stays in evidence storage; answer sources keep their surviving file ID.
-function afMergeDuplicateSelections(){
- const seen=new Map(),duplicates=new Map();
- for(const item of selectedFiles){
-  const documentId=item.storedDocumentId||af.results.get(item.id)?.server?.documentId;
-  if(!documentId||!item.type)continue;
-  const key=JSON.stringify([documentId,item.type,item.person]);
-  if(seen.has(key))duplicates.set(item.id,seen.get(key));else seen.set(key,item.id);
+// Collapse repeated selections only when they point to the same immutable
+// server document. A generic/blank selection may be
+// merged into a specific selection, but conflicting employee classifications
+// remain visible for review.
+function afSelectionIdentity(item){
+ const result=af.results.get(item.id),documentId=String(item.storedDocumentId||result?.server?.documentId||'').trim();
+ return documentId?'document:'+documentId:null;
+}
+function afSelectionType(item){return String(item.type??'').trim();}
+function afSelectionPerson(item){return String(item.person??'').trim();}
+function afSelectionTypeIsGeneric(item){const type=afSelectionType(item);return !type||type==='Другой документ';}
+function afSelectionPersonIsExplicit(item){return Boolean(afSelectionPerson(item));}
+function afSelectionsConflict(left,right){
+ const leftType=afSelectionType(left),rightType=afSelectionType(right);
+ if(!afSelectionTypeIsGeneric(left)&&!afSelectionTypeIsGeneric(right)&&leftType!==rightType)return true;
+ const leftPerson=afSelectionPerson(left),rightPerson=afSelectionPerson(right);
+ return Boolean(leftPerson&&rightPerson&&leftPerson!==rightPerson&&afSelectionPersonIsExplicit(left)&&afSelectionPersonIsExplicit(right));
+}
+function afSelectionPreferred(left,right){
+ const leftGeneric=afSelectionTypeIsGeneric(left),rightGeneric=afSelectionTypeIsGeneric(right);
+ if(leftGeneric!==rightGeneric)return leftGeneric?right:left;
+ const leftPerson=afSelectionPersonIsExplicit(left),rightPerson=afSelectionPersonIsExplicit(right);
+ if(leftPerson!==rightPerson)return leftPerson?left:right;
+ return left;
+}
+function afMergeDuplicateSelections(preferredIds=new Set()){
+ preferredIds=new Set(preferredIds||[]);
+ const groups=new Map(),duplicates=new Map();
+ for(const item of selectedFiles){const identity=afSelectionIdentity(item);if(identity){const group=groups.get(identity)||[];group.push(item);groups.set(identity,group);}}
+ for(const group of groups.values()){
+  const clusters=[];
+  for(const item of group){
+   const cluster=clusters.find(items=>items.every(existing=>!afSelectionsConflict(existing,item)));
+   if(cluster)cluster.push(item);else clusters.push([item]);
+  }
+  for(const cluster of clusters){
+   if(cluster.length<2)continue;
+   const winner=cluster.reduce((best,item)=>afSelectionPreferred(best,item));
+   const current=cluster.filter(item=>preferredIds.has(item.id)).map(item=>af.results.get(item.id)).filter(Boolean);
+   // A fresh server response owns its review state, including withdrawal. Do
+   // not restore an older approval onto that response, even for the same ID.
+   const result=current.find(result=>!result.error)||current[0]||af.results.get(winner.id)||cluster.map(item=>af.results.get(item.id)).find(Boolean);
+   if(result)af.results.set(winner.id,result);
+   for(const item of cluster){
+    if(item===winner)continue;
+    duplicates.set(item.id,winner.id);
+    if(!afSelectionType(winner)&&afSelectionType(item))winner.type=item.type;
+    if(!afSelectionPersonIsExplicit(winner)&&afSelectionPersonIsExplicit(item))winner.person=item.person;
+   }
+  }
  }
- if(!duplicates.size)return;
- for(const source of af.sources.values())if(duplicates.has(source.fileId))source.fileId=duplicates.get(source.fileId);
+ if(!duplicates.size)return duplicates;
+ for(const [fieldId,source]of af.sources){
+  if(duplicates.has(source.fileId))source.fileId=duplicates.get(source.fileId);
+  const current=af.results.get(source.fileId)?.server,previous=source.server;
+  if(current&&previous&&(current.documentId!==previous.documentId||current.extractionId!==previous.extractionId||current.identityRevision!==previous.identityRevision)){
+   source.stale=true;source.pending=true;if($af(fieldId))afBadge($af(fieldId),source);
+  }
+ }
  selectedFiles=selectedFiles.filter(item=>!duplicates.has(item.id));
  for(const id of duplicates.keys())af.results.delete(id);
+ return duplicates;
 }
 function afRenderResults(){
  const root=$af('afFileResults');root.replaceChildren();
@@ -364,11 +413,11 @@ async function afAnalyze(preferences={}){
     }
     if(r.hash&&hashes.has(r.hash)){r.duplicate=true;r.notes=[...(r.notes||[]).filter(t=>!t.startsWith('Повтор файла:')),'Повтор файла: '+hashes.get(r.hash)+'. Повторно не учитывается.'];}else if(r.hash)hashes.set(r.hash,item.file.name);
     for(const [fieldId,source]of af.sources)if(source.server?.documentId===r.server?.documentId&&source.server?.extractionId!==r.server?.extractionId){source.stale=true;source.pending=true;if($af(fieldId))afBadge($af(fieldId),source);}
-    af.results.set(item.id,r);if(!preferences.restoreOnly||r.kind==='salary'&&item.type==='Выписка Kaspi Gold'&&!r.blocked&&r.identity?.iin===HostedAssessment.getContext().client.iin){if(!item.person&&r.identity?.iin===HostedAssessment.getContext().client.iin)item.person='Клиент';if(r.type&&r.kind!=='other')item.type=r.type;}
+    af.results.set(item.id,r);const canPromoteRestoredType=preferences.restoreOnly&&afSelectionTypeIsGeneric(item)&&r.kind!=='other';if(!preferences.restoreOnly||canPromoteRestoredType||r.kind==='salary'&&item.type==='Выписка Kaspi Gold'&&!r.blocked&&r.identity?.iin===HostedAssessment.getContext().client.iin){if(!item.person&&r.identity?.iin===HostedAssessment.getContext().client.iin)item.person='Клиент';if(r.type&&r.kind!=='other')item.type=r.type;}
    }catch(e){fail++;af.results.set(item.id,{error:e.message,notes:['Файл не заполнен автоматически. Проверьте вручную.']});}
    afRenderResults();afAnalysisProgress(done,files.length);
   }
-  if(!preferences.restoreOnly)afMergeDuplicateSelections();
+  if(!preferences.restoreOnly)afMergeDuplicateSelections(new Set(files.map(item=>item.id)));
   $af('afProgress').value=files.length;afClientChoices();
   if($af('afClient').value&&[...af.results.values()].some(r=>(!r.blocked||r.draftOnly)&&!r.error)){af.restoringEvidence=Boolean(preferences.restoreOnly);try{await afApply();}finally{af.restoringEvidence=false;}}else afStatus('Распознавание завершено. Нераспознанные ответы заполните вручную.');
   if(fail)afStatus('Не удалось обработать файлов: '+fail+'. Остальные результаты сохранены. Проверьте результаты по документам.',true);
