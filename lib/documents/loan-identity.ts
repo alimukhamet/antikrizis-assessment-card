@@ -4,7 +4,9 @@
  * ACF's exact legal-form alias is documented by the lender:
  * https://asiancreditfund.com/payment (АКФ / Азиатский Кредитный Фонд).
  * Latin look-alike legal forms (TOO/AO) are folded to Cyrillic. */
-export const creditorKey=(value:string)=>value.normalize('NFKC').toLocaleLowerCase('ru-RU').replace(/[\s«»“”„"]/g,'').replace(/^too(?=.)/u,'тоо').replace(/^ao(?=.)/u,'ао').replace(/^акционерноеобщество(?=.)/u,'ао').replace(/^товариществосограниченнойответственностью(?=.)/u,'тоо').replace(/^тоомикрофинансоваяорганизация(?=.)/u,'тоомфо').replace(/^народныйбанкказахстана$/u,'аонародныйбанкказахстана').replace(/^тоомфоакф$/u,'тоомфоазиатскийкредитныйфонд')
+export const creditorKey=(value:string)=>value.normalize('NFKC').toLocaleLowerCase('ru-RU').replace(/[\s«»“”„"]/g,'').replace(/^too(?=.)/u,'тоо').replace(/^ao(?=.)/u,'ао')
+ // «ДО АО …» / «Дочерняя организация АО …» is how the full GKB prints bank subsidiaries the short report lists as «АО …».
+ .replace(/^(?:до|дочерняяорганизация)(?=ао|акционерногообщества)/u,'').replace(/^акционерногообщества(?=.)/u,'ао').replace(/^акционерноеобщество(?=.)/u,'ао').replace(/^товариществосограниченнойответственностью(?=.)/u,'тоо').replace(/^тоомикрофинансоваяорганизация(?=.)/u,'тоомфо').replace(/^народныйбанкказахстана$/u,'аонародныйбанкказахстана').replace(/^тоомфоакф$/u,'тоомфоазиатскийкредитныйфонд')
  // SB Sberbank Russia JSC (Kazakhstan) was renamed Bereke Bank JSC in 2022; the
  // full GKB can still print the old name while the short report prints the new one.
  .replace(/^(?:дочернийбанк)?(?:акционерноеобщество|ао)?(?:дб)?(?:ао)?сбербанкроссии$/u,'аоberekebank').replace(/^аоberekebank(?:\(дбleshabankllc\(public\)\))?$/u,'аоberekebank');
