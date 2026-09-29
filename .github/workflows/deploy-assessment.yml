@@ -90,6 +90,7 @@ jobs:
             'hosted-assessment.js'
             'server-drafts.js'
             'profile-backfill.js'
+            'profile-presence.js'
             'required-answers.js'
             'intake-data.js'
             'enforcement-editor.js'
@@ -153,6 +154,7 @@ jobs:
         run: |
           node scripts/audit-live-tools.mjs
           node scripts/audit-live-knowledge.mjs
+          node scripts/audit-live-profile.mjs
           node scripts/monitor-production.mjs
 
       - name: Preserve live audit result
@@ -163,6 +165,7 @@ jobs:
           path: |
             live-tools-audit.json
             live-knowledge-audit.json
+            live-profile-audit.json
             production-monitor.json
           if-no-files-found: ignore
           retention-days: 1
