@@ -11,7 +11,7 @@ const crm=load('lib/crm/lawyer-handoff.ts',{'../documents/repository':evidence})
 const {HandoffRepository}=load('lib/questionnaire/handoff-repository.ts',{'../documents/repository':evidence});
 const upload=load('lib/crm/document-upload.ts',{'../documents/repository':evidence});
 const {UploadManifestRepository}=load('lib/documents/upload-manifest.ts',{'./repository':evidence});
-const service=load('lib/questionnaire/handoff-service.ts',{'../documents/repository':evidence,'../documents/analysis-service':{analysisVersion:'test'},'../documents/package-check':{checkDocumentPackage:async()=>({packageReady:true,manuallyReviewed:[]})},'../documents/upload-service':load('lib/documents/upload-service.ts',{'./repository':evidence,'../crm/document-upload':upload}),'../documents/upload-plan':load('lib/documents/upload-plan.ts',{'./repository':evidence}),'../crm/lawyer-handoff':crm});
+const service=load('lib/questionnaire/handoff-service.ts',{'../documents/repository':evidence,'../documents/analysis-service':{analysisVersion:'test'},'../documents/package-check':{checkDocumentPackage:async()=>({packageReady:true,manuallyReviewed:[]})},'../documents/upload-service':load('lib/documents/upload-service.ts',{'./repository':evidence,'../crm/document-upload':upload}),'../documents/upload-plan':load('lib/documents/upload-plan.ts',{'./repository':evidence}),'../crm/lawyer-handoff':crm,'../crm/assessment-write':load('lib/crm/assessment-write.ts')});
 const record={id:'case',identity_revision:1,client_iin:'000000000010',external_id:'900001'},actor={id:'staff',authentication:'test'};
 const destination={categoryId:'13',fromStageId:'C13:FINAL_INVOICE',fromStageName:'Договор',stageId:'C13:WON',stageName:'Сделка завершена'};
 function transport(){const state={deal:{ID:'900001',CATEGORY_ID:'13',STAGE_ID:'C13:FINAL_INVOICE',STAGE_SEMANTIC_ID:'P',UF_CRM_AI_IIN:'000000000010',TITLE:'SYNTHETIC ONLY',UF_CRM_1773669702495:'SYNTHETIC ONLY',UF_CRM_1773655613972:'199'},writes:[],history:[],timeout:false,robot:false,name:'Сделка завершена',semantic:'S'};
@@ -304,4 +304,21 @@ test('title reconciliation rejects changed characters, identity, source or missi
   }finally{s.sql.close();}
  }
  const s=await plannedHandoff();try{await assert.rejects(service.reconcileHandoffOutcome(s.deps,record,s.row),/HANDOFF_NOT_STARTED/);assert.equal(s.remote.writes.length,0);}finally{s.sql.close();}
+});
+
+
+test('assessment mismatch diagnostics expose only field keys and never permit handoff writes',async(t)=>{
+ const s=await deliveredHandoff();t.after(()=>s.sql.close());
+ s.deps.assessment.reconcile=async()=>({verified:false,mismatches:['card','debt','card','SYNTHETIC PRIVATE VALUE']});
+ await assert.rejects(service.verifyHandoffDelivery(s.deps,record,{verifyBytes:false}),error=>{
+  assert.equal(error.code,'HANDOFF_ASSESSMENT_CHANGED');
+  assert.deepEqual(Array.from(error.mismatchedFields),['card','debt']);
+  assert.equal(JSON.stringify(error).includes('SYNTHETIC PRIVATE VALUE'),false);
+  return true;
+ });
+ await assert.rejects(service.runHandoff(s.deps,record,actor,s.row,'2026-09-16'),/HANDOFF_ASSESSMENT_CHANGED/);
+ assert.equal(s.counts.reads,0);
+ assert.equal(s.counts.moves,0);
+ assert.equal(s.counts.uploads,0);
+ assert.equal((await s.handoffs.get(record.id,s.row.request_id)).state,'prepared');
 });

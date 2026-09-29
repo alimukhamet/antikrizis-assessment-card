@@ -7,9 +7,18 @@ import {uploadBatchId} from '../documents/upload-plan';
 import {HandoffRepository,type HandoffPayload,type HandoffRow} from './handoff-repository';
 import {HandoffMoveError,type createHandoffAdapter,type HandoffTitleSource} from '../crm/lawyer-handoff';
 import type {createDocumentUploadAdapter,CrmFileRef} from '../crm/document-upload';
-import type {createAssessmentAdapter} from '../crm/assessment-write';
+import {ASSESSMENT_FIELDS,type AssessmentField,type createAssessmentAdapter} from '../crm/assessment-write';
 import type {SubmissionRepository,SubmissionPayload} from './submission-repository';
 import type {Actor} from '../worker-session';
+
+/** Expose only known field keys; the immutable assessment and CRM values stay private. */
+export class HandoffAssessmentChangedError extends RepositoryError {
+ readonly mismatchedFields:AssessmentField[];
+ constructor(fields:readonly AssessmentField[]=[]){
+  super('HANDOFF_ASSESSMENT_CHANGED');
+  this.mismatchedFields=[...new Set(fields.filter(key=>Object.hasOwn(ASSESSMENT_FIELDS,key)))];
+ }
+}
 
 export async function validateHandoffDocuments(repository:EvidenceRepository,record:CaseRow,powerId:string,signedId:string,day:string){
  if(!record.client_iin||!powerId||!signedId||powerId===signedId)throw new RepositoryError('HANDOFF_DOCUMENTS_REQUIRED');
@@ -43,7 +52,7 @@ async function verifiedDelivery(deps:DeliveryDependencies,record:CaseRow,options
  if(!payload?.values||payload.values.iin!==record.client_iin||!Array.isArray(payload.draft?.documents))throw new RepositoryError('HANDOFF_ASSESSMENT_CHANGED');
  let assessment;
  try{assessment=await deps.assessment.reconcile(record.external_id,record.client_iin,payload.values);}catch{throw new RepositoryError('HANDOFF_ASSESSMENT_UNVERIFIED');}
- if(!assessment.verified)throw new RepositoryError('HANDOFF_ASSESSMENT_CHANGED');
+ if(!assessment.verified)throw new HandoffAssessmentChangedError(assessment.mismatches);
  const files:UploadManifest['files']=[],seen=new Set<string>();
  for(const selected of payload.draft.documents){
   if(!selected||typeof selected.documentId!=='string'||!selected.documentId)throw new RepositoryError('HANDOFF_ORIGINALS_REQUIRED');

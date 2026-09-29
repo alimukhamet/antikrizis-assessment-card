@@ -185,7 +185,9 @@ export class OperationsRepository {
       const extra =
         table === "assessment_submissions"
           ? " OR s.state='prepared' OR (s.state='verified' AND s.history_state NOT IN ('verified','cancelled'))"
-          : "";
+          : table === "assessment_handoffs"
+            ? " OR s.state='prepared'"
+            : "";
       const rows = await this.db
         .prepare(
           `SELECT c.external_id AS deal_id,s.id AS operation_id,s.state,s.outcome_code,s.updated_at${table === "assessment_submissions" ? ",s.history_state,s.history_outcome_code" : ""}

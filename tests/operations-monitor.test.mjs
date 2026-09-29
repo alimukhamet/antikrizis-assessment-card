@@ -184,6 +184,51 @@ test("summary finds stuck preparations and unfinished writes, excludes completed
   assert.equal(result.activity.samples, 3);
   assert.equal(JSON.stringify(result).includes("payload_json"), false);
 });
+test("summary reports only aged unfinished handoffs without mutating their receipts", async (t) => {
+  const { sql, repo } = setup(t),
+    now = "2026-09-29T08:00:00.000Z",
+    old = "2026-09-29T07:00:00.000Z";
+  for (const [index, state, stamp] of [
+    [1, "prepared", old],
+    [2, "prepared", now],
+    [3, "verified", old],
+    [4, "cancelled", old],
+    [5, "writing", old],
+    [6, "uncertain", old],
+  ]) {
+    sql.prepare(
+      "INSERT INTO assessment_cases (id,external_system,external_id,title,created_at,updated_at) VALUES (?,?,?,?,?,?)",
+    ).run("handoff-c" + index, "bitrix", String(9930 + index), "Synthetic", old, old);
+    sql.prepare(
+      "INSERT INTO assessment_handoffs (id,case_id,request_id,identity_revision,actor_id,authentication,payload_json,payload_hash,state,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+    ).run(
+      "handoff-h" + index,
+      "handoff-c" + index,
+      "handoff-r" + index,
+      1,
+      "worker:ali",
+      "test",
+      "{}",
+      "hash",
+      state,
+      old,
+      stamp,
+    );
+  }
+  const before = sql.prepare("SELECT * FROM assessment_handoffs ORDER BY id").all();
+  const result = await repo.summary(now);
+  assert.deepEqual(
+    Array.from(
+      result.stuck.filter((row) => row.action === "handoff"),
+      (row) => row.operation_id,
+    ),
+    ["handoff-h1", "handoff-h5", "handoff-h6"],
+  );
+  assert.deepEqual(
+    sql.prepare("SELECT * FROM assessment_handoffs ORDER BY id").all(),
+    before,
+  );
+});
 test("verified handoffs remain visible without current-identity assessment and history delivery, including inactive cases", async (t) => {
   const { sql, repo } = setup(t),
     old = "2026-08-01T10:00:00.000Z",
