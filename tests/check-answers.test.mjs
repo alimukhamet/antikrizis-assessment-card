@@ -112,6 +112,7 @@ test('pension-only contract includes actual benefits and preserves every payment
 test('contract includes spouse benefits only while spouse answers apply',()=>{
  const p=fixture();benefits(p,'partner','Единовременно','345678');assert.doesNotMatch(contractData(p,iin).official_income,/345678/);
  set(p,'marital','В браке');for(const key of ['count-partnerjobs','count-partnerunofficial','partnerKaspiAnnual'])set(p,key,'0');set(p,'holding:partner:none','none',true);set(p,'holding:partner:businessNone','businessNone',true);
+ set(p,'choice:partnerSocialStatus:Пенсионер','Пенсионер',true);
  assert.equal(run(p).answersComplete,true,JSON.stringify(run(p).issues));const income=contractData(p,iin).official_income;assert.match(income,/Супруг\(а\)/);assert.match(income,/345678/);assert.match(income,/Единовременно/);
 });
 test('benefit answers cannot silently contradict the document-step answer',()=>{

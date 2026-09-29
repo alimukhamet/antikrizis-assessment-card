@@ -42,6 +42,7 @@ Storage: `0016_profile_saves` and `0017_profile_presence`; no Bitrix fields are 
 ## Confirmed business rules
 
 - Preserve the canonical document list, contract/payment rules and downstream assessment format.
+- For a married client, contract preparation asks for the spouse's social status separately from the client's. A new assessment cannot be completed with a missing or unknown spouse status; partial drafts remain savable. The answer is included in the saved assessment and CRM intake. Pension, disability or benefits make the spouse's own certificate required during CRM document collection, without adding a new spouse-document gate to contract generation.
 - GKB reports issued in the last three calendar months are accepted (in September: from 1 June; owner decision 29 Sep 2026, previously 30 days); future dates are rejected.
 - Bank and salary statements must cover twelve months and end in the last three calendar months (in September: from 1 June) (owner decision 29 Sep 2026).
 - ENPF inspection requires three years of coverage through its issue date.
