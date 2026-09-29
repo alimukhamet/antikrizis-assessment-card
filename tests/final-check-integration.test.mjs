@@ -1,3 +1,4 @@
+import * as profileExplanations from '../public/profile-explanations.mjs';
 import {webcrypto} from 'node:crypto';
 import * as intake from '../public/intake-data.mjs';
 // Final readiness regressions with synthetic source files and repository records only.
@@ -10,7 +11,7 @@ const repoTypes=load('lib/documents/repository.ts'),policy=load('lib/documents/p
 const participants=await import(root+'public/loan-participants.mjs'),schedule=await import(root+'public/payment-schedule.mjs'),words=await import(root+'public/contract-words.mjs');
 const native=load('lib/documents/extract-native.ts',{'./power-of-attorney':load('lib/documents/power-of-attorney.ts'),'./kz-labels.json':JSON.parse(fs.readFileSync(root+'lib/documents/kz-labels.json'))});
 const {validateDraft}=load('lib/questionnaire/draft.ts',{'./schema.json':schema,'./draft-recovery':load('lib/questionnaire/draft-recovery.ts'),'../documents/repository':repoTypes});
-const {checkAnswers}=load('lib/questionnaire/check-answers.ts',{'./schema.json':schema,'../documents/extract-native':native,'../../public/payment-schedule.mjs':schedule,'../../public/loan-participants.mjs':participants});
+const {checkAnswers}=load('lib/questionnaire/check-answers.ts',{'../../public/profile-explanations.mjs':profileExplanations,'./schema.json':schema,'../documents/extract-native':native,'../../public/payment-schedule.mjs':schedule,'../../public/loan-participants.mjs':participants});
 const compiler=load('lib/questionnaire/compile-assessment.ts',{'./draft':{validateDraft},'./check-answers':{checkAnswers},'../documents/repository':repoTypes,'../../public/payment-schedule.mjs':schedule});
 const {contractData}=load('lib/questionnaire/contract-data.ts',{'./compile-assessment':compiler,'./check-answers':{checkAnswers},'../../public/contract-words.mjs':words,'../documents/repository':repoTypes});
 const powerValidation=load('lib/documents/power-validation.ts',{'./power-of-attorney':load('lib/documents/power-of-attorney.ts'),'./policy':policy,'./approved-representatives.server.json':[]});

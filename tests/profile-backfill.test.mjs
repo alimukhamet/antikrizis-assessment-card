@@ -1,3 +1,4 @@
+import * as profileExplanations from '../public/profile-explanations.mjs';
 /** Profile backfill (documentologist mode). Synthetic data only; no real client or CRM data. */
 import * as participants from '../public/loan-participants.mjs';
 import * as intake from '../public/intake-data.mjs';
@@ -14,7 +15,7 @@ function load(path,imports={}){const exports={};vm.runInNewContext(ts.transpileM
 const json=path=>JSON.parse(fs.readFileSync(new URL('../'+path,import.meta.url),'utf8'));
 const schema=json('lib/questionnaire/schema.json'),native=load('lib/documents/extract-native.ts',{'./power-of-attorney':load('lib/documents/power-of-attorney.ts'),'./kz-labels.json':json('lib/documents/kz-labels.json')});
 const repository=load('lib/documents/repository.ts');
-const {checkAnswers,SALES_ONLY_KEYS}=load('lib/questionnaire/check-answers.ts',{'./schema.json':schema,'../documents/extract-native':native,'../../public/payment-schedule.mjs':schedule,'../../public/loan-participants.mjs':participants});
+const {checkAnswers,SALES_ONLY_KEYS}=load('lib/questionnaire/check-answers.ts',{'../../public/profile-explanations.mjs':profileExplanations,'./schema.json':schema,'../documents/extract-native':native,'../../public/payment-schedule.mjs':schedule,'../../public/loan-participants.mjs':participants});
 const {validateDraft}=load('lib/questionnaire/draft.ts',{'./schema.json':schema,'./draft-recovery':load('lib/questionnaire/draft-recovery.ts'),'../documents/repository':repository});
 const compileAssessmentModule=load('lib/questionnaire/compile-assessment.ts',{'./draft':{validateDraft},'./check-answers':{checkAnswers},'../documents/repository':repository,'../../public/payment-schedule.mjs':schedule,'../../public/loan-participants.mjs':participants});
 const {compileProfile,PROFILE_SCHEMA}=load('lib/questionnaire/compile-profile.ts',{'./draft':{validateDraft},'./check-answers':{checkAnswers,SALES_ONLY_KEYS},'./compile-assessment':compileAssessmentModule,'../documents/repository':repository});
@@ -25,7 +26,7 @@ const {sortProfileQueue}=load('lib/crm/profile-queue.ts',{'./profile-fields':fie
 
 const iin='000000000010';
 const salesValues={fio:'SYNTHETIC ONLY',enforcementStatus:'no',enforcementDetails:'Нет',guarantors:'Нет',iin,dognum:'TEST',marital:'Холост / не замужем',regAddress:'TEST CITY, TEST STREET 1',factAddressSame:'same',recommendedDistrict:'Алматы',recommendedCourt:'Рекомендация продаж',clientRequestedDistrict:'Алматы',clientRequestedCourt:'Алматинский суд',registrationChangePosition:'undecided',dependents:'0',childrenTotal:'0',procedure:'199','count-clientjobs':'0','count-clientunofficial':'0',clientBenefitsCount:'0',c8037:'0',hardshipReason:'Платежи вношу, трудностей нет',kaspiAnnual:'0',gamblingTransfers:'no',lawyerNotesStatus:'no',n8044:'0',summa:'500000',contractDate:'2026-09-10',months:'5',payDay:'7',grafType:'423'};
-const profileValues={regAddress:'TEST CITY, TEST STREET 1',factAddressSame:'same',clientPhone:'+7 700 000 00 00',contactChannel:'WhatsApp',filingDestination:'Алматинский районный суд','count-profilefamily':'1'};
+const profileValues={debtPurposeOther:'Кредитные деньги потратили на покупку жилья для проживания семьи клиента.',regAddress:'TEST CITY, TEST STREET 1',factAddressSame:'same',clientPhone:'+7 700 000 00 00',contactChannel:'WhatsApp',filingDestination:'Алматинский районный суд','count-profilefamily':'1'};
 const credit={n8038:'TEST BANK',loanContractId:'TEST-001',n8038Start:'2025-01',n8039:'Потребительский кредит',loanStatus:'Платится по графику',n8040:'100.25',n8041:'20.00',n8042:'0',n8043:'Жильё',loanParticipants:'Нет'};
 const member={familyName:'SYNTHETIC CHILD',familyRelation:'Сын',familyBirthDate:'01.02.2015',familyDependent:'Да, полностью',familyStudy:''};
 function fixture({profile=false}={}){
@@ -74,6 +75,43 @@ test('profile mode: complete answers pass, «Не знаю» becomes an open que
  assert.equal(checkAnswers(validateDraft(p),iin,'2026-09-25',{profile:true}).answersComplete,true);
  // Sales still treats «Не знаю» as unanswered.
  assert.ok(!checkAnswers(validateDraft({...fixture(),answers:fixture().answers.map(a=>a.key==='hardshipReason'?{...a,value:'Не знаю'}:a)}),iin).answersComplete);
+});
+
+test('every profile needs a 60-character overall purpose explanation; partial drafts remain intact',()=>{
+ const p=fixture({profile:true}),original=p.answers.find(a=>a.key==='debtPurposeOther').value;
+ const check=()=>checkAnswers(validateDraft(p),iin,'2026-09-25',{profile:true});
+ for(const text of ['',(original.slice(0,58)+'.'),'   '+(original.slice(0,58)+'.')+' \n  ','Не знаю','Не знаю. '.repeat(10)]){
+  set(p,'debtPurposeOther',text);
+  assert.equal(validateDraft(p).answers.find(a=>a.key==='debtPurposeOther').value,text,'draft saving keeps incomplete text');
+  assert.ok(has(check(),'debtPurposeOther','EXPLANATION_REQUIRED'),JSON.stringify(text));
+  assert.ok(!check().unresolved.some(a=>a.key==='debtPurposeOther'));
+  assert.throws(()=>compileProfile(p,iin,'11665',author),/ANSWERS_INCOMPLETE/,'direct save cannot bypass the check');
+ }
+ set(p,'debtPurposeOther',original.slice(0,60));
+ assert.equal(check().answersComplete,true,JSON.stringify(check().issues));
+ assert.equal(profileExplanations.explanationLength('  '+original.slice(0,60)+' \n '),60);
+ set(p,'debtPurposeOther',original);
+ const compiled=compileProfile(p,iin,'11665',author);
+ assert.ok(compiled.json.answers.some(a=>a.key==='debtPurposeOther'&&a.value===original&&a.label===profileExplanations.PROFILE_EXPLANATIONS.debtPurposeOther.label));
+ set(p,'choice:debtPurpose:Другое','Другое',true);
+ assert.equal(check().displayAnswers.filter(a=>a.key==='debtPurposeOther').length,1,'one shared explanation, including other purposes');
+});
+
+test('payment difficulties need 60 characters only when applicable; sales requirements stay unchanged',()=>{
+ const p=fixture({profile:true}),check=()=>checkAnswers(validateDraft(p),iin,'2026-09-25',{profile:true});
+ set(p,'hardshipReason','Снижение дохода');set(p,'n12009','Нет');
+ const text='С марта 2026 года сократились рабочие часы и доход. После оплаты жилья денег на платежи не хватает.';
+ for(const value of ['',text.slice(0,59),'Не знаю','Неизвестно; '.repeat(10)]){
+  set(p,'n12008',value);assert.ok(has(check(),'n12008','EXPLANATION_REQUIRED'));
+  assert.throws(()=>compileProfile(p,iin,'11665',author),/ANSWERS_INCOMPLETE/);
+ }
+ set(p,'n12008',text.slice(0,60));assert.equal(check().answersComplete,true,JSON.stringify(check().issues));
+ set(p,'hardshipReason','Платежи вношу, трудностей нет');set(p,'n12008','Не знаю');
+ assert.equal(check().answersComplete,true,'do not invent difficulties when the client has none');
+ const sales=fixture();set(sales,'hardshipReason','Снижение дохода');set(sales,'n12008','Доход снизился');set(sales,'n12009','Нет');
+ set(sales,'choice:debtPurpose:Другое','Другое',true);set(sales,'debtPurposeOther','Короткое объяснение');
+ const result=checkAnswers(validateDraft(sales),iin,'2026-09-25');
+ assert.equal(result.answersComplete,true,JSON.stringify(result.issues));
 });
 
 test('married profile does not require spouse social status, and keeps it when given',()=>{

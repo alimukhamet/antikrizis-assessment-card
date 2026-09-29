@@ -11,3 +11,4 @@ for(const fields of [scalar,...groups.map(g=>g.fields)])if(fields.some(f=>!f.key
 const schema={version:1,scalar,groups};await fs.writeFile('lib/questionnaire/schema.json',JSON.stringify(schema,null,2)+'\n');await fs.writeFile('public/questionnaire-schema.json',JSON.stringify(schema));console.log('Questionnaire schema:',scalar.length,'scalar controls,',groups.length,'repeat groups');
 
 await build({entryPoints:['public/intake-data.mjs'],outfile:'public/intake-data.js',bundle:true,format:'iife',globalName:'window.IntakeData'});
+await build({entryPoints:['public/profile-explanations.mjs'],outfile:'public/profile-explanations.js',bundle:true,format:'iife',globalName:'window.ProfileExplanationRules'});
