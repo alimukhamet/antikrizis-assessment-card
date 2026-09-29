@@ -27,9 +27,9 @@ test('cached incomplete, unreadable or unclassified documents cannot autofill or
   assert.ok(result.findings.includes(code));
  }
 });
-test('thirty-day GKB is eligible but thirty-one-day and future reports cannot reuse reviews',async()=>{
+test('GKB up to three months old is eligible but older and future reports cannot reuse reviews',async()=>{
  const valid=await analyze();assert.equal(valid.result.eligibleForAutofill,true);assert.equal(valid.reviewReads,1);
- for(const date of ['2026-08-10','2026-09-11']){const {result,reviewReads}=await analyze([],date);assert.equal(result.eligibleForAutofill,false);assert.equal(reviewReads,0);}
+ for(const date of ['2026-06-09','2026-09-11']){const {result,reviewReads}=await analyze([],date);assert.equal(result.eligibleForAutofill,false);assert.equal(reviewReads,0);}
 });
 test('cached extraction is rechecked against the current deal identity',async()=>{
  const {result,reviewReads}=await analyze([],'2026-09-10','different-client');

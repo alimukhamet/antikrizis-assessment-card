@@ -32,7 +32,7 @@ test('batch preserves exact values, identity, ownership, date and correction gat
   [s=>s.inputs[0].documentId='other-client','DOCUMENT_NOT_IN_CASE'],
   [s=>s.inputs[0].extractionId='other-extraction','EXTRACTION_NOT_IN_DOCUMENT'],
   [s=>s.result.extraction.identity.iin='OTHER','CLIENT_IDENTITY_UNVERIFIED'],
-  [s=>s.result.extraction.issuedAt='2026-07-01','GKB_DATE_NOT_ACCEPTABLE'],
+  [s=>s.result.extraction.issuedAt='2026-06-01','GKB_DATE_NOT_ACCEPTABLE'],
   [s=>s.result.extraction.findings=['PAGE_COMPLETENESS_UNVERIFIED'],'DOCUMENT_REQUIRES_VALIDATION'],
   [s=>{s.inputs[0].value='changed';s.inputs[0].disposition='corrected';},'CORRECTION_REQUIRES_VALUE_AND_REASON']
  ]){const s=setup();mutate(s);const result=await s.run([s.inputs[0]]);assert.equal(result.ok,false);assert.equal(result.outcomes[0].error,code);assert.equal(s.saved.size,0);}

@@ -46,7 +46,7 @@ test('Kaspi owner inspection retains automatic transaction, page and exact perio
  for(const mutate of [a=>a.extraction.bankStatement.reconciled=false,a=>a.extraction.bankStatement.rowsReadable=false,a=>a.read.pages.pop(),a=>a.read.pages[0].needsOcr=true]){const a=structuredClone(statement);mutate(a);assert.throws(()=>review.validateDocumentReview(value,a,record,'2026-09-10'),/STATEMENT_RECONCILIATION_REQUIRED/);}
  const wrongOwner=structuredClone(statement);wrongOwner.extraction.identity.iin='other';assert.throws(()=>review.validateDocumentReview(value,wrongOwner,record,'2026-09-10'),/DOCUMENT_IDENTITY_CONFLICT/);
  const wrongPeriod=structuredClone(statement);wrongPeriod.extraction.bankStatement.from='2025-10-01';assert.throws(()=>review.validateDocumentReview(value,wrongPeriod,record,'2026-09-10'),/STATEMENT_PERIOD_NOT_ACCEPTABLE/);
- assert.throws(()=>review.validateDocumentReview(value,statement,record,'2026-10-01'),/STATEMENT_PERIOD_NOT_ACCEPTABLE/);
+ assert.throws(()=>review.validateDocumentReview(value,statement,record,'2027-01-01'),/STATEMENT_PERIOD_NOT_ACCEPTABLE/);
 });
 
 test('ENPF accepts annual dated coverage and rechecks incomplete approvals',async()=>{
