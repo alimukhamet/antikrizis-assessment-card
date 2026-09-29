@@ -91,6 +91,8 @@ jobs:
             'server-drafts.js'
             'profile-backfill.js'
             'profile-presence.js'
+            'profile-explanations.js'
+            'debt-purpose.js'
             'required-answers.js'
             'intake-data.js'
             'enforcement-editor.js'

@@ -1,10 +1,11 @@
+import * as profileExplanations from '../public/profile-explanations.mjs';
 import * as intake from '../public/intake-data.mjs';
 import * as participants from '../public/loan-participants.mjs';
 import {test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import vm from'node:vm';import ts from'typescript';import * as schedule from'../public/payment-schedule.mjs';
 function load(path,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+path,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>n==='../../public/intake-data.mjs'?intake:imports[n],Date,Map,Set,TextEncoder});return exports;}
 const json=path=>JSON.parse(fs.readFileSync(new URL('../'+path,import.meta.url),'utf8'));
 const schema=json('lib/questionnaire/schema.json'),native=load('lib/documents/extract-native.ts',{'./power-of-attorney':load('lib/documents/power-of-attorney.ts'),'./kz-labels.json':json('lib/documents/kz-labels.json')});
-const {checkAnswers}=load('lib/questionnaire/check-answers.ts',{'./schema.json':schema,'../documents/extract-native':native,'../../public/payment-schedule.mjs':schedule,'../../public/loan-participants.mjs':participants});
+const {checkAnswers}=load('lib/questionnaire/check-answers.ts',{'../../public/profile-explanations.mjs':profileExplanations,'./schema.json':schema,'../documents/extract-native':native,'../../public/payment-schedule.mjs':schedule,'../../public/loan-participants.mjs':participants});
 const {validateDraft}=load('lib/questionnaire/draft.ts',{'./schema.json':schema,'./draft-recovery':load('lib/questionnaire/draft-recovery.ts'),'../documents/repository':load('lib/documents/repository.ts')});
 const iin='000000000010';
 function fixture(){const values={fio:'SYNTHETIC ONLY',enforcementStatus:'no',enforcementDetails:'Нет',guarantors:'Нет',iin,dognum:'TEST',marital:'Холост / не замужем',regAddress:'TEST REGISTRATION',factAddressSame:'same',dependents:'0',childrenTotal:'0',procedure:'199','count-clientjobs':'0','count-clientunofficial':'0',clientBenefitsCount:'0',c8037:'0',hardshipReason:'Платежи вношу, трудностей нет',kaspiAnnual:'0',gamblingTransfers:'no',lawyerNotesStatus:'no',n8044:'0',summa:'500000',contractDate:'2026-09-10',months:'5',payDay:'7',grafType:'423'};

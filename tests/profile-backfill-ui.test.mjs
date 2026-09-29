@@ -113,6 +113,39 @@ test('profile unknown addresses survive saved-draft restore and stay explicit',a
  for(const key of ['regAddress','factAddressSame','filingDestination','clientPhone'])assert.equal(restored.answers.find(answer=>answer.key===key).value,payload.answers.find(answer=>answer.key===key).value,key);
 });
 
+test('profile explanation prompts show the hard minimum and restore partial text without an unknown shortcut',async t=>{
+ const s=await setup(t);await s.load();const {d,w}=s;
+ w.AssessmentWorkflow.show('answers',{focus:false});
+ const purpose=d.getElementById('debtPurposeOther'),hardship=d.getElementById('n12008'),reason=d.getElementById('hardshipReason');
+ assert.ok(!d.getElementById('debtPurposeOtherField').classList.contains('hidden'),'the explanation is visible without Other');
+ assert.match(purpose.closest('.field').textContent,/кто пользовался деньгами/);
+ assert.match(hardship.closest('.field').textContent,/месяц\/год/);
+ for(const field of [purpose,hardship]){
+  assert.equal(field.minLength,60);
+  assert.equal(field.closest('.field').querySelector('.pb-unknown,[data-unknown],[data-legacy-unknown]'),null);
+ }
+ const original='Кредитные деньги потратили на покупку жилья для проживания семьи клиента.';
+ purpose.value=(original.slice(0,58)+'.')+' \n ';purpose.dispatchEvent(new w.Event('input',{bubbles:true}));
+ assert.match(d.getElementById('debtPurposeOtherCount').textContent,/59 \/ 60.*ещё 1/);
+ assert.equal(purpose.validity.customError,true);
+ const draft=w.ServerDrafts.capture();purpose.value='';
+ await w.ServerDrafts.restore({draft:{revision:2,identityRevision:1,payload:draft},automatic:true});
+ assert.equal(purpose.value,(original.slice(0,58)+'.')+' \n ');
+ assert.equal(purpose.validity.customError,true);
+ assert.match(d.getElementById('debtPurposeOtherCount').textContent,/59 \/ 60/);
+ purpose.value=original.slice(0,60);purpose.dispatchEvent(new w.Event('input',{bubbles:true}));
+ assert.equal(purpose.validity.customError,false);
+ assert.match(d.getElementById('debtPurposeOtherCount').textContent,/60 \/ 60/);
+ reason.value='Снижение дохода';reason.dispatchEvent(new w.Event('change',{bubbles:true}));
+ hardship.value='Не знаю';hardship.dispatchEvent(new w.Event('input',{bubbles:true}));
+ assert.equal(hardship.validity.customError,true);
+ hardship.value='С марта сократились рабочие часы и доход. После оплаты жилья денег на платежи не хватает.';
+ hardship.dispatchEvent(new w.Event('input',{bubbles:true}));assert.equal(hardship.validity.customError,false);
+ reason.value='Платежи вношу, трудностей нет';reason.dispatchEvent(new w.Event('change',{bubbles:true}));
+ hardship.value='';hardship.dispatchEvent(new w.Event('input',{bubbles:true}));
+ assert.equal(hardship.validity.customError,false,'hidden inapplicable details do not block');
+});
+
 test('a failed draft save stops profile publication and retains entered answers',async t=>{
  const s=await setup(t,{draftSaveFails:true,check:{ready:true,issues:[],unresolved:[]}});await s.load();
  const {d,w,calls}=s;d.getElementById('regAddress').value='SYNTHETIC UNSAVED ADDRESS';

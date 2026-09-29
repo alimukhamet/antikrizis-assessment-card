@@ -1,4 +1,5 @@
 import {normalizeIntake} from '../../public/intake-data.mjs';
+import {PROFILE_EXPLANATIONS,explanationError} from '../../public/profile-explanations.mjs';
 import schema from './schema.json';
 import {parseParticipants} from '../../public/loan-participants.mjs';
 import type {Answer,DraftPayload} from './draft';
@@ -42,7 +43,7 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   if(c==='partnerSocialOtherField')return married&&checked('choice:partnerSocialStatus:Другое');
   if(c==='enforcementRecords')return value('enforcementStatus')==='yes';
   if(c==='lawyerNotesDetails')return value('lawyerNotesStatus')==='yes';
-  if(c==='debtPurposeOtherField')return checked('choice:debtPurpose:Другое');
+  if(c==='debtPurposeOtherField')return profile||checked('choice:debtPurpose:Другое');
   if(c==='hardshipDetails')return !!value('hardshipReason')&&value('hardshipReason')!=='Платежи вношу, трудностей нет';
   if(c==='proof-details')return ['Есть на руках','Можно получить'].includes(value('n12009'));
   if(c==='kaspiWhyField'||c==='partnerKaspiWhyField')return highKaspi(c.startsWith('partner'));
@@ -58,6 +59,8 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
  function field(f:Definition,row?:Map<string,Answer>,group?:string,index?:number){
   if(f.legacy||!active(f.conditions,row)||f.key.startsWith('exact:'))return;
   if(profile&&SALES_ONLY_KEYS.has(f.key))return;
+  const explanation=profile&&!group?PROFILE_EXPLANATIONS[f.key as keyof typeof PROFILE_EXPLANATIONS]:undefined;
+  if(explanation)f={...f,label:explanation.label};
   const required=f.required;
   const retired=profile&&(group==='profilefamily'||RETIRED_PROFILE_KEYS.has(f.key)||f.key.startsWith('choice:partnerSocialStatus:'));
   if(!retired&&(row?.get(f.key)||all.get(f.key))?.sourceReplaced)issue(f.key,'ANSWER_SOURCE_REPLACED','Источник заменён: '+f.label,group,index);
@@ -73,6 +76,13 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   const unknown=f.key!=='loanParticipants'&&(row?row.get(unknownKey)?.checked===true:checked(unknownKey))&&(group?schema.groups.find(g=>g.id===group)?.fields:schema.scalar)?.some(x=>x.key===unknownKey);
   displayAnswers.push({key:f.key,label:f.label,value:unknown?'Неизвестно — уточнить':v,...(group?{group,row:index}:{})});
   if(retired)return;
+  // Drafts keep partial text, but these two explanations must be complete before
+  // publishing a profile. Old tabs and explicit unknowns cannot bypass the rule.
+  if(explanation){
+   const error=explanationError(v);
+   if(unknown||error)issue(f.key,'EXPLANATION_REQUIRED',f.label+' — '+(error||'Уточните факты у клиента.'),group,index);
+   return;
+  }
   if(unknown||['unknown','Не знаю'].includes(v)){if(profile)unresolved.push({key:f.key,label:f.label,value:'Неизвестно — уточнить',...(group?{group,row:index}:{})});else issue(f.key,'ANSWER_REQUIRED',f.label,group,index);return;}
   if(!v){if(required)issue(f.key,'ANSWER_REQUIRED',f.label,group,index);return;}
   if(f.key==='loanParticipants'&&!parseParticipants(v).valid)issue(f.key,'PARTICIPANTS_REQUIRED','Выберите «Нет» или укажите ФИО и роль каждого участника',group,index);
