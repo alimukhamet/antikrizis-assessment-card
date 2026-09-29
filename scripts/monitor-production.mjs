@@ -61,6 +61,8 @@ function recordFailure(error) {
       ? error.message : "MONITOR_REQUEST_FAILED",
     status: error.status || null,
     route: error.path || null,
+    ...(/^[1-9]\d{0,19}$/.test(error.dealId || "") ? { dealId: error.dealId } : {}),
+    ...(["timeout", "transport", "invalid_response"].includes(error.reason) ? { reason: error.reason } : {}),
     ...(error.scope === "monitoring" ? { scope: "monitoring" } : {}),
     ...(error.auditDetail || {}),
   };
@@ -69,13 +71,24 @@ function recordFailure(error) {
   process.exitCode = 1;
 }
 async function request(path, body, timeoutMs = 20000) {
-  const response = await fetch(origin + path, {
-    method: body ? "POST" : "GET",
-    headers: { cookie, origin, "content-type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
-    redirect: "manual",
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  const context = { path: path.replace(/\/\d+(?=\/|$)/g, "/:deal") };
+  const failed = (error) => {
+    const reason = ["AbortError", "TimeoutError"].includes(error?.name) ? "timeout"
+      : error?.name === "SyntaxError" ? "invalid_response" : "transport";
+    return Object.assign(Error(reason === "invalid_response" ? "MONITOR_RESPONSE_INVALID" : "MONITOR_REQUEST_FAILED"), context, { reason });
+  };
+  let response;
+  try {
+    response = await fetch(origin + path, {
+      method: body ? "POST" : "GET",
+      headers: { cookie, origin, "content-type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+      redirect: "manual",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    throw failed(error);
+  }
   if (path === "/api/session" && body)
     cookie = response.headers
       .getSetCookie()
@@ -84,10 +97,14 @@ async function request(path, body, timeoutMs = 20000) {
   if (!response.ok)
     throw Object.assign(Error("HTTP_FAILURE"), {
       status: response.status,
-      path: path.replace(/\/\d+(?=\/|$)/g, "/:deal"),
+      ...context,
       ...(path === "/api/lawyer-delivery-audit" ? { auditDetail: await auditFailure(response) } : {}),
     });
-  return response.json();
+  try {
+    return await response.json();
+  } catch (error) {
+    throw failed(error);
+  }
 }
 try {
   if (!process.env.ASSESSMENT_TEST_PASSWORD)
@@ -194,46 +211,52 @@ try {
   for (const id of ids) {
     const root = "/api/assessment/" + id;
     try {
-      await request(root);
-    } catch (error) {
-      if (error.status === 404 && id !== "12103") {
-        report.cases.push({ dealId: id, unavailable: true });
-        continue;
+      try {
+        await request(root);
+      } catch (error) {
+        if (error.status === 404 && id !== "12103") {
+          report.cases.push({ dealId: id, unavailable: true });
+          continue;
+        }
+        throw error;
       }
-      throw error;
+      const { draft } = await request(root + "/draft");
+      const result = { dealId: id, draftPresent: !!draft };
+      if (draft) {
+        const checked = await request(root + "/check", {
+          payload: draft.payload,
+          bindings: [],
+        });
+        Object.assign(result, {
+          revision: draft.revision,
+          ready: checked.readyToSubmit,
+          answerIssues: checked.issues?.length ?? null,
+          documentIssues: checked.documents?.issues?.length ?? null,
+          missingLoans: checked.documents?.loanCoverage?.missing ?? null,
+          duplicateLoans: checked.documents?.loanCoverage?.duplicates ?? null,
+          blockerCodes: [
+            ...new Set(
+              [
+                ...(checked.issues || []),
+                ...(checked.documents?.issues || []),
+                ...(checked.evidence?.issues || []),
+              ]
+                .map((v) => v.code)
+                .filter(
+                  (v) => typeof v === "string" && /^[A-Z_0-9]{1,80}$/.test(v),
+                ),
+            ),
+          ],
+        });
+      }
+      report.cases.push(result);
+    } catch (error) {
+      // A failed case remains visible while independent cases are still read.
+      recordFailure(Object.assign(error, { dealId: id }));
+      report.cases.push({ dealId: id, failed: true });
     }
-    const { draft } = await request(root + "/draft");
-    const result = { dealId: id, draftPresent: !!draft };
-    if (draft) {
-      const checked = await request(root + "/check", {
-        payload: draft.payload,
-        bindings: [],
-      });
-      Object.assign(result, {
-        revision: draft.revision,
-        ready: checked.readyToSubmit,
-        answerIssues: checked.issues?.length ?? null,
-        documentIssues: checked.documents?.issues?.length ?? null,
-        missingLoans: checked.documents?.loanCoverage?.missing ?? null,
-        duplicateLoans: checked.documents?.loanCoverage?.duplicates ?? null,
-        blockerCodes: [
-          ...new Set(
-            [
-              ...(checked.issues || []),
-              ...(checked.documents?.issues || []),
-              ...(checked.evidence?.issues || []),
-            ]
-              .map((v) => v.code)
-              .filter(
-                (v) => typeof v === "string" && /^[A-Z_0-9]{1,80}$/.test(v),
-              ),
-          ),
-        ],
-      });
-    }
-    report.cases.push(result);
   }
-  report.checks.push("bitrix_and_saved_cases");
+  if (!report.cases.some((row) => row.failed)) report.checks.push("bitrix_and_saved_cases");
   // Availability and unfinished delivery are separate. Delivery gaps remain in
   // incidents even outside the bounded sample; business readiness is not uptime.
   report.healthy = report.failures.length === 0;

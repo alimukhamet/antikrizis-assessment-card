@@ -526,9 +526,10 @@ test("production probe checks saved cases without modifying answers and never ex
       "import.meta.url",
       "'file:///synthetic/scripts/monitor-production.mjs'",
     );
-  for (const mode of ["healthy", "broken", "delivery_gaps", "cohort_signals", "cohort_failed", "cohort_incomplete", "cohort_count", "cohort_private_field", "cohort_duplicate", "cohort_badflag", "cohort_outside", "cohort_timeout", "cohort_and_case_failed", "cohort_large_error", "cohort_bad_detail"]) {
+  for (const mode of ["healthy", "broken", "delivery_gaps", "cohort_signals", "cohort_failed", "cohort_incomplete", "cohort_count", "cohort_private_field", "cohort_duplicate", "cohort_badflag", "cohort_outside", "cohort_timeout", "cohort_and_case_failed", "cohort_large_error", "cohort_bad_detail", "case_timeout", "case_transport", "case_bad_json", "case_body_timeout", "case_http"]) {
     const broken = mode === "broken";
     const cohortFailure = mode.startsWith("cohort_") && mode !== "cohort_signals";
+    const caseFailure = mode.startsWith("case_");
     const output = {},
       calls = [],
       logs = [],
@@ -546,7 +547,7 @@ test("production probe checks saved cases without modifying answers and never ex
           }))
         : [],
       staleClients: [],
-      activeCases: [],
+      activeCases: caseFailure ? [{ deal_id: "900020" }, { deal_id: "900021" }] : [],
     };
     const fetch = async (url, options = {}) => {
       const path = new URL(url).pathname;
@@ -596,6 +597,12 @@ test("production probe checks saved cases without modifying answers and never ex
         return Response.json({ error: "private-case-error" }, { status: 503 });
       if (/^\/api\/assessment\/\d+$/.test(path))
         return Response.json({ client: { name: "private-name" } });
+      if (path === "/api/assessment/12103/draft" && caseFailure) {
+        if (mode === "case_http") return Response.json({ error: "private-error" }, { status: 503 });
+        if (mode === "case_bad_json") return new Response("private-invalid-json");
+        if (mode === "case_body_timeout") return { ok: true, json: async () => { throw Object.assign(Error("private-body-error"), { name: "AbortError" }); } };
+        throw Object.assign(Error("private-transport-url?password=private-secret"), { name: mode === "case_timeout" ? "TimeoutError" : "TypeError" });
+      }
       if (path.endsWith("/draft"))
         return Response.json({
           draft: { revision: 4, payload: { answers: ["private-answer"] } },
@@ -627,10 +634,22 @@ test("production probe checks saved cases without modifying answers and never ex
     const report = JSON.parse(output["production-monitor.json"]);
     assert.equal(output["production-monitor.json"].includes("private-"), false);
     assert.equal(logs.join("").includes("private-"), false);
-    assert.equal(report.healthy, !broken && !cohortFailure);
+    assert.equal(report.healthy, !broken && !cohortFailure && !caseFailure);
     if (broken) {
       assert.equal(process.exitCode, 1);
       assert.equal(report.failure.code, "HTTP_FAILURE");
+    } else if (caseFailure) {
+      assert.equal(process.exitCode, 1, mode);
+      assert.equal(report.failure.route, "/api/assessment/:deal/draft", mode);
+      assert.equal(report.failure.dealId, "12103", mode);
+      assert.equal(report.failure.code, mode === "case_http" ? "HTTP_FAILURE" : mode === "case_bad_json" ? "MONITOR_RESPONSE_INVALID" : "MONITOR_REQUEST_FAILED", mode);
+      assert.equal(report.failure.reason, mode === "case_http" ? undefined : mode === "case_bad_json" ? "invalid_response" : mode.includes("timeout") ? "timeout" : "transport", mode);
+      assert.equal(report.failures.length, 1, mode);
+      assert.deepEqual(report.cases[0], { dealId: "12103", failed: true }, mode);
+      assert.equal(report.cases.length, 3, mode);
+      assert.ok(report.cases.slice(1).every(row => row.revision === 4 && !row.failed), "later saved cases remain checked");
+      assert.equal(report.checks.includes("bitrix_and_saved_cases"), false, "partial checks cannot report completion");
+      assert.equal(calls.filter(c => c.path === "/api/assessment/12103/draft").length, 1, "failed request is not retried");
     } else if (cohortFailure) {
       assert.equal(process.exitCode, 1);
       assert.equal(report.failure.code, "LAWYER_WAITING_MONITOR_FAILED");
