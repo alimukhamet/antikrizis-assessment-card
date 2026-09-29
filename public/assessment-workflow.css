@@ -134,7 +134,7 @@ body[data-assessment-workflow] .required-document{border-radius:6px}
 .wf-stage-footer{display:none!important}
 .wf-answer-intro{padding:4px 0 16px;margin:0}
 .wf-answer-intro .af-actions{display:flex;gap:8px;margin:0}
-.wf-answer-intro .af-actions .btn:first-child{color:#245c36;border-color:#b9cbbd}
+.wf-answer-intro .af-actions .btn-ghost:first-child{color:#245c36;border-color:#b9cbbd}
 #afQuestions{margin:12px 0 0;font-size:13px;color:#7a857e}
 #afQuestions>summary{cursor:pointer}
 .wf-conflicts{margin:12px 0 0;padding:10px 13px;border:1px solid #ead9b2;border-radius:9px;background:#fff8e8;color:#79571e;font-size:14px}
