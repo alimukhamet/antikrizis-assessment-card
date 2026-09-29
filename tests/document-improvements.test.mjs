@@ -1,4 +1,5 @@
 import{test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import vm from'node:vm';import ts from'typescript';
+import{parseParticipants}from'../public/loan-participants.mjs';
 function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>{if(n in imports)return imports[n];throw Error(n);},Date,TextEncoder});return exports;}
 const rules=load('lib/documents/extract-native.ts',{'./kz-labels.json':JSON.parse(fs.readFileSync('lib/documents/kz-labels.json')),'./power-of-attorney':load('lib/documents/power-of-attorney.ts')});const policy=load('lib/documents/policy.ts');const reader=load('lib/documents/read-pdf.ts',{'unpdf':{}});
 const pages=(...texts)=>texts.map((text,i)=>({page:i+1,text,nativeCharacters:text.length,needsOcr:false}));
@@ -179,6 +180,7 @@ test('Kazakh guarantor and joint co-borrower rows retain names, original roles a
  for(const role of ['Кепілдік беруші - O','Кепілдік\nберуші - О','Ынтымақты міндеттемелері бар\nқосалқы қарыз алушы (қосылған\nтұлға)']){
   const second=`Байланысты субъектілер\nСубъектінің рөлі: АТӘ/атауы: ЖСН/БСН: Құжат түрі: Құжат нөмірі:\n${role} ТЕСТОВ\nТЕСТ ТЕСТОВИЧ\n991231300003 Жеке куәлік 123456789\nШарттың валютасындағы күндер саны\n2 беттің 2 беті`;
   const r=rules.extractNative(pages(first,second)),fact=r.credits[0].facts.find(f=>f.key==='relatedParties');assert.equal(r.credits.length,1);assert.equal(r.credits[0].contractNumber,'TEST-1');assert.equal(fact.page,2);assert.equal(fact.value,'ТЕСТОВ ТЕСТ ТЕСТОВИЧ — '+role.replace(/\s+/g,' '));
+  const profile=parseParticipants(fact.value);assert.equal(profile.valid,true);assert.equal(profile.people[0].name,'ТЕСТОВ ТЕСТ ТЕСТОВИЧ');assert.equal(profile.people[0].role,role.startsWith('Ынтымақты')?'Созаёмщик':'Гарант');assert.equal(parseParticipants(fact.value.replace(/ — .*/,' — Неизвестная роль')).valid,false);
   assert.equal(rules.extractNative(pages(first,second.replace('991231300003','991231300004'))).credits[0].facts.some(f=>f.key==='relatedParties'),false);
  }
 });
