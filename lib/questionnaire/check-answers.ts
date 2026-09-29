@@ -10,8 +10,8 @@ type Definition={key:string;type:string;label:string;required?:boolean;legacy?:b
 /** Answer completeness only. Document eligibility and fact review are separate gates. */
 /** Contract/payment answers belong to sales. The profile backfill never asks for or writes them. */
 export const SALES_ONLY_KEYS=new Set(['dognum','summa','contractDate','months','payDay','grafType']);
-/** Optional for sales, required when the documentologist completes the profile. */
-const PROFILE_REQUIRED_KEYS=new Set(['n8001Employer','n8002Employer']);
+/** Retired profile questions remain in saved data, but cannot require new answers. */
+const RETIRED_PROFILE_KEYS=new Set(['postAddress','contactChannel','count-profilefamily','partnerSocialOther']);
 export type CheckOptions={profile?:boolean};
 export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessmentDay?:string,options:CheckOptions={}){
  const profile=options.profile===true;
@@ -58,8 +58,9 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
  function field(f:Definition,row?:Map<string,Answer>,group?:string,index?:number){
   if(f.legacy||!active(f.conditions,row)||f.key.startsWith('exact:'))return;
   if(profile&&SALES_ONLY_KEYS.has(f.key))return;
-  const required=f.required||profile&&PROFILE_REQUIRED_KEYS.has(f.key);
-  if((row?.get(f.key)||all.get(f.key))?.sourceReplaced)issue(f.key,'ANSWER_SOURCE_REPLACED','Источник заменён: '+f.label,group,index);
+  const required=f.required;
+  const retired=profile&&(group==='profilefamily'||RETIRED_PROFILE_KEYS.has(f.key)||f.key.startsWith('choice:partnerSocialStatus:'));
+  if(!retired&&(row?.get(f.key)||all.get(f.key))?.sourceReplaced)issue(f.key,'ANSWER_SOURCE_REPLACED','Источник заменён: '+f.label,group,index);
   if(f.type==='checkbox'){
    if(group==='creditors'&&f.key==='loanClaimIncluded'){
     displayAnswers.push({key:f.key,label:'Включить в иск',value:row?.get(f.key)?.checked===false?'Нет':'Да',group,row:index});return;
@@ -71,6 +72,7 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   const unknownKey='unknown:'+f.key;
   const unknown=f.key!=='loanParticipants'&&(row?row.get(unknownKey)?.checked===true:checked(unknownKey))&&(group?schema.groups.find(g=>g.id===group)?.fields:schema.scalar)?.some(x=>x.key===unknownKey);
   displayAnswers.push({key:f.key,label:f.label,value:unknown?'Неизвестно — уточнить':v,...(group?{group,row:index}:{})});
+  if(retired)return;
   if(unknown||['unknown','Не знаю'].includes(v)){if(profile)unresolved.push({key:f.key,label:f.label,value:'Неизвестно — уточнить',...(group?{group,row:index}:{})});else issue(f.key,'ANSWER_REQUIRED',f.label,group,index);return;}
   if(!v){if(required)issue(f.key,'ANSWER_REQUIRED',f.label,group,index);return;}
   if(f.key==='loanParticipants'&&!parseParticipants(v).valid)issue(f.key,'PARTICIPANTS_REQUIRED','Выберите «Нет» или укажите ФИО и роль каждого участника',group,index);

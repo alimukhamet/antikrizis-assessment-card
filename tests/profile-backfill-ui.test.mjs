@@ -7,7 +7,7 @@ import {JSDOM} from 'jsdom';
 const html=fs.readFileSync('public/questionnaire.html','utf8');
 const tick=()=>new Promise(r=>setTimeout(r,20));
 
-async function setup(t,{mode='profile',check={ready:false,issues:[{key:'regAddress',code:'ANSWER_REQUIRED',label:'Адрес прописки*'}],unresolved:[]}}={}){
+async function setup(t,{mode='profile',draftSaveFails=false,check={ready:false,issues:[{key:'regAddress',code:'ANSWER_REQUIRED',label:'Адрес прописки*'}],unresolved:[]}}={}){
  const dom=new JSDOM(html,{url:'https://synthetic.invalid/questionnaire.html'+(mode?'?mode='+mode:''),runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window,d=w.document,run=code=>vm.runInContext(code,dom.getInternalVMContext()),calls=[],errors=[];
  w.HTMLElement.prototype.scrollIntoView=function(){};
  w.HTMLElement.prototype.getClientRects=function(){return this.isConnected&&!this.closest('.hidden,[hidden]')?[{}]:[];};
@@ -17,6 +17,7 @@ async function setup(t,{mode='profile',check={ready:false,issues:[{key:'regAddre
  const profile={dealId:'900001',title:'SYNTHETIC CLIENT',iin:'000000000010',zviDate:'2026-09-01',procedure:'199',phone:'+7 700 000 00 01',legacyCard:'SYNTHETIC LEGACY CARD',current:{fio:'SYNTHETIC CLIENT FULL',marital:'В браке'},active:null,latest:null};
  w.fetch=async(path,options={})=>{
   calls.push({path,method:options.method||'GET',body:options.body});let result;
+  if(draftSaveFails&&path.endsWith('/draft')&&options.method==='POST')return{ok:false,status:409,json:async()=>({error:'DRAFT_CHANGED'})};
   if(path==='/api/assessment/900001')result=context;
   else if(path==='/api/assessment/clients')result={drafts:[],recent:[]};
   else if(path.endsWith('/draft')){result=options.method==='POST'?{revision:2,latestRevision:2}:{draft:null};}
@@ -53,7 +54,7 @@ test('profile mode hides the contract, prefills from Bitrix, shows the old card 
  assert.ok(d.body.hasAttribute('data-profile-backfill'));
  assert.equal(d.body.dataset.uxMode,'contract');
  assert.ok(d.getElementById('dognum').closest('section.card').hasAttribute('data-profile-hidden'));
- assert.equal(d.getElementById('profileOnly').classList.contains('hidden'),false);
+ assert.ok(d.getElementById('profileOnly').hasAttribute('data-profile-hidden'));
  assert.ok(d.querySelector('.wf-final-actions #profileSavePanel'));
  assert.equal(d.querySelector('.ux-page-title').textContent,'Профиль клиента');
  assert.equal(d.getElementById('fio').value,'SYNTHETIC CLIENT FULL');
@@ -80,12 +81,46 @@ test('«Не знаю» fills an open answer and the check lists missing answers
  assert.equal(panel.querySelectorAll('.pb-issues li').length,1);
 });
 
-test('birth dates are typed as digits and formatted',async t=>{
+test('profile reuses the contract form with phone and three addresses, without family or extra contact questions',async t=>{
  const s=await setup(t);await s.load();
  const {d,w}=s;d.getElementById('count-profilefamily').value='1';d.getElementById('count-profilefamily').dispatchEvent(new w.Event('change',{bubbles:true}));await tick();
- const input=d.querySelector('#profilefamily .repeat-rows input[data-profile-date]');
- input.value='01022015';input.dispatchEvent(new w.Event('input',{bubbles:true}));
- assert.equal(input.value,'01.02.2015');
+ const phone=d.getElementById('clientPhone'),addresses=d.getElementById('regAddress').closest('section.card');
+ assert.equal(phone.closest('section.card'),d.getElementById('fio').closest('section.card'));
+ assert.notEqual(w.getComputedStyle(phone.closest('.field')).display,'none');
+ assert.equal(phone.required,false,'the existing contact does not become a new save gate');
+ for(const id of ['factAddressSame','factAddress','filingDestination'])assert.equal(d.getElementById(id).closest('section.card'),addresses,id);
+ for(const id of ['profilefamily','contactChannel','postAddress','partnerSocialStatusField'])assert.ok(d.getElementById(id).closest('[data-profile-hidden]'),id);
+ assert.equal(d.querySelector('input[type="email"]'),null);
+ const suggestions=d.getElementById('recommendedCourt').closest('details');
+ assert.ok(suggestions.classList.contains('pb-address-details'));
+ assert.equal(suggestions.open,false);
+ assert.equal(d.querySelectorAll('#filingDestination').length,1);
+ assert.equal(d.querySelectorAll('#clientPhone').length,1);
+ const saved=w.ServerDrafts.capture();
+ assert.ok(saved.groups.find(group=>group.id==='profilefamily').rows.length===1,'legacy rows stay in drafts');
+});
+
+test('profile unknown addresses survive saved-draft restore and stay explicit',async t=>{
+ const s=await setup(t);await s.load();const {d,w}=s;
+ for(const id of ['regAddress','filingDestination'])d.getElementById(id).value='Не знаю';
+ d.getElementById('factAddressSame').value='unknown';
+ const payload=w.ServerDrafts.capture();
+ for(const id of ['regAddress','filingDestination','factAddressSame','clientPhone'])d.getElementById(id).value='';
+ await w.ServerDrafts.restore({draft:{revision:2,identityRevision:1,payload},automatic:true});
+ for(const id of ['regAddress','filingDestination'])assert.equal(d.getElementById(id).value,'Не знаю',id);
+ assert.equal(d.getElementById('factAddressSame').value,'unknown');
+ const restored=w.ServerDrafts.capture();
+ for(const key of ['regAddress','factAddressSame','filingDestination','clientPhone'])assert.equal(restored.answers.find(answer=>answer.key===key).value,payload.answers.find(answer=>answer.key===key).value,key);
+});
+
+test('a failed draft save stops profile publication and retains entered answers',async t=>{
+ const s=await setup(t,{draftSaveFails:true,check:{ready:true,issues:[],unresolved:[]}});await s.load();
+ const {d,w,calls}=s;d.getElementById('regAddress').value='SYNTHETIC UNSAVED ADDRESS';
+ d.getElementById('regAddress').dispatchEvent(new w.Event('input',{bubbles:true}));
+ await w.ProfileBackfill.save();
+ assert.equal(d.getElementById('regAddress').value,'SYNTHETIC UNSAVED ADDRESS');
+ assert.match(d.getElementById('profileSavePanel').textContent,/Черновик не сохранён/);
+ assert.ok(!calls.some(call=>call.path.endsWith('/profile')&&call.method==='POST'),'no profile check or publication follows the rejected draft');
 });
 
 test('built Worker protects the profile queue page and its APIs; signed-in page renders the queue',async()=>{
