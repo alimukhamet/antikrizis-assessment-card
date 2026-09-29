@@ -104,6 +104,7 @@ window.AssessmentWorkflow=(()=>{
  });
  const answerIntro=step(make('section',null,'wf-answer-intro'),'answers');
  answerIntro.id='workflowAnswers';
+ answerActions.prepend($('afApply'));
  const conflictDetails=details('Расхождения','wf-conflicts');conflictDetails.append(conflicts);
  answerIntro.append(answerActions,conflictDetails,metrics);moreContent.append(questions);questions.open=false;metrics.hidden=true;
  root.prepend(answerIntro);

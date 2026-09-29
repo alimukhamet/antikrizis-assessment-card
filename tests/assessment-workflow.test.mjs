@@ -498,3 +498,9 @@ test('a failed PDF cleanup cannot prevent closing or leave an old client documen
  await s.run('afSource({fileId:1,page:1})');s.d.getElementById('afSourceClose').click();assert.equal(s.d.getElementById('afSourceDialog').open,false);assert.equal(s.d.getElementById('afPreview').textContent,'');
  await s.run('afSource({fileId:1,page:1})');s.d.dispatchEvent(new s.w.Event('assessment-case-opened'));assert.equal(s.d.getElementById('afSourceDialog').open,false);assert.equal(s.d.getElementById('afPreview').textContent,'');assert.deepEqual(s.capture(),before);
 });
+
+test('the fill-missing action is reachable in Answers, outside the hidden identity picker',async t=>{
+ const s=setup(t);await s.load();s.mount();collect(s);
+ s.run(`af.results.set(selectedFiles[0].id,{identity:{iin:'991231300003',fio:'SYNTHETIC'},fields:[],loans:[],properties:[],kind:'gkbFull'});afClientChoices();`);
+ s.w.AssessmentWorkflow.show('answers',{focus:false});const button=s.d.getElementById('afApply');assert.ok(button.closest('#workflowAnswers'));assert.equal(button.closest('#afIdentity'),null);assert.equal(button.style.display,'inline-block');assert.match(button.textContent,/Заполнить пропуски/);
+});

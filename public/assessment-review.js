@@ -147,6 +147,7 @@ function afRow(group,key,loan=null){
    const controls=[...row.querySelectorAll('input,select')],get=key=>controls.find(e=>e.id.replace(/_r\d+$/,'')===key)?.value;
    return get('n8038')&&get('loanContractId')&&aliases.has(afLoanRowKey(group+'|'+af.client+'|'+get('n8038')+'|'+get('loanContractId')));
   });
+  if(af.fillingMissing&&matches.length>1)return null;
   if(matches.length===1){if(!matches[0].id)matches[0].id='af-row-'+(++nextRow);candidateIds.add(matches[0].id);}
  }
  const candidates=[...g.querySelector(':scope > .repeat-rows').children].filter(row=>candidateIds.has(row.id));
