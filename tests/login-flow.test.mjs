@@ -113,5 +113,9 @@ test('native login retains the rate limiter and distinguishes an unavailable pro
 test('login redirects accept only local approved pages and a numeric deal ID', () => {
   assert.equal(navigation.loginDestination(destination), destination);
   assert.equal(navigation.loginDestination('/?dealId=11665&password=discard'), '/?dealId=11665');
+  assert.equal(navigation.loginDestination('/profile-backfill?dealId=11665&edit=1&password=discard'), '/profile-backfill?dealId=11665&edit=1');
+  assert.equal(navigation.loginDestination('/profile-backfill?edit=1'), '/profile-backfill');
+  assert.equal(navigation.loginDestination('/profile-backfill?dealId=11665&edit=evil'), '/profile-backfill?dealId=11665');
+  assert.equal(navigation.loginDestination('/assessment-review?dealId=11665&edit=1'), '/assessment-review?dealId=11665');
   for (const value of ['https://other.invalid', '//other.invalid', '/\\other.invalid', '/api/export', 'javascript:alert(1)', '/login', null]) assert.equal(navigation.loginDestination(value), '/');
 });

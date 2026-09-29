@@ -22,7 +22,7 @@ Canonical Site: https://antikrizis-assessment-card.mukhamet-ali-ma.chatgpt.site
 
 Documents, drafts, inspections, submissions and upload receipts are separate records. A timeout does not prove that an external write failed. Retrying recovers the original operation. An owner can cancel an upload only while the server can prove it never started; cancellation remains available after reopening the case.
 
-## Profile backfill (Документолог, one-time)
+## Client profiles (Документолог)
 
 `/profile-backfill` lists every category `1` deal on a «ЗВИ…» or «В ожидании» stage, unfinished first, oldest Дата ЗВИ first. Missing/invalid dates are last within each completion group; equal dates use ascending deal ID. The queue reapplies this priority after completion or reopening, and «Начать» / «Следующая сделка» select the oldest available unfinished profile. Opening a deal runs the same questionnaire in `mode=profile`:
 
@@ -35,6 +35,7 @@ Documents, drafts, inspections, submissions and upload receipts are separate rec
 - the small employee summary counts distinct completed client profiles across this tool, credited to the latest saver. Repeated saves do not add completions; reopened profiles are excluded until saved again. Presence does not change answers, documents, CRM fields or receipts;
 - ФИО, телефон, семейное положение and процедура are prefilled from Bitrix; contract and payment questions are hidden;
 - the profile reuses the contract questionnaire's client and financial questions, without contract/payment fields or stricter employer-name requirements. The existing contact phone is visible and optional; there is no email or family-members questionnaire;
+- CRM «Изменить факты» opens this same questionnaire directly at the answers after the saved draft has loaded. Any profile answer can be corrected; uploading documents again is unnecessary. Draft autosave stays separate from «Сохранить изменения». After a verified save, editing restores that action and presence; a pending save must be reconciled before a new publication. A receipt never marks newer, unsent edits as saved.
 - registration address, actual residence and filing destination appear together. Sales recommendations and client preferences remain available in a collapsed optional section;
 - the overall debt-purpose explanation is always visible in profiles; payment-difficulty details appear when a difficulty is selected. Both require at least 60 characters after trimming/collapsing whitespace, with concrete prompts and a live counter. «Не знаю» cannot satisfy these explanations. The server enforces the same rule for checking and saving, including old tabs; unfinished text remains saveable as a draft. Contract mode keeps its existing requirements;
 - other supported «Не знаю» answers save an open question («Требует уточнения») and survive draft restore. Retired family/contact answers remain in old drafts and saved history without blocking profile completion;

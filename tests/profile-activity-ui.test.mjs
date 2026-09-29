@@ -52,6 +52,7 @@ test('profile tab announces presence, warns about another worker and releases af
  w.document.dispatchEvent(new w.Event('profile-backfill-saved'));await new Promise(r=>setTimeout(r,10));
  assert.equal(calls.at(-1).action,'release');assert.equal(w.document.getElementById('profilePresence').hidden,true);
  const before=calls.length;w.dispatchEvent(new w.Event('focus'));await new Promise(r=>setTimeout(r,10));assert.equal(calls.length,before,'saved profile does not become in-progress again');
+ w.document.dispatchEvent(new w.Event('profile-backfill-editing'));await new Promise(r=>setTimeout(r,10));assert.equal(calls.at(-1).action,'heartbeat','editing a saved profile resumes presence for the same deal');assert.equal(calls.at(-1).dealId,'900001');
  w.dispatchEvent(new w.Event('pagehide'));await new Promise(r=>setTimeout(r,10));assert.equal(calls.at(-1).action,'release');
  assert.ok(calls.every(c=>c.path==='/api/profile-activity'),'no client or CRM writes');
 });
