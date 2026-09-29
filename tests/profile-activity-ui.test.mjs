@@ -6,20 +6,22 @@ import ts from 'typescript';
 import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
+const ordering={};vm.runInNewContext(ts.transpileModule(await readFile('lib/crm/profile-queue-order.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:ordering});
 
 test('profile queue shows coworkers, skips occupied work, updates completions and filters in-progress',async()=>{
  const dom=new JSDOM('<div id="root"></div>',{url:'https://synthetic.invalid/profile-backfill',pretendToBeVisual:true});
  const previous={window:globalThis.window,document:globalThis.document,act:globalThis.IS_REACT_ACT_ENVIRONMENT};
  globalThis.window=dom.window;globalThis.document=dom.window.document;globalThis.IS_REACT_ACT_ENVIRONMENT=true;
- const items=[1,2,3].map(i=>({dealId:'90000'+i,title:'SYNTHETIC '+i,stageName:'ЗВИ',zviDate:'2026-09-29',procedure:'',hasIin:true,hasLegacyCard:false,profileSavedAt:''}));
+ const items=[3,2,1].map(i=>({dealId:'90000'+i,title:'SYNTHETIC '+i,stageName:'ЗВИ',zviDate:'2026-09-0'+i,procedure:'',hasIin:true,hasLegacyCard:false,profileSavedAt:''}));
  const activity={currentWorker:'azhar',active:[{dealId:'900001',workerId:'ramazan',workerName:'Ramazan'}],completed:[],workers:[{workerId:'ramazan',workerName:'Ramazan',done:0,inProgress:1},{workerId:'azhar',workerName:'Azhar',done:0,inProgress:0}]};
  const timers=[],calls=[];
- const context=vm.createContext({exports:{},window:dom.window,document:dom.window.document,Intl,Date,AbortController,setInterval:f=>(timers.push(f),timers.length),clearInterval:()=>{},fetch:async path=>{calls.push(path);return {ok:true,json:async()=>path==='/api/profile-queue'?{items}:structuredClone(activity)};},require:n=>{if(n==='react')return React;throw Error(n);}});
+ const context=vm.createContext({exports:{},window:dom.window,document:dom.window.document,Intl,Date,AbortController,setInterval:f=>(timers.push(f),timers.length),clearInterval:()=>{},fetch:async path=>{calls.push(path);return {ok:true,json:async()=>path==='/api/profile-queue'?{items}:structuredClone(activity)};},require:n=>{if(n==='react')return React;if(n==='../../lib/crm/profile-queue-order')return ordering;throw Error(n);}});
  const source=await readFile('app/profile-backfill/ProfileQueue.tsx','utf8');
  vm.runInContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText.replace('"use strict";','"use strict"; const React = require("react");'),context);
  const root=createRoot(document.getElementById('root'));
  try{
   await act(async()=>root.render(React.createElement(context.exports.ProfileQueue)));
+  assert.deepEqual([...document.querySelectorAll('.profile-queue-name strong')].map(n=>n.textContent),['SYNTHETIC 1','SYNTHETIC 2','SYNTHETIC 3']);
   assert.equal(document.querySelector('.profile-queue-next').getAttribute('href'),'/profile-backfill?dealId=900002');
   const busy=document.querySelector('.profile-queue-list a[aria-disabled=true]');assert.match(busy.textContent,/В работе: Ramazan/);assert.equal(busy.hasAttribute('href'),false);
   await act(async()=>[...document.querySelectorAll('.profile-queue-tools button')].find(b=>b.textContent==='В работе').click());
@@ -32,6 +34,11 @@ test('profile queue shows coworkers, skips occupied work, updates completions an
   await act(async()=>[...document.querySelectorAll('.profile-queue-tools button')].find(b=>b.textContent==='Заполнены').click());
   assert.equal(document.querySelectorAll('.profile-queue-list li').length,1);
   assert.match(document.querySelector('.profile-queue-progress').textContent,/1 из 3/);
+  activity.completed=[];activity.workers[0].done=0;
+  await act(async()=>timers[0]());
+  await act(async()=>[...document.querySelectorAll('.profile-queue-tools button')].find(b=>b.textContent==='Не заполнены').click());
+  assert.equal(document.querySelector('.profile-queue-name strong').textContent,'SYNTHETIC 1','a reopened older profile returns to its date priority');
+  assert.equal(document.querySelector('.profile-queue-next').getAttribute('href'),'/profile-backfill?dealId=900001');
  }finally{await act(async()=>root.unmount());dom.window.close();globalThis.window=previous.window;globalThis.document=previous.document;globalThis.IS_REACT_ACT_ENVIRONMENT=previous.act;}
 });
 

@@ -15,6 +15,19 @@ try{
  assert.equal(new Set(activity.active.map(s=>s.dealId+':'+s.workerId)).size,activity.active.length);
  for(const worker of activity.workers){assert.equal(worker.done,activity.completed.filter(s=>s.workerId===worker.workerId).length);assert.equal(worker.inProgress,activity.active.filter(s=>s.workerId===worker.workerId).length);}
  const page=await request('/profile-backfill',{headers:{cookie}});assert.equal(page.status,200);const html=await page.text();assert.match(html,/В работе/);assert.match(html,/Не заполнены/);
+ assert.match(html,/Сначала старые даты ЗВИ/);
+ const queueResponse=await request('/api/profile-queue',{headers:{cookie}});assert.equal(queueResponse.status,200);
+ const queue=(await queueResponse.json()).items;assert.ok(Array.isArray(queue));
+ const ordered=queue.map(item=>{const date=Date.parse(item.zviDate);return {done:Boolean(item.profileSavedAt),time:Number.isFinite(date)?date:Infinity,id:Number(item.dealId)};});
+ for(let i=1;i<ordered.length;i++){
+  const previous=ordered[i-1],current=ordered[i];
+  assert.ok(Number(previous.done)<=Number(current.done),'Unfinished profiles must come first');
+  if(previous.done===current.done){
+   assert.ok(previous.time<=current.time,'ZVI dates must be oldest first, missing dates last');
+   if(previous.time===current.time)assert.ok(previous.id<=current.id,'Equal dates use ascending deal ID');
+  }
+ }
+ report.queue={order:'oldest-zvi-first',total:queue.length,dated:ordered.filter(item=>Number.isFinite(item.time)).length,verified:true};
  // Validate in memory on an existing audit case. Never call save, draft POST,
  // presence POST or the profile GET (which may reconcile a history receipt).
  const root='/api/assessment/11665';

@@ -24,7 +24,7 @@ Documents, drafts, inspections, submissions and upload receipts are separate rec
 
 ## Profile backfill (Документолог, one-time)
 
-`/profile-backfill` lists every category `1` deal on a «ЗВИ…» or «В ожидании» stage, unfinished first, newest Дата ЗВИ first. Opening a deal runs the same questionnaire in `mode=profile`:
+`/profile-backfill` lists every category `1` deal on a «ЗВИ…» or «В ожидании» stage, unfinished first, oldest Дата ЗВИ first. Missing/invalid dates are last within each completion group; equal dates use ascending deal ID. The queue reapplies this priority after completion or reopening, and «Начать» / «Следующая сделка» select the oldest available unfinished profile. Opening a deal runs the same questionnaire in `mode=profile`:
 
 - deal documents are pulled from Bitrix and read automatically; the old text card (`UF_CRM_AI_CARD`) is shown read-only next to the answers;
 - opening a profile automatically shows «В работе: имя» to colleagues. The queue refreshes activity every 15 seconds without rereading Bitrix; occupied rows and the next-profile suggestion direct staff to free clients. Direct links warn if another employee also has the profile open. Presence is coordination information, not an exclusive editing lock;
