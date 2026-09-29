@@ -76,8 +76,8 @@ export class EvidenceRepository {
   if(extraction)return {document,extraction,result:await this.readResult(extraction)};
   // Compare actual facts, not a broad document kind. An unchanged report keeps
   // its immutable evidence and employee reviews; improved facts require review.
-  if(version.endsWith(':rules-native-24')){
-   const previous=await this.cached(caseId,originalHash,version.replace(/:rules-native-24$/,':rules-native-23'));
+  if(/:rules-native-(?:24|25)$/.test(version)){
+   const previous=await this.cached(caseId,originalHash,version.replace(/(rules-native-)(\d+)$/,(_,prefix,n)=>prefix+(Number(n)-1)));
    if(!previous)return null;
    const result=previous.result as {extraction?:NativeExtraction;read?:{pages?:PageText[]}};
    if(!result.extraction?.kind)return null;

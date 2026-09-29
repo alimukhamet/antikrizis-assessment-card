@@ -132,3 +132,11 @@ test('loan type distinguishes the spelling Займ, business financing and hous
   const result=rules.extractNative(pages(header+`Вид финансирования: ${financing}\nЦель кредита: ${purpose}\nОбъект кредитования: ${object}\nВид обеспечения: ${security}\nСтраница 1 из 1`));assert.equal(result.credits[0].facts.find(f=>f.key==='creditType')?.value,expected);
  }
 });
+
+test('Lombard lender names fill the profile type even when full GKB calls the product a generic loan',()=>{
+ const report=creditor=>`Персональный кредитный отчет\nОбязательство 1\nРоль субъекта: Заёмщик\nФаза контракта: Действующий\nКредитор: ${creditor}\nНомер договора: L-1\nВид финансирования: Заем\nЦель кредита: Прочие\nСумма предстоящих платежей /валюта: 100.00 KZT\nКоличество дней просрочки: 0\nСтраница 1 из 1`;
+ for(const creditor of ['ТОО "Сейф-Ломбард"','ТОО "Lemon Land Lombard"','ТОО "Ломбард Сандық"','ТОО "birinshi lombard"']){
+  const r=rules.extractNative(pages(report(creditor))),fact=r.credits[0].facts.find(f=>f.key==='creditType');assert.equal(fact.value,'Ломбард');assert.ok(fact.source.includes(creditor));assert.equal(r.credits.length,1);assert.equal(r.credits[0].contractNumber,'L-1');
+ }
+ for(const creditor of ['ТОО "Lombardia"','TEST BANK'])assert.equal(rules.extractNative(pages(report(creditor)+'\nНазначение: Ломбард')).credits[0].facts.find(f=>f.key==='creditType').value,'Потребительский кредит');
+});

@@ -26,7 +26,11 @@ export async function POST(request:Request,ctx:{params:Promise<{dealId:string}>}
   if(typeof body.fileId!=='string'||! /^[1-9]\d*$/.test(body.fileId))throw new RepositoryError('INVALID_FILE_ID',400);
   if(body.identityRevision!==record.identity_revision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
   const imported=await repository.importedDocument(record,body.fileId);
-  if(imported){
+  // Owner diagnostics can measure the real Bitrix transfer without changing an
+  // origin receipt, client answer or CRM record. Ordinary intake always reuses it.
+  if(body.verifyOriginal===true&&actor.worker!=='ali')throw new RepositoryError('FORBIDDEN',403);
+  if(body.verifyOriginal===true&&!imported)throw new RepositoryError('DOCUMENT_NOT_FOUND',404);
+  if(imported&&body.verifyOriginal!==true){
    // Reuse the immutable inbound copy only while this file still belongs to the
    // same CRM client. Final delivery separately verifies the live file's bytes.
    const refs=await dealDocumentReferences(process.env.BITRIX_WEBHOOK??'',dealId,client.iin);
@@ -35,14 +39,17 @@ export async function POST(request:Request,ctx:{params:Promise<{dealId:string}>}
    if(!current||current.identity_revision!==record.identity_revision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
    return Response.json({...await storedAnalysis(client,record,repository,imported,actor),originalName:imported.original_name,crmFileId:body.fileId},{headers});
   }
-  let filename='Bitrix-'+body.fileId+'.pdf';
+  const started=Date.now();let filename='Bitrix-'+body.fileId+'.pdf';
   const bytes=await createCrmDocumentReader(process.env.BITRIX_WEBHOOK??'',dealId,client.iin,fetch,{pdfOnly:true,onFilename:name=>{filename=name;}})({id:body.fileId});
-  const hash=await sha256(bytes),cached=await repository.cached(record.id,hash,analysisVersion),result=cached?.result as Analysis|undefined;
+  const hash=await sha256(bytes);
+  if(body.verifyOriginal===true&&imported&&(hash!==imported.original_sha256||bytes.length!==imported.byte_size))throw new RepositoryError('ORIGINAL_INTEGRITY_FAILED',409);
+  const cached=await repository.cached(record.id,hash,analysisVersion),result=cached?.result as Analysis|undefined;
   const read=result?.read??await readPdf(bytes),extraction=result?.extraction??extractNative(read.pages);
   const fresh=await readClientContext(dealId,process.env.BITRIX_WEBHOOK??'');
   if(fresh.iin!==client.iin)throw new RepositoryError('CASE_IDENTITY_CHANGED');
   const current=await repository.syncCase(fresh);
   if(current.identity_revision!==record.identity_revision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
+  if(body.verifyOriginal===true&&imported)return Response.json({...await storedAnalysis(fresh,current,repository,imported,actor),originalName:imported.original_name,crmFileId:body.fileId,downloadVerification:{verified:true,byteSize:bytes.length,elapsedMs:Date.now()-started}},{headers});
   const stored=cached??await repository.store(record.id,bytes,filename,actor,analysisVersion,{read,extraction});
   // Record an inbound origin receipt in the existing immutable evidence history.
   // Final saving can reuse this exact CRM file after membership and byte-hash readback.

@@ -124,7 +124,7 @@ window.AssessmentWorkflow=(()=>{
  const floating=make('nav',null,'wf-bottom-nav');floating.setAttribute('aria-label','Переход между этапами');
  const previous=action('← Назад',()=>show(active==='contract'?'answers':'documents'));
  const nextStep=action('Проверить и продолжить →',async()=>{
-  if(profile){if(active==='documents'){if(!af.busy&&HostedAssessment.ready())show('answers');}else if(active==='answers')show('contract');else window.ProfileBackfill?.save();return;}
+  if(profile){if(active==='documents'){if(HostedAssessment.ready()&&window.ServerDrafts?.canSwitch())show('answers');}else if(active==='answers')show('contract');else window.ProfileBackfill?.save();return;}
   if(active==='documents'){
    if(checkingDocuments||af.busy||!HostedAssessment.ready()||!prepareUpload())return;
    const state=collection();
@@ -284,9 +284,9 @@ window.AssessmentWorkflow=(()=>{
   }
   const open=profile||state.ready;
   for(const [name,{button}]of tabs)if(name!=='documents'){button.setAttribute('aria-disabled',String(!open));button.title=open?'':'Сначала соберите обязательные документы';}
-  nextStep.setAttribute('aria-disabled',String(active==='documents'&&(checkingDocuments||af.busy||!HostedAssessment.ready())));
+  nextStep.setAttribute('aria-disabled',String(active==='documents'&&(checkingDocuments||!profile&&af.busy||!HostedAssessment.ready())));
   nextStep.classList.toggle('wf-missing-action',!profile&&active==='documents'&&HostedAssessment.ready()&&!af.busy&&!state.ready);
-  if(active==='documents'&&profile)nextStep.textContent=!HostedAssessment.ready()?'Выберите клиента':af.busy?'Читаем документы…':'Далее: ответы →';
+  if(active==='documents'&&profile)nextStep.textContent=!HostedAssessment.ready()?'Выберите клиента':af.busy?'Заполнять профиль, пока читаются документы →':'Далее: ответы →';
   else if(active==='documents')nextStep.textContent=!HostedAssessment.ready()?'Выберите клиента':checkingDocuments?'Проверяем изменения…':af.busy?'Читаем документы…':waitingForContext?'Ответить на вопросы':state.ready?'К ответам →':collectionAction(state.rows.find(row=>row.state!=='present'));
   if(!profile&&active!=='documents'&&!state.ready)show('documents',{focus:false,remember:false});
  }

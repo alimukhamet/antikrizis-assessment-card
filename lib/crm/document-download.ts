@@ -79,9 +79,10 @@ export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin
      range(response,start,end,total);
      const data=await bytes(response);if(data.length!==end-start+1)throw new DocumentUploadError('CRM_FILE_LENGTH_MISMATCH');result.set(data,start);
     }
-    // Three bounded read-only transfers per file; the complete assembled bytes
+    // PDF intake uses six bounded read-only transfers; verification keeps three.
+    // The complete assembled bytes
     // still have to pass the upload manifest's length and SHA-256 checks.
-    try{await Promise.all(Array.from({length:Math.min(3,Math.ceil((total-cursor)/RANGE_BYTES))},async()=>{while(cursor<total){if(stopped.signal.aborted)throw new DocumentUploadError('CRM_FILE_DOWNLOAD_FAILED');const start=cursor;cursor+=RANGE_BYTES;await part(start);}}));}
+    try{await Promise.all(Array.from({length:Math.min(options.pdfOnly?6:3,Math.ceil((total-cursor)/RANGE_BYTES))},async()=>{while(cursor<total){if(stopped.signal.aborted)throw new DocumentUploadError('CRM_FILE_DOWNLOAD_FAILED');const start=cursor;cursor+=RANGE_BYTES;await part(start);}}));}
     catch(error){stopped.abort();throw error;}
     options.onProgress?.({phase:'file-complete',bytes:total,parts:Math.ceil(total/RANGE_BYTES)});
     return result;

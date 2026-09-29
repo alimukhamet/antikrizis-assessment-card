@@ -10,6 +10,10 @@ on:
         description: 'Update obsolete analysis only; preserve drafts, originals, reviews and CRM data'
         default: false
         type: boolean
+      verify_download_file_ids:
+        description: 'Optional: verify bytes and timing of up to two existing Bitrix files in one case, without saving answers'
+        default: ''
+        type: string
 permissions:
   contents: read
 jobs:
@@ -26,6 +30,7 @@ jobs:
         env:
           ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
           ASSESSMENT_AUDIT_DEAL_IDS: ${{ inputs.deal_ids }}
+          ASSESSMENT_VERIFY_DOWNLOAD_FILES: ${{ inputs.verify_download_file_ids }}
           ASSESSMENT_REFRESH_GKB: ${{ inputs.refresh_analysis }}
         run: node scripts/audit-gkb-cache.mjs
       - uses: actions/upload-artifact@v4
