@@ -12,6 +12,8 @@ For each report record the deal, employee action, observed error, client/server 
 
 ### Open issue register
 
+Spouse status, 29 September: the owner requested status questions during assessment/contract preparation and the corresponding spouse certificate during CRM collection. The controls existed only in the retired profile section, so Sales never collected the answers. The shared questionnaire now displays them when married; new Sales submissions require an explicit known answer. Existing profile backfills retain partial answers, and saved client facts and contract receipts are not rewritten. The final-validation version advances so an unused preparation from an older tab is rechecked. Release verification includes in-memory production validation of missing, unknown, none, pensioner and unmarried cases on the synthetic audit deal, followed by an unchanged-draft readback. Deployment evidence is recorded with the release.
+
 Entries have separate verification dates. Unresolved observations below originated on **22 September 2026** unless a newer date is stated. Recheck live state before taking action.
 
 | Priority | Issue | Last verified state | Next completion gate |

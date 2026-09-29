@@ -46,9 +46,22 @@ try{
   assert.equal(check.ready,false,'The incomplete audit payload must never become a complete client profile');
   for(const key of ['debtPurposeOther','n12008'])assert.equal(check.issues.some(i=>i.key===key&&i.code==='EXPLANATION_REQUIRED'),expected,name+':'+key);
  }
+ // Contract preparation must collect spouse status independently of the
+ // client's answer. These incomplete synthetic payloads are validation only.
+ const spouseDraft=()=>({schemaVersion:1,answers:[{key:'marital',value:'В браке',checked:false},{key:'choice:socialStatus:Нет',value:'Нет',checked:true}],groups:[],docContext:{social:'',salary:''},documents:[],pendingFiles:[]});
+ for(const [choice,blocked] of [['',true],['unknown',true],['Нет',false],['Пенсионер',false]]){
+  const payload=spouseDraft();
+  if(choice)payload.answers.push({key:'choice:partnerSocialStatus:'+choice,value:choice,checked:true});
+  const check=await json(root+'/check',{payload,bindings:[]});
+  assert.equal(check.readyToSubmit,false,'The audit must never prepare a complete contract');
+  assert.equal(check.issues.some(i=>i.key==='choice:partnerSocialStatus:'&&i.code==='CHOICE_REQUIRED'),blocked,'spouse status: '+(choice||'missing'));
+ }
+ const unmarried=spouseDraft();unmarried.answers[0].value='Холост / не замужем';
+ assert.ok(!(await json(root+'/check',{payload:unmarried,bindings:[]})).issues.some(i=>i.key==='choice:partnerSocialStatus:'));
  const after=(await json(root+'/draft')).draft;
  assert.equal(digest(before),digest(after),'Audit draft changed; investigate concurrent edits');
  report.explanations={minimum:60,shortBlocked:true,whitespacePaddingBlocked:true,unknownBlocked:true,minimumAccepted:true,draftUnchanged:true};
+ report.spouseStatus={marriedRequiresAnswer:true,unknownBlocked:true,explicitNoneAccepted:true,pensionerAccepted:true,unmarriedExempt:true,draftUnchanged:true};
  Object.assign(report,{anonymousBlocked:true,authenticated:true,completed:activity.completed.length,activeProfiles:new Set(activity.active.map(s=>s.dealId)).size,workers:activity.workers,passed:true});
- console.log('Profile verified: team activity, unique counts, live controls and 60-character explanations. Audit draft unchanged; no profile writes.');
+ console.log('Profile verified: team activity, queue order, explanations and spouse-status validation. Audit draft unchanged; no client writes.');
 }finally{await writeFile('live-profile-audit.json',JSON.stringify(report,null,2)+'\n');}

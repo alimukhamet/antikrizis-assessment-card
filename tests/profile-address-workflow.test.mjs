@@ -54,11 +54,11 @@ test('married-only spouse status mirrors client choices and keeps explicit unkno
   assert.deepEqual(partner.slice(0, client.length), client);
   assert.equal(partner.at(-1), 'unknown');
   for (const field of source.scalar.filter(field => field.key.startsWith('choice:partnerSocialStatus:'))) {
-    assert.ok(field.conditions.includes('profileOnly'), field.key);
+    assert.ok(!field.conditions.includes('profileOnly'), field.key);
     assert.ok(field.conditions.includes('partnerSocialStatusField'), field.key);
   }
   const other = byKey('partnerSocialOther');
-  assert.ok(other.conditions.includes('profileOnly'));
+  assert.ok(!other.conditions.includes('profileOnly'));
   assert.ok(other.conditions.includes('partnerSocialOtherField'));
 
   const document = new JSDOM(read('public/questionnaire.html')).window.document;

@@ -89,7 +89,11 @@ test('profile reuses the contract form with phone and three addresses, without f
  assert.notEqual(w.getComputedStyle(phone.closest('.field')).display,'none');
  assert.equal(phone.required,false,'the existing contact does not become a new save gate');
  for(const id of ['factAddressSame','factAddress','filingDestination'])assert.equal(d.getElementById(id).closest('section.card'),addresses,id);
- for(const id of ['profilefamily','contactChannel','postAddress','partnerSocialStatusField'])assert.ok(d.getElementById(id).closest('[data-profile-hidden]'),id);
+ for(const id of ['profilefamily','contactChannel','postAddress'])assert.ok(d.getElementById(id).closest('[data-profile-hidden]'),id);
+ const spouseStatus=d.getElementById('partnerSocialStatusField');
+ assert.equal(spouseStatus.closest('[data-profile-hidden]'),null,'married profile keeps the shared spouse status block available');
+ assert.notEqual(w.getComputedStyle(spouseStatus).display,'none','married profile shows the shared spouse status block');
+ assert.equal(d.getElementById('partnerSocialStatusRequired').hidden,true,'profile keeps spouse status optional');
  assert.equal(d.querySelector('input[type="email"]'),null);
  const suggestions=d.getElementById('recommendedCourt').closest('details');
  assert.ok(suggestions.classList.contains('pb-address-details'));

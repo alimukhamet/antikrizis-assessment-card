@@ -126,6 +126,54 @@ test('married profile does not require spouse social status, and keeps it when g
  assert.equal(knownResult.answersComplete,true,JSON.stringify(knownResult.issues));
 });
 
+function marriedSales(){
+ const p=fixture();set(p,'marital','В браке');
+ for(const [key,value] of [['count-partnerjobs','0'],['count-partnerunofficial','0'],['partnerBenefitsCount','0'],['partnerKaspiAnnual','0']])set(p,key,value);
+ set(p,'holding:partner:none','none',true);set(p,'holding:partner:businessNone','businessNone',true);
+ return p;
+}
+
+test('new married assessment requires an explicit spouse status while partial drafts remain savable',()=>{
+ const p=marriedSales(),before=JSON.stringify(p);
+ assert.ok(has(checkAnswers(validateDraft(p),iin,'2026-09-25'),'choice:partnerSocialStatus:','CHOICE_REQUIRED'));
+ assert.throws(()=>compileAssessment(p,iin,[],'2026-09-25'),/ANSWERS_INCOMPLETE/);
+ assert.equal(JSON.stringify(validateDraft(p).answers),JSON.stringify(p.answers));
+ set(p,'choice:partnerSocialStatus:unknown','unknown',true);
+ assert.ok(has(checkAnswers(validateDraft(p),iin,'2026-09-25'),'choice:partnerSocialStatus:','CHOICE_REQUIRED'));
+ set(p,'choice:partnerSocialStatus:unknown','unknown',false);
+ set(p,'choice:partnerSocialStatus:Нет','Нет',true);
+ const result=checkAnswers(validateDraft(p),iin,'2026-09-25');
+ assert.equal(result.answersComplete,true,JSON.stringify(result.issues));
+ assert.ok(compileAssessment(p,iin,[],'2026-09-25').lawyerCard.includes('Социальный статус супруга(и)'));
+ assert.equal(JSON.parse(before).answers.find(a=>a.key==='choice:partnerSocialStatus:Нет').checked,false,'no default status was assigned');
+});
+
+test('spouse status reaches the saved assessment independently of the client status',()=>{
+ const p=marriedSales();
+ set(p,'choice:partnerSocialStatus:Пенсионер','Пенсионер',true);
+ set(p,'choice:partnerSocialStatus:Инвалид 2 группы','Инвалид 2 группы',true);
+ const result=checkAnswers(validateDraft(p),iin,'2026-09-25');
+ assert.equal(result.answersComplete,true,JSON.stringify(result.issues));
+ const card=compileAssessment(p,iin,[],'2026-09-25').lawyerCard;
+ assert.match(card,/Социальный статус супруга\(и\).*: Пенсионер/);
+ assert.match(card,/Социальный статус супруга\(и\).*: Инвалид 2 группы/);
+ set(p,'choice:partnerSocialStatus:Нет','Нет',true);
+ assert.ok(has(checkAnswers(validateDraft(p),iin,'2026-09-25'),'choice:partnerSocialStatus:','CONFLICTING_CHOICES'));
+});
+
+test('spouse other status needs an explanation for sales and inactive spouse answers stay preserved',()=>{
+ const p=marriedSales();set(p,'choice:partnerSocialStatus:Другое','Другое',true);
+ assert.ok(has(checkAnswers(validateDraft(p),iin,'2026-09-25'),'partnerSocialOther','ANSWER_REQUIRED'));
+ set(p,'partnerSocialOther','Иное обстоятельство со слов клиента');
+ assert.equal(checkAnswers(validateDraft(p),iin,'2026-09-25').answersComplete,true);
+ for(const marital of ['Холост / не замужем','Разведён(а)','Вдовец / вдова']){
+  set(p,'marital',marital);const result=checkAnswers(validateDraft(p),iin,'2026-09-25');
+  assert.equal(result.answersComplete,true,JSON.stringify(result.issues));
+  assert.ok(!result.displayAnswers.some(a=>a.key.startsWith('choice:partnerSocialStatus:')||a.key==='partnerSocialOther'));
+  assert.equal(validateDraft(p).answers.find(a=>a.key==='partnerSocialOther').value,'Иное обстоятельство со слов клиента');
+ }
+});
+
 test('an old unfinished family row cannot block the profile and its saved values survive',()=>{
  const p=fixture({profile:true});
  cell(p,'profilefamily','familyName').value='';

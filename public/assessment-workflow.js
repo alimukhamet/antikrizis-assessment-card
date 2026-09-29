@@ -14,7 +14,7 @@ window.AssessmentWorkflow=(()=>{
  socialLabel.removeAttribute('for');socialLabel.id='workflowSocialStatusLabel';
  $('socialStatusChips').setAttribute('role','group');$('socialStatusChips').setAttribute('aria-labelledby',socialLabel.id);
  const partnerSocial=$('partnerSocialStatusChips'),partnerSocialLabel=partnerSocial?.closest('.field')?.querySelector('label.lbl');
- if(partnerSocial&&partnerSocialLabel){partnerSocialLabel.removeAttribute('for');partnerSocialLabel.id='workflowPartnerSocialStatusLabel';partnerSocial.setAttribute('role','group');partnerSocial.setAttribute('aria-labelledby',partnerSocialLabel.id);}
+ if(partnerSocial&&partnerSocialLabel){partnerSocialLabel.removeAttribute('for');partnerSocialLabel.id='workflowPartnerSocialStatusLabel';partnerSocial.setAttribute('role','group');partnerSocial.setAttribute('aria-labelledby',partnerSocialLabel.id);$('partnerSocialStatusRequired')?.toggleAttribute('hidden',profile);}
  $('procedure').closest('.field').querySelector('label.lbl').htmlFor='procedure';
 
  // Keep saved drafts easy to reach; occasional exports and reset share one menu.
