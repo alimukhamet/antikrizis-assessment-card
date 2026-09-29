@@ -89,6 +89,8 @@ jobs:
             'submission-flow.js'
             'hosted-assessment.js'
             'server-drafts.js'
+            'profile-backfill.js'
+            'required-answers.js'
             'intake-data.js'
             'enforcement-editor.js'
             'document-review.js'

@@ -88,15 +88,32 @@ test('married profile does not require spouse social status, and keeps it when g
  assert.equal(knownResult.answersComplete,true,JSON.stringify(knownResult.issues));
 });
 
-test('profile mode validates birth dates and requires employer names for listed jobs',()=>{
+test('an old unfinished family row cannot block the profile and its saved values survive',()=>{
  const p=fixture({profile:true});
- for(const bad of ['2015-02-01','31.02.2015','01.01.2099']){cell(p,'profilefamily','familyBirthDate').value=bad;assert.ok(has(checkAnswers(validateDraft(p),iin,'2026-09-25',{profile:true}),'familyBirthDate','INVALID_DATE'),bad);}
- cell(p,'profilefamily','familyBirthDate').value='Не знаю';
- assert.equal(checkAnswers(validateDraft(p),iin,'2026-09-25',{profile:true}).answersComplete,true);
+ cell(p,'profilefamily','familyName').value='';
+ cell(p,'profilefamily','familyRelation').value='';
+ cell(p,'profilefamily','familyBirthDate').value='31.02.2015';
+ cell(p,'profilefamily','familyDependent').value='';
+ cell(p,'profilefamily','familyStudy').value='PREVIOUS SAVED NOTE';
+ const before=JSON.stringify(p);
+ const result=checkAnswers(validateDraft(p),iin,'2026-09-25',{profile:true});
+ assert.equal(result.answersComplete,true,JSON.stringify(result.issues));
+ assert.ok(!result.unresolved.some(answer=>answer.group==='profilefamily'));
+ const compiled=compileProfile(p,iin,'11665',author,'2026-09-25');
+ assert.ok(compiled.json.answers.some(answer=>answer.group==='profilefamily'&&answer.key==='familyStudy'&&answer.value==='PREVIOUS SAVED NOTE'));
+ assert.ok(compiled.json.answers.some(answer=>answer.group==='profilefamily'&&answer.key==='familyBirthDate'&&answer.value==='31.02.2015'));
+ assert.equal(JSON.stringify(p),before,'no saved answer is rewritten');
+});
+
+test('profile uses the contract form requirements for jobs without extra employer obligations',()=>{
  const jobs=fixture({profile:true});set(jobs,'count-clientjobs','1');
  const group=schema.groups.find(g=>g.id==='clientjobs');jobs.groups.find(g=>g.id==='clientjobs').rows=[group.fields.map(f=>({key:f.key,value:f.key==='n8001'?'150000':'',checked:false}))];jobs.groups.find(g=>g.id==='clientjobs').rowKeys=[null];
- assert.ok(has(checkAnswers(validateDraft(jobs),iin,'2026-09-25',{profile:true}),'n8001Employer','ANSWER_REQUIRED'));
- assert.ok(!has(checkAnswers(validateDraft({...jobs,answers:jobs.answers.map(a=>SALES_ONLY_KEYS.has(a.key)?{...a,value:salesValues[a.key]}:a)}),iin),'n8001Employer'));
+ const profile=checkAnswers(validateDraft(jobs),iin,'2026-09-25',{profile:true});
+ const sales=checkAnswers(validateDraft({...jobs,answers:jobs.answers.map(a=>SALES_ONLY_KEYS.has(a.key)?{...a,value:salesValues[a.key]}:a)}),iin,'2026-09-25');
+ assert.equal(sales.answersComplete,true,JSON.stringify(sales.issues));
+ assert.equal(profile.answersComplete,true,JSON.stringify(profile.issues));
+ cell(jobs,'clientjobs','n8001').value='';
+ assert.ok(has(checkAnswers(validateDraft(jobs),iin,'2026-09-25',{profile:true}),'n8001','ANSWER_REQUIRED'),'the existing income question remains required');
 });
 
 test('compiled profile carries no contract data, lists open questions and keeps the debt honest',()=>{
