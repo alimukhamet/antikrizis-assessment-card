@@ -5,7 +5,7 @@ window.ClientWorkspace=(()=>{
  const button=(text,fn)=>{const node=el('button',text,'btn btn-ghost');node.type='button';node.onclick=fn;return node;};
  let directory=null,switching=false;
  const url=id=>({handoff:'/lawyer-handoff',profile:'/profile-backfill'}[new URLSearchParams(location.search).get('mode')]||'/assessment-review')+'?dealId='+encodeURIComponent(id);
- const json=(path,options)=>HostedAssessment.requestJson(path,options);
+ const json=(path,options,settings)=>HostedAssessment.requestJson(path,options,settings);
  function close(){if(directory){directory.close();directory.remove();directory=null;}}
  async function switchTo(id){
   const current=HostedAssessment.getContext()?.client.external.dealId;
@@ -73,6 +73,29 @@ window.ClientWorkspace=(()=>{
   afRefresh();
   let imported=0,reused=0,keysSkipped=0,checkpointFailed=false;const failures=[],seen=new Set(),refreshedIds=new Set();
   const controller=new AbortController(),initialIds=new Set(selectedFiles.map(item=>item.id)),sourceOrder=new Map();let integration=Promise.resolve();
+  const sameClient=()=>{if(HostedAssessment.getContext()!==context)throw Object.assign(Error('Клиент изменился. Результат импорта не применён.'),{code:'CASE_IDENTITY_CHANGED'});};
+  async function importFile(fileId){
+   sameClient();
+   try{
+    const payload=await json(base,{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({fileId,identityRevision:context.identityRevision})},{timeoutMs:180000});
+    sameClient();if(payload.identityRevision!==context.identityRevision)throw Object.assign(Error('Данные клиента изменились. Результат импорта не применён.'),{code:'CASE_IDENTITY_CHANGED'});return payload;
+   }catch(error){
+    if(controller.signal.aborted)throw error;
+    if(!['REQUEST_TIMEOUT','INVALID_SERVER_RESPONSE','SERVER_UNAVAILABLE'].includes(error.code)&&!['TypeError','AbortError'].includes(error.name))throw error;
+    notice.textContent='Ответ потерян. Проверяем уже сохранённый файл…';
+    for(let attempt=0;attempt<3;attempt++){
+     sameClient();
+     if(attempt)await new Promise(resolve=>setTimeout(resolve,1500));
+     sameClient();
+     const payload=await json(base+'?fileId='+encodeURIComponent(fileId)+'&identityRevision='+context.identityRevision,{signal:controller.signal});
+     sameClient();
+     if(payload.pending===true)continue;
+     if(payload.crmFileId!==fileId||!payload.documentId||payload.identityRevision!==context.identityRevision)throw Error('Не удалось подтвердить сохранённый файл.');
+     return payload;
+    }
+    throw Error('Сохранение файла пока не подтверждено. Уже добавленные документы сохранены; повторная отправка не выполнялась.');
+   }
+  }
   try{
    const {files}=await json(base);afAnalysisProgress(0,files.length);if(!files.length){notice.textContent='В сделке пока нет загруженных документов.';return;}
    let cursor=0,completed=0;
@@ -82,7 +105,7 @@ window.ClientWorkspace=(()=>{
     while(cursor<files.length&&!checkpointFailed&&!controller.signal.aborted){
      const index=cursor++,file=files[index];
      try{
-      const payload=await HostedAssessment.requestJson(base,{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({fileId:file.id,identityRevision:context.identityRevision})},{timeoutMs:120000});
+      const payload=await importFile(file.id);
       integration=integration.then(async()=>{
        if(HostedAssessment.getContext()!==context){controller.abort();return;}
        sourceOrder.set(payload.documentId,Math.min(index,sourceOrder.get(payload.documentId)??Infinity));
@@ -99,7 +122,7 @@ window.ClientWorkspace=(()=>{
        }
       }).catch(error=>{checkpointFailed=true;controller.abort();failures.push('Импорт остановлен: '+error.message);});
       await integration;
-     }catch(error){if(!controller.signal.aborted){if(error.code==='CREDENTIAL_NOT_ANALYSED'){keysSkipped++;window.CredentialUpload?.offerExisting(file.id);}else failures.push('Файл № '+file.id+': '+error.message);}}
+     }catch(error){if(!controller.signal.aborted){if(error.code==='CASE_IDENTITY_CHANGED'){checkpointFailed=true;controller.abort();notice.textContent=error.message;failures.push(error.message);}else if(error.code==='CREDENTIAL_NOT_ANALYSED'){keysSkipped++;window.CredentialUpload?.offerExisting(file.id);}else failures.push('Файл № '+file.id+': '+error.message);}}
      finally{completed++;progress();}
     }
    }));

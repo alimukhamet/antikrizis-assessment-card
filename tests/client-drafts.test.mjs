@@ -257,3 +257,24 @@ test('a failed import checkpoint stops scheduling more files and preserves the c
  };
  await s.w.ClientWorkspace.importDocuments();assert.equal(started,3);assert.equal(s.writes.length,1);assert.equal(s.run('selectedFiles.length'),1);assert.equal(s.store.revision,undefined);assert.match(s.d.getElementById('crmImportErrors').textContent,/не удалось сохранить черновик/);assert.equal(s.run('af.busy'),false);
 });
+
+test('CRM lost-response recovery reads the existing receipt once and preserves answers after reload',async t=>{
+ const s=await setup(t);await s.load();s.edit('fio','KEEP SAVED ANSWER');s.edit('needsSocialDoc','0');s.edit('needsSalaryDoc','none');s.mountWorkspace();
+ const originalFetch=s.w.fetch,calls=[],settings=[],request=s.w.HostedAssessment.requestJson;
+ s.w.HostedAssessment.requestJson=(path,options,config)=>{if(options?.method==='POST'&&path.endsWith('/crm-documents'))settings.push(config);return request(path,options,config);};
+ const payload={client:s.w.HostedAssessment.getContext().client,identityRevision:1,assessmentDay:'2026-09-29',documentId:'recovered',extractionId:'extract',crmFileId:'123',originalName:'synthetic.pdf',eligibleForAutofill:false,findings:[],document:{totalPages:1,pages:[{text:'SYNTHETIC ONLY'}],extraction:{kind:'enpf',identity:{iin:null,name:null},facts:[],credits:[]}}};
+ s.w.fetch=async(path,options={})=>{if(!path.includes('/crm-documents'))return originalFetch(path,options);calls.push({path,method:options.method||'GET'});if(options.method==='POST')throw new s.w.TypeError('Lost network response');return{ok:true,json:async()=>path.includes('?fileId=')?payload:{files:[{id:'123'}]}};};
+ await s.w.ClientWorkspace.importDocuments();assert.deepEqual(settings.map(s=>s.timeoutMs),[180000]);assert.equal(calls.filter(c=>c.method==='POST').length,1);assert.equal(calls.filter(c=>c.path.includes('?fileId=')).length,1);
+ assert.equal(s.store.payload.documents[0].documentId,'recovered');assert.equal(s.store.payload.answers.find(a=>a.key==='fio').value,'KEEP SAVED ANSWER');
+ const restored=await setup(t,s.store);restored.run('afAnalyze=async()=>{}');await restored.load();assert.equal(restored.w.ServerDrafts.capture().documents[0].documentId,'recovered');assert.equal(restored.d.getElementById('fio').value,'KEEP SAVED ANSWER');
+});
+test('pending import recovery is bounded and never repeats the POST or adds an unverified selection',async t=>{
+ const s=await setup(t);await s.load();s.edit('needsSocialDoc','0');s.edit('needsSalaryDoc','none');s.mountWorkspace();const originalFetch=s.w.fetch,timer=s.w.setTimeout.bind(s.w);s.w.setTimeout=(fn,ms,...args)=>timer(fn,ms===1500?0:ms,...args);let posts=0,reads=0;
+ s.w.fetch=async(path,options={})=>{if(!path.includes('/crm-documents'))return originalFetch(path,options);if(options.method==='POST'){posts++;throw Object.assign(new s.w.Error('Timed out'),{code:'REQUEST_TIMEOUT'});}return{ok:true,json:async()=>path.includes('?fileId=')?(reads++,{pending:true,crmFileId:'123'}):{files:[{id:'123'}]}};};
+ await s.w.ClientWorkspace.importDocuments();assert.equal(posts,1);assert.equal(reads,3);assert.equal(s.run('selectedFiles.length'),0);assert.equal(s.writes.length,0);assert.match(s.d.getElementById('crmImportErrors').textContent,/пока не подтверждено/);
+});
+test('CRM recovery rejects a changed client before applying or saving the recovered file',async t=>{
+ const s=await setup(t);await s.load();s.edit('needsSocialDoc','0');s.edit('needsSalaryDoc','none');s.mountWorkspace();const originalFetch=s.w.fetch,context=s.w.HostedAssessment.getContext();let posts=0;
+ s.w.fetch=async(path,options={})=>{if(!path.includes('/crm-documents'))return originalFetch(path,options);if(options.method==='POST'){posts++;throw new s.w.TypeError('Lost response');}return{ok:true,json:async()=>{if(!path.includes('?fileId='))return{files:[{id:'123'}]};s.w.HostedAssessment.getContext=()=>({...context,identityRevision:2});return{documentId:'wrong',crmFileId:'123',identityRevision:1};}};};
+ await s.w.ClientWorkspace.importDocuments();assert.equal(posts,1);assert.equal(s.run('selectedFiles.length'),0);assert.equal(s.writes.length,0);assert.match(s.d.getElementById('crmImportStatus').textContent,/Клиент изменился/);
+});
