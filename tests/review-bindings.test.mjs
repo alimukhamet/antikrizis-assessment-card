@@ -22,7 +22,7 @@ test('changed values, loan targets, field targets and pending reviews cannot bor
  for(const [edit,code] of [[s=>s.active[0].value='13.00','REVIEW_VALUE_CHANGED'],[s=>s.payload.groups[0].rowKeys[0]='creditors|test-client|OTHER|LOAN2','REVIEW_LOAN_MISMATCH'],[s=>{s.binding.key='n8040';s.active[0].key='n8040';},'REVIEW_TARGET_MISMATCH'],[s=>s.binding.reviewId=null,'ANSWER_REVIEW_REQUIRED']]){const s=setup();edit(s);assert.equal((await s.run()).issues[0].code,code);}
 });
 test('old extraction, stale GKB and superseded reviews lose eligibility',async()=>{
- for(const [edit,code] of [[s=>s.extraction.version='old','EXTRACTION_VERSION_CHANGED'],[s=>s.result.extraction.issuedAt='2026-06-01','GKB_DATE_NOT_ACCEPTABLE'],[s=>s.current.splice(0),'REVIEW_SUPERSEDED_OR_MISSING'],[s=>s.binding.documentId='foreign','DOCUMENT_NOT_IN_CASE']]){const s=setup();edit(s);assert.equal((await s.run()).issues[0].code,code);}
+ for(const [edit,code] of [[s=>s.extraction.version='old','EXTRACTION_VERSION_CHANGED'],[s=>s.result.extraction.issuedAt='2026-05-20','GKB_DATE_NOT_ACCEPTABLE'],[s=>s.current.splice(0),'REVIEW_SUPERSEDED_OR_MISSING'],[s=>s.binding.documentId='foreign','DOCUMENT_NOT_IN_CASE']]){const s=setup();edit(s);assert.equal((await s.run()).issues[0].code,code);}
 });
 test('duplicate target rejected; one cached source read serves several fields',async()=>{
  const s=setup();s.active.push({key:'n8040',group:'creditors',row:0,value:'100.00'});s.current.push({id:'review2',fact_key:'credits.0.debtOutstanding',value_json:'"100.00"',disposition:'confirmed',reason:''});

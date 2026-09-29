@@ -70,7 +70,7 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
   }
   if(requiresDocumentValidation(parsed.findings)||read.pages.some(p=>p.needsOcr)){issue('DOCUMENT_COMPLETENESS_UNVERIFIED','Есть нечитаемые страницы или полнота документа не подтверждена.');continue;}
   if(parsed.kind.startsWith('gkb_')){
-   if(gkbFreshness(parsed.issuedAt||'',day).length){issue('GKB_DATE_NOT_ACCEPTABLE','ГКБ должен быть выдан не более 3 месяцев назад и не иметь будущую дату.');continue;}
+   if(gkbFreshness(parsed.issuedAt||'',day).length){issue('GKB_DATE_NOT_ACCEPTABLE','ГКБ должен быть выдан в последние 3 календарных месяца и не иметь будущую дату.');continue;}
    if(parsed.findings.includes('CONTRACT_LIST_INCOMPLETE_OR_OTHER_ROLES'))issue('CREDIT_LIST_REVIEW_REQUIRED','Нужно сверить полноту обязательств и роль клиента.');
    if(parsed.kind==='gkb_full'&&parsed.creditList?.complete)coverageReports.push({documentId:document.id,analysis:cached.result as Analysis});
    for(const credit of parsed.credits){
@@ -84,7 +84,7 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
    available.add(selected.type);
   }else if(parsed.kind==='kaspi'){
    if(!parsed.bankStatement?.reconciled||!parsed.bankStatement.rowsReadable)issue('STATEMENT_RECONCILIATION_REQUIRED','Не удалось сверить операции и остатки по выписке.');
-   else if(statementPeriod(parsed.bankStatement.from,parsed.bankStatement.to,day).length)issue('STATEMENT_PERIOD_NOT_ACCEPTABLE','Нужна выписка за 12 месяцев, заканчивающаяся не раньше чем 3 месяца назад.');
+   else if(statementPeriod(parsed.bankStatement.from,parsed.bankStatement.to,day).length)issue('STATEMENT_PERIOD_NOT_ACCEPTABLE','Нужна выписка за 12 месяцев, заканчивающаяся в последние 3 календарных месяца.');
    else available.add(selected.type);
   }else if(parsed.kind==='enpf'||parsed.kind==='salary'){
    const problems=parsed.kind==='enpf'?enpfPeriod(parsed.coverage?.from||null,parsed.coverage?.to||null,parsed.issuedAt,day,read.pages?.[0]?.text||''):salaryStatementPeriod(parsed.coverage?.from||null,parsed.coverage?.to||null,day);

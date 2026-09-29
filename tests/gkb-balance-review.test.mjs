@@ -61,7 +61,7 @@ test('unknown totals reject mismatched debt, unknown principal or arrears, repor
   s=>s.full.extraction.identity.iin='other',
   s=>s.short.extraction.identity.iin=null,
   s=>s.full.extraction.issuedAt='2026-09-20',
-  s=>s.full.extraction.issuedAt=s.short.extraction.issuedAt='2026-06-01',
+  s=>s.full.extraction.issuedAt=s.short.extraction.issuedAt='2026-05-20',
   s=>s.full.read.pages[0].needsOcr=true,
   s=>s.full.extraction.creditList.complete=false,
   s=>s.full.extraction.credits.push(credit('CONTRACT-A-456','0.00')),
