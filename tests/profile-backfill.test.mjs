@@ -22,7 +22,7 @@ const {compileProfile,PROFILE_SCHEMA}=load('lib/questionnaire/compile-profile.ts
 const {compileAssessment}=compileAssessmentModule;
 const fields=load('lib/crm/profile-fields.ts');
 const {createProfileAdapter}=load('lib/crm/profile-write.ts',{'./profile-fields':fields});
-const {sortProfileQueue}=load('lib/crm/profile-queue.ts',{'./profile-fields':fields});
+const {sortProfileQueue}=load('lib/crm/profile-queue-order.ts');
 
 const iin='000000000010';
 const salesValues={fio:'SYNTHETIC ONLY',enforcementStatus:'no',enforcementDetails:'Нет',guarantors:'Нет',iin,dognum:'TEST',marital:'Холост / не замужем',regAddress:'TEST CITY, TEST STREET 1',factAddressSame:'same',recommendedDistrict:'Алматы',recommendedCourt:'Рекомендация продаж',clientRequestedDistrict:'Алматы',clientRequestedCourt:'Алматинский суд',registrationChangePosition:'undecided',dependents:'0',childrenTotal:'0',procedure:'199','count-clientjobs':'0','count-clientunofficial':'0',clientBenefitsCount:'0',c8037:'0',hardshipReason:'Платежи вношу, трудностей нет',kaspiAnnual:'0',gamblingTransfers:'no',lawyerNotesStatus:'no',n8044:'0',summa:'500000',contractDate:'2026-09-10',months:'5',payDay:'7',grafType:'423'};
@@ -215,10 +215,12 @@ test('profile adapter accepts whole-tenge debt storage and reports a lost write 
  await assert.rejects(createProfileAdapter('https://portal.example/rest/1/token/',fake.send).save('11665',iin,baseline,values),e=>e.code==='PROFILE_READBACK_MISMATCH'&&!e.notStarted);
 });
 
-test('queue puts unfinished deals first, then the latest ZVI date',()=>{
+test('queue puts unfinished deals first, oldest ZVI dates first and missing dates last',()=>{
  const item=(dealId,zviDate,profileSavedAt='')=>({dealId,title:'',stageName:'ЗВИ',zviDate,procedure:'',hasIin:true,hasLegacyCard:false,profileSavedAt});
- const order=JSON.parse(JSON.stringify(sortProfileQueue([item('1','2026-09-01'),item('2','2026-09-20','2026-09-24 · X'),item('3',''),item('4','2026-09-10')]).map(i=>i.dealId)));
- assert.deepEqual(order,['4','1','3','2']);
+ const items=[item('6','2026-09-01T05:00:00+05:00'),item('1','2026-09-01'),item('2','2026-08-01','2026-09-24 · X'),item('5','invalid'),item('3',''),item('4','2026-09-10')],before=JSON.stringify(items);
+ const order=JSON.parse(JSON.stringify(sortProfileQueue(items).map(i=>i.dealId)));
+ assert.deepEqual(order,['1','6','4','3','5','2']);
+ assert.equal(JSON.stringify(items),before,'sorting never rewrites the source records');
  assert.equal(fields.isProfileBackfillStage('В ожидании'),true);assert.equal(fields.isProfileBackfillStage('Подготовка ЗВИ'),true);assert.equal(fields.isProfileBackfillStage('Дело возбуждено'),false);
 });
 

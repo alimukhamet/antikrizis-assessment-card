@@ -1,4 +1,6 @@
 import { bitrixHeaders } from './http-headers';
+import { sortProfileQueue } from './profile-queue-order';
+export { sortProfileQueue } from './profile-queue-order';
 import {
   PROFILE_CATEGORY_ID, ZVI_DATE_FIELD, PROCEDURE_FIELD, LEGACY_CARD_FIELD, IIN_FIELD,
   isProfileBackfillStage,
@@ -62,12 +64,4 @@ export async function readProfileQueue(webhook: string, savedAt: Map<string, str
     profileSavedAt: savedAt.get(String(d.ID)) || '',
   }));
   return sortProfileQueue(items);
-}
-
-/** Unfinished first, then the most recent ZVI date, then newest deal. */
-export function sortProfileQueue(items: ProfileQueueItem[]) {
-  const time = (value: string) => { const t = value ? Date.parse(value) : NaN; return Number.isFinite(t) ? t : -Infinity; };
-  return [...items].sort((a, b) =>
-    Number(Boolean(a.profileSavedAt)) - Number(Boolean(b.profileSavedAt)) ||
-    time(b.zviDate) - time(a.zviDate) || Number(b.dealId) - Number(a.dealId));
 }

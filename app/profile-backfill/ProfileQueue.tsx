@@ -1,6 +1,7 @@
 'use client';
 import {useEffect,useState} from 'react';
 import type {ProfileActivity} from '../../lib/questionnaire/profile-activity';
+import {sortProfileQueue} from '../../lib/crm/profile-queue-order';
 
 type Item={dealId:string;title:string;stageName:string;zviDate:string;procedure:string;hasIin:boolean;hasLegacyCard:boolean;profileSavedAt:string};
 type Filter='todo'|'active'|'done'|'all';
@@ -35,7 +36,7 @@ export function ProfileQueue(){
   return()=>{controller.abort();clearInterval(timer);window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);};
  },[reload]);
  const completed=new Map(activity?.completed.map(s=>[s.dealId,`${s.savedAt} · ${s.workerName}`]));
- const rows=(items||[]).map(item=>({...item,profileSavedAt:activity?completed.get(item.dealId)||'':item.profileSavedAt}));
+ const rows=sortProfileQueue((items||[]).map(item=>({...item,profileSavedAt:activity?completed.get(item.dealId)||'':item.profileSavedAt})));
  const activeFor=(id:string)=>activityReady?activity?.active.filter(s=>s.dealId===id)||[]:[];
  const done=rows.filter(i=>i.profileSavedAt).length,total=rows.length;
  const next=activityReady?rows.find(i=>!i.profileSavedAt&&!activeFor(i.dealId).length):null;
@@ -46,6 +47,7 @@ export function ProfileQueue(){
    <div>
     <h1 id="profileQueueTitle">Дозаполнить профили клиентов</h1>
     <p>Сделки на стадиях «ЗВИ» и «В ожидании». Заполните профиль так, как это сделали бы продажи: документы из сделки подтянутся автоматически, вам останется проверить ответы и заполнить пропуски.</p>
+    <p><strong>Сначала старые даты ЗВИ.</strong> Сделки без даты — в конце.</p>
    </div>
    {next?<a className="profile-queue-next" href={open(next.dealId)}>Начать: {next.title||'Сделка № '+next.dealId} →</a>:null}
   </header>
