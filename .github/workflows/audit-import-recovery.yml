@@ -1,0 +1,33 @@
+name: Imported file recovery audit
+on:
+  workflow_dispatch:
+    inputs:
+      deal_ids:
+        description: 'Exact deal IDs, separated by commas (up to five); reads only'
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Verify existing import receipts without resending files
+        env:
+          ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
+          ASSESSMENT_AUDIT_DEAL_IDS: ${{ inputs.deal_ids }}
+        run: node scripts/audit-import-recovery.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: import-recovery-audit
+          path: import-recovery-audit.json
+          retention-days: 3

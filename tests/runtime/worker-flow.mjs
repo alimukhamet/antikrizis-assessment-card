@@ -69,10 +69,17 @@ test('built Worker persists a complete contract and recovers a handoff without d
  assert.equal((await api(root+'/documents/analyze',{documentIds:batchIds,identityRevision:2},409)).error,'CASE_IDENTITY_CHANGED');
  const inboundBytes=await seedInbound(db,await mf.getR2Bucket('FILES'),fixture,batchIds[0],'999');crm.seedFile('999',inboundBytes,'synthetic.pdf');
  const beforeImports=await db.prepare('SELECT COUNT(*) n FROM assessment_reviews').first();
+ const beforeReadbackDraft=await api(root+'/draft'),beforeReadbackWrites={...crm.counts};
+ const readback=await api(root+'/crm-documents?fileId=999&identityRevision=1');
+ assert.equal(readback.documentId,batchIds[0]);assert.equal(readback.crmFileId,'999');
+ assert.equal((await api(root+'/crm-documents?fileId=998&identityRevision=1',undefined,202)).pending,true);
+ assert.equal((await api(root+'/crm-documents?fileId=999&identityRevision=2',undefined,409)).error,'CASE_IDENTITY_CHANGED');
+ assert.deepEqual(await api(root+'/draft'),beforeReadbackDraft);assert.deepEqual(crm.counts,beforeReadbackWrites);
  for(let n=0;n<2;n++)assert.equal((await api(root+'/crm-documents',{fileId:'999',identityRevision:1})).documentId,batchIds[0]);
  assert.equal(crm.fileReads,0,'Reopening/reimporting stored PDFs never downloads their bytes again');
  assert.deepEqual(await db.prepare('SELECT COUNT(*) n FROM assessment_reviews').first(),beforeImports,'Reusing an import does not duplicate origin receipts');
  crm.removeFile('999');assert.equal((await api(root+'/crm-documents',{fileId:'999',identityRevision:1},422)).error,'FILE_NOT_IN_DEAL');
+ assert.equal((await api(root+'/crm-documents?fileId=999&identityRevision=1',undefined,422)).error,'FILE_NOT_IN_DEAL');
  // Reset only this synthetic import fixture before the independent delivery scenario.
  await db.prepare("DELETE FROM assessment_reviews WHERE case_id=? AND fact_key='document.origin.bitrix.v1' AND json_extract(value_json,'$.fileId')='999'").bind(fixture.record.id).run();
  // Incident recovery cannot become a generic bypass, even for the owner.

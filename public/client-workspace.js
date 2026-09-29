@@ -5,7 +5,7 @@ window.ClientWorkspace=(()=>{
  const button=(text,fn)=>{const node=el('button',text,'btn btn-ghost');node.type='button';node.onclick=fn;return node;};
  let directory=null,switching=false;
  const url=id=>({handoff:'/lawyer-handoff',profile:'/profile-backfill'}[new URLSearchParams(location.search).get('mode')]||'/assessment-review')+'?dealId='+encodeURIComponent(id);
- const json=(path,options)=>HostedAssessment.requestJson(path,options);
+ const json=(path,options,settings)=>HostedAssessment.requestJson(path,options,settings);
  function close(){if(directory){directory.close();directory.remove();directory=null;}}
  async function switchTo(id){
   const current=HostedAssessment.getContext()?.client.external.dealId;
@@ -72,12 +72,34 @@ window.ClientWorkspace=(()=>{
   const locked=[...$('documentStep').querySelectorAll('input,select,button')].map(node=>[node,node.disabled]);locked.forEach(([node])=>node.disabled=true);af.busy=true;af.transferFailures=[];$('documentStep').classList.add('af-busy');
   afRefresh();
   let imported=0,reused=0,keysSkipped=0,checkpointFailed=false;const failures=[],seen=new Set(),refreshedIds=new Set();
+  const sameClient=()=>{if(HostedAssessment.getContext()!==context)throw Object.assign(Error('Клиент изменился. Результат импорта не применён.'),{code:'CASE_IDENTITY_CHANGED'});};
+  async function importFile(fileId){
+   sameClient();
+   try{
+    const payload=await json(base,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileId,identityRevision:context.identityRevision})},{timeoutMs:180000});
+    sameClient();if(payload.identityRevision!==context.identityRevision)throw Object.assign(Error('Данные клиента изменились. Результат импорта не применён.'),{code:'CASE_IDENTITY_CHANGED'});return payload;
+   }catch(error){
+    if(!['REQUEST_TIMEOUT','INVALID_SERVER_RESPONSE','SERVER_UNAVAILABLE'].includes(error.code)&&!['TypeError','AbortError'].includes(error.name))throw error;
+    notice.textContent='Ответ потерян. Проверяем уже сохранённый файл…';
+    for(let attempt=0;attempt<3;attempt++){
+     sameClient();
+     if(attempt)await new Promise(resolve=>setTimeout(resolve,1500));
+     sameClient();
+     const payload=await json(base+'?fileId='+encodeURIComponent(fileId)+'&identityRevision='+context.identityRevision);
+     sameClient();
+     if(payload.pending===true)continue;
+     if(payload.crmFileId!==fileId||!payload.documentId||payload.identityRevision!==context.identityRevision)throw Error('Не удалось подтвердить сохранённый файл.');
+     return payload;
+    }
+    throw Error('Сохранение файла пока не подтверждено. Уже добавленные документы сохранены; повторная отправка не выполнялась.');
+   }
+  }
   try{
    const {files}=await json(base);afAnalysisProgress(0,files.length);if(!files.length){notice.textContent='В сделке пока нет загруженных документов.';return;}
    for(let i=0;i<files.length;i++){
     afAnalysisProgress(i,files.length);notice.textContent='Берём документы из сделки: '+(i+1)+' из '+files.length+'…';
     try{
-     const payload=await json(base,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileId:files[i].id,identityRevision:context.identityRevision})});
+     const payload=await importFile(files[i].id);
      if(seen.has(payload.documentId))continue;seen.add(payload.documentId);
      const result=HostedAssessment.adapt(payload);result.assessmentDate=payload.assessmentDay;
      let item=selectedFiles.find(item=>(item.storedDocumentId||af.results.get(item.id)?.server?.documentId)===payload.documentId);
@@ -89,14 +111,14 @@ window.ClientWorkspace=(()=>{
      if(!await ServerDrafts.save({automatic:true,importCheckpoint:true})){
       checkpointFailed=true;failures.push('Импорт остановлен: не удалось сохранить черновик. Уже прочитанные файлы остаются на экране.');break;
      }
-    }catch(error){if(error.code==='CREDENTIAL_NOT_ANALYSED'){keysSkipped++;window.CredentialUpload?.offerExisting(files[i].id);}else failures.push('Файл № '+files[i].id+': '+error.message);}finally{afAnalysisProgress(i+1,files.length);}
+    }catch(error){if(error.code==='CASE_IDENTITY_CHANGED')throw error;if(error.code==='CREDENTIAL_NOT_ANALYSED'){keysSkipped++;window.CredentialUpload?.offerExisting(files[i].id);}else failures.push('Файл № '+files[i].id+': '+error.message);}finally{afAnalysisProgress(i+1,files.length);}
    }
    afMergeDuplicateSelections(refreshedIds);afRenderResults();afClientChoices();if($('afClient').value&&!checkpointFailed)await afApply();renderDocuments();afRefresh();
    notice.textContent='Добавлено PDF: '+imported+(reused?' · Уже в черновике: '+reused:'')+(failures.length?' · Не удалось прочитать: '+failures.length:'')+(keysSkipped?' · ЭЦП найдена в сделке':'')+'.';
    $('crmImportErrors')?.remove();
    if(failures.length){const details=el('details');details.id='crmImportErrors';details.append(el('summary','Какие файлы не добавлены'));for(const message of failures)details.append(el('p',message,'hint'));notice.after(details);}
   }catch(error){notice.textContent=error.message;failures.push(error.message);}
-  finally{af.transferFailures=failures;af.progress=null;$('documentStep').classList.remove('af-busy');af.busy=false;locked.forEach(([node,disabled])=>node.disabled=disabled);afRefresh();document.dispatchEvent(new CustomEvent('assessment-analysis-complete',{detail:{showPackageSummary:true}}));if((imported||reused)&&!checkpointFailed)await ServerDrafts.save({automatic:true});}
+  finally{af.transferFailures=failures;af.progress=null;$('documentStep').classList.remove('af-busy');af.busy=false;locked.forEach(([node,disabled])=>node.disabled=disabled);afRefresh();document.dispatchEvent(new CustomEvent('assessment-analysis-complete',{detail:{showPackageSummary:true}}));if((imported||reused)&&!checkpointFailed&&HostedAssessment.getContext()===context)await ServerDrafts.save({automatic:true});}
  }
  const clients=button(HostedAssessment.ready()?'Другой клиент':'Выбрать',open);clients.id='openClients';clients.setAttribute('aria-label',HostedAssessment.ready()?'Сменить клиента':'Выбрать клиента');document.querySelector('.wf-client-copy').after(clients);
  const picker=document.querySelector('.wf-case-picker');picker.querySelector('summary').textContent='По номеру сделки';

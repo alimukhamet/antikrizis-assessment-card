@@ -15,7 +15,26 @@ function failure(error:unknown){
 }
 export async function GET(request:Request,ctx:{params:Promise<{dealId:string}>}){
  const denied=await requireStaffRequest(request);if(denied)return denied;
- try{const {dealId}=await ctx.params,{client}=await evidenceContext(request,dealId);return Response.json({files:await dealDocumentReferences(process.env.BITRIX_WEBHOOK??'',dealId,client.iin||'')},{headers});}catch(error){return failure(error);}
+ try{
+  const {dealId}=await ctx.params,{client,record,repository,actor}=await evidenceContext(request,dealId),query=new URL(request.url).searchParams;
+  if(query.has('fileId')){
+   const fileId=query.get('fileId')||'',identityRevision=Number(query.get('identityRevision'));
+   if(!/^[1-9]\d*$/.test(fileId))throw new RepositoryError('INVALID_FILE_ID',400);
+   if(!Number.isSafeInteger(identityRevision)||identityRevision!==record.identity_revision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
+   if(!client.iin)throw new RepositoryError('DEAL_IDENTITY_UNVERIFIED');
+   // Reconcile a lost inbound-copy response. Never download, reprocess or write
+   // evidence here: an absent receipt stays pending and must not imply success.
+   const imported=await repository.importedDocument(record,fileId);
+   if(!imported)return Response.json({pending:true,crmFileId:fileId},{status:202,headers});
+   const refs=await dealDocumentReferences(process.env.BITRIX_WEBHOOK??'',dealId,client.iin);
+   if(!refs.some(ref=>ref.id===fileId))throw new DocumentUploadError('FILE_NOT_IN_DEAL');
+   const analysis=await storedAnalysis(client,record,repository,imported,actor,true);
+   const current=await repository.findCaseByExternal(client.external.system,dealId);
+   if(!current||current.identity_revision!==record.identity_revision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
+   return Response.json({...analysis,originalName:imported.original_name,crmFileId:fileId},{headers});
+  }
+  return Response.json({files:await dealDocumentReferences(process.env.BITRIX_WEBHOOK??'',dealId,client.iin||'')},{headers});
+ }catch(error){return failure(error);}
 }
 /** Inbound copy only: this route never updates a Bitrix field or deal. */
 export async function POST(request:Request,ctx:{params:Promise<{dealId:string}>}){
