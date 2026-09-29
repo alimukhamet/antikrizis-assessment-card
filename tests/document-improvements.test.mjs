@@ -1,4 +1,5 @@
 import{test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import vm from'node:vm';import ts from'typescript';
+import{parseParticipants}from'../public/loan-participants.mjs';
 function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>{if(n in imports)return imports[n];throw Error(n);},Date,TextEncoder});return exports;}
 const rules=load('lib/documents/extract-native.ts',{'./kz-labels.json':JSON.parse(fs.readFileSync('lib/documents/kz-labels.json')),'./power-of-attorney':load('lib/documents/power-of-attorney.ts')});const policy=load('lib/documents/policy.ts');const reader=load('lib/documents/read-pdf.ts',{'unpdf':{}});
 const pages=(...texts)=>texts.map((text,i)=>({page:i+1,text,nativeCharacters:text.length,needsOcr:false}));
@@ -139,4 +140,53 @@ test('Lombard lender names fill the profile type even when full GKB calls the pr
   const r=rules.extractNative(pages(report(creditor))),fact=r.credits[0].facts.find(f=>f.key==='creditType');assert.equal(fact.value,'Ломбард');assert.ok(fact.source.includes(creditor));assert.equal(r.credits.length,1);assert.equal(r.credits[0].contractNumber,'L-1');
  }
  for(const creditor of ['ТОО "Lombardia"','TEST BANK'])assert.equal(rules.extractNative(pages(report(creditor)+'\nНазначение: Ломбард')).credits[0].facts.find(f=>f.key==='creditType').value,'Потребительский кредит');
+});
+
+test('digital ID exports allow two-part names and Russian or Kazakh sex markers without relaxing owner checks',()=>{
+ for(const name of ['СЫНАҚ\nТЕСТ','ТЕСТОВА\nСЫНАҚ\nТЕСТОВНА'])for(const sex of ['',' М',' Ж',' Ә',' Е']){
+  const card=`${name}\n31.12.1999${sex}\n991231300003\n123456789\nҚАЗАҚСТАН\n01.01.2025 - 31.12.2034   ҚР ІІМ\nSYNAQ<<TEST<<<<<<<<<<<<`;
+  const r=rules.extractNative(pages(card));assert.equal(r.kind,'identity');assert.equal(r.identity.name,name.replaceAll('\n',' '));assert.equal(r.identity.iin,'991231300003');assert.equal(r.issuedAt,'2025-01-01');assert.equal(r.expiresAt,'2034-12-31');
+  for(const broken of [card.replace('991231300003','991231300004'),card.replace('123456789',''),card.replace('SYNAQ<<TEST<<<<<<<<<<<<',''),card.replace('01.01.2025 - 31.12.2034','')])assert.equal(rules.extractNative(pages(broken)).kind,'unknown');
+ }
+});
+
+test('ENPF summary followed by bilingual account pages supplies owner and coverage, never inferred wages',()=>{
+ const first='Сведения об остатках и о движении денег на счете (-ах) по состоянию на 07.09.2026г.\nЖСН\nИИН 991231300003 ТАӘ\nФИО ТЕСТОВ ТЕСТ\nДата рождения 31.12.1999\nПенсионные накопления за счет ОПВ: 300000.00';
+ const second='Выписка с индивидуального пенсионного счета\nза период с 06.06.2025г. по 06.09.2026г.';
+ const r=rules.extractNative(pages(first,second));assert.equal(r.kind,'enpf');assert.equal(r.identity.iin,'991231300003');assert.equal(r.identity.name,'ТЕСТОВ ТЕСТ');assert.equal(r.issuedAt,'2026-09-07');assert.equal(r.coverage.from,'2025-06-06');assert.equal(r.coverage.to,'2026-09-06');assert.ok(r.findings.includes('ENPF_ROWS_REVIEW_REQUIRED'));assert.equal(r.facts.some(f=>/employment|income|salary/.test(f.key)),false);
+ assert.equal(rules.extractNative(pages(first)).kind,'unknown');
+ const conflicting=rules.extractNative(pages(first,second,second.replace('06.06.2025','01.01.2026')));assert.equal(conflicting.coverage.from,null);assert.equal(conflicting.coverage.to,null);
+});
+
+test('property date comes from its receipt label and never from a birthday or property registration',()=>{
+ const body='Сведения об отсутствии (наличии) недвижимого имущества\nВыдана: ТЕСТОВ ТЕСТ, 31.12.1999, ИИН 991231300003\nДата регистрации 01.01.2020';
+ for(const header of ['Алу күні мен уақыты:\n14.09.2026 Дата получения:','Дата получения: 14.09.2026'])assert.equal(rules.extractNative(pages(header+'\n'+body)).issuedAt,'2026-09-14');
+ assert.equal(rules.extractNative(pages(body)).issuedAt,null);assert.equal(rules.extractNative(pages('Дата получения: 31.02.2026\n'+body)).issuedAt,null);
+});
+
+test('benefit rows retain fixed and indefinite terms and exclude a history table whose columns precede its title',()=>{
+ const prefix='Информация о пенсионных выплатах и пособиях\nЖСН/ИИН 991231300003\nДата получения: 15.09.2026\nДействующие выплаты:\nNo Вид выплаты Сумма выплаты Дата назначения Дата окончания\n';
+ const terms=['19.05.2028','мерзімсіз/бессрочно','өмір бойы / пожизненно','БЖЗҚ шотындағы\nқаражат таусылғанға\nдейін/до исчерпания\nсредств, имеющихся на\nсчете в ЕНПФ'];
+ const rows=terms.map((term,i)=>`${i+1} Вид выплаты ${String.fromCharCode(65+i)}\n32005 17.04.2024 ${term}`).join('\n');
+ const suffix='\nКезең / Период\nСумма выплат\nТөленген төлемдер / Выплаченные выплаты:\n1 Историческая выплата 99999 01.01.2020 01.01.2021';
+ const r=rules.extractNative(pages(prefix+rows+suffix)),fact=r.facts.find(f=>f.key==='benefits.count');assert.equal(fact.value,'4');assert.match(fact.source,/бессрочно/);assert.match(fact.source,/пожизненно/);assert.match(fact.source,/до исчерпания/);assert.equal(fact.source.includes('99999'),false);assert.equal(r.facts.some(f=>/Amount|Frequency|income/i.test(f.key)),false);
+ for(const broken of [rows.replace('32005 17.04.2024','??? 17.04.2024'),rows.replace('2 Вид','9 Вид'),rows.replace('19.05.2028','неразборчиво'),rows+'\n5 Нечитаемая строка']){
+  const b=rules.extractNative(pages(prefix+broken+suffix));assert.equal(b.facts.some(f=>f.key==='benefits.count'),false);assert.ok(b.findings.includes('BENEFITS_ACTIVE_TABLE_REVIEW_REQUIRED'));
+ }
+});
+
+test('Kazakh guarantor and joint co-borrower rows retain names, original roles and the actual table page',()=>{
+ const first='Жеке кредиттік есеп\nМіндеттеме 1\nСубъектінің рөлі: Қарыз алушы\nКредитор: TEST BANK\nКелісімшарт кезеңі Қолданыстағы\nШарт нөмірі: TEST-1\n1 беттің 2 беті';
+ for(const role of ['Кепілдік беруші - O','Кепілдік\nберуші - О','Ынтымақты міндеттемелері бар\nқосалқы қарыз алушы (қосылған\nтұлға)']){
+  const second=`Байланысты субъектілер\nСубъектінің рөлі: АТӘ/атауы: ЖСН/БСН: Құжат түрі: Құжат нөмірі:\n${role} ТЕСТОВ\nТЕСТ ТЕСТОВИЧ\n991231300003 Жеке куәлік 123456789\nШарттың валютасындағы күндер саны\n2 беттің 2 беті`;
+  const r=rules.extractNative(pages(first,second)),fact=r.credits[0].facts.find(f=>f.key==='relatedParties');assert.equal(r.credits.length,1);assert.equal(r.credits[0].contractNumber,'TEST-1');assert.equal(fact.page,2);assert.equal(fact.value,'ТЕСТОВ ТЕСТ ТЕСТОВИЧ — '+role.replace(/\s+/g,' '));
+  const profile=parseParticipants(fact.value);assert.equal(profile.valid,true);assert.equal(profile.people[0].name,'ТЕСТОВ ТЕСТ ТЕСТОВИЧ');assert.equal(profile.people[0].role,role.startsWith('Ынтымақты')?'Созаёмщик':'Гарант');assert.equal(parseParticipants(fact.value.replace(/ — .*/,' — Неизвестная роль')).valid,false);
+  assert.equal(rules.extractNative(pages(first,second.replace('991231300003','991231300004'))).credits[0].facts.some(f=>f.key==='relatedParties'),false);
+ }
+});
+
+test('Eurasian doubled label separators do not hide the account owner, date or period',()=>{
+ const text='АО "Евразийский банк"\neubank.kz EURIKZKA\nВыписка по счету: Дата формирования: : 04.08.2026 15:19:34\nПериод: : 04.08.2025 - 04.08.2026\nФИО: : ТЕСТОВ ТЕСТ\nИИН: : 991231300003';
+ const r=rules.extractNative(pages(text));assert.equal(r.kind,'salary');assert.equal(r.identity.iin,'991231300003');assert.equal(r.identity.name,'ТЕСТОВ ТЕСТ');assert.equal(r.issuedAt,'2026-08-04');assert.equal(r.coverage.from,'2025-08-04');assert.equal(r.coverage.to,'2026-08-04');assert.equal(r.facts.some(f=>/salary|income|statement/.test(f.key)),false);
+ assert.equal(rules.extractNative(pages(text.replace('991231300003','991231300004'))).identity.iin,null);
 });

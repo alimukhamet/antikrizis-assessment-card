@@ -98,6 +98,8 @@ jobs:
             'enforcement-editor.js'
             'document-review.js'
             'loan-duplicates.js'
+            'loan-participants.mjs'
+            'loan-participants-editor.mjs'
             'gkb-comparison.mjs'
             'gkb-comparison-ui.mjs'
             'server-answer-check.js'

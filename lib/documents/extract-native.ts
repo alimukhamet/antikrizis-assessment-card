@@ -1,7 +1,7 @@
 import labels from './kz-labels.json';
 import type { PageText } from './read-pdf';
 import {extractPowerParties,type PowerParties} from './power-of-attorney';
-export const EXTRACTION_VERSION = 'rules-native-25';
+export const EXTRACTION_VERSION = 'rules-native-26';
 export type Fact = { key: string; value: string; page: number; source: string };
 export type Credit = { contractNumber: string; contractCode?: string; page: number; facts: Fact[]; components: Record<string, string | null>; comparisonDebt?:Fact; relatedPartiesNotice?: {page:number;source:string} };
 export type BankStatement={from:string|null;to:string|null;credits:string;topUps:string;topUpsVerified:boolean;debits:string;transactions:number;reconciled:boolean;rowsReadable:boolean;sourcePage:number;reconciliation?:string;gambling?:{total:string;matches:Array<{date:string;amount:string;description:string;page:number}>}};
@@ -43,13 +43,16 @@ export function identityCardDates(pages:Array<{page:number;text:string}>){
  return {issuedAt,expiresAt,page:issuedAt?issued.get(issuedAt)!:expiresAt?expires.get(expiresAt)!:null};
 }
 function identityCardHeader(text:string){
- return /^([А-ЯӘІҢҒҮҰҚӨҺЁ -]+)\n([А-ЯӘІҢҒҮҰҚӨҺЁ -]+)\n([А-ЯӘІҢҒҮҰҚӨҺЁ -]+)\n\d{2}\.\d{2}\.\d{4}\s*\n(\d{12})\s*\n\d{9}\b/m.exec(text);
+ // Digital cards may omit a patronymic and print sex beside the birth date.
+ // Still demand the adjacent IIN/card-number structure, not any ID in the PDF.
+ const card=/^((?:[А-ЯӘІҢҒҮҰҚӨҺЁ '-]+\n){2,3})\d{2}\.\d{2}\.\d{4}[ \t]*(?:[МЖӘЕMF][ \t]*)?\n\s*(\d{12})\s*\n\d{9}\b/m.exec(text);
+ return card?{iin:card[2],name:card[1].replace(/\s+/g,' ').trim()}:null;
 }
 function identityCardWithoutIssuer(text:string,pages:PageText[]){
  const header=identityCardHeader(text),dates=identityCardDates(pages);
  // Some digital cards render the title/issuer as graphics. Demand the full
  // printed card structure, a checksum-valid IIN, MRZ and an unambiguous term.
- return !!header&&validIin(header[4])&&/^[A-Z]+<<[A-Z<]+\s*$/m.test(text)&&!!dates.issuedAt&&!!dates.expiresAt;
+ return !!header&&validIin(header.iin)&&/^[A-Z]+<<[A-Z<]+\s*$/m.test(text)&&!!dates.issuedAt&&!!dates.expiresAt;
 }
 const isLombard=(creditor:string)=>/(?:^|[^\p{L}\p{N}])(?:ломбард|lombard)(?=$|[^\p{L}\p{N}])/iu.test(creditor);
 /** Questionnaire categories agreed for GKB intake; preserve the bureau wording in the source. */
@@ -78,7 +81,6 @@ export function extractNative(pages: PageText[]): NativeExtraction {
   const statementFront=(pages[0]?.text||'').toLowerCase().replace(/ё/g,'е');
   const compactFront=statementFront.replace(/\s+/g,' '),compactHead=head.replace(/\s+/g,' ');
   const pensionAccount=/сведения об остатках и о движении денег на счете/.test(compactFront)
-    && /(?:условный|индивидуальный) пенсионный счет/.test(compactFront)
     && /выписка с (?:условного|индивидуального) пенсионного счета/.test(compactHead);
   const propertyRights=/о зарегистрированных правах \(обременениях\)/.test(compactFront)
     && /на недвижимое имущество и его технических характеристиках/.test(compactFront);
@@ -126,7 +128,9 @@ export function extractNative(pages: PageText[]): NativeExtraction {
     output.identity.name = kind === 'kaspi' ? (value(/подтверждает,\s*что\s+([\s\S]+?),\s*ИИН/i,front)||value(/«Kaspi\s+Bank»\s+АҚ\s+([^,]+),\s*ЖСН/u,front))?.replace(/\s+/g,' ') || null : kind === 'property' ? value(/Выдан[ао]:\s*([^,\n]+)/i,front) : null;
   }
   if(kind==='salary'){
-    const front=pages[0]?.text||'';
+    const front=(pages[0]?.text||'').replace(/:(?:[ \t]*:)+/g,':');
+    const iin=value(/(?:ИИН|ЖСН)\s*:\s*(\d{12})\b/,front);
+    if(validIin(iin))output.identity.iin=iin;
     output.identity.name=value(/ФИО\s*:\s*([^\n]+?)(?=\s+Дата формирования(?: выписки)?\s*:|\n|$)/,front);
     output.issuedAt=day(value(/Дата формирования(?: выписки)?\s*:\s*(\d{2}\.\d{2}\.\d{4})/,front));
     const period=/Период(?: выписки)?\s*:\s*(?:с\s*)?(\d{2}\.\d{2}\.\d{4})\s*(?:по|[-–—])\s*(\d{2}\.\d{2}\.\d{4})/.exec(front);
@@ -158,24 +162,29 @@ export function extractNative(pages: PageText[]): NativeExtraction {
       output.findings.push('ENPF_ROWS_REVIEW_REQUIRED');
     }else extractEnpfPayers(pages,output);
   }
-  if(kind==='encumbrance'){
+  if(kind==='encumbrance'||kind==='property'){
     const front=pages[0]?.text||'';
     output.issuedAt=day(value(/(?:Дата получения\s*:?\s*(\d{2}\.\d{2}\.\d{4}))/,front)
       ||value(/(\d{2}\.\d{2}\.\d{4})\s+Дата получения/,front));
   }
   if(kind==='identity'&&!output.identity.iin){
     const card=identityCardHeader(raw);
-    if(card&&validIin(card[4]))output.identity={iin:card[4],name:card.slice(1,4).join(' ').replace(/\s+/g,' ').trim()};
+    if(card&&validIin(card.iin))output.identity={iin:card.iin,name:card.name};
   }
   if(kind==='identity'){const dates=identityCardDates(pages);output.issuedAt=dates.issuedAt;output.expiresAt=dates.expiresAt;}
   if(kind==='benefits'){
     output.issuedAt=day(value(/Дата получения:\s*(\d{2}\.\d{2}\.\d{4})/,raw));
-    const active=/Действующие выплаты:\s*([\s\S]*?)Төленген төлемдер\s*\/\s*Выплаченные выплаты:/.exec(raw);
+    // Some exports place the history table's column labels before its title.
+    const active=/Действующие выплаты:\s*([\s\S]*?)(?:Төленген төлемдер\s*\/\s*Выплаченные выплаты:|Кезең\s*\/\s*Период)/.exec(raw);
     if(active){
-      const rows=[...active[1].matchAll(/^\s*(\d+)\s*\n([\s\S]+?)\n(\d+(?:[.,]\d+)?)\s+(\d{2}\.\d{2}\.\d{4})\s+(\d{2}\.\d{2}\.\d{4})(?=\s*(?:\n\s*\d+\s*\n|$))/gm)];
-      const starts=[...active[1].matchAll(/^\s*\d+\s*$/gm)];
-      if(output.issuedAt&&rows.length&&rows.length===starts.length&&rows.every((r,i)=>Number(r[1])===i+1&&day(r[4])&&day(r[5]))){
-        const evidence=rows.map(r=>r[2].replace(/\s+/g,' ').trim()+'; сумма в строке '+r[3]+' ₸; назначено '+r[4]+'; до '+r[5]).join(' | ');
+      const term='(?:\\d{2}\\.\\d{2}\\.\\d{4}|мерзімсіз\\s*\\/\\s*бессрочно|өмір\\s+бойы\\s*\\/\\s*пожизненно|БЖЗҚ\\s+шотындағы\\s+қаражат\\s+таусылғанға\\s+дейін\\s*\\/\\s*до\\s+исчерпания\\s+средств,\\s*имеющихся\\s+на\\s+счете\\s+в\\s+ЕНПФ)';
+      const rows=[...active[1].matchAll(new RegExp('(?:^|\\n)[ \\t]*(\\d{1,3})\\s+([\\s\\S]+?)\\s+(\\d+(?:[.,]\\d+)?)\\s+(\\d{2}\\.\\d{2}\\.\\d{4})\\s+('+term+')(?=\\s*(?:\\n[ \\t]*\\d{1,3}\\s+|$))','giu'))];
+      const first=rows[0]?.index??0,last=rows.at(-1);
+      // Only headings may precede the rows; no unmatched row or tail can vanish.
+      const prefix=active[1].slice(0,first),tail=last?active[1].slice(last.index!+last[0].length):active[1];
+      const contiguous=rows.every((r,i)=>i===0||!active[1].slice(rows[i-1].index!+rows[i-1][0].length,r.index).trim());
+      if(output.issuedAt&&rows.length&&!/\d/.test(prefix)&&!tail.trim()&&contiguous&&rows.every((r,i)=>Number(r[1])===i+1&&day(r[4])&&(!/^\d/.test(r[5])||day(r[5]))&&!/\n[ \t]*\d{1,3}(?:[ \t]+(?=\S)|[ \t]*\n)/.test(r[2]))){
+        const evidence=rows.map(r=>r[2].replace(/\s+/g,' ').trim()+'; сумма в строке '+r[3]+' ₸; назначено '+r[4]+(/^\d/.test(r[5])?'; до ':'; срок ')+r[5].replace(/\s+/g,' ').trim()).join(' | ');
         output.facts.push({key:'benefits.count',value:String(rows.length),page:pages.find(p=>p.text.includes('Действующие выплаты:'))?.page||1,source:'Действующие выплаты на дату справки '+output.issuedAt+': '+evidence+'. Исторические выплаты не включены; актуальность, сумму и периодичность уточните у клиента.'});
       }else output.findings.push('BENEFITS_ACTIVE_TABLE_REVIEW_REQUIRED');
     }
@@ -225,10 +234,10 @@ export function extractNative(pages: PageText[]): NativeExtraction {
       let relatedPartiesNotice:Credit['relatedPartiesNotice'];
       if(related){
        const empty=related.match(/Нет данных/g)?.length||0;
-       const people=[...related.matchAll(/(?:^|\n)\s*(Соза[её]мщик|Гарант|Поручитель|Залогодатель|Кепіл беруші)\s+([\p{L}\s'-]{3,180}?)\s+(\d{12})\b/giu)];
+       const people=[...related.matchAll(/(?:^|\n)\s*(Соза[её]мщик|Гарант|Поручитель|Залогодатель|Кепіл беруші|Кепілдік\s+беруші\s*-\s*[OО]|Ынтымақты\s+міндеттемелері\s+бар\s+қосалқы\s+қарыз\s+алушы\s*\(қосылған\s+тұлға\))\s+([\p{L}\s'-]{3,180}?)\s+(\d{12})\b/giu)];
        if(people.length&&people.length===(related.match(/\b\d{12}\b/g)||[]).length&&people.every(p=>validIin(p[3]))){
         // Preserve the role. "Кепіл беруші" is a pledgor, not a guarantor (Kaspi bilingual pledge form, clauses 1.1.2).
-        const described=people.map(p=>`${p[2].replace(/\s+/g,' ').trim()} — ${p[1]==='Кепіл беруші'?'Залогодатель (в ГКБ: Кепіл беруші)':p[1]}`);
+        const described=people.map(p=>`${p[2].replace(/\s+/g,' ').trim()} — ${p[1]==='Кепіл беруші'?'Залогодатель (в ГКБ: Кепіл беруші)':p[1].replace(/\s+/g,' ')}`);
         add('relatedParties',described.join('; '),'Связанные субъекты: '+related.trim(),'Связанные субъекты');
        }else if(empty===5&&/(?:Номер документа|Құжат нөмірі):\s*(?:Нет данных\s*){5}$/.test(related.trim())&&!/Соза[её]мщик|Гарант|Поручитель|Залогодатель|Кепіл беруші|\b\d{12}\b/i.test(related)){
         // The explicit five-cell empty row maps to "Нет" under the agreed intake rule.

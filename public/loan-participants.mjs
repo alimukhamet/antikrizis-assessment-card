@@ -1,4 +1,13 @@
 export const participantRoles=['Созаёмщик','Гарант','Поручитель','Залогодатель'];
+// Keep the original bureau wording in saved evidence while displaying the
+// corresponding existing questionnaire role. These are exact known labels.
+const roleAliases={
+ 'Созаемщик':'Созаёмщик',
+ 'Залогодатель (в ГКБ: Кепіл беруші)':'Залогодатель',
+ 'Кепілдік беруші - O':'Гарант',
+ 'Кепілдік беруші - О':'Гарант',
+ 'Ынтымақты міндеттемелері бар қосалқы қарыз алушы (қосылған тұлға)':'Созаёмщик'
+};
 
 // The existing per-loan string remains portable in drafts, evidence and contracts.
 export function parseParticipants(value){
@@ -10,7 +19,7 @@ export function parseParticipants(value){
   const match=/^(.*?)\s*—\s*(.*?)$/.exec(entry.trim());
   if(!match)return {choice:'',people:[],valid:false,legacy:text};
   const name=match[1].trim(),rawRole=match[2].trim();
-  const role=rawRole==='Созаемщик'?'Созаёмщик':rawRole==='Залогодатель (в ГКБ: Кепіл беруші)'?'Залогодатель':rawRole;
+  const role=Object.hasOwn(roleAliases,rawRole)?roleAliases[rawRole]:rawRole;
   if(role&&!participantRoles.includes(role))return {choice:'',people:[],valid:false,legacy:text};
   people.push({name,role});
  }

@@ -1,6 +1,8 @@
 // Owner-triggered analysis refresh. This never saves drafts, reviews or CRM data.
 import assert from 'node:assert/strict';import {writeFile} from 'node:fs/promises';import {createHash} from 'node:crypto';
-const origin='https://assessment.anti-krizis.kz',ids=[...new Set((process.env.ASSESSMENT_AUDIT_DEAL_IDS||'').split(/[ ,]+/).filter(Boolean))],refresh=process.env.ASSESSMENT_REFRESH_GKB==='true',report={scope:'saved-gkb-analysis',refresh,cases:[],failures:[]};let cookie='';
+const documentScope=process.env.ASSESSMENT_DOCUMENT_SCOPE||'gkb';
+assert.ok(['gkb','all'].includes(documentScope),'Unknown document audit scope');
+const origin='https://assessment.anti-krizis.kz',ids=[...new Set((process.env.ASSESSMENT_AUDIT_DEAL_IDS||'').split(/[ ,]+/).filter(Boolean))],refresh=process.env.ASSESSMENT_REFRESH_GKB==='true',report={scope:documentScope==='all'?'saved-document-analysis':'saved-gkb-analysis',refresh,cases:[],failures:[]};let cookie='';
 const verifyFiles=(process.env.ASSESSMENT_VERIFY_DOWNLOAD_FILES||'').split(/[ ,]+/).filter(Boolean);
 assert.ok(verifyFiles.length<=2&&verifyFiles.every(id=>/^[1-9]\d*$/.test(id))&&(!verifyFiles.length||ids.length===1),'Download verification is limited to two existing files in one exact case');
 const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -11,12 +13,12 @@ try{
  for(const dealId of ids){const item={dealId,documents:[]};report.cases.push(item);const root='/api/assessment/'+dealId;
   try{
    const context=await request(root),before=await request(root+'/draft');
-   const docs=[...new Set((before.draft?.payload?.documents||[]).filter(doc=>/^ГКБ — (?:полный|краткий) отчёт$/.test(doc.type)).map(doc=>doc.documentId))];
+   const docs=[...new Set((before.draft?.payload?.documents||[]).filter(doc=>doc.documentId&&!/ЭЦП|парол/i.test(doc.type||'')&&(documentScope==='all'||/^ГКБ — (?:полный|краткий) отчёт$/.test(doc.type))).map(doc=>doc.documentId))];
    for(let n=0;n<docs.length;n+=8){const documentIds=docs.slice(n,n+8),body={documentIds,identityRevision:context.identityRevision},started=Date.now(),batch=await request(root+'/documents/analyze',body);let refreshed=0;
     for(const entry of batch.results){
      let analysis=entry.analysis;if(entry.error){if(entry.error!=='CACHE_REPROCESS_REQUIRED'||!refresh)throw Error(entry.error);analysis=await request(root+'/documents/'+encodeURIComponent(entry.documentId)+'/analyze',{cacheOnly:false});refreshed++;}
      assert.equal(analysis.documentId,entry.documentId);assert.equal(analysis.identityRevision,context.identityRevision);
-     item.documents.push({documentId:entry.documentId,extractionId:analysis.extractionId,originalSha256:analysis.document.originalSha256,kind:analysis.document.extraction.kind,version:analysis.document.extraction.version,loans:analysis.document.extraction.credits.length,complete:analysis.document.extraction.creditList?.complete,findings:analysis.findings,profile:{none:analysis.document.extraction.credits.filter(c=>c.facts.some(f=>f.key==='relatedParties'&&f.value==='Нет')).length,lombard:analysis.document.extraction.credits.filter(c=>c.facts.some(f=>f.key==='creditType'&&f.value==='Ломбард')).length},refreshed:Boolean(entry.error)});
+     item.documents.push({documentId:entry.documentId,extractionId:analysis.extractionId,originalSha256:analysis.document.originalSha256,kind:analysis.document.extraction.kind,version:analysis.document.extraction.version,loans:analysis.document.extraction.credits.length,complete:analysis.document.extraction.creditList?.complete,findings:analysis.findings,identityExtracted:Boolean(analysis.document.extraction.identity.iin),issueDateExtracted:Boolean(analysis.document.extraction.issuedAt),factKeys:analysis.document.extraction.facts.map(f=>f.key),profile:{none:analysis.document.extraction.credits.filter(c=>c.facts.some(f=>f.key==='relatedParties'&&f.value==='Нет')).length,lombard:analysis.document.extraction.credits.filter(c=>c.facts.some(f=>f.key==='creditType'&&f.value==='Ломбард')).length},refreshed:Boolean(entry.error)});
     }
     const repeatStart=Date.now(),repeat=await request(root+'/documents/analyze',body);item.batches||=[];item.batches.push({documents:documentIds.length,firstMs:repeatStart-started,repeatMs:Date.now()-repeatStart,refreshed});
     for(const row of repeat.results){assert.ok(row.analysis?.cacheHit,'Repeated read must reuse analysis');const previous=item.documents.find(doc=>doc.documentId===row.documentId);assert.equal(row.analysis.extractionId,previous.extractionId);assert.equal(row.analysis.document.originalSha256,previous.originalSha256);}

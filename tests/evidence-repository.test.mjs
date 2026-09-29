@@ -153,3 +153,20 @@ test('v24 preserves unchanged extraction/review IDs and stores improved rules wi
  assert.equal(await repo.previousAnalysis(old.document,'different-reader'),null);assert.equal((await repo.previousAnalysis(old.document,'native-pdf-3')).extraction.id,old.extraction.id);
  const updated=await repo.storeExtraction(old.document,'native-pdf-3:rules-native-24',{read:{pages},extraction});assert.equal(updated.document.id,old.document.id);assert.notEqual(updated.extraction.id,old.extraction.id);assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_documents').get().n,1);assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_reviews').get().n,1);
 });
+
+test('v26 compares non-GKB facts and retains unchanged review IDs instead of reusing stale ID and benefit results',async()=>{
+ const compiledRules=buildSync({entryPoints:['lib/documents/extract-native.ts'],bundle:true,platform:'node',format:'cjs',write:false}).outputFiles[0].text,rulesModule={exports:{}};vm.runInNewContext(compiledRules,{module:rulesModule,exports:rulesModule.exports,Date,JSON});
+ for(const changed of [false,true]){
+  const {repo,sqlite}=setup(),c=await repo.syncCase(client());
+  const text='ТЕСТОВА\nСЫНАҚ\n31.12.1999 Ж\n991231300003\n123456789\n01.01.2025 - 31.12.2034\nTESTOVA<<SYNAQ<<<<<<<<<<<<';
+  const pages=[{page:1,text,nativeCharacters:text.length,needsOcr:false}],current=rulesModule.exports.extractNative(pages);
+  const previous=changed?{...current,kind:'unknown',identity:{iin:null,name:null},facts:[],issuedAt:null}:current;
+  const old=await repo.store(c.id,new Uint8Array([90]),'synthetic.pdf',actor,'native-pdf-3:rules-native-25',{read:{pages},extraction:{...previous,version:'rules-native-25'}});
+  const review=await repo.appendReview({caseId:c.id,documentId:old.document.id,extractionId:old.extraction.id,identityRevision:1,requestId:'review',factKey:'document.manual-check.v1',value:{type:'Удостоверение личности'},disposition:'confirmed',reason:'synthetic'},actor);
+  const cached=await repo.cached(c.id,old.document.original_sha256,'native-pdf-3:rules-native-26');
+  if(changed){
+   assert.equal(cached,null);const updated=await repo.storeExtraction(old.document,'native-pdf-3:rules-native-26',{read:{pages},extraction:current});assert.notEqual(updated.extraction.id,old.extraction.id);assert.equal((await repo.currentReviews(c.id,old.document.id,updated.extraction.id,1)).length,0);
+  }else assert.equal(cached.extraction.id,old.extraction.id);
+  assert.equal((await repo.currentReviews(c.id,old.document.id,old.extraction.id,1))[0].id,review.id);assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_documents').get().n,1);assert.ok(await repo.cached(c.id,old.document.original_sha256,'native-pdf-3:rules-native-25'));
+ }
+});

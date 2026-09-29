@@ -10,6 +10,13 @@ on:
         description: 'Update obsolete analysis only; preserve drafts, originals, reviews and CRM data'
         default: false
         type: boolean
+      document_scope:
+        description: 'Audit saved GKB reports, or all ordinary saved documents (no credentials)'
+        default: 'gkb'
+        type: choice
+        options:
+          - gkb
+          - all
       verify_download_file_ids:
         description: 'Optional: verify bytes and timing of up to two existing Bitrix files in one case, without saving answers'
         default: ''
@@ -32,6 +39,7 @@ jobs:
           ASSESSMENT_AUDIT_DEAL_IDS: ${{ inputs.deal_ids }}
           ASSESSMENT_VERIFY_DOWNLOAD_FILES: ${{ inputs.verify_download_file_ids }}
           ASSESSMENT_REFRESH_GKB: ${{ inputs.refresh_analysis }}
+          ASSESSMENT_DOCUMENT_SCOPE: ${{ inputs.document_scope }}
         run: node scripts/audit-gkb-cache.mjs
       - uses: actions/upload-artifact@v4
         if: always()
