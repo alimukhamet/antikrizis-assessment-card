@@ -55,7 +55,7 @@ window.ServerDrafts=(()=>{
  async function save(options={}){
   clearTimeout(timer);
   if(saveTask){if(!await saveTask)return false;if(!isDirty())return true;return save(options);}
-  if(loading||af.busy||!HostedAssessment.ready()){showDraftStatus('Дождитесь загрузки клиента и документов.');return false;}
+  if(loading||af.busy&&!options.importCheckpoint||!HostedAssessment.ready()){showDraftStatus('Дождитесь загрузки клиента и документов.');return false;}
   if(!baselineLoaded){showDraftStatus('Откройте сохранённый черновик перед продолжением.');return false;}
   if(options.automatic&&!isDirty())return true;
   const savedContext=HostedAssessment.getContext(),path=base(),payload=capture(),body={payload,expectedRevision:revision,identityRevision:HostedAssessment.getContext().identityRevision},signature=JSON.stringify(body);

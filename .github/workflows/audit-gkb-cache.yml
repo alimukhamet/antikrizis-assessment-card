@@ -1,0 +1,36 @@
+name: Saved GKB cache audit
+on:
+  workflow_dispatch:
+    inputs:
+      deal_ids:
+        description: 'Exact deal IDs, separated by commas (up to 50)'
+        required: true
+        type: string
+      refresh_analysis:
+        description: 'Update obsolete analysis only; preserve drafts, originals, reviews and CRM data'
+        default: false
+        type: boolean
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Verify saved reports and repeat reads
+        env:
+          ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
+          ASSESSMENT_AUDIT_DEAL_IDS: ${{ inputs.deal_ids }}
+          ASSESSMENT_REFRESH_GKB: ${{ inputs.refresh_analysis }}
+        run: node scripts/audit-gkb-cache.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gkb-cache-audit
+          path: gkb-cache-audit.json
+          retention-days: 3

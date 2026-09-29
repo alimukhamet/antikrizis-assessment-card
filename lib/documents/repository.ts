@@ -3,6 +3,8 @@ import type {SubmissionRow}from'../questionnaire/submission-repository';
 import type {UploadRow}from'./upload-manifest';
 import type { ClientContext } from '../crm/bitrix';
 import type { Actor } from '../worker-session';
+import {extractNative,type NativeExtraction} from './extract-native';
+import type {PageText} from './read-pdf';
 export class RepositoryError extends Error {constructor(public code:string, public status=409){super(code);}}
 export type CaseRow={id:string;external_system:string;external_id:string;client_iin:string|null;identity_revision:number;title:string;created_at:string;updated_at:string};
 export type DocumentRow={id:string;case_id:string;original_sha256:string;original_key:string;original_name:string;byte_size:number;uploaded_by:string;created_at:string};
@@ -37,6 +39,16 @@ export class EvidenceRepository {
   return saved;
  }
  async document(caseId:string,documentId:string){return this.db.prepare('SELECT * FROM assessment_documents WHERE id=? AND case_id=?').bind(documentId,caseId).first<DocumentRow>();}
+ async importedDocument(record:CaseRow,fileId:string){
+  const receipt=await this.db.prepare("SELECT * FROM assessment_reviews WHERE case_id=? AND identity_revision=? AND fact_key='document.origin.bitrix.v1' AND json_extract(value_json,'$.fileId')=? ORDER BY rowid DESC LIMIT 1").bind(record.id,record.identity_revision,fileId).first<ReviewRow>();
+  if(!receipt||receipt.disposition!=='confirmed')return null;
+  const origin=JSON.parse(receipt.value_json),document=await this.document(record.id,receipt.document_id);
+  return document&&origin.system==='bitrix'&&origin.sha256===document.original_sha256&&origin.byteSize===document.byte_size?document:null;
+ }
+ async previousAnalysis(document:DocumentRow,readerVersion:string){
+  const prefix=readerVersion+':',extraction=await this.db.prepare('SELECT * FROM assessment_extractions WHERE document_id=? AND substr(version,1,?)=? ORDER BY rowid DESC LIMIT 1').bind(document.id,prefix.length,prefix).first<ExtractionRow>();
+  return extraction?{document,extraction,result:await this.readResult(extraction)}:null;
+ }
  async credentialStatus(record:CaseRow){
   const row=await this.db.prepare("SELECT * FROM assessment_upload_manifests WHERE case_id=? AND identity_revision=? AND json_extract(manifest_json,'$.scope')='credentials' AND state<>'cancelled' ORDER BY rowid DESC LIMIT 1").bind(record.id,record.identity_revision).first<UploadRow>();
   if(!row)return null;
@@ -62,6 +74,18 @@ export class EvidenceRepository {
   const document=await this.db.prepare('SELECT * FROM assessment_documents WHERE case_id=? AND original_sha256=?').bind(caseId,originalHash).first<DocumentRow>();if(!document)return null;
   let extraction=await this.db.prepare('SELECT * FROM assessment_extractions WHERE document_id=? AND version=?').bind(document.id,version).first<ExtractionRow>();
   if(extraction)return {document,extraction,result:await this.readResult(extraction)};
+  // Compare actual facts, not a broad document kind. An unchanged report keeps
+  // its immutable evidence and employee reviews; improved facts require review.
+  if(version.endsWith(':rules-native-24')){
+   const previous=await this.cached(caseId,originalHash,version.replace(/:rules-native-24$/,':rules-native-23'));
+   if(!previous)return null;
+   const result=previous.result as {extraction?:NativeExtraction;read?:{pages?:PageText[]}};
+   if(!result.extraction?.kind)return null;
+   if(!result.extraction.kind.startsWith('gkb_'))return previous;
+   if(!result.read?.pages?.length)return null;
+   const current=extractNative(result.read.pages);
+   return JSON.stringify({...result.extraction,version:current.version})===JSON.stringify(current)?previous:null;
+  }
   // v23 recognizes pension-account and property-rights exports. Keep every
   // unaffected extraction/review identity. Changed originals require explicit
   // reprocessing; old results and approvals stay in their immutable history.
@@ -126,6 +150,10 @@ export class EvidenceRepository {
    await this.db.prepare('INSERT INTO assessment_documents (id,case_id,original_sha256,original_key,original_name,byte_size,uploaded_by,created_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(case_id,original_sha256) DO NOTHING').bind(crypto.randomUUID(),caseId,originalHash,originalKey,name.slice(0,240),bytes.length,actor.id,now).run();
   }
   const document=await this.db.prepare('SELECT * FROM assessment_documents WHERE case_id=? AND original_sha256=?').bind(caseId,originalHash).first<DocumentRow>();if(!document)throw new RepositoryError('DOCUMENT_PERSISTENCE_FAILED',503);
+  return this.storeExtraction(document,version,result);
+ }
+ async storeExtraction(document:DocumentRow,version:string,result:unknown){
+  const caseId=document.case_id,now=new Date().toISOString();
   const resultText=JSON.stringify(result),resultHash=await sha256(resultText),resultKey=`cases/${caseId}/extractions/${resultHash}.json`;
   await this.files.put(resultKey,resultText,{httpMetadata:{contentType:'application/json'},customMetadata:{sha256:resultHash}});
   await this.db.prepare('INSERT INTO assessment_extractions (id,document_id,version,result_key,result_sha256,created_at) VALUES (?,?,?,?,?,?) ON CONFLICT(document_id,version) DO NOTHING').bind(crypto.randomUUID(),document.id,version,resultKey,resultHash,now).run();

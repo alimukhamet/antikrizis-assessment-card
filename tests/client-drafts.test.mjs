@@ -214,3 +214,18 @@ test('a late failed draft save cannot replace the status or readiness of a diffe
  s.w.HostedAssessment.getContext=()=>current;s.d.getElementById('draftStatus').textContent='NEW CLIENT STATUS';finish();assert.equal(await saving,false);
  assert.equal(s.d.getElementById('draftStatus').textContent,'NEW CLIENT STATUS');assert.equal(s.w.ServerDrafts.canSwitch(),true);
 });
+
+test('completed CRM PDFs are checkpointed before the next download and survive leaving midway',async t=>{
+ const s=await setup(t);await s.load();s.edit('needsSocialDoc','0');s.edit('needsSalaryDoc','none');s.edit('fio','KEEP MY ANSWER');s.mountWorkspace();let secondStarted;const started=new Promise(r=>secondStarted=r);let finish;const gate=new Promise(r=>finish=r),originalFetch=s.w.fetch;
+ const payload=id=>({client:s.w.HostedAssessment.getContext().client,identityRevision:1,assessmentDay:'2026-09-29',documentId:id,extractionId:id,originalName:id+'.pdf',eligibleForAutofill:false,findings:[],document:{totalPages:1,pages:[],extraction:{kind:'other',identity:{iin:null},facts:[],credits:[]}}});
+ s.w.fetch=async(path,options={})=>{if(!path.endsWith('/crm-documents'))return originalFetch(path,options);if(options.method!=='POST')return{ok:true,json:async()=>({files:[{id:'1'},{id:'2'}]})};const id=JSON.parse(options.body).fileId;if(id==='2'){secondStarted();await gate;}return{ok:true,json:async()=>payload('doc-'+id)};};
+ const importing=s.w.ClientWorkspace.importDocuments();await started;
+ assert.equal(s.run('af.busy'),true);assert.equal(s.store.payload.documents.length,1);assert.equal(s.store.payload.documents[0].documentId,'doc-1');assert.equal(s.store.payload.answers.find(a=>a.key==='fio').value,'KEEP MY ANSWER');assert.equal(await s.w.ServerDrafts.save(),false,'ordinary save still waits during import');
+ const reopen=await setup(t,structuredClone(s.store));reopen.run('afAnalyze=async()=>{}');await reopen.load();assert.equal(reopen.run('selectedFiles[0].storedDocumentId'),'doc-1');assert.equal(reopen.d.getElementById('fio').value,'KEEP MY ANSWER');finish();await importing;assert.equal(s.store.payload.documents.length,2);
+});
+test('fill missing fields uses cached evidence and preserves employee answers, zero and existing reviews',async t=>{
+ const s=await setup(t);await s.load();s.edit('iin','991231300003');s.edit('fio','EMPLOYEE NAME');s.edit('dependents','0');
+ s.run(`HostedAssessment.getContext().client.iin='991231300003';selectedFiles=[{id:1,file:{name:'report.pdf'},type:'ГКБ — полный отчёт',person:'Клиент',storedDocumentId:'saved'}];af.results.set(1,{identity:{iin:'991231300003',fio:'SOURCE NAME'},fields:[{key:'fio',value:'SOURCE NAME',page:1},{key:'dependents',value:'4',page:1},{key:'clientPhone',value:'87000000000',page:1}],loans:[],properties:[],notes:[],server:{dealId:'11665',documentId:'saved',extractionId:'source'},kind:'gkbFull'});af.sources.set('fio',{fileId:1,reviewId:'employee-review',pending:false,value:'EMPLOYEE NAME'});afClientChoices();`);
+ const before=s.writes.length;assert.equal(s.d.getElementById('afApply').style.display,'inline-block');assert.match(s.d.getElementById('afApply').textContent,/пропуски/);await s.d.getElementById('afApply').onclick();
+ assert.equal(s.d.getElementById('fio').value,'EMPLOYEE NAME');assert.equal(s.d.getElementById('dependents').value,'0');assert.equal(s.d.getElementById('clientPhone').value,'87000000000');assert.equal(s.run("af.sources.get('fio').reviewId"),'employee-review');assert.equal(s.run('af.conflicts.length'),0);assert.equal(s.writes.length,before+1);assert.equal(s.run('af.fillingMissing'),false);
+});

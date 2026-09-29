@@ -7,9 +7,9 @@ import fs from 'node:fs';import vm from 'node:vm';import path from 'node:path';i
 const root=fileURLToPath(new URL('../',import.meta.url)),require=createRequire(root+'package.json'),ts=require('typescript');
 function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>{if(n==='../../public/intake-data.mjs')return intake;if(n in imports)return imports[n];throw Error('Missing audit import: '+n);},Date,Map,Set,TextEncoder,crypto:webcrypto});return exports;}
 const schema=JSON.parse(fs.readFileSync(root+'lib/questionnaire/schema.json'));
-const repoTypes=load('lib/documents/repository.ts'),policy=load('lib/documents/policy.ts');
 const participants=await import(root+'public/loan-participants.mjs'),schedule=await import(root+'public/payment-schedule.mjs'),words=await import(root+'public/contract-words.mjs');
 const native=load('lib/documents/extract-native.ts',{'./power-of-attorney':load('lib/documents/power-of-attorney.ts'),'./kz-labels.json':JSON.parse(fs.readFileSync(root+'lib/documents/kz-labels.json'))});
+const repoTypes=load('lib/documents/repository.ts',{'./extract-native':native}),policy=load('lib/documents/policy.ts');
 const {validateDraft}=load('lib/questionnaire/draft.ts',{'./schema.json':schema,'./draft-recovery':load('lib/questionnaire/draft-recovery.ts'),'../documents/repository':repoTypes});
 const {checkAnswers}=load('lib/questionnaire/check-answers.ts',{'../../public/profile-explanations.mjs':profileExplanations,'./schema.json':schema,'../documents/extract-native':native,'../../public/payment-schedule.mjs':schedule,'../../public/loan-participants.mjs':participants});
 const compiler=load('lib/questionnaire/compile-assessment.ts',{'./draft':{validateDraft},'./check-answers':{checkAnswers},'../documents/repository':repoTypes,'../../public/payment-schedule.mjs':schedule});

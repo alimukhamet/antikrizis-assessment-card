@@ -137,3 +137,11 @@ test('short-report rows with Latin TOO/AO legal forms are counted and totalled',
  const r=rules.extractNative(page(shortReport(rows,'3','350.75')));assert.equal(r.credits.length,3);
  assert.equal(r.findings.includes('SHORT_CREDIT_COUNT_MISMATCH'),false);assert.equal(r.findings.includes('SHORT_TOTAL_MISMATCH'),false);
 });
+
+test('compact modern short tables read inline rows, spaced identifiers and the layout without payment frequency',()=>{
+ const p=modernShortPages();
+ p[0].text=p[0].text.replace('CARD-1','БМК 6-3-2025').replaceAll('Деректер жоқ   ','').replace('1\nАО','1   АО');
+ p[1].text=p[1].text.replace('Ай сайынғы төлемдер - 30 күн   ','').replace('Мерзімділігі тұрақсыз салымдар   ','').replace('3\nАО','3   АО');
+ const r=rules.extractNative(p);assert.equal(r.creditList.complete,true);assert.equal(r.credits.length,4);assert.equal(r.credits[0].contractNumber,'БМК 6-3-2025');assert.equal(r.credits[2].facts.find(f=>f.key==='debtOutstanding').value,'12428507.75');
+ const missingCurrency=structuredClone(p);missingCurrency[0].text=missingCurrency[0].text.replace('БМК 6-3-2025   KZT','БМК 6-3-2025');const partial=rules.extractNative(missingCurrency);assert.equal(partial.creditList.complete,false);assert.equal(partial.credits.length,3);assert.ok(partial.findings.includes('SHORT_CREDIT_COUNT_MISMATCH'));
+});

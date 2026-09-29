@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 export function syntheticCrm(){
  const deal={ID:'900001',TITLE:'SYNTHETIC ONLY - [whatcrm] line #21',UF_CRM_AI_IIN:'000000000010',CATEGORY_ID:'13',STAGE_ID:'C13:FINAL_INVOICE',STAGE_SEMANTIC_ID:'P'};
  const counts={assessmentWrites:0,historyWrites:0,fileWrites:0,stageWrites:0},files=new Map(),comments=[],history=[];
- let refs=[],blocked=false;
+ let refs=[],blocked=false,fileReads=0;
  const lost=()=>Response.json({error:'SYNTHETIC_LOST_RESPONSE'},{status:503});
  const item=()=>({id:deal.ID,ufCrmAiIin:deal.UF_CRM_AI_IIN,ufCrmAnkPrimaryDocs:refs});
  const handle=async request=>{
   const u=new URL(request.url);assert.equal(u.origin,'https://bitrix.synthetic.invalid','External network is forbidden');
   const method=u.pathname.split('/').at(-1);
   if(method==='crm.controller.item.getFile.json'){
+   fileReads++;
    assert.equal(request.method,'GET');const file=files.get(u.searchParams.get('id'));assert.ok(file,'Unknown synthetic file');
    return new Response(file.bytes,{headers:{'content-length':String(file.bytes.length),'content-disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(file.name)}});
   }
@@ -44,5 +45,5 @@ export function syntheticCrm(){
    default:throw Error('Unexpected synthetic CRM method: '+method);
   }
  };
- return{handle,counts,files,deal,restore(){blocked=false;}};
+ return{handle,counts,files,deal,get fileReads(){return fileReads;},seedFile(id,bytes,name){files.set(id,{bytes,name});refs.push({id,urlMachine:'https://bitrix.synthetic.invalid/crm.controller.item.getFile.json?id='+id});},removeFile(id){files.delete(id);refs=refs.filter(ref=>ref.id!==id);},restore(){blocked=false;}};
 }

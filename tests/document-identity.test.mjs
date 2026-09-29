@@ -6,8 +6,8 @@ import ts from 'typescript';
 import {webcrypto} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import {httpHeaders} from './bitrix-headers-helper.mjs'; function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>{if(n==='./http-headers')return httpHeaders;if(n in imports)return imports[n];throw Error(n);},crypto:webcrypto,Uint8Array,TextEncoder,Date,JSON,Map,Set,fetch,AbortSignal});return exports;}
-const repoModule=load('lib/documents/repository.ts');
 const rules=load('lib/documents/extract-native.ts',{'./power-of-attorney':load('lib/documents/power-of-attorney.ts'),'./kz-labels.json':JSON.parse(fs.readFileSync('lib/documents/kz-labels.json'))});
+const repoModule=load('lib/documents/repository.ts',{'./extract-native':rules});
 const crm=load('lib/crm/bitrix.ts',{'../documents/extract-native':rules});
 const adapterModule=load('lib/crm/document-identity.ts',{'../documents/repository':repoModule,'../documents/extract-native':rules,'./bitrix':crm});
 const analysis=load('lib/documents/analysis-service.ts',{'./read-pdf':{},'./extract-native':rules,'./policy':load('lib/documents/policy.ts'),'./request-context':{operatingDay:()=> '2026-09-16'},'./repository':repoModule,'./power-validation':{},'./analysis-version':{analysisVersion:'test-version'},'./document-review':{}});
