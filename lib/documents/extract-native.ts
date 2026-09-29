@@ -1,7 +1,7 @@
 import labels from './kz-labels.json';
 import type { PageText } from './read-pdf';
 import {extractPowerParties,type PowerParties} from './power-of-attorney';
-export const EXTRACTION_VERSION = 'rules-native-24';
+export const EXTRACTION_VERSION = 'rules-native-25';
 export type Fact = { key: string; value: string; page: number; source: string };
 export type Credit = { contractNumber: string; contractCode?: string; page: number; facts: Fact[]; components: Record<string, string | null>; comparisonDebt?:Fact; relatedPartiesNotice?: {page:number;source:string} };
 export type BankStatement={from:string|null;to:string|null;credits:string;topUps:string;topUpsVerified:boolean;debits:string;transactions:number;reconciled:boolean;rowsReadable:boolean;sourcePage:number;reconciliation?:string;gambling?:{total:string;matches:Array<{date:string;amount:string;description:string;page:number}>}};
@@ -51,6 +51,7 @@ function identityCardWithoutIssuer(text:string,pages:PageText[]){
  // printed card structure, a checksum-valid IIN, MRZ and an unambiguous term.
  return !!header&&validIin(header[4])&&/^[A-Z]+<<[A-Z<]+\s*$/m.test(text)&&!!dates.issuedAt&&!!dates.expiresAt;
 }
+const isLombard=(creditor:string)=>/(?:^|[^\p{L}\p{N}])(?:ломбард|lombard)(?=$|[^\p{L}\p{N}])/iu.test(creditor);
 /** Questionnaire categories agreed for GKB intake; preserve the bureau wording in the source. */
 function questionnaireCreditType(financing:string|null,purpose:string|null,object:string|null,security:string|null):string|null{
  if(financing==='Кредитная карта')return 'Кредитная карта';
@@ -214,8 +215,8 @@ export function extractNative(pages: PageText[]): NativeExtraction {
       if (remaining !== null && !ambiguous) add('debtOutstanding',remaining,'Остаток / предстоящие платежи при отсутствии показанной просрочки; требуется проверка',amount('Остаточная (использованная) сумма',block)!==null?'Остаточная (использованная) сумма':'Сумма предстоящих платежей');
       const financing=value(/Вид финансирования:\s*([^\n]+)/,block),purpose=value(/Цель кредита:\s*([^\n]+)/,block),object=value(/Объект кредитования:\s*([\s\S]*?)(?=\n[^\n]*:|$)/,block)?.replace(/\s+/g,' ')||null;
       const security=value(/Вид обеспечения:\s*([^\n]+)/,block);
-      const type=questionnaireCreditType(financing,purpose,object,security);
-      add('creditType',type,'Вид финансирования: '+(financing||'—')+'; цель кредита: '+(purpose||'—')+'; объект кредитования: '+(object||'—'),'Вид финансирования:');
+      const lombard=isLombard(creditor),type=lombard?'Ломбард':questionnaireCreditType(financing,purpose,object,security);
+      add('creditType',type,lombard?'Кредитор: '+creditor+'; ломбард указан в названии кредитора.':'Вид финансирования: '+(financing||'—')+'; цель кредита: '+(purpose||'—')+'; объект кредитования: '+(object||'—'),lombard?'Кредитор:':'Вид финансирования:');
       const purposes: Array<[RegExp,string]>=[[/рефинанс|қайта қаржыландыру/i,'Погашение других долгов'],[/приобретение жилья|сатып.*тұрғын|тұрғын.*сатып/i,'Жильё'],[/лечение|емдеу/i,'Лечение'],[/образование|оқу ақысын/i,'Образование'],[/ремонт|жөндеу/i,'Ремонт']];
       const mapped=purposes.find(([pattern])=>pattern.test(purpose||''));if(mapped)add('purpose',mapped[1],'Цель кредита: '+purpose,'Цель кредита:');
       // A broad purpose such as "purchase" does not establish what the client spent it on.
@@ -283,6 +284,10 @@ export function extractNative(pages: PageText[]): NativeExtraction {
     if(expected!==null&&expected!==sum)output.findings.push('SHORT_TOTAL_MISMATCH');
     if(declared===null||Number(declared)!==output.credits.length||expected===null||expected!==sum)output.findings.push('SHORT_CREDIT_LIST_UNVERIFIED');
     output.creditList={complete:!output.findings.includes('SHORT_CREDIT_LIST_UNVERIFIED'),declared:declared===null?null:Number(declared)};
+  }
+  if(kind==='gkb_short')for(const credit of output.credits){
+    const creditor=credit.facts.find(f=>f.key==='creditor');
+    if(creditor&&isLombard(creditor.value))credit.facts.push({key:'creditType',value:'Ломбард',page:creditor.page,source:'Кредитор: '+creditor.value+'; ломбард указан в названии кредитора.'});
   }
   if(kind==='kaspi'){
     output.bankStatement=parseKaspiStatement(pages);

@@ -145,3 +145,15 @@ test('compact modern short tables read inline rows, spaced identifiers and the l
  const r=rules.extractNative(p);assert.equal(r.creditList.complete,true);assert.equal(r.credits.length,4);assert.equal(r.credits[0].contractNumber,'БМК 6-3-2025');assert.equal(r.credits[2].facts.find(f=>f.key==='debtOutstanding').value,'12428507.75');
  const missingCurrency=structuredClone(p);missingCurrency[0].text=missingCurrency[0].text.replace('БМК 6-3-2025   KZT','БМК 6-3-2025');const partial=rules.extractNative(missingCurrency);assert.equal(partial.creditList.complete,false);assert.equal(partial.credits.length,3);assert.ok(partial.findings.includes('SHORT_CREDIT_COUNT_MISMATCH'));
 });
+
+test('both short report layouts recognize Lombards without changing contracts, debts or completeness',()=>{
+ const compare=(original,changed)=>{
+  const before=rules.extractNative(original),after=rules.extractNative(changed);assert.equal(after.credits[0].facts.find(f=>f.key==='creditType')?.value,'Ломбард');
+  const financial=x=>JSON.parse(JSON.stringify({creditList:x.creditList,credits:x.credits.map(c=>({...c,facts:c.facts.filter(f=>!['creditor','creditType'].includes(f.key)).map(f=>({...f,source:''}))}))}));
+  assert.deepEqual(financial(after),financial(before));
+ };
+ const legacy=page(shortReport('ТОО "TEST"  CONTRACT-1  100.00 KZT  0  Нет данных  Нет данных','1','100.00'));
+ compare(legacy,legacy.map(p=>({...p,text:p.text.replace('ТОО "TEST"','ТОО "Smart Ломбард"')})));
+ const modern=modernShortPages(),lender='АО "Тест\nБанк"';
+ compare(modern,modern.map(p=>({...p,text:p.text.replace(lender,'ТОО "Lemon Land Lombard"')})));
+});

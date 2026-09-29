@@ -74,3 +74,12 @@ test('PDF import preserves safe names but excludes signing keys before reading t
  const pdf=createCrmDocumentReader(webhook,'11665',iin,async(url,o)=>o.method==='POST'?metadata():new Response('%PDF-1.7',{headers:{'content-disposition':"attachment; filename*=UTF-8''%D0%A2%D0%B5%D1%81%D1%82.pdf"}}),{pdfOnly:true,onFilename:n=>names.push(n)});
  assert.equal(new TextDecoder().decode(await pdf({id:'22'})),'%PDF-1.7');assert.deepEqual(names,['Тест.pdf']);
 });
+
+test('PDF intake uses six small bounded ranges, preserves the exact original and does not loosen validation',async()=>{
+ const source=Uint8Array.from({length:2439928},(_,i)=>i%251);let active=0,peak=0,parts=0;
+ const read=createCrmDocumentReader(webhook,'11665',iin,async(url,o)=>{
+  if(o.method==='POST')return metadata();const [start,askedEnd]=o.headers.range.slice(6).split('-').map(Number),end=Math.min(askedEnd,source.length-1);assert.ok(end-start<8192);peak=Math.max(peak,++active);parts++;await new Promise(r=>setTimeout(r,0));active--;
+  return new Response(source.slice(start,end+1),{status:206,headers:{'content-range':`bytes ${start}-${end}/${source.length}`,'content-length':String(end-start+1),'content-disposition':'attachment; filename="synthetic.pdf"'}});
+ },{pdfOnly:true});
+ assert.deepEqual(await read({id:'22'}),source);assert.equal(peak,6);assert.equal(parts,Math.ceil(source.length/8192));
+});

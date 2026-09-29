@@ -140,14 +140,14 @@ function afRow(group,key,loan=null){
  const g=$af(group);if(!g)return null;
  const canonical=afLoanRowKey(group+'|'+key),aliases=new Set([canonical,...(loan?.aliases||[]).map(alias=>afLoanRowKey(group+'|'+af.client+'|'+alias))]);
  const candidateIds=new Set([...af.rowKeys].filter(([k,id])=>aliases.has(afLoanRowKey(k))&&$af(id)).map(([,id])=>id));
- if(!candidateIds.size&&loan&&!af.restoringEvidence){
+ if(!candidateIds.size&&loan){
   // Older/manual rows may not have a source key. Reuse only one exact lender +
   // contract match; never match by lender alone or overwrite a different loan.
   const matches=[...g.querySelector(':scope > .repeat-rows').children].filter(row=>{
    const controls=[...row.querySelectorAll('input,select')],get=key=>controls.find(e=>e.id.replace(/_r\d+$/,'')===key)?.value;
    return get('n8038')&&get('loanContractId')&&aliases.has(afLoanRowKey(group+'|'+af.client+'|'+get('n8038')+'|'+get('loanContractId')));
   });
-  if(af.fillingMissing&&matches.length>1)return null;
+  if((af.fillingMissing||af.restoringEvidence)&&matches.length>1)return null;
   if(matches.length===1){if(!matches[0].id)matches[0].id='af-row-'+(++nextRow);candidateIds.add(matches[0].id);}
  }
  const candidates=[...g.querySelector(':scope > .repeat-rows').children].filter(row=>candidateIds.has(row.id));
@@ -170,6 +170,25 @@ function afRow(group,key,loan=null){
 function afRowFields(row,fields,src){if(!row)return;for(const [key,value]of Object.entries(fields)){const e=[...row.querySelectorAll('input,select,textarea')].find(e=>e.id===key||e.id.startsWith(key+'_r'));if(key==='n8038'&&e?.value&&e.value!==String(value)&&afCreditorKey(e.value)===afCreditorKey(value))continue;afPut(e,value,{...src,serverFactKey:src.fieldKeys?.[key],...src.fieldReview?.[key]});}}
 function afLoanParticipantsNotice(row,loan,fileId){
  if(!row)return;
+ // Older drafts intentionally keep blank/deleted answers. Put the exact report
+ // proposal beside the field so filling it does not require retyping or reimport.
+ row.querySelectorAll('.af-profile-proposal').forEach(node=>node.remove());
+ for(const key of ['loanParticipants','n8039']){
+  const value=loan.fields[key];if(!value)continue;
+  const input=[...row.querySelectorAll('textarea,select')].find(e=>e.id.replace(/_r\d+$/,'')===key);
+  if(!input||input.dataset.sourceReplaced||input.value&&(key!=='n8039'||value!=='Ломбард'||input.value===value))continue;
+  const previous=input.value;
+  const box=afEl('div',undefined,'af-source af-profile-proposal');box.dataset.for=input.id;
+  const use=afEl('button',(previous?'Заменить по ГКБ: ':'Заполнить из ГКБ: ')+value);use.type='button';
+  const src={...loan,fileId,serverFactKey:loan.fieldKeys?.[key],...loan.fieldReview?.[key]};
+  const open=afEl('button','Источник');open.type='button';open.onclick=()=>afSource(src);
+  use.onclick=async()=>{
+   if(af.busy||input.value!==previous||!input.isConnected||!selectedFiles.some(item=>item.id===fileId)||af.results.get(fileId)?.server?.extractionId!==src.server?.extractionId)return;
+   if(previous){input.value='';af.sources.delete(input.id);}
+   afPut(input,value,src);box.remove();afRefresh();await window.ServerDrafts?.save({automatic:true});
+  };
+  box.append(use,open);input.closest('.field').append(box);
+ }
  const notice=loan.relatedPartiesNotice;if(!notice&&!loan.fields.loanParticipants)return;
  row.querySelector('.af-related-notice')?.remove();if(!notice)return;
  const input=[...row.querySelectorAll('textarea')].find(e=>e.id.replace(/_r\d+$/,'')==='loanParticipants');if(!input)return;

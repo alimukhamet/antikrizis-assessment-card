@@ -72,20 +72,22 @@ window.ClientWorkspace=(()=>{
   const locked=[...$('documentStep').querySelectorAll('input,select,button')].map(node=>[node,node.disabled]);locked.forEach(([node])=>node.disabled=true);af.busy=true;af.transferFailures=[];$('documentStep').classList.add('af-busy');
   afRefresh();
   let imported=0,reused=0,keysSkipped=0,checkpointFailed=false;const failures=[],seen=new Set(),refreshedIds=new Set();
+  const controller=new AbortController(),initialIds=new Set(selectedFiles.map(item=>item.id)),sourceOrder=new Map();let integration=Promise.resolve();
   const sameClient=()=>{if(HostedAssessment.getContext()!==context)throw Object.assign(Error('Клиент изменился. Результат импорта не применён.'),{code:'CASE_IDENTITY_CHANGED'});};
   async function importFile(fileId){
    sameClient();
    try{
-    const payload=await json(base,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileId,identityRevision:context.identityRevision})},{timeoutMs:180000});
+    const payload=await json(base,{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({fileId,identityRevision:context.identityRevision})},{timeoutMs:180000});
     sameClient();if(payload.identityRevision!==context.identityRevision)throw Object.assign(Error('Данные клиента изменились. Результат импорта не применён.'),{code:'CASE_IDENTITY_CHANGED'});return payload;
    }catch(error){
+    if(controller.signal.aborted)throw error;
     if(!['REQUEST_TIMEOUT','INVALID_SERVER_RESPONSE','SERVER_UNAVAILABLE'].includes(error.code)&&!['TypeError','AbortError'].includes(error.name))throw error;
     notice.textContent='Ответ потерян. Проверяем уже сохранённый файл…';
     for(let attempt=0;attempt<3;attempt++){
      sameClient();
      if(attempt)await new Promise(resolve=>setTimeout(resolve,1500));
      sameClient();
-     const payload=await json(base+'?fileId='+encodeURIComponent(fileId)+'&identityRevision='+context.identityRevision);
+     const payload=await json(base+'?fileId='+encodeURIComponent(fileId)+'&identityRevision='+context.identityRevision,{signal:controller.signal});
      sameClient();
      if(payload.pending===true)continue;
      if(payload.crmFileId!==fileId||!payload.documentId||payload.identityRevision!==context.identityRevision)throw Error('Не удалось подтвердить сохранённый файл.');
@@ -96,29 +98,45 @@ window.ClientWorkspace=(()=>{
   }
   try{
    const {files}=await json(base);afAnalysisProgress(0,files.length);if(!files.length){notice.textContent='В сделке пока нет загруженных документов.';return;}
-   for(let i=0;i<files.length;i++){
-    afAnalysisProgress(i,files.length);notice.textContent='Берём документы из сделки: '+(i+1)+' из '+files.length+'…';
-    try{
-     const payload=await importFile(files[i].id);
-     if(seen.has(payload.documentId))continue;seen.add(payload.documentId);
-     const result=HostedAssessment.adapt(payload);result.assessmentDate=payload.assessmentDay;
-     let item=selectedFiles.find(item=>(item.storedDocumentId||af.results.get(item.id)?.server?.documentId)===payload.documentId);
-     if(item)reused++;else{item={id:++fileSequence,file:{name:payload.originalName,size:0,type:'application/pdf'},type:result.type||'',person:'Клиент',storedDocumentId:payload.documentId};selectedFiles.push(item);imported++;}
-     item.storedDocumentId=payload.documentId;if(afSelectionTypeIsGeneric(item)&&result.type&&result.kind!=='other')item.type=result.type;refreshedIds.add(item.id);
-     af.results.set(item.id,result);
-     // A completed PDF must survive leaving midway through the next transfer.
-     // Keep upload controls locked while serializing each optimistic draft save.
-     if(!await ServerDrafts.save({automatic:true,importCheckpoint:true})){
-      checkpointFailed=true;failures.push('Импорт остановлен: не удалось сохранить черновик. Уже прочитанные файлы остаются на экране.');break;
-     }
-    }catch(error){if(error.code==='CASE_IDENTITY_CHANGED')throw error;if(error.code==='CREDENTIAL_NOT_ANALYSED'){keysSkipped++;window.CredentialUpload?.offerExisting(files[i].id);}else failures.push('Файл № '+files[i].id+': '+error.message);}finally{afAnalysisProgress(i+1,files.length);}
-   }
-   afMergeDuplicateSelections(refreshedIds);afRenderResults();afClientChoices();if($('afClient').value&&!checkpointFailed)await afApply();renderDocuments();afRefresh();
+   let cursor=0,completed=0;
+   const progress=()=>{if(HostedAssessment.getContext()!==context)return;afAnalysisProgress(completed,files.length);notice.textContent='Прочитано документов: '+completed+' из '+files.length+'…';};
+   progress();
+   await Promise.all(Array.from({length:Math.min(3,files.length)},async()=>{
+    while(cursor<files.length&&!checkpointFailed&&!controller.signal.aborted){
+     const index=cursor++,file=files[index];
+     try{
+      const payload=await importFile(file.id);
+      integration=integration.then(async()=>{
+       if(HostedAssessment.getContext()!==context){controller.abort();return;}
+       sourceOrder.set(payload.documentId,Math.min(index,sourceOrder.get(payload.documentId)??Infinity));
+       if(seen.has(payload.documentId))return;seen.add(payload.documentId);
+       const result=HostedAssessment.adapt(payload);result.assessmentDate=payload.assessmentDay;
+       let item=selectedFiles.find(item=>(item.storedDocumentId||af.results.get(item.id)?.server?.documentId)===payload.documentId);
+       if(item)reused++;else{item={id:++fileSequence,file:{name:payload.originalName,size:0,type:'application/pdf'},type:result.type||'',person:'Клиент',storedDocumentId:payload.documentId};selectedFiles.push(item);imported++;}
+       item.storedDocumentId=payload.documentId;if(afSelectionTypeIsGeneric(item)&&result.type&&result.kind!=='other')item.type=result.type;refreshedIds.add(item.id);af.results.set(item.id,result);
+       // Show each completed file immediately. Never let concurrent responses
+       // race optimistic draft revisions or reapply answers the employee edited.
+       afClientChoices();afRenderResults();renderDocuments();afRefresh();
+       if(!checkpointFailed&&!await ServerDrafts.save({automatic:true,importCheckpoint:true})){
+        checkpointFailed=true;controller.abort();failures.push('Импорт остановлен: не удалось сохранить черновик. Уже прочитанные файлы остаются на экране.');
+       }
+      }).catch(error=>{checkpointFailed=true;controller.abort();failures.push('Импорт остановлен: '+error.message);});
+      await integration;
+     }catch(error){if(!controller.signal.aborted){if(error.code==='CASE_IDENTITY_CHANGED'){checkpointFailed=true;controller.abort();notice.textContent=error.message;failures.push(error.message);}else if(error.code==='CREDENTIAL_NOT_ANALYSED'){keysSkipped++;window.CredentialUpload?.offerExisting(file.id);}else failures.push('Файл № '+file.id+': '+error.message);}}
+     finally{completed++;progress();}
+    }
+   }));
+   if(HostedAssessment.getContext()!==context)return;
+   // Restore CRM ordering before applying facts: network completion order must
+   // never decide which of two reports supplies the first proposed value.
+   const order=item=>initialIds.has(item.id)?-1:sourceOrder.get(item.storedDocumentId)??Infinity;
+   selectedFiles.sort((a,b)=>order(a)-order(b));af.results=new Map(selectedFiles.filter(item=>af.results.has(item.id)).map(item=>[item.id,af.results.get(item.id)]));
+   afMergeDuplicateSelections(refreshedIds);afRenderResults();afClientChoices();if($('afClient').value&&!checkpointFailed){af.fillingMissing=Boolean(context.client.iin)&&new URLSearchParams(location.search).get('mode')==='profile';try{await afApply();}finally{af.fillingMissing=false;}}renderDocuments();afRefresh();
    notice.textContent='Добавлено PDF: '+imported+(reused?' · Уже в черновике: '+reused:'')+(failures.length?' · Не удалось прочитать: '+failures.length:'')+(keysSkipped?' · ЭЦП найдена в сделке':'')+'.';
    $('crmImportErrors')?.remove();
    if(failures.length){const details=el('details');details.id='crmImportErrors';details.append(el('summary','Какие файлы не добавлены'));for(const message of failures)details.append(el('p',message,'hint'));notice.after(details);}
-  }catch(error){notice.textContent=error.message;failures.push(error.message);}
-  finally{af.transferFailures=failures;af.progress=null;$('documentStep').classList.remove('af-busy');af.busy=false;locked.forEach(([node,disabled])=>node.disabled=disabled);afRefresh();document.dispatchEvent(new CustomEvent('assessment-analysis-complete',{detail:{showPackageSummary:true}}));if((imported||reused)&&!checkpointFailed&&HostedAssessment.getContext()===context)await ServerDrafts.save({automatic:true});}
+  }catch(error){if(HostedAssessment.getContext()===context){notice.textContent=error.message;failures.push(error.message);}}
+  finally{if(HostedAssessment.getContext()===context){af.transferFailures=failures;af.progress=null;$('documentStep').classList.remove('af-busy');af.busy=false;locked.forEach(([node,disabled])=>node.disabled=disabled);afRefresh();document.dispatchEvent(new CustomEvent('assessment-analysis-complete',{detail:{showPackageSummary:true}}));if((imported||reused)&&!checkpointFailed)await ServerDrafts.save({automatic:true});}}
  }
  const clients=button(HostedAssessment.ready()?'Другой клиент':'Выбрать',open);clients.id='openClients';clients.setAttribute('aria-label',HostedAssessment.ready()?'Сменить клиента':'Выбрать клиента');document.querySelector('.wf-client-copy').after(clients);
  const picker=document.querySelector('.wf-case-picker');picker.querySelector('summary').textContent='По номеру сделки';
