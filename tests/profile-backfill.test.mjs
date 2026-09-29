@@ -51,13 +51,14 @@ test('sales flow asks for registration and factual residence while profile-only 
  for(const key of ['postAddress','clientPhone','count-profilefamily','n8001Employer'])assert.ok(!has(result,key),key);
 });
 
-test('profile mode skips contract answers and keeps sales address facts while asking for delivery, phone and family',()=>{
+test('profile mode skips contract answers, keeps sales address facts and asks only where the ISK is filed (owner decision 29 Sep)',()=>{
  const p=fixture();for(const key of SALES_ONLY_KEYS)set(p,key,'');
  const result=checkAnswers(validateDraft(p),iin,'2026-09-25',{profile:true});
  assert.equal(result.schedule,null);
  for(const key of SALES_ONLY_KEYS)assert.ok(!has(result,key),key);
  for(const key of ['regAddress','factAddressSame','recommendedDistrict','registrationChangePosition'])assert.ok(!has(result,key),key);
- for(const key of ['clientPhone','contactChannel','count-profilefamily'])assert.ok(has(result,key,'ANSWER_REQUIRED'),key);
+ for(const key of ['clientPhone','contactChannel','count-profilefamily'])assert.ok(!has(result,key,'ANSWER_REQUIRED'),key);
+ assert.ok(has(result,'filingDestination','ANSWER_REQUIRED'));
 });
 
 test('profile mode: complete answers pass, «Не знаю» becomes an open question, fact address is conditional',()=>{
@@ -75,14 +76,13 @@ test('profile mode: complete answers pass, «Не знаю» becomes an open que
  assert.ok(!checkAnswers(validateDraft({...fixture(),answers:fixture().answers.map(a=>a.key==='hardshipReason'?{...a,value:'Не знаю'}:a)}),iin).answersComplete);
 });
 
-test('married profile keeps spouse social status explicit, including unknown',()=>{
+test('married profile does not require spouse social status, and keeps it when given',()=>{
  const p=fixture({profile:true});set(p,'marital','В браке');
  for(const [key,value] of [['count-partnerjobs','0'],['count-partnerunofficial','0'],['partnerBenefitsCount','0'],['partnerKaspiAnnual','0']])set(p,key,value);
  set(p,'holding:partner:none','none',true);set(p,'holding:partner:businessNone','businessNone',true);
- set(p,'choice:partnerSocialStatus:unknown','unknown',true);
  const result=checkAnswers(validateDraft(p),iin,'2026-09-25',{profile:true});
  assert.equal(result.answersComplete,true,JSON.stringify(result.issues));
- assert.ok(result.unresolved.some(answer=>answer.key==='choice:partnerSocialStatus:unknown'));
+ set(p,'choice:partnerSocialStatus:unknown','unknown',true);
  const known=structuredClone(p);set(known,'choice:partnerSocialStatus:unknown','unknown',false);set(known,'choice:partnerSocialStatus:Пенсионер','Пенсионер',true);
  const knownResult=checkAnswers(validateDraft(known),iin,'2026-09-25',{profile:true});
  assert.equal(knownResult.answersComplete,true,JSON.stringify(knownResult.issues));
@@ -103,7 +103,7 @@ test('compiled profile carries no contract data, lists open questions and keeps 
  const p=fixture({profile:true});set(p,'clientPhone','Не знаю');
  const compiled=compileProfile(p,iin,'11665',author,'2026-09-25');
  assert.match(compiled.card,/^ПРОФИЛЬ КЛИЕНТА/);assert.match(compiled.card,/ТРЕБУЕТ УТОЧНЕНИЯ/);assert.match(compiled.card,/SYNTHETIC CHILD/);
- assert.doesNotMatch(compiled.card,/• Номер договора:|Сумма контракта|Всего платежей/);assert.match(compiled.card,/Где клиент живёт фактически\?: По адресу регистрации/);assert.match(compiled.card,/Рекомендованный район \/ территория суда: Алматы/);assert.match(compiled.card,/Куда направляем дело: Алматинский районный суд/);assert.match(compiled.card,/Позиция клиента по смене регистрации: Не определился\(лась\)/);
+ assert.doesNotMatch(compiled.card,/• Номер договора:|Сумма контракта|Всего платежей/);assert.match(compiled.card,/Где клиент живёт фактически\?: По адресу регистрации/);assert.match(compiled.card,/Рекомендованный район \/ территория суда: Алматы/);assert.match(compiled.card,/Куда направляем иск: суд и адрес: Алматинский районный суд/);assert.match(compiled.card,/Позиция клиента по смене регистрации: Не определился\(лась\)/);
  const data=JSON.parse(compiled.values.profileJson);
  assert.equal(data.schema,PROFILE_SCHEMA);assert.equal(data.iin,iin);assert.equal(data.totalDebt,'100.25');assert.equal(data.debtComplete,true);
  assert.ok(data.answers.some(answer=>answer.key==='filingDestination'&&answer.value==='Алматинский районный суд'));

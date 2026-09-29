@@ -37,8 +37,8 @@ Setup is done: migration `0016_profile_saves` is applied and no Bitrix fields ar
 ## Confirmed business rules
 
 - Preserve the canonical document list, contract/payment rules and downstream assessment format.
-- GKB reports up to three calendar months old are accepted (owner decision 29 Sep 2026, previously 30 days); future dates are rejected.
-- Bank and salary statements must cover twelve months and end no earlier than three calendar months before the assessment day (owner decision 29 Sep 2026).
+- GKB reports issued in the last three calendar months are accepted (in September: from 1 June; owner decision 29 Sep 2026, previously 30 days); future dates are rejected.
+- Bank and salary statements must cover twelve months and end in the last three calendar months (in September: from 1 June) (owner decision 29 Sep 2026).
 - ENPF inspection requires three years of coverage through its issue date.
 - Match the client IIN against trusted deal data. A filename or matching name alone does not establish ownership or authenticity.
 - Powers of attorney must identify the approved Aizhan representative or Aplus corporate entity. Server checks do not prove execution or authenticity.

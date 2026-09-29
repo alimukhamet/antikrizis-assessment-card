@@ -54,12 +54,11 @@ function parseDay(value: string): Date | null {
   const result = new Date(value + 'T00:00:00.000Z');
   return Number.isFinite(result.getTime()) && result.toISOString().slice(0, 10) === value ? result : null;
 }
-/** Owner decision 29 Sep: ГКБ reports and statements up to three calendar months old are accepted. */
+/** Owner decision 29 Sep: documents from the last three calendar months are accepted —
+ * in September, anything issued or ending from 1 June onwards. */
 export const DOCUMENT_MAX_AGE_MONTHS = 3;
 function monthsBefore(day: Date, months: number): Date {
-  const year = day.getUTCFullYear(), month = day.getUTCMonth() - months;
-  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  return new Date(Date.UTC(year, month, Math.min(day.getUTCDate(), lastDay)));
+  return new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth() - months, 1));
 }
 export function gkbFreshness(issuedAt: string, assessmentDay: string, boundary: 'calendar-month' | '30-days' | 'three-months' = 'three-months'): Finding[] {
   const issued = parseDay(issuedAt), assessment = parseDay(assessmentDay);

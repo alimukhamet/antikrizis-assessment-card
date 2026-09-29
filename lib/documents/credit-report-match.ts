@@ -92,7 +92,7 @@ export function shortBalanceReviewPlan(short:Analysis,full:Analysis,clientIin:st
 export function shortReportMismatchReasons(short:Analysis,full:Analysis,day:string):string[]{
  const s=short.extraction,f=full.extraction,reasons:string[]=[];
  if(!s.issuedAt||!f.issuedAt||s.issuedAt!==f.issuedAt)reasons.push('Отчёты выданы в разные даты или дата не прочитана. Нужны краткий и полный отчёты на одну дату.');
- if(gkbFreshness(s.issuedAt||'',day).length||gkbFreshness(f.issuedAt||'',day).length)reasons.push('Проверьте даты: оба ГКБ должны быть не старше 3 месяцев и без будущей даты.');
+ if(gkbFreshness(s.issuedAt||'',day).length||gkbFreshness(f.issuedAt||'',day).length)reasons.push('Проверьте даты: оба ГКБ должны быть выданы в последние 3 календарных месяца и без будущей даты.');
  if(s.credits.length!==f.credits.length)reasons.push(`Прочитано обязательств: краткий ГКБ — ${s.credits.length}, полный — ${f.credits.length}. Сверьте каждый договор: краткий отчёт может не включать кредитные карты и кредитные лимиты без задолженности и просрочки. Разница в количестве сама по себе не подтверждает ошибку. Не исключайте договор без проверки полного отчёта.`);
  if(f.findings.includes('TOTAL_DEBT_REQUIRES_RECONCILIATION'))reasons.push('В полном ГКБ итог долга не подтверждён: нужно сверить остаток, просрочку и дополнительные начисления.');
  if(short.read.pages.some(p=>p.needsOcr)||full.read.pages.some(p=>p.needsOcr)||[...s.findings,...f.findings].some(v=>['PAGE_COMPLETENESS_UNVERIFIED','SHORT_CREDIT_COUNT_MISMATCH','SHORT_TOTAL_MISMATCH','SHORT_SUMMARY_MISSING','SHORT_DUPLICATE_CREDIT','CONTRACT_LIST_INCOMPLETE_OR_OTHER_ROLES'].includes(v)))reasons.push('Не подтверждена полнота или читаемость отчётов. Проверьте страницы и итоговые строки.');
