@@ -4,7 +4,7 @@ const rules=load('lib/documents/extract-native.ts',{'./kz-labels.json':JSON.pars
 const pages=(...texts)=>texts.map((text,i)=>({page:i+1,text,nativeCharacters:text.length,needsOcr:false}));
 test('rolling annual statements qualify, with calendar years, leap days, stale and future boundaries checked',()=>{
  for(const dates of [['2025-09-10','2026-09-10','2026-09-12'],['2025-09-01','2026-08-31','2026-09-12'],['2023-03-01','2024-02-29','2024-03-01']])assert.equal(policy.statementPeriod(...dates).length,0);
- for(const dates of [['2025-09-11','2026-09-10','2026-10-01'],['2025-09-12','2026-09-10','2026-09-12'],['2025-09-14','2026-09-14','2026-09-12'],['2025-02-30','2026-02-28','2026-03-01']])assert.equal(policy.statementPeriod(...dates).length,1);
+ for(const dates of [['2025-05-11','2026-05-10','2026-10-01'],['2025-09-12','2026-09-10','2026-09-12'],['2025-09-14','2026-09-14','2026-09-12'],['2025-02-30','2026-02-28','2026-03-01']])assert.equal(policy.statementPeriod(...dates).length,1);
 });
 test('Kazakh full report accepts only complete ordered page sequences and maps the payment on its actual page',()=>{
  const a='Жеке кредиттік есеп\nЖСН: 991231300003\nБерілген күні: 10.09.2026\nМіндеттеме 1\nСубъектінің рөлі: Қарыз алушы\nКредитор: TEST BANK\nКелісімшарт кезеңі Қолданыстағы\nШарт нөмірі: TEST-1\nКелісімшарттың қолданылу мерзімінің басталу күні: 01.01.2025\nҚаржыландыру түрі: Кредиттік карта\n1 беттің 2 беті';

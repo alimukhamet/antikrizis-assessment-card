@@ -14,23 +14,23 @@ export const DOCUMENT_VALIDATION_BLOCKERS = [
 export function requiresDocumentValidation(findings: readonly string[]): boolean {
   return DOCUMENT_VALIDATION_BLOCKERS.some(code => findings.includes(code));
 }
-/** Accept a full rolling year, or the preceding twelve complete calendar months.
- * The end must reach the most recent completed month; future and older periods remain blocked. */
+/** Accept a full rolling year, or twelve complete calendar months, ending within the
+ * last three months (owner decision 29 Sep); future periods remain blocked. */
 export function statementPeriod(from:string|null,to:string|null,assessmentDay:string):Finding[]{
  const assessment=parseDay(assessmentDay),start=from?parseDay(from):null,end=to?parseDay(to):null;
  if(!assessment||!start||!end)return [{code:'STATEMENT_PERIOD_UNVERIFIED',severity:'block'}];
- const latestCompletedMonth=new Date(Date.UTC(assessment.getUTCFullYear(),assessment.getUTCMonth(),0));
+ const oldestAcceptedEnd=monthsBefore(assessment,DOCUMENT_MAX_AGE_MONTHS);
  const anniversary=new Date(Date.UTC(end.getUTCFullYear()-1,end.getUTCMonth(),Math.min(end.getUTCDate(),new Date(Date.UTC(end.getUTCFullYear()-1,end.getUTCMonth()+1,0)).getUTCDate())));
  const annual=start>=anniversary&&start.getTime()<=anniversary.getTime()+86400000;
- return annual&&end>=latestCompletedMonth&&end<=assessment?[]:[{code:'STATEMENT_PERIOD_NOT_ACCEPTABLE',severity:'block'}];
+ return annual&&end>=oldestAcceptedEnd&&end<=assessment?[]:[{code:'STATEMENT_PERIOD_NOT_ACCEPTABLE',severity:'block'}];
 }
 /** Coverage checks do not turn a statement's aggregate inflows into annual income. */
 export function salaryStatementPeriod(from:string|null,to:string|null,assessmentDay:string):Finding[]{
  const assessment=parseDay(assessmentDay),start=from?parseDay(from):null,end=to?parseDay(to):null;
  if(!assessment||!start||!end)return [{code:'STATEMENT_PERIOD_UNVERIFIED',severity:'block'}];
- const latestCompletedMonth=new Date(Date.UTC(assessment.getUTCFullYear(),assessment.getUTCMonth(),0));
+ const oldestAcceptedEnd=monthsBefore(assessment,DOCUMENT_MAX_AGE_MONTHS);
  const anniversary=new Date(Date.UTC(end.getUTCFullYear()-1,end.getUTCMonth(),Math.min(end.getUTCDate(),new Date(Date.UTC(end.getUTCFullYear()-1,end.getUTCMonth()+1,0)).getUTCDate())));
- return start.getTime()<=anniversary.getTime()+86400000&&end>=latestCompletedMonth&&end<=assessment?[]:[{code:'STATEMENT_PERIOD_NOT_ACCEPTABLE',severity:'block'}];
+ return start.getTime()<=anniversary.getTime()+86400000&&end>=oldestAcceptedEnd&&end<=assessment?[]:[{code:'STATEMENT_PERIOD_NOT_ACCEPTABLE',severity:'block'}];
 }
 /** Only the labelled period on the original's first page establishes all-history coverage. */
 export function enpfAllHistory(firstPage:string):boolean{
@@ -54,12 +54,20 @@ function parseDay(value: string): Date | null {
   const result = new Date(value + 'T00:00:00.000Z');
   return Number.isFinite(result.getTime()) && result.toISOString().slice(0, 10) === value ? result : null;
 }
-export function gkbFreshness(issuedAt: string, assessmentDay: string, boundary: 'calendar-month' | '30-days' = '30-days'): Finding[] {
+/** Owner decision 29 Sep: ГКБ reports and statements up to three calendar months old are accepted. */
+export const DOCUMENT_MAX_AGE_MONTHS = 3;
+function monthsBefore(day: Date, months: number): Date {
+  const year = day.getUTCFullYear(), month = day.getUTCMonth() - months;
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(year, month, Math.min(day.getUTCDate(), lastDay)));
+}
+export function gkbFreshness(issuedAt: string, assessmentDay: string, boundary: 'calendar-month' | '30-days' | 'three-months' = 'three-months'): Finding[] {
   const issued = parseDay(issuedAt), assessment = parseDay(assessmentDay);
   if (!issued || !assessment) return [{ code: 'DATE_UNVERIFIED', severity: 'block' }];
   if (issued > assessment) return [{ code: 'FUTURE_DOCUMENT_DATE', severity: 'block' }];
   let minimum: Date;
-  if (boundary === '30-days') minimum = new Date(assessment.getTime() - 30 * 86400000);
+  if (boundary === 'three-months') minimum = monthsBefore(assessment, DOCUMENT_MAX_AGE_MONTHS);
+  else if (boundary === '30-days') minimum = new Date(assessment.getTime() - 30 * 86400000);
   else {
     const lastDay = new Date(Date.UTC(assessment.getUTCFullYear(), assessment.getUTCMonth(), 0)).getUTCDate();
     minimum = new Date(Date.UTC(assessment.getUTCFullYear(), assessment.getUTCMonth() - 1, Math.min(assessment.getUTCDate(), lastDay)));
