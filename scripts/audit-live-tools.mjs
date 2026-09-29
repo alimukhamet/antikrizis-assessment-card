@@ -23,23 +23,33 @@ async function verify(){
 }
 try{
  requireValue(!!process.env.ASSESSMENT_TEST_PASSWORD);
+ report.step='authenticate';
  await request('/api/session',{worker:'ali',password:process.env.ASSESSMENT_TEST_PASSWORD});
+ report.step='read_current_draft';
  const assessment=await request(root),before=(await request(root+'/draft')).draft;
+ report.step='pin_revision';
  requireValue(before?.revision===1&&before.identityRevision===1&&assessment.identityRevision===1);
+ report.step='validate_saved_payload';
  const payload=validateDraft(before.payload);
+ report.step='pin_payload_hash';
  requireValue(hash({payload,expectedRevision:0,identityRevision:1,actorId:'worker:darkhan'})===expectedHash);
  requireValue(payload.documents.length===7&&!payload.documents.some(d=>d.documentId===documentId));
+ report.step='read_stored_analysis';
  const analysis=await request(root+'/documents/'+documentId+'/analyze',{cacheOnly:true});
+ report.step='pin_document_identity';
  requireValue(analysis.documentId===documentId&&analysis.identityRevision===1&&analysis.document?.extraction?.kind==='benefits'&&!!analysis.document.extraction.identity.iin&&analysis.document.extraction.identity.iin===assessment.client.iin);
  const added={documentId,type:'Справка по выплатам пенсии и пособий',person:'Клиент'};
+ report.step='validate_proposed_selection';
  proposed=validateDraft({...payload,documents:[...payload.documents,added]});
  requireValue(hash({...proposed,documents:proposed.documents.slice(0,-1)})===hash(payload));
  // One guarded draft append only. Lost responses are reconciled by reads;
  // never repeat the write or change reviews, facts or CRM state.
+ report.step='append_selection';
  report.writeAttempted=true;
  await request(root+'/draft',{payload:proposed,identityRevision:1,expectedRevision:1,requestId});
  await verify();
-}catch{
+}catch(error){
+ report.errorCode=/^[A-Z_]{1,80}$/.test(error?.code||'')?error.code:'GUARD_OR_READ_FAILED';
  if(report.writeAttempted){try{await verify();report.reconciledAfterLostResponse=true;}catch{report.failure='WRITE_OUTCOME_UNVERIFIED';process.exitCode=1;}}
  else{report.failure='GUARD_OR_READ_FAILED';process.exitCode=1;}
 }
