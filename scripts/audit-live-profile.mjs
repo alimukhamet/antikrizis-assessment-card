@@ -19,14 +19,18 @@ try{
  // presence POST or the profile GET (which may reconcile a history receipt).
  const root='/api/assessment/11665';
  const json=async(path,body)=>{const r=await request(path,{headers:{cookie,origin,'content-type':'application/json'},...(body?{method:'POST',body:JSON.stringify(body)}:{})});assert.equal(r.status,200,path);return r.json();};
- const before=(await json(root+'/draft')).draft;assert.ok(before?.payload,'Existing audit draft required');
+ const before=(await json(root+'/draft')).draft;
  const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
- const draft=structuredClone(before.payload),set=(key,value)=>{let a=draft.answers.find(a=>a.key===key);if(!a){a={key,value:'',checked:false};draft.answers.push(a);}a.value=value;};
+ // The audit case can legitimately have no draft. Exercise only these rules
+ // with an incomplete in-memory payload; do not copy or create client answers.
+ const draft={schemaVersion:1,answers:[],groups:[],docContext:{social:'',salary:''},documents:[],pendingFiles:[]};
+ const set=(key,value)=>{let a=draft.answers.find(a=>a.key===key);if(!a){a={key,value:'',checked:false};draft.answers.push(a);}a.value=value;};
  set('hardshipReason','Снижение дохода');
  const detail='Тестовая проверка длины объяснения без сохранения клиентских данных. '.slice(0,58)+'..';assert.equal(detail.length,60);assert.equal(detail.trim().length,60);
  for(const [name,text,expected] of [['short',detail.slice(0,59),true],['whitespace',detail.slice(0,59)+' \n   ',true],['unknown','Не знаю. '.repeat(10),true],['minimum',detail,false]]){
   for(const key of ['debtPurposeOther','n12008'])set(key,text);
   const check=await json(root+'/profile',{action:'check',requestId:randomUUID(),draft});
+  assert.equal(check.ready,false,'The incomplete audit payload must never become a complete client profile');
   for(const key of ['debtPurposeOther','n12008'])assert.equal(check.issues.some(i=>i.key===key&&i.code==='EXPLANATION_REQUIRED'),expected,name+':'+key);
  }
  const after=(await json(root+'/draft')).draft;

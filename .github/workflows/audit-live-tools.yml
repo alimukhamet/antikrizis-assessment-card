@@ -110,6 +110,11 @@ jobs:
           RECONCILE_HANDOFF_REQUEST_ID: ${{ inputs.reconcile_handoff_request_id }}
           RECONCILE_HANDOFF_EXPECTED_HASH: ${{ inputs.reconcile_handoff_expected_hash }}
         run: node scripts/reconcile-handoff.mjs
+      - name: Verify profile activity and explanation rules without saving profiles
+        if: inputs.audit_lawyer_names != true && inputs.repair_title_deal_id == ''
+        env:
+          ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
+        run: node scripts/audit-live-profile.mjs
       - uses: actions/upload-artifact@v4
         if: always() && inputs.audit_lawyer_names != true && inputs.repair_title_deal_id == ''
         with:
@@ -118,6 +123,7 @@ jobs:
             live-tools-audit.json
             assessment-recovery.json
             handoff-reconciliation.json
+            live-profile-audit.json
           retention-days: 1
       - uses: actions/upload-artifact@v4
         if: always() && inputs.audit_lawyer_names == true
