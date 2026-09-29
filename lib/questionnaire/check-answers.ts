@@ -61,7 +61,7 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   if(profile&&SALES_ONLY_KEYS.has(f.key))return;
   const explanation=profile&&!group?PROFILE_EXPLANATIONS[f.key as keyof typeof PROFILE_EXPLANATIONS]:undefined;
   if(explanation)f={...f,label:explanation.label};
-  const required=f.required;
+  const required=f.required||(!profile&&f.key==='partnerSocialOther');
   const retired=profile&&(group==='profilefamily'||RETIRED_PROFILE_KEYS.has(f.key)||f.key.startsWith('choice:partnerSocialStatus:'));
   if(!retired&&(row?.get(f.key)||all.get(f.key))?.sourceReplaced)issue(f.key,'ANSWER_SOURCE_REPLACED','Источник заменён: '+f.label,group,index);
   if(f.type==='checkbox'){
@@ -123,7 +123,9 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   });
  }
  const choices=[{prefix:'choice:socialStatus:',kinds:null as string[]|null,none:'Нет',key:'choice:socialStatus:',label:'Социальный статус'}];
- // Owner decision 29 Sep: the profile adds only the ISK destination; spouse status is not required.
+ // Sales asks once while preparing the contract. Existing profile backfills
+ // keep partial spouse answers without becoming a second mandatory interview.
+ if(!profile&&married)choices.push({prefix:'choice:partnerSocialStatus:',kinds:null,none:'Нет',key:'choice:partnerSocialStatus:',label:'Социальный статус супруга(и)'});
  for(const owner of ['client',...(married?['partner']:[])]){
   choices.push({prefix:`holding:${owner}:`,kinds:['real','land','car','other','none','unknown'],none:'none',key:`holding:${owner}:`,label:owner==='client'?'Имущество клиента':'Имущество супруга(и)'});
   choices.push({prefix:`holding:${owner}:`,kinds:['ip','too','kh','businessNone'],none:'businessNone',key:`holding:${owner}:business`,label:owner==='client'?'Бизнес и регистрация клиента':'Бизнес и регистрация супруга(и)'});
