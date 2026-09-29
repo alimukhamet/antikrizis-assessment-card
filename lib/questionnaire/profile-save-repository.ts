@@ -8,7 +8,7 @@ export type ProfileSavePayload = {
   /** Bitrix values read immediately before the write — the recovery point. */
   baseline: ProfileBaseline; values: ProfileValues; unresolvedCount: number;
 };
-export type ProfileSaveState = 'writing' | 'uncertain' | 'verified' | 'failed';
+export type ProfileSaveState = 'writing' | 'uncertain' | 'verified' | 'failed' | 'reopened';
 export type ProfileSaveRow = {
   id: string; case_id: string; request_id: string; identity_revision: number; actor_id: string;
   payload_json: string; state: ProfileSaveState; outcome_code: string | null; history_comment_id: string | null;
@@ -34,9 +34,19 @@ export class ProfileSaveRepository {
   }
   /** Deal ID → «time · worker» of the latest verified profile save per deal (the queue's «done» marker). */
   async savedByDeal(names: Record<string, string>) {
-    const { results } = await this.db.prepare("SELECT c.external_id AS deal_id, s.actor_id, s.updated_at FROM assessment_profile_saves s JOIN assessment_cases c ON c.id=s.case_id WHERE s.state='verified' AND c.external_system='bitrix' ORDER BY s.updated_at")
+    return new Map((await this.completedByDeal(names)).map(row => [row.dealId, `${row.savedAt} · ${row.workerName}`]));
+  }
+  /** One completion per client, credited to the latest saver. Reopened receipts are not completions. */
+  async completedByDeal(names: Record<string, string>) {
+    const { results } = await this.db.prepare(`SELECT deal_id,actor_id,updated_at FROM (
+      SELECT c.external_id AS deal_id,s.actor_id,s.updated_at,s.state,
+        ROW_NUMBER() OVER (PARTITION BY c.external_id ORDER BY s.created_at DESC,s.rowid DESC) AS position
+      FROM assessment_profile_saves s JOIN assessment_cases c ON c.id=s.case_id
+      WHERE s.state IN ('verified','reopened') AND c.external_system='bitrix'
+    ) WHERE position=1 AND state='verified' ORDER BY deal_id`)
       .all<{ deal_id: string; actor_id: string; updated_at: string }>();
-    return new Map(results.map(row => [row.deal_id, `${row.updated_at} · ${names[row.actor_id.replace(/^worker:/, '')] || row.actor_id}`]));
+    return results.map(row => ({dealId:row.deal_id,workerId:row.actor_id.replace(/^worker:/,''),
+      workerName:names[row.actor_id.replace(/^worker:/,'')] || row.actor_id,savedAt:row.updated_at}));
   }
   /** Claims the single in-flight write for this case before Bitrix is touched. */
   async begin(record: CaseRow, requestId: string, payload: ProfileSavePayload, actor: Actor) {

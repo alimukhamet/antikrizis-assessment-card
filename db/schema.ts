@@ -93,3 +93,7 @@ export const profileSaves=sqliteTable('assessment_profile_saves',{
  createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull(),
 },t=>[uniqueIndex('assessment_profile_save_request').on(t.caseId,t.requestId),
  uniqueIndex('assessment_profile_save_active').on(t.caseId).where(sql`${t.state} IN ('writing','uncertain')`)]);
+export const profilePresence=sqliteTable('assessment_profile_presence',{
+ id:text('id').primaryKey(),dealId:text('deal_id').notNull(),actorId:text('actor_id').notNull(),
+ updatedAt:text('updated_at').notNull(),expiresAt:text('expires_at').notNull(),
+},t=>[index('assessment_profile_presence_expiry').on(t.expiresAt)]);

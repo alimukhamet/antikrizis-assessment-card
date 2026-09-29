@@ -118,7 +118,7 @@ window.ProfileBackfill=(()=>{
   if(typeof selectedFiles!=='undefined'&&selectedFiles.length)return;
   try{await ClientWorkspace.importDocuments();}catch{/* The worker can press «Взять из Bitrix» again. */}
  }
- async function onReady(){if(!ClientContextUI.ready())return;await load();prefill();autoImport();}
+ async function onReady(){if(!ClientContextUI.ready())return;window.ProfilePresence?.start(dealId());await load();prefill();autoImport();}
  for(const event of ['assessment-client-readiness-changed','assessment-draft-restored','assessment-case-opened'])document.addEventListener(event,()=>setTimeout(onReady,0));
  setTimeout(onReady,0);
 
@@ -183,8 +183,10 @@ window.ProfileBackfill=(()=>{
  async function next(){
   nextButton.disabled=true;
   try{
-   const result=await api('/api/profile-queue');
-   const item=result.ok?result.body.items.find(i=>!i.profileSavedAt&&i.dealId!==dealId()):null;
+   await window.ProfilePresence?.release();
+   const [result,activity]=await Promise.all([api('/api/profile-queue'),api('/api/profile-activity')]);
+   const occupied=new Set(activity.ok?activity.body.active.map(s=>s.dealId):[]);
+   const item=result.ok&&activity.ok?result.body.items.find(i=>!i.profileSavedAt&&i.dealId!==dealId()&&!occupied.has(i.dealId)):null;
    (window.top||window).location.assign(item?'/profile-backfill?dealId='+encodeURIComponent(item.dealId):'/profile-backfill');
   }catch{(window.top||window).location.assign('/profile-backfill');}
  }

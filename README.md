@@ -27,13 +27,16 @@ Documents, drafts, inspections, submissions and upload receipts are separate rec
 `/profile-backfill` lists every category `1` deal on a «ЗВИ…» or «В ожидании» stage, unfinished first, newest Дата ЗВИ first. Opening a deal runs the same questionnaire in `mode=profile`:
 
 - deal documents are pulled from Bitrix and read automatically; the old text card (`UF_CRM_AI_CARD`) is shown read-only next to the answers;
+- opening a profile automatically shows «В работе: имя» to colleagues. The queue refreshes activity every 15 seconds without rereading Bitrix; occupied rows and the next-profile suggestion direct staff to free clients. Direct links warn if another employee also has the profile open. Presence is coordination information, not an exclusive editing lock;
+- presence clears after saving or leaving; disconnected tabs expire after two minutes. Tabs idle for ten minutes stop advertising work until the employee interacts again. Separate tabs cannot clear each other's presence;
+- the small employee summary counts distinct completed client profiles across this tool, credited to the latest saver. Repeated saves do not add completions; reopened profiles are excluded until saved again. Presence does not change answers, documents, CRM fields or receipts;
 - ФИО, телефон, семейное положение and процедура are prefilled from Bitrix; contract and payment questions are hidden;
 - the profile reuses the contract questionnaire's client and financial questions, without contract/payment fields or stricter employer-name requirements. The existing contact phone is visible and optional; there is no email or family-members questionnaire;
 - registration address, actual residence and filing destination appear together. Sales recommendations and client preferences remain available in a collapsed optional section;
 - «Не знаю» saves an open question («Требует уточнения») and survives draft restore. Retired family/contact answers remain in old drafts and saved history without blocking profile completion;
 - «Сохранить профиль» writes only the existing `UF_CRM_1773669702495` (ФИО), `UF_CRM_AI_MARITAL` and `UF_CRM_AI_DEBT`, with conflict detection and readback. No new Bitrix fields: the full profile (card text + `antikrizis.profile.v1` JSON) is kept in `assessment_profile_saves` and posted as a deal timeline comment together with the previous values. Contract, payment, procedure and the old card are never written.
 
-Setup is done: migration `0016_profile_saves` is applied and no Bitrix fields are needed.
+Storage: `0016_profile_saves` and `0017_profile_presence`; no Bitrix fields are needed. The additive presence migration was applied and read back in production on 29 September before publication.
 
 ## Confirmed business rules
 
