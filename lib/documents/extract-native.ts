@@ -1,7 +1,7 @@
 import labels from './kz-labels.json';
 import type { PageText } from './read-pdf';
 import {extractPowerParties,type PowerParties} from './power-of-attorney';
-export const EXTRACTION_VERSION = 'rules-native-26';
+export const EXTRACTION_VERSION = 'rules-native-27';
 export type Fact = { key: string; value: string; page: number; source: string };
 export type Credit = { contractNumber: string; contractCode?: string; page: number; facts: Fact[]; components: Record<string, string | null>; comparisonDebt?:Fact; relatedPartiesNotice?: {page:number;source:string} };
 export type BankStatement={from:string|null;to:string|null;credits:string;topUps:string;topUpsVerified:boolean;debits:string;transactions:number;reconciled:boolean;rowsReadable:boolean;sourcePage:number;reconciliation?:string;gambling?:{total:string;matches:Array<{date:string;amount:string;description:string;page:number}>}};
@@ -234,7 +234,7 @@ export function extractNative(pages: PageText[]): NativeExtraction {
       let relatedPartiesNotice:Credit['relatedPartiesNotice'];
       if(related){
        const empty=related.match(/Нет данных/g)?.length||0;
-       const people=[...related.matchAll(/(?:^|\n)\s*(Соза[её]мщик|Гарант|Поручитель|Залогодатель|Кепіл беруші|Кепілдік\s+беруші\s*-\s*[OО]|Ынтымақты\s+міндеттемелері\s+бар\s+қосалқы\s+қарыз\s+алушы\s*\(қосылған\s+тұлға\))\s+([\p{L}\s'-]{3,180}?)\s+(\d{12})\b/giu)];
+       const people=[...related.matchAll(/(?:^|\n)\s*(Соза[её]мщик(?:\s*\(присоединившееся\s+лицо\)\s+с\s+солидарными\s+обязательствами)?|Гарант|Поручитель|Залогодатель|Кепіл беруші|Кепілдік\s+беруші\s*-\s*[OО]|Ынтымақты\s+міндеттемелері\s+бар\s+қосалқы\s+қарыз\s+алушы\s*\(қосылған\s+тұлға\))\s+([\p{L}\s'-]{3,180}?)\s+(\d{12})\b/giu)];
        if(people.length&&people.length===(related.match(/\b\d{12}\b/g)||[]).length&&people.every(p=>validIin(p[3]))){
         // Preserve the role. "Кепіл беруші" is a pledgor, not a guarantor (Kaspi bilingual pledge form, clauses 1.1.2).
         const described=people.map(p=>`${p[2].replace(/\s+/g,' ').trim()} — ${p[1]==='Кепіл беруші'?'Залогодатель (в ГКБ: Кепіл беруші)':p[1].replace(/\s+/g,' ')}`);

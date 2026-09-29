@@ -190,3 +190,15 @@ test('Eurasian doubled label separators do not hide the account owner, date or p
  const r=rules.extractNative(pages(text));assert.equal(r.kind,'salary');assert.equal(r.identity.iin,'991231300003');assert.equal(r.identity.name,'ТЕСТОВ ТЕСТ');assert.equal(r.issuedAt,'2026-08-04');assert.equal(r.coverage.from,'2025-08-04');assert.equal(r.coverage.to,'2026-08-04');assert.equal(r.facts.some(f=>/salary|income|statement/.test(f.key)),false);
  assert.equal(rules.extractNative(pages(text.replace('991231300003','991231300004'))).identity.iin,null);
 });
+
+test('wrapped Russian joint co-borrower and pledgor rows keep both source roles without treating role text as a name',()=>{
+ const first='Персональный кредитный отчет\nИИН: 991231300003\nОбязательство 1\nРоль субъекта: Заемщик\nКредитор: TEST BANK\nФаза контракта: Действующий\nНомер договора: TEST-1\nСтраница 1 из 2';
+ for(const spelling of ['Созаемщик','Созаёмщик']){
+  const role=spelling+'\n(присоединившееся лицо) с\nсолидарными\nобязательствами';
+  const second=`Связанные субъекты\nРоль субъекта: ФИО/Наименование субъекта: ИИН/БИН: Вид документа: Номер документа:\n${role}\nТЕСТОВ\nТЕСТ\nТЕСТОВИЧ\n991231300003 Удостоверение личности 123456789\nЗалогодатель ТЕСТОВ\nТЕСТ ТЕСТОВИЧ\n991231300003 Удостоверение личности 123456789\nСтраница 2 из 2`;
+  const r=rules.extractNative(pages(first,second)),fact=r.credits[0].facts.find(f=>f.key==='relatedParties');
+  assert.equal(r.credits.length,1);assert.equal(fact.page,2);assert.equal(fact.value,`ТЕСТОВ ТЕСТ ТЕСТОВИЧ — ${role.replace(/\s+/g,' ')}; ТЕСТОВ ТЕСТ ТЕСТОВИЧ — Залогодатель`);
+  const profile=parseParticipants(fact.value);assert.equal(profile.valid,true);assert.deepEqual(profile.people,[{name:'ТЕСТОВ ТЕСТ ТЕСТОВИЧ',role:'Созаёмщик'},{name:'ТЕСТОВ ТЕСТ ТЕСТОВИЧ',role:'Залогодатель'}]);
+  for(const broken of [second.replace('991231300003','991231300004'),second.replace('солидарными','неизвестными')])assert.equal(rules.extractNative(pages(first,broken)).credits[0].facts.some(f=>f.key==='relatedParties'),false);
+ }
+});

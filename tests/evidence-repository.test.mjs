@@ -170,3 +170,20 @@ test('v26 compares non-GKB facts and retains unchanged review IDs instead of reu
   assert.equal((await repo.currentReviews(c.id,old.document.id,old.extraction.id,1))[0].id,review.id);assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_documents').get().n,1);assert.ok(await repo.cached(c.id,old.document.original_sha256,'native-pdf-3:rules-native-25'));
  }
 });
+
+test('v27 keeps unchanged v26 evidence but reprocesses a newly readable joint borrower without inheriting approval',async()=>{
+ const compiledRules=buildSync({entryPoints:['lib/documents/extract-native.ts'],bundle:true,platform:'node',format:'cjs',write:false}).outputFiles[0].text,rulesModule={exports:{}};vm.runInNewContext(compiledRules,{module:rulesModule,exports:rulesModule.exports,Date,JSON});
+ for(const scenario of ['unchanged-credit','changed-credit','unchanged-other']){
+  const {repo,sqlite}=setup(),c=await repo.syncCase(client());
+  const text=scenario==='unchanged-other'?'Информация о пенсионных выплатах и пособиях\nЖСН/ИИН 991231300003\nДата получения: 15.09.2026':'Персональный кредитный отчет\nИИН: 991231300003\nОбязательство 1\nРоль субъекта: Заемщик\nКредитор: TEST BANK\nФаза контракта: Действующий\nНомер договора: TEST-1\nСвязанные субъекты\nСозаемщик\n(присоединившееся лицо) с солидарными обязательствами\nТЕСТОВ ТЕСТ ТЕСТОВИЧ\n991231300003 Удостоверение личности 123456789\nСтраница 1 из 1';
+  const pages=[{page:1,text,nativeCharacters:text.length,needsOcr:false}],current=rulesModule.exports.extractNative(pages),previous=JSON.parse(JSON.stringify(current));previous.version='rules-native-26';
+  if(scenario==='changed-credit')previous.credits[0].facts=previous.credits[0].facts.filter(f=>f.key!=='relatedParties');
+  const old=await repo.store(c.id,new Uint8Array([91]),'synthetic.pdf',actor,'native-pdf-3:rules-native-26',{read:{pages},extraction:previous});
+  const review=await repo.appendReview({caseId:c.id,documentId:old.document.id,extractionId:old.extraction.id,identityRevision:1,requestId:'review',factKey:'document.manual-check.v1',value:{type:'synthetic'},disposition:'confirmed',reason:'synthetic'},actor);
+  const cached=await repo.cached(c.id,old.document.original_sha256,'native-pdf-3:rules-native-27');
+  if(scenario==='changed-credit'){
+   assert.equal(cached,null);const updated=await repo.storeExtraction(old.document,'native-pdf-3:rules-native-27',{read:{pages},extraction:current});assert.notEqual(updated.extraction.id,old.extraction.id);assert.equal((await repo.currentReviews(c.id,old.document.id,updated.extraction.id,1)).length,0);
+  }else assert.equal(cached.extraction.id,old.extraction.id);
+  assert.equal((await repo.currentReviews(c.id,old.document.id,old.extraction.id,1))[0].id,review.id);assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_documents').get().n,1);assert.equal((await repo.cached(c.id,old.document.original_sha256,'native-pdf-3:rules-native-26')).extraction.id,old.extraction.id);
+ }
+});

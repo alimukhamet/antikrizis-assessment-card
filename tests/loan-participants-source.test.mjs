@@ -6,7 +6,7 @@ import {participantRoles,parseParticipants,formatParticipants} from '../public/l
 
 test('source participant roles populate the real editor without rewriting the evidence-backed value',()=>{
  const editor=fs.readFileSync('public/loan-participants-editor.mjs','utf8').replace(/^import[^\n]+\n/,'');
- for(const [label,role] of [['Кепілдік беруші - O','Гарант'],['Кепілдік беруші - О','Гарант'],['Ынтымақты міндеттемелері бар қосалқы қарыз алушы (қосылған тұлға)','Созаёмщик']]){
+ for(const [label,role] of [['Созаемщик (присоединившееся лицо) с солидарными обязательствами','Созаёмщик'],['Созаёмщик (присоединившееся лицо) с солидарными обязательствами','Созаёмщик'],['Кепілдік беруші - O','Гарант'],['Кепілдік беруші - О','Гарант'],['Ынтымақты міндеттемелері бар қосалқы қарыз алушы (қосылған тұлға)','Созаёмщик']]){
   const dom=new JSDOM('<div id="questionnaireStep"><textarea id="loanParticipants"></textarea></div>',{runScripts:'outside-only'});
   try{
    const {window}=dom,input=window.document.querySelector('textarea');
