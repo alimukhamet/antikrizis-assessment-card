@@ -164,16 +164,17 @@ test('built Worker protects the profile queue page and its APIs; signed-in page 
  const {session,TEST_SECRET}=await import('./session-helper.mjs');
  const {default:worker}=await import('../dist/server/index.js');
  const env={SITE_SESSION_TOKEN:TEST_SECRET,ASSETS:{fetch:async()=>new Response('',{status:404})}},ctx={waitUntil(){},passThroughOnException(){}};
- for(const path of ['/profile-backfill','/profile-backfill?dealId=11665','/api/profile-queue','/api/assessment/11665/profile']){
+ for(const path of ['/profile-backfill','/profile-backfill?dealId=11665','/profile-backfill?dealId=11665&edit=1','/api/profile-queue','/api/assessment/11665/profile']){
   const response=await worker.fetch(new Request('https://site.test'+path),env,ctx);
   assert.equal(response.status,path.startsWith('/api/')?401:303,path);
  }
+ const unauthEdit=await worker.fetch(new Request('https://site.test/profile-backfill?dealId=11665&edit=1'),env,ctx);assert.match(decodeURIComponent(unauthEdit.headers.get('location')||''),/dealId=11665&edit=1/);
  const cookie=session.SESSION_COOKIE+'='+await session.issueSession('darkhan',TEST_SECRET);
  const previous=process.env.SITE_SESSION_TOKEN;process.env.SITE_SESSION_TOKEN=TEST_SECRET; // pages read the secret from process.env
  try{
  const page=await worker.fetch(new Request('https://site.test/profile-backfill',{headers:{cookie}}),env,ctx);
  assert.equal(page.status,200);assert.match(page.headers.get('cache-control'),/no-store/);assert.match(await page.text(),/Дозаполнить профили клиентов/);
- const frame=await worker.fetch(new Request('https://site.test/profile-backfill?dealId=11665',{headers:{cookie}}),env,ctx);
- assert.match(await frame.text(),/questionnaire\.html\?dealId=11665&amp;mode=profile/);
+ const frame=await worker.fetch(new Request('https://site.test/profile-backfill?dealId=11665&edit=1',{headers:{cookie}}),env,ctx);
+ assert.match(await frame.text(),/questionnaire\.html\?dealId=11665&amp;mode=profile&amp;edit=1/);
  }finally{if(previous===undefined)delete process.env.SITE_SESSION_TOKEN;else process.env.SITE_SESSION_TOKEN=previous;}
 });

@@ -1,11 +1,11 @@
-/** Login redirects carry only an approved page and an optional deal identifier. */
+/** Login redirects carry only an approved page, deal and supported profile-edit flag. */
 export function loginDestination(value: unknown): string {
   if (typeof value !== 'string' || value.length > 2048 || !value.startsWith('/') || value.startsWith('//')) return '/';
   try {
     const url = new URL(value, 'https://assessment.invalid');
-    if (url.origin !== 'https://assessment.invalid' || !['/', '/assessment-review', '/assessment-feedback','/lawyer-handoff'].includes(url.pathname)) return '/';
+    if (url.origin !== 'https://assessment.invalid' || !['/', '/assessment-review', '/assessment-feedback','/lawyer-handoff','/profile-backfill'].includes(url.pathname)) return '/';
     const id = url.searchParams.get('dealId');
-    return url.pathname + (id && /^[1-9]\d*$/.test(id) ? '?dealId=' + id : '');
+    return url.pathname + (id && /^[1-9]\d*$/.test(id) ? '?dealId=' + id + (url.pathname === '/profile-backfill' && url.searchParams.get('edit') === '1' ? '&edit=1' : '') : '');
   } catch { return '/'; }
 }
 

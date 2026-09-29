@@ -25,20 +25,25 @@ window.ProfilePresence=(()=>{
   finally{pending=false;}
  }
  function start(id){
-  if(!/^[1-9]\d*$/.test(id)||id===dealId)return;
-  if(dealId)void release(dealId);
+  if(!/^[1-9]\d*$/.test(id))return;
+  // A verified profile save pauses this tab's presence. Reopening the same
+  // profile for corrections must claim it again without changing the deal.
+  if(id===dealId&&!stopped){lastActive=Date.now();if(banner.hidden)void heartbeat();return;}
+  if(dealId&&id!==dealId)void release(dealId);
   dealId=id;stopped=false;lastActive=Date.now();
   const step=document.getElementById('documentStep');
   (step?.parentElement||document.body).insertBefore(banner,step||null);
   void heartbeat();
  }
+ function resume(id=dealId){start(id);}
  function active(){const idle=Date.now()-lastActive>IDLE_MS;lastActive=Date.now();if(idle)void heartbeat();}
  for(const event of ['pointerdown','keydown','input'])document.addEventListener(event,active,{passive:true});
  window.addEventListener('focus',()=>{active();void heartbeat();});
  window.addEventListener('pageshow',()=>{active();void heartbeat();});
  window.addEventListener('pagehide',()=>void release());
  document.addEventListener('profile-backfill-saved',()=>{stopped=true;banner.hidden=true;void release();});
+ document.addEventListener('profile-backfill-editing',()=>{if(dealId)resume(dealId);});
  setInterval(()=>void heartbeat(),30000);
  const initialId=new URLSearchParams(location.search).get('dealId');if(initialId)start(initialId);
- return {start,release};
+ return {start,resume,release};
 })();
