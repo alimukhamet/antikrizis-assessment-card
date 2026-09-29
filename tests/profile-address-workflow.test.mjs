@@ -26,8 +26,8 @@ test('address roles stay separate between sales facts and profile delivery', () 
   assert.deepEqual(postal.conditions, ['profileOnly']);
 
   const filing = byKey('filingDestination');
-  assert.equal(filing.label, 'Куда направляем дело');
-  assert.equal(filing.required, false);
+  assert.equal(filing.label, 'Куда направляем иск: суд и адрес*');
+  assert.equal(filing.required, true, 'owner decision 29 Sep: the profile names where the ISK is filed');
   assert.deepEqual(filing.conditions, ['profileOnly']);
 
   for (const key of ['recommendedDistrict', 'recommendedCourt', 'clientRequestedDistrict', 'clientRequestedCourt', 'registrationChangePosition']) {
@@ -65,4 +65,10 @@ test('married-only spouse status mirrors client choices and keeps explicit unkno
   const partnerGroup = document.querySelectorAll('#partnerSocialStatusChips input[name="partnerSocialStatus"]');
   assert.equal(partnerGroup.length, client.length + 1);
   assert.ok([...partnerGroup].some(input => input.value === 'unknown'));
+});
+
+test('owner decision 29 Sep: the profile requires where the ISK is filed, sales does not', () => {
+  const field = byKey('filingDestination');
+  assert.equal(field.required, true);
+  assert.deepEqual(field.conditions, ['profileOnly'], 'hidden from sales, so only the documentologist profile requires it');
 });

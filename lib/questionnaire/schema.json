@@ -268,8 +268,8 @@
     {
       "key": "clientPhone",
       "type": "text",
-      "label": "Телефон клиента*",
-      "required": true,
+      "label": "Телефон клиента",
+      "required": false,
       "conditions": [
         "profileOnly"
       ]
@@ -277,7 +277,7 @@
     {
       "key": "contactChannel",
       "type": "select-one",
-      "label": "Как клиент отвечает быстрее?*",
+      "label": "Как клиент отвечает быстрее?",
       "options": [
         "",
         "WhatsApp",
@@ -286,7 +286,7 @@
         "Другое",
         "unknown"
       ],
-      "required": true,
+      "required": false,
       "conditions": [
         "profileOnly"
       ]
@@ -294,8 +294,8 @@
     {
       "key": "filingDestination",
       "type": "text",
-      "label": "Куда направляем дело",
-      "required": false,
+      "label": "Куда направляем иск: суд и адрес*",
+      "required": true,
       "conditions": [
         "profileOnly"
       ]
@@ -303,7 +303,7 @@
     {
       "key": "choice:partnerSocialStatus:Нет",
       "type": "checkbox",
-      "label": "Социальный статус супруга(и) — отметьте подходящее*",
+      "label": "Социальный статус супруга(и) — отметьте подходящее",
       "required": false,
       "conditions": [
         "partnerSocialStatusField",
@@ -313,7 +313,7 @@
     {
       "key": "choice:partnerSocialStatus:Пенсионер",
       "type": "checkbox",
-      "label": "Социальный статус супруга(и) — отметьте подходящее*",
+      "label": "Социальный статус супруга(и) — отметьте подходящее",
       "required": false,
       "conditions": [
         "partnerSocialStatusField",
@@ -323,7 +323,7 @@
     {
       "key": "choice:partnerSocialStatus:Инвалид 1 группы",
       "type": "checkbox",
-      "label": "Социальный статус супруга(и) — отметьте подходящее*",
+      "label": "Социальный статус супруга(и) — отметьте подходящее",
       "required": false,
       "conditions": [
         "partnerSocialStatusField",
@@ -333,7 +333,7 @@
     {
       "key": "choice:partnerSocialStatus:Инвалид 2 группы",
       "type": "checkbox",
-      "label": "Социальный статус супруга(и) — отметьте подходящее*",
+      "label": "Социальный статус супруга(и) — отметьте подходящее",
       "required": false,
       "conditions": [
         "partnerSocialStatusField",
@@ -343,7 +343,7 @@
     {
       "key": "choice:partnerSocialStatus:Инвалид 3 группы",
       "type": "checkbox",
-      "label": "Социальный статус супруга(и) — отметьте подходящее*",
+      "label": "Социальный статус супруга(и) — отметьте подходящее",
       "required": false,
       "conditions": [
         "partnerSocialStatusField",
@@ -353,7 +353,7 @@
     {
       "key": "choice:partnerSocialStatus:Многодетный(ая)",
       "type": "checkbox",
-      "label": "Социальный статус супруга(и) — отметьте подходящее*",
+      "label": "Социальный статус супруга(и) — отметьте подходящее",
       "required": false,
       "conditions": [
         "partnerSocialStatusField",
@@ -363,7 +363,7 @@
     {
       "key": "choice:partnerSocialStatus:Получает соц. выплаты",
       "type": "checkbox",
-      "label": "Социальный статус супруга(и) — отметьте подходящее*",
+      "label": "Социальный статус супруга(и) — отметьте подходящее",
       "required": false,
       "conditions": [
         "partnerSocialStatusField",
@@ -373,7 +373,7 @@
     {
       "key": "choice:partnerSocialStatus:Другое",
       "type": "checkbox",
-      "label": "Социальный статус супруга(и) — отметьте подходящее*",
+      "label": "Социальный статус супруга(и) — отметьте подходящее",
       "required": false,
       "conditions": [
         "partnerSocialStatusField",
@@ -383,7 +383,7 @@
     {
       "key": "choice:partnerSocialStatus:unknown",
       "type": "checkbox",
-      "label": "Социальный статус супруга(и) — отметьте подходящее*",
+      "label": "Социальный статус супруга(и) — отметьте подходящее",
       "required": false,
       "conditions": [
         "partnerSocialStatusField",
@@ -393,8 +393,8 @@
     {
       "key": "partnerSocialOther",
       "type": "text",
-      "label": "Какое другое обстоятельство важно для супруга(и)?*",
-      "required": true,
+      "label": "Какое другое обстоятельство важно для супруга(и)?",
+      "required": false,
       "conditions": [
         "partnerSocialOtherField",
         "profileOnly"
@@ -403,7 +403,7 @@
     {
       "key": "count-profilefamily",
       "type": "select-one",
-      "label": "Сколько членов семьи указать: супруг(а), дети, иждивенцы?*",
+      "label": "Сколько членов семьи указать: супруг(а), дети, иждивенцы?",
       "options": [
         "",
         "0",
@@ -416,7 +416,7 @@
       ],
       "compactCount": true,
       "groupTarget": "profilefamily",
-      "required": true,
+      "required": false,
       "conditions": [
         "profileOnly"
       ]
@@ -1123,7 +1123,7 @@
     {
       "key": "exact:count-profilefamily",
       "type": "number",
-      "label": "Точное количество: Сколько членов семьи указать: супруг(а), дети, иждивенцы?*"
+      "label": "Точное количество: Сколько членов семьи указать: супруг(а), дети, иждивенцы?"
     },
     {
       "key": "exact:count-clientjobs",
@@ -1176,14 +1176,14 @@
         {
           "key": "familyName",
           "type": "text",
-          "label": "ФИО*",
-          "required": true,
+          "label": "ФИО",
+          "required": false,
           "conditions": []
         },
         {
           "key": "familyRelation",
           "type": "select-one",
-          "label": "Кем приходится клиенту?*",
+          "label": "Кем приходится клиенту?",
           "options": [
             "",
             "Супруг(а)",
@@ -1194,20 +1194,20 @@
             "Другой родственник",
             "Другое лицо на иждивении"
           ],
-          "required": true,
+          "required": false,
           "conditions": []
         },
         {
           "key": "familyBirthDate",
           "type": "text",
-          "label": "Дата рождения*",
-          "required": true,
+          "label": "Дата рождения",
+          "required": false,
           "conditions": []
         },
         {
           "key": "familyDependent",
           "type": "select-one",
-          "label": "На иждивении у клиента?*",
+          "label": "На иждивении у клиента?",
           "options": [
             "",
             "Да, полностью",
@@ -1215,7 +1215,7 @@
             "Нет",
             "unknown"
           ],
-          "required": true,
+          "required": false,
           "conditions": []
         },
         {

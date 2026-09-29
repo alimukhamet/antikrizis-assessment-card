@@ -111,7 +111,7 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   });
  }
  const choices=[{prefix:'choice:socialStatus:',kinds:null as string[]|null,none:'Нет',key:'choice:socialStatus:',label:'Социальный статус'}];
- if(profile&&married)choices.push({prefix:'choice:partnerSocialStatus:',kinds:null,none:'Нет',key:'choice:partnerSocialStatus:',label:'Социальный статус супруга(и)'});
+ // Owner decision 29 Sep: the profile adds only the ISK destination; spouse status is not required.
  for(const owner of ['client',...(married?['partner']:[])]){
   choices.push({prefix:`holding:${owner}:`,kinds:['real','land','car','other','none','unknown'],none:'none',key:`holding:${owner}:`,label:owner==='client'?'Имущество клиента':'Имущество супруга(и)'});
   choices.push({prefix:`holding:${owner}:`,kinds:['ip','too','kh','businessNone'],none:'businessNone',key:`holding:${owner}:business`,label:owner==='client'?'Бизнес и регистрация клиента':'Бизнес и регистрация супруга(и)'});
