@@ -245,3 +245,81 @@ test('serves only the declared same-case original document and denies credential
   const credential = await read.handleAssessmentIntakeDocument(await documentRequest(descriptor), dealId, 'doc-1', dependencies({ credentials: true }));
   assert.equal(credential.status, 403);
 });
+
+const poaBytes = new TextEncoder().encode('%PDF-1.7\nclient power of attorney\n');
+const poaHash = createHash('sha256').update(poaBytes).digest('hex');
+const poaDraft = { ...draft, documents: [...draft.documents, { documentId: 'poa-1', type: 'Доверенность', person: 'Клиент' }, { documentId: 'poa-spouse', type: 'Доверенность', person: 'Супруг(а)' }] };
+const poaPayload = { ...payload, draft: poaDraft };
+const poaRow = { ...row, payload: poaPayload, payload_hash: sha256(JSON.stringify({ payload: poaPayload, identityRevision, actorId })) };
+const poaDocument = { id: 'poa-1', case_id: 'case-1', original_sha256: poaHash, byte_size: poaBytes.byteLength, original_name: 'Document CLIENT.pdf' };
+const spouseDocument = { id: 'poa-spouse', case_id: 'case-1', original_sha256: 'a'.repeat(64), byte_size: 10, original_name: 'spouse.pdf' };
+
+function poaRepository(overrides = {}) {
+  const current = bundle({ documents: [...bundle().documents, poaDocument, spouseDocument], submissions: [poaRow] });
+  return {
+    ...repository(overrides),
+    async exportCase() { return overrides.bundle ?? current; },
+    async document(caseId, documentId) { return current.documents.find(item => item.case_id === caseId && item.id === documentId) ?? null; },
+    async credentialStatus() { return overrides.credentials ? { files: [{ id: 'poa-1' }] } : null; },
+    async originalStream() { return new ReadableStream({ start(controller) { controller.enqueue(poaBytes); controller.close(); } }); },
+  };
+}
+
+function poaDependencies(overrides = {}) {
+  return { repository: poaRepository(overrides), environment: { secret, approvedOrigin }, replayStore: new Map(), now: Date.now() };
+}
+
+async function poaList(overrides = {}) {
+  const response = await read.handleAssessmentIntakeManifest(await manifestRequest({ operation: 'assessment-power-of-attorney', dealId }), dealId, poaDependencies(overrides));
+  return { response, parsed: await response.json() };
+}
+
+test('lists only the client доверенность typed in the current verified submission', async () => {
+  const { response, parsed } = await poaList();
+  assert.equal(response.status, 200);
+  assert.equal(parsed.status, 'ready');
+  assert.equal(parsed.sourceSubmissionId, sourceSubmissionId);
+  assert.deepEqual(parsed.documents, [{ sourceDocumentId: 'poa-1', sha256: poaHash, sizeBytes: poaBytes.byteLength, originalName: 'Document CLIENT.pdf' }]);
+
+  const none = await read.handleAssessmentIntakeManifest(await manifestRequest({ operation: 'assessment-power-of-attorney', dealId }), dealId, dependencies());
+  assert.equal(none.status, 404);
+  assert.deepEqual(await none.json(), { status: 'not_found', reason: 'no_power_of_attorney' });
+
+  const credential = await poaList({ credentials: true });
+  assert.equal(credential.response.status, 404);
+
+  const noCase = await poaList({ noCase: true });
+  assert.deepEqual(noCase.parsed, { status: 'not_found', reason: 'no_case' });
+});
+
+test('serves the listed доверенность bytes and nothing outside the list', async () => {
+  const { parsed } = await poaList();
+  const descriptor = {
+    operation: 'assessment-power-of-attorney-artifact',
+    dealId,
+    documentId: 'poa-1',
+    sourceSubmissionId,
+    sourcePayloadHash: parsed.sourcePayloadHash,
+    sha256: poaHash,
+    sizeBytes: poaBytes.byteLength,
+    originalName: 'Document CLIENT.pdf',
+  };
+  const request = (value, documentId = 'poa-1') => documentRequest(value).then(built => new Request(built.url.replace(/doc-1$/u, documentId), { headers: built.headers }));
+  const served = await read.handleAssessmentIntakeDocument(await request(descriptor), dealId, 'poa-1', poaDependencies());
+  assert.equal(served.status, 200);
+  assert.deepEqual(new Uint8Array(await served.arrayBuffer()), poaBytes);
+
+  const spouse = await read.handleAssessmentIntakeDocument(await request({ ...descriptor, documentId: 'poa-spouse' }, 'poa-spouse'), dealId, 'poa-spouse', poaDependencies());
+  assert.equal(spouse.status, 409);
+  assert.equal((await spouse.json()).error, 'assessment_intake_document_not_declared');
+
+  const evidence = await read.handleAssessmentIntakeDocument(await request({ ...descriptor, documentId: 'doc-1' }, 'doc-1'), dealId, 'doc-1', poaDependencies());
+  assert.equal(evidence.status, 409);
+
+  const wrongHash = await read.handleAssessmentIntakeDocument(await request({ ...descriptor, sha256: 'b'.repeat(64) }), dealId, 'poa-1', poaDependencies());
+  assert.equal(wrongHash.status, 409);
+  assert.equal((await wrongHash.json()).error, 'assessment_intake_document_identity_mismatch');
+
+  const credential = await read.handleAssessmentIntakeDocument(await request(descriptor), dealId, 'poa-1', poaDependencies({ credentials: true }));
+  assert.equal(credential.status, 409);
+});

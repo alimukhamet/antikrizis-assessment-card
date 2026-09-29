@@ -216,6 +216,66 @@ async function readSelection(request: Request, dealId: string, dependencies: Ass
   return json({ status: 'ready', selection }, 200);
 }
 
+const POWER_OF_ATTORNEY_TYPE = 'Доверенность';
+const CLIENT_PERSON = 'Клиент';
+
+type PowerOfAttorneyReference = {
+  sourceDocumentId: string;
+  sha256: string;
+  sizeBytes: number;
+  originalName: string;
+};
+
+type PowerOfAttorneyList =
+  | { status: 'not_found'; reason: string }
+  | { status: 'pending'; reason: string }
+  | { status: 'ready'; sourceSubmissionId: string; sourceRevision: number; sourcePayloadHash: string; documents: PowerOfAttorneyReference[] };
+
+/**
+ * The client's own доверенность is excluded from fact evidence, so the CRM
+ * cannot reach it through the intake manifest. Only documents that staff
+ * typed as «Доверенность» for «Клиент» in the current verified submission are
+ * listed; credential files never are.
+ */
+async function powerOfAttorneyList(repository: AssessmentIntakeReadRepository, record: CaseRow, dealId: string): Promise<PowerOfAttorneyList> {
+  const bundle = await repository.exportCase(record.id);
+  const selection = selectAssessmentSubmissionFromExport(bundle);
+  if (selection.status === 'not_found') return { status: 'not_found', reason: selection.reason };
+  if (selection.status === 'pending') return { status: 'pending', reason: selection.reason };
+  const result = await assessmentIntakeFromExport(bundle, { sourceSubmissionId: selection.sourceSubmissionId, expectedDealId: dealId });
+  const credentialStatus = await repository.credentialStatus(record);
+  const credentialIds = new Set((credentialStatus?.files ?? []).map(file => file.id));
+  const typed = new Set(result.intake.answers.documents
+    .filter(document => document.type === POWER_OF_ATTORNEY_TYPE && document.person === CLIENT_PERSON)
+    .map(document => document.documentId));
+  const documents = (Array.isArray(bundle.documents) ? bundle.documents : [])
+    .filter(document => document.case_id === record.id && typed.has(document.id) && !credentialIds.has(document.id))
+    .map(document => ({ sourceDocumentId: document.id, sha256: document.original_sha256, sizeBytes: document.byte_size, originalName: document.original_name }));
+  if (!documents.length) return { status: 'not_found', reason: 'no_power_of_attorney' };
+  return { status: 'ready', sourceSubmissionId: selection.sourceSubmissionId, sourceRevision: selection.sourceRevision, sourcePayloadHash: selection.sourcePayloadHash, documents };
+}
+
+async function readPowerOfAttorney(request: Request, dealId: string, dependencies: AssessmentIntakeReadDependencies): Promise<Response> {
+  if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+  const raw = await request.text();
+  const body = parseCanonicalJson(raw);
+  await verifyAssessmentIntakeRequest({
+    request,
+    body: raw,
+    secret: dependencies.environment.secret,
+    approvedOrigin: dependencies.environment.approvedOrigin,
+    replayStore: dependencies.replayStore,
+    now: dependencies.now,
+  });
+  if (body.dealId !== dealId) throw new AssessmentIntakeReadError('assessment_intake_deal_mismatch', 409);
+  const record = await sourceCase(dependencies.repository, dealId);
+  if (!record) return json({ status: 'not_found', reason: 'no_case' }, 404);
+  const list = await powerOfAttorneyList(dependencies.repository, record, dealId);
+  if (list.status === 'not_found') return json(list, 404);
+  if (list.status === 'pending') return json(list, 409);
+  return json(list, 200);
+}
+
 export async function handleAssessmentIntakeManifest(
   request: Request,
   dealId: string,
@@ -223,6 +283,7 @@ export async function handleAssessmentIntakeManifest(
 ): Promise<Response> {
   try {
     const preview = parseCanonicalJson(await request.clone().text());
+    if (preview.operation === 'assessment-power-of-attorney') return await readPowerOfAttorney(request, dealId, dependencies);
     return preview.operation === 'assessment-intake-select'
       ? await readSelection(request, dealId, dependencies)
       : await readManifest(request, dealId, dependencies);
@@ -247,6 +308,44 @@ function fileRequest(body: Record<string, unknown>, dealId: string, documentId: 
   };
 }
 
+async function readPowerOfAttorneyDocument(body: Record<string, unknown>, dealId: string, documentId: string, dependencies: AssessmentIntakeReadDependencies): Promise<Response> {
+  if (body.dealId !== dealId) throw new AssessmentIntakeReadError('assessment_intake_deal_mismatch', 409);
+  if (body.documentId !== documentId) throw new AssessmentIntakeReadError('assessment_intake_document_mismatch', 409);
+  const sourceSubmissionId = requiredText(body.sourceSubmissionId, 'assessment_intake_submission_id_invalid', 200);
+  const sourcePayloadHash = requiredText(body.sourcePayloadHash, 'assessment_intake_source_payload_hash_invalid', 64);
+  const sha256 = requiredText(body.sha256, 'assessment_intake_document_hash_invalid', 64);
+  const sizeBytes = positiveRevision(body.sizeBytes, 'assessment_intake_document_size_invalid');
+  const originalName = requiredText(body.originalName, 'assessment_intake_document_name_invalid', 500);
+  if (!hashPattern.test(sourcePayloadHash) || !hashPattern.test(sha256)) throw new AssessmentIntakeReadError('assessment_intake_document_identity_invalid', 400);
+  if (sizeBytes > MAX_DOCUMENT_BYTES) throw new AssessmentIntakeReadError('assessment_intake_document_too_large', 413);
+  const record = await sourceCase(dependencies.repository, dealId);
+  if (!record) throw new AssessmentIntakeReadError('assessment_intake_not_found', 404);
+  const list = await powerOfAttorneyList(dependencies.repository, record, dealId);
+  if (list.status !== 'ready' || list.sourceSubmissionId !== sourceSubmissionId || list.sourcePayloadHash !== sourcePayloadHash) {
+    throw new AssessmentIntakeReadError('assessment_intake_source_identity_mismatch', 409);
+  }
+  const declared = list.documents.find(item => item.sourceDocumentId === documentId);
+  if (!declared) throw new AssessmentIntakeReadError('assessment_intake_document_not_declared', 409);
+  const document = await dependencies.repository.document(record.id, documentId);
+  if (!document || document.case_id !== record.id) throw new AssessmentIntakeReadError('assessment_intake_document_not_found', 404);
+  if (declared.sha256 !== sha256 || declared.sizeBytes !== sizeBytes || declared.originalName !== originalName
+    || document.original_sha256 !== sha256 || document.byte_size !== sizeBytes || document.original_name !== originalName) {
+    throw new AssessmentIntakeReadError('assessment_intake_document_identity_mismatch', 409);
+  }
+  const stream = await dependencies.repository.originalStream(document);
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      'cache-control': 'no-store',
+      'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(document.original_name)}`,
+      'content-length': String(sizeBytes),
+      'content-type': 'application/octet-stream',
+      'x-content-type-options': 'nosniff',
+      'x-antikrizis-source-sha256': document.original_sha256,
+    },
+  });
+}
+
 async function readDocument(request: Request, dealId: string, documentId: string, dependencies: AssessmentIntakeReadDependencies): Promise<Response> {
   if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
   const body = decodeCanonicalHeader(request.headers.get('x-antikrizis-assessment-request'));
@@ -258,6 +357,7 @@ async function readDocument(request: Request, dealId: string, documentId: string
     replayStore: dependencies.replayStore,
     now: dependencies.now,
   });
+  if (body.operation === 'assessment-power-of-attorney-artifact') return readPowerOfAttorneyDocument(body, dealId, documentId, dependencies);
   const requested = fileRequest(body, dealId, documentId);
   if (!hashPattern.test(requested.sourcePayloadHash) || !hashPattern.test(requested.sourceSubmissionHash) || !hashPattern.test(requested.sha256)) {
     throw new AssessmentIntakeReadError('assessment_intake_document_identity_invalid', 400);
