@@ -21,7 +21,7 @@ test('built Worker persists a complete contract and recovers a handoff without d
  const fixtureDir=await mkdtemp(resolve('.wrangler/runtime-fixture-'));
  t.after(()=>rm(fixtureDir,{recursive:true,force:true}));
  await build({entryPoints:['tests/runtime/fixture.mjs'],bundle:true,platform:'node',format:'esm',packages:'external',outfile:join(fixtureDir,'fixture.mjs'),logLevel:'silent'});
- const {seed,seedMissingBalance}=await import(pathToFileURL(join(fixtureDir,'fixture.mjs')).href);
+ const {seed,seedMissingBalance,seedInbound}=await import(pathToFileURL(join(fixtureDir,'fixture.mjs')).href);
  const modulePaths=(await readdir('dist/server',{recursive:true})).filter(n=>/\.m?js$/.test(n)).sort((a,b)=>a==='index.js'?-1:b==='index.js'?1:a.localeCompare(b));
  const modules=await Promise.all(modulePaths.map(async path=>({type:'ESModule',path,contents:await readFile(join('dist/server',path),'utf8')})));
  const crm=syntheticCrm();
@@ -62,6 +62,19 @@ test('built Worker persists a complete contract and recovers a handoff without d
  assert.equal(context.identityRevision,1);
  const fixture=await seed(db,await mf.getR2Bucket('FILES'));
  const root='/api/assessment/900001';
+ const batchIds=fixture.documents.slice(0,3).map(doc=>doc.documentId);
+ const cachedBatch=await api(root+'/documents/analyze',{documentIds:batchIds,identityRevision:1});
+ assert.deepEqual(cachedBatch.results.map(row=>row.documentId),batchIds);
+ assert.ok(cachedBatch.results.every(row=>row.analysis?.cacheHit));
+ assert.equal((await api(root+'/documents/analyze',{documentIds:batchIds,identityRevision:2},409)).error,'CASE_IDENTITY_CHANGED');
+ const inboundBytes=await seedInbound(db,await mf.getR2Bucket('FILES'),fixture,batchIds[0],'999');crm.seedFile('999',inboundBytes,'synthetic.pdf');
+ const beforeImports=await db.prepare('SELECT COUNT(*) n FROM assessment_reviews').first();
+ for(let n=0;n<2;n++)assert.equal((await api(root+'/crm-documents',{fileId:'999',identityRevision:1})).documentId,batchIds[0]);
+ assert.equal(crm.fileReads,0,'Reopening/reimporting stored PDFs never downloads their bytes again');
+ assert.deepEqual(await db.prepare('SELECT COUNT(*) n FROM assessment_reviews').first(),beforeImports,'Reusing an import does not duplicate origin receipts');
+ crm.removeFile('999');assert.equal((await api(root+'/crm-documents',{fileId:'999',identityRevision:1},422)).error,'FILE_NOT_IN_DEAL');
+ // Reset only this synthetic import fixture before the independent delivery scenario.
+ await db.prepare("DELETE FROM assessment_reviews WHERE case_id=? AND fact_key='document.origin.bitrix.v1' AND json_extract(value_json,'$.fileId')='999'").bind(fixture.record.id).run();
  // Incident recovery cannot become a generic bypass, even for the owner.
  const deniedRecovery=await api(root+'/draft-recovery',{action:'inspect'},409);
  assert.equal(deniedRecovery.error,'RECOVERY_SOURCE_CHANGED');

@@ -105,6 +105,7 @@ async function afConfirmPending(){
 function afDispatchChange(e){const previous=af.applying;af.applying=true;try{e.dispatchEvent(new Event('change',{bubbles:true}));}finally{af.applying=previous;}}
 function afPut(e,value,src){
  if(!e||value===null||value===undefined)return false;
+ if(af.fillingMissing&&(e.type==='checkbox'?e.checked:Boolean(e.value)))return false;
  value=String(value);let retainedCorrection=null;
  if(af.restoringEvidence){
   // Reopening a draft restores evidence badges, not deleted answers or older document values.
@@ -150,6 +151,7 @@ function afRow(group,key,loan=null){
  }
  const candidates=[...g.querySelector(':scope > .repeat-rows').children].filter(row=>candidateIds.has(row.id));
  if(af.restoringEvidence)return candidates.length===1?candidates[0]:null;
+ if(af.fillingMissing&&candidates.length>1)return null;
  if(candidates.length){
   const target=candidates[0];
   // Collapse an earlier auto-created alias only when every value is still present in this source.
@@ -201,8 +203,9 @@ function afClientChoices(){
  const select=$af('afClient'),chosen=select.value;select.replaceChildren(new Option('Выберите клиента',''));for(const [iin,name]of ids)select.add(new Option(name+' · ИИН '+iin,iin));
  const existing=$af('iin').value.trim();if(ids.has(existing))select.value=existing;else if(ids.has(chosen))select.value=chosen;else if(ids.size===1)select.value=[...ids.keys()][0];else select.value='';
  const draftMode=!HostedAssessment.getContext()?.client.iin&&[...af.results.values()].some(r=>r.draftOnly);
- $af('afApply').style.display=draftMode?'inline-block':'none';select.disabled=!draftMode;
- $af('afApply').textContent='Подтвердить клиента и заполнить';
+ const canFill=Boolean(HostedAssessment.getContext()?.client.iin)&&[...af.results].some(([id,r])=>selectedFiles.some(item=>item.id===id)&&!r.blocked&&!r.error&&!r.duplicate&&r.identity?.iin===HostedAssessment.getContext().client.iin);
+ $af('afApply').style.display=draftMode||canFill?'inline-block':'none';select.disabled=!draftMode;
+ $af('afApply').textContent=draftMode?'Подтвердить клиента и заполнить':'Заполнить пропуски из документов';
  $af('afIdentity').hidden=!ids.size;$af('afIdentity').style.display=ids.size?'flex':'none';return select.value;
 }
 // Used by server-answer-check.js and client-context-ui.js.
@@ -271,7 +274,12 @@ async function afApply(preferences={}){
  if(kids.size){const first=[...kids.values()][0];afPut($af('childrenTotal'),kids.size,{fileId:first.id,page:1,quote:'Найдены документы '+kids.size+' разных детей с совпадением ФИО родителя. Подтвердите, что других детей нет.'});}
  renderDocuments();afRenderResults();afRenderConflicts();kaspi();visibilityRules();afRefresh();afStatus('Распознанные ответы перенесены. Проверьте отмеченные поля и заполните оставшиеся. Ваши ответы не перезаписывались.');
 }
-$af('afApply').onclick=afApply;
+$af('afApply').onclick=async()=>{
+ if(af.busy||window.ServerDrafts&&!ServerDrafts.canSwitch())return;
+ af.fillingMissing=Boolean(HostedAssessment.getContext()?.client.iin);$af('afApply').disabled=true;
+ try{await afApply();await window.ServerDrafts?.save({automatic:true});}
+ finally{af.fillingMissing=false;$af('afApply').disabled=false;}
+};
 // Keep employee-facing reasons consistent in the package summary and the original-file row.
 function afDocumentAttention(item){
  const r=af.results.get(item.id);if(!r||afExcluded(item))return null;
@@ -395,9 +403,18 @@ async function afAnalyze(preferences={}){
  const read=async item=>{
   if(!preferences.restoreOnly)return HostedAssessment.analyzeFile(item,preferences);
   const index=files.indexOf(item);
-  // Only saved-cache reads run concurrently. Uploads and explicit recognition remain sequential.
-  for(const next of files.slice(index,index+3))if(!pending.has(next.id)&&!afExcluded(next))pending.set(next.id,HostedAssessment.analyzeFile(next,preferences).then(payload=>({payload}),error=>({error})));
-  const result=await pending.get(item.id);if(result.error)throw result.error;return result.payload;
+  if(!pending.has(item.id)){
+   const chunk=files.slice(index,index+8).filter(next=>!afExcluded(next)&&next.storedDocumentId);
+   if(chunk.length){
+    const batch=HostedAssessment.analyzeStoredFiles(chunk);
+    chunk.forEach((next,i)=>pending.set(next.id,batch.then(results=>results[i],error=>({error}))));
+   }
+  }
+  const result=await pending.get(item.id);
+  // Also supports a tab left open across a release. Only cache failures fall
+  // back to the existing individual read; saved originals are never uploaded.
+  if(!result||result.error&&!['SIGN_IN_REQUIRED','CASE_IDENTITY_CHANGED','DOCUMENT_NOT_IN_CASE'].includes(result.error.code))return HostedAssessment.analyzeFile(item,preferences);
+  if(result.error)throw result.error;return result.payload;
  };
  afAnalysisProgress(0,files.length);
  try{

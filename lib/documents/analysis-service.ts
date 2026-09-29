@@ -1,4 +1,4 @@
-import {readPdf}from'./read-pdf';import{extractNative,identityCardDates}from'./extract-native';import{gkbFreshness}from'./policy';import{operatingDay}from'./request-context';import type{EvidenceRepository,CaseRow,DocumentRow,ExtractionRow}from'./repository';import type{ClientContext}from'../crm/bitrix';import {RepositoryError}from'./repository';
+import {readPdf,PDF_READER_VERSION}from'./read-pdf';import{extractNative,identityCardDates}from'./extract-native';import{gkbFreshness}from'./policy';import{operatingDay}from'./request-context';import type{EvidenceRepository,CaseRow,DocumentRow,ExtractionRow}from'./repository';import type{ClientContext}from'../crm/bitrix';import {RepositoryError}from'./repository';
 import type{Actor}from'../worker-session';
 import {requiresDocumentValidation,statementPeriod,salaryStatementPeriod,enpfPeriod,enpfAllHistory}from'./policy';
 import {checkPowerTemplate}from'./power-validation';
@@ -35,6 +35,10 @@ export async function analysisResponse(client:ClientContext,record:CaseRow,repos
 export async function storedAnalysis(client:ClientContext,record:CaseRow,repository:EvidenceRepository,document:DocumentRow,actor:Actor,cacheOnly=false){
  const cached=await repository.cached(record.id,document.original_sha256,analysisVersion);if(cached)return analysisResponse(client,record,repository,cached,true);
  if(cacheOnly)throw new RepositoryError('CACHE_REPROCESS_REQUIRED',409);
- const bytes=await repository.original(document),read=await readPdf(bytes),extraction=extractNative(read.pages),stored=await repository.store(record.id,bytes,document.original_name,actor,analysisVersion,{read,extraction});
+ const previous=await repository.previousAnalysis(document,PDF_READER_VERSION),saved=(previous?.result as Analysis|undefined)?.read;
+ // Rule changes can reuse hash-verified native pages. Re-read the original only
+ // if the PDF reader changed or the saved read is incomplete/inconsistent.
+ const reusable=saved?.readerVersion===PDF_READER_VERSION&&saved.originalSha256===document.original_sha256&&saved.readAllPhysicalPages===true&&saved.pages.length===saved.totalPages;
+ const read=reusable?saved:await readPdf(await repository.original(document)),extraction=extractNative(read.pages),stored=await repository.storeExtraction(document,analysisVersion,{read,extraction});
  return analysisResponse(client,record,repository,stored,false);
 }

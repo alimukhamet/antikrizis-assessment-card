@@ -24,6 +24,12 @@ export async function seed(db,files){
  return {payload,documents,record,today,from,iin};
 }
 
+export async function seedInbound(db,files,fixture,documentId,fileId){
+ const repo=new EvidenceRepository(db,files),doc=await repo.document(fixture.record.id,documentId),cached=await repo.cached(fixture.record.id,doc.original_sha256,analysisVersion);
+ await repo.appendReview({caseId:fixture.record.id,documentId:doc.id,extractionId:cached.extraction.id,identityRevision:1,requestId:crypto.randomUUID(),factKey:'document.origin.bitrix.v1',value:{system:'bitrix',fileId,sha256:doc.original_sha256,byteSize:doc.byte_size},disposition:'confirmed',reason:'Synthetic import fixture'}, {id:'worker:ali',authentication:'synthetic'});
+ return repo.original(doc);
+}
+
 export async function seedMissingBalance(db,files,fixture){
  const repo=new EvidenceRepository(db,files),document=await repo.document(fixture.record.id,fixture.documents.find(d=>d.kind==='gkb_full').documentId);
  const cached=await repo.cached(fixture.record.id,document.original_sha256,analysisVersion),result=structuredClone(cached.result);

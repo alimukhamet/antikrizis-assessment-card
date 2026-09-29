@@ -23,3 +23,11 @@ test('a reader failure is actionable and does not discard the saved document ref
  let calls=0;const w=await setup(t,async()=>{calls++;return calls===1?stale():{ok:false,status:422,json:async()=>({error:'PDF_UNREADABLE'})};});const item={storedDocumentId:'saved-doc',file:{name:'original.pdf'}};
  await assert.rejects(w.HostedAssessment.analyzeFile(item,{cacheOnly:true,restoreOnly:true}));assert.equal(calls,2);assert.equal(item.storedDocumentId,'saved-doc');
 });
+
+test('batch restore sends unique saved IDs once, associates results exactly and rejects replaced selections',async t=>{
+ const calls=[];let pending;
+ const w=await setup(t,async(path,options)=>{calls.push({path,body:JSON.parse(options.body)});if(pending)return pending;return{ok:true,json:async()=>({results:[{documentId:'a',analysis:{documentId:'a'}},{documentId:'b',error:'CACHE_REPROCESS_REQUIRED'}]})};});
+ const a={storedDocumentId:'a',file:{name:'a.pdf'}},b={storedDocumentId:'b',file:{name:'b.pdf'}};
+ const result=await w.HostedAssessment.analyzeStoredFiles([a,b,a]);assert.equal(calls.length,1);assert.deepEqual(calls[0].body,{documentIds:['a','b'],identityRevision:1});assert.equal(result[0].payload.documentId,'a');assert.equal(result[1].error.code,'CACHE_REPROCESS_REQUIRED');assert.equal(result[2].payload.documentId,'a');
+ let resolve;pending=new Promise(r=>resolve=r);const running=w.HostedAssessment.analyzeStoredFiles([a,b]);a.storedDocumentId='replacement';resolve({ok:true,json:async()=>({results:[{documentId:'a',analysis:{documentId:'a'}},{documentId:'b',analysis:{documentId:'b'}}]})});await assert.rejects(running,e=>e.code==='CASE_IDENTITY_CHANGED');
+});

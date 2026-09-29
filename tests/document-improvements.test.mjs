@@ -110,3 +110,25 @@ test('a wrapped creditor name remains complete and stops at the next bureau fiel
  const text='Персональный кредитный отчет\nОбязательство 1\nРоль субъекта: Заёмщик\nКредитор: Товарищество с ограниченной ответственностью\n"Специальная финансовая компания TEST"\nБИН: 111111111111\nНомер договора: TEST-1\nФаза контракта: Действующий\nСтраница 1 из 1';
  const r=rules.extractNative(pages(text));assert.equal(r.credits[0].facts.find(f=>f.key==='creditor').value,'Товарищество с ограниченной ответственностью "Специальная финансовая компания TEST"');
 });
+
+test('five explicit empty related-party cells survive Russian/Kazakh footers and the history heading',()=>{
+ const header='Персональный кредитный отчет\nДействующие обязательства: (1)\nОбязательство 1\nРоль субъекта: Заёмщик\nФаза контракта: Действующий\nКредитор: TEST BANK\nНомер договора: TEST-EMPTY\nСвязанные субъекты\nРоль субъекта: ФИО/Наименование субъекта: ИИН/БИН: Вид документа: Номер документа:\n';
+ for(const footer of ['Страница 1 из 1','1 беттің 1 беті']){
+  const text=header+'Нет данных   Нет данных   Нет данных   Нет данных   Нет данных\n'+footer+'\nДанные по количеству дней и сумме просроченных платежей в валюте договора *\n2026 год';
+  assert.equal(rules.extractNative(pages(text)).credits[0].facts.find(f=>f.key==='relatedParties')?.value,'Нет');
+  for(const replaced of [text.replace('Нет данных   Нет данных','Нет данных'),text.replace('Нет данных   Нет данных','991231300003   Нет данных'),text.replace('Нет данных   Нет данных','Неразборчиво   Нет данных')])assert.equal(rules.extractNative(pages(replaced)).credits[0].facts.some(f=>f.key==='relatedParties'),false);
+ }
+});
+test('loan type distinguishes the spelling Займ, business financing and housing secured by real estate',()=>{
+ const header='Персональный кредитный отчет\nОбязательство 1\nРоль субъекта: Заёмщик\nФаза контракта: Действующий\nКредитор: TEST BANK\nНомер договора: TEST-TYPE\n';
+ for(const [financing,purpose,object,security,expected]of [
+  ['Займ','Прочие','Прочие','Бланковые','Потребительский кредит'],
+  ['Займ','Пополнение оборотных средств','Товары для производственного процесса','Бланковые','Другое'],
+  ['Займ','Приобретение/покупка','Жилая недвижимость','Залог недвижимости жилой/коммерческой','Ипотека'],
+  ['Займ','Приобретение/покупка','Жилая недвижимость','Залог денег на сберегательном счете',undefined],
+  ['Программа ипотечного жилищного кредитования','Прочие','Прочие','Бланковые','Ипотека'],
+  ['Несие желісі','Айналым қаражатын толтыру','Өндірістік процес үшін тауарлар','','Другое']
+ ]){
+  const result=rules.extractNative(pages(header+`Вид финансирования: ${financing}\nЦель кредита: ${purpose}\nОбъект кредитования: ${object}\nВид обеспечения: ${security}\nСтраница 1 из 1`));assert.equal(result.credits[0].facts.find(f=>f.key==='creditType')?.value,expected);
+ }
+});

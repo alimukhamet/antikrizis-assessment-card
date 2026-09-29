@@ -1,5 +1,6 @@
-import {test} from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import fs from 'node:fs';import ts from 'typescript';import {webcrypto} from 'node:crypto';import {DatabaseSync} from 'node:sqlite';
-const source=fs.readFileSync(new URL('../lib/documents/repository.ts',import.meta.url),'utf8'),exports={};vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,crypto:webcrypto,Uint8Array,TextEncoder,Date,JSON});const {EvidenceRepository}=exports;
+import {buildSync} from 'esbuild';
+import {test} from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import fs from 'node:fs';import {webcrypto} from 'node:crypto';import {DatabaseSync} from 'node:sqlite';
+const compiled=buildSync({entryPoints:['lib/documents/repository.ts'],bundle:true,platform:'node',format:'cjs',write:false}).outputFiles[0].text,repoModule={exports:{}};vm.runInNewContext(compiled,{module:repoModule,exports:repoModule.exports,crypto:webcrypto,Uint8Array,TextEncoder,Date,JSON});const {EvidenceRepository}=repoModule.exports;
 const actor={id:'worker:ramazan',worker:'ramazan',displayName:'Ramazan',authentication:'shared-password-worker-selection'};
 function setup(){
  const sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys=ON');for(const migration of fs.readdirSync(new URL('../drizzle/',import.meta.url)).filter(p=>p.endsWith('.sql')).sort())sqlite.exec(fs.readFileSync(new URL('../drizzle/'+migration,import.meta.url),'utf8'));
@@ -134,4 +135,21 @@ test('v22 retains older compatibility exclusions and prefers a new extraction wh
  const current=await repo.store(c.id,new Uint8Array([82]),'short.pdf',actor,'pdf-test:rules-native-22',{read:{pages:[{text:'АО Банк'}]},extraction:{kind:'gkb_short'}});
  assert.equal((await repo.cached(c.id,old.document.original_sha256,'pdf-test:rules-native-22')).extraction.id,current.extraction.id);
  assert.notEqual(old.extraction.id,current.extraction.id);
+});
+
+test('inbound reuse requires the same case, identity revision and exact origin hash and size',async()=>{
+ const {repo,sqlite}=setup(),c=await repo.syncCase(client()),other=await repo.syncCase(client('11666')),d=await repo.store(c.id,new Uint8Array([9,8,7]),'synthetic.pdf',actor,'v1',{});
+ const base={caseId:c.id,documentId:d.document.id,extractionId:d.extraction.id,identityRevision:1,factKey:'document.origin.bitrix.v1',disposition:'confirmed',reason:'synthetic'};
+ const value={system:'bitrix',fileId:'123',sha256:d.document.original_sha256,byteSize:3};
+ await repo.appendReview({...base,requestId:'origin-1',value},actor);assert.equal((await repo.importedDocument(c,'123')).id,d.document.id);assert.equal(await repo.importedDocument(other,'123'),null);assert.equal(await repo.importedDocument(c,'124'),null);assert.equal(await repo.importedDocument({...c,identity_revision:2},'123'),null);
+ for(const [index,change]of [{byteSize:4},{sha256:'wrong'},{system:'other'}].entries()){await repo.appendReview({...base,requestId:'invalid-'+index,value:{...value,...change}},actor);assert.equal(await repo.importedDocument(c,'123'),null);}
+ await repo.appendReview({...base,requestId:'withdrawn',value,disposition:'unresolved'},actor);assert.equal(await repo.importedDocument(c,'123'),null);assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_documents').get().n,1);
+});
+test('v24 preserves unchanged extraction/review IDs and stores improved rules without re-uploading the PDF',async()=>{
+ const {repo,sqlite}=setup(),c=await repo.syncCase(client()),pages=[{page:1,text:'Персональный кредитный отчет\nИИН: 991231300003\nДействующие обязательства: (0)\nСтраница 1 из 1',needsOcr:false,nativeCharacters:200}],compiled=buildSync({entryPoints:['lib/documents/extract-native.ts'],bundle:true,platform:'node',format:'cjs',write:false}).outputFiles[0].text,rulesModule={exports:{}};vm.runInNewContext(compiled,{module:rulesModule,exports:rulesModule.exports});
+ const extraction=rulesModule.exports.extractNative(pages),old=await repo.store(c.id,new Uint8Array([81]),'synthetic.pdf',actor,'native-pdf-3:rules-native-23',{read:{pages},extraction:{...extraction,version:'rules-native-23'}});
+ const review=await repo.appendReview({caseId:c.id,documentId:old.document.id,extractionId:old.extraction.id,identityRevision:1,requestId:'unchanged',factKey:'identity.iin',value:'991231300003',disposition:'confirmed',reason:''},actor);
+ const cached=await repo.cached(c.id,old.document.original_sha256,'native-pdf-3:rules-native-24');assert.equal(cached.extraction.id,old.extraction.id);assert.equal((await repo.currentReviews(c.id,old.document.id,cached.extraction.id,1))[0].id,review.id);
+ assert.equal(await repo.previousAnalysis(old.document,'different-reader'),null);assert.equal((await repo.previousAnalysis(old.document,'native-pdf-3')).extraction.id,old.extraction.id);
+ const updated=await repo.storeExtraction(old.document,'native-pdf-3:rules-native-24',{read:{pages},extraction});assert.equal(updated.document.id,old.document.id);assert.notEqual(updated.extraction.id,old.extraction.id);assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_documents').get().n,1);assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_reviews').get().n,1);
 });

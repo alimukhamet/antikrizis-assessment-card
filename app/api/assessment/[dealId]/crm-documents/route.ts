@@ -5,7 +5,7 @@ import {createCrmDocumentReader} from '../../../../../lib/crm/document-download'
 import {DocumentUploadError} from '../../../../../lib/crm/document-upload';
 import {readPdf,DocumentReadError} from '../../../../../lib/documents/read-pdf';
 import {extractNative} from '../../../../../lib/documents/extract-native';
-import {analysisResponse,analysisVersion,type Analysis} from '../../../../../lib/documents/analysis-service';
+import {analysisResponse,analysisVersion,storedAnalysis,type Analysis} from '../../../../../lib/documents/analysis-service';
 import {sha256,RepositoryError} from '../../../../../lib/documents/repository';
 import {readClientContext} from '../../../../../lib/crm/bitrix';
 const headers={'cache-control':'no-store'};
@@ -25,6 +25,16 @@ export async function POST(request:Request,ctx:{params:Promise<{dealId:string}>}
   if(!client.iin)throw new RepositoryError('DEAL_IDENTITY_UNVERIFIED');
   if(typeof body.fileId!=='string'||! /^[1-9]\d*$/.test(body.fileId))throw new RepositoryError('INVALID_FILE_ID',400);
   if(body.identityRevision!==record.identity_revision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
+  const imported=await repository.importedDocument(record,body.fileId);
+  if(imported){
+   // Reuse the immutable inbound copy only while this file still belongs to the
+   // same CRM client. Final delivery separately verifies the live file's bytes.
+   const refs=await dealDocumentReferences(process.env.BITRIX_WEBHOOK??'',dealId,client.iin);
+   if(!refs.some(ref=>ref.id===body.fileId))throw new DocumentUploadError('FILE_NOT_IN_DEAL');
+   const current=await repository.findCaseByExternal(client.external.system,dealId);
+   if(!current||current.identity_revision!==record.identity_revision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
+   return Response.json({...await storedAnalysis(client,record,repository,imported,actor),originalName:imported.original_name,crmFileId:body.fileId},{headers});
+  }
   let filename='Bitrix-'+body.fileId+'.pdf';
   const bytes=await createCrmDocumentReader(process.env.BITRIX_WEBHOOK??'',dealId,client.iin,fetch,{pdfOnly:true,onFilename:name=>{filename=name;}})({id:body.fileId});
   const hash=await sha256(bytes),cached=await repository.cached(record.id,hash,analysisVersion),result=cached?.result as Analysis|undefined;
