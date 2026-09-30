@@ -83,3 +83,17 @@ test('PDF intake uses six small bounded ranges, preserves the exact original and
  },{pdfOnly:true});
  assert.deepEqual(await read({id:'22'}),source);assert.equal(peak,6);assert.equal(parts,Math.ceil(source.length/8192));
 });
+
+test('document intake accepts JPEG/PNG names but retains credential and unsupported-format gates',async()=>{
+ for(const name of ['photo.jpg','photo.jpeg','photo.png','original.pdf']){
+  const reader=createCrmDocumentReader(webhook,'11665',iin,async(url,o)=>o.method==='POST'?metadata():new Response(new Uint8Array([1,2,3]),{headers:{'content-disposition':`attachment; filename="${name}"`}}),{documentsOnly:true});
+  // This transport does not interpret bytes; readDocument performs magic and
+  // structural validation before the intake route stores the original.
+  assert.deepEqual(await reader({id:'22'}),new Uint8Array([1,2,3]));
+ }
+ for(const [name,code] of [['secret.pfx','CREDENTIAL_NOT_ANALYSED'],['letter.docx','NOT_A_SUPPORTED_DOCUMENT'],['scan.gif','NOT_A_SUPPORTED_DOCUMENT']]){
+  let cancelled=false;
+  const reader=createCrmDocumentReader(webhook,'11665',iin,async(url,o)=>o.method==='POST'?metadata():new Response(new ReadableStream({cancel(){cancelled=true;}}),{headers:{'content-disposition':`attachment; filename="${name}"`}}),{documentsOnly:true});
+  await assert.rejects(reader({id:'22'}),e=>e.code===code);assert.equal(cancelled,true);
+ }
+});

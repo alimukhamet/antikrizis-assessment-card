@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev",
-    "build": "node scripts/verify-canonical-target.mjs && node scripts/build-tools-home.mjs && node scripts/build-pdf-viewer.mjs && node scripts/build-questionnaire-schema.mjs && node scripts/build-contract-renderer.mjs && WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
+    "build": "node scripts/verify-canonical-target.mjs && node scripts/build-tools-home.mjs && node scripts/build-pdf-viewer.mjs && node scripts/build-browser-ocr.mjs && node scripts/build-questionnaire-schema.mjs && node scripts/build-contract-renderer.mjs && WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
     "build:anti-krizis": "ANTIKRIZIS_EXTERNAL_DEPLOY=1 npm run build",
     "deploy:anti-krizis": "npm run build:anti-krizis && wrangler deploy --config wrangler.anti-krizis.jsonc",
     "db:migrate:anti-krizis": "wrangler d1 migrations apply DB --remote --config wrangler.anti-krizis.jsonc",
@@ -27,7 +27,9 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
+    "@paddleocr/paddleocr-js": "0.4.2",
     "@tailwindcss/postcss": "4.2.1",
+    "@techstark/opencv-js": "4.10.0-release.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
@@ -40,6 +42,7 @@
     "fake-indexeddb": "6.2.5",
     "jsdom": "30.0.1",
     "miniflare": "4.20260515.0",
+    "onnxruntime-web": "1.30.0",
     "react-server-dom-webpack": "19.2.6",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",

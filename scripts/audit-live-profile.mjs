@@ -62,6 +62,18 @@ try{
  assert.equal(digest(before),digest(after),'Audit draft changed; investigate concurrent edits');
  report.explanations={minimum:60,shortBlocked:true,whitespacePaddingBlocked:true,unknownBlocked:true,minimumAccepted:true,draftUnchanged:true};
  report.spouseStatus={marriedRequiresAnswer:true,unknownBlocked:true,explicitNoneAccepted:true,pensionerAccepted:true,unmarriedExempt:true,draftUnchanged:true};
+ // Read the new OCR sidecar without claiming work or writing page results on a real case.
+ const ocrRoot='/api/assessment/8595',ocrBefore=(await json(ocrRoot+'/draft')).draft;
+ const ocrContext=await json(ocrRoot),ocrDocument=ocrBefore?.payload.documents.find(doc=>doc.documentId);
+ assert.ok(ocrDocument,'OCR route verification needs an existing saved original');
+ const ocrPath=ocrRoot+'/documents/'+encodeURIComponent(ocrDocument.documentId)+'/ocr?suggestions=0';
+ assert.equal((await request(ocrPath)).status,401);
+ const ocr=await json(ocrPath);
+ assert.equal(ocr.documentId,ocrDocument.documentId);assert.equal(ocr.identityRevision,ocrContext.identityRevision);
+ assert.equal(ocr.engineVersion,'paddleocr-js-0.4.2-cyrillic-v1');assert.equal(ocr.reviewNeeded,true);assert.equal(ocr.authenticity,'not_verified');
+ assert.equal(new Set([...ocr.pendingPages,...ocr.completedPages.map(page=>page.page)]).size,ocr.eligiblePages.length);
+ assert.equal(digest(ocrBefore),digest((await json(ocrRoot+'/draft')).draft),'OCR read changed the saved draft or a concurrent edit occurred');
+ report.browserOcr={authenticatedRead:true,anonymousBlocked:true,engineVersion:ocr.engineVersion,eligiblePages:ocr.eligiblePages.length,completedPages:ocr.completedPages.length,draftUnchanged:true,noOcrWrite:true};
  Object.assign(report,{anonymousBlocked:true,authenticated:true,completed:activity.completed.length,activeProfiles:new Set(activity.active.map(s=>s.dealId)).size,workers:activity.workers,passed:true});
- console.log('Profile verified: team activity, queue order, explanations and spouse-status validation. Audit draft unchanged; no client writes.');
+ console.log('Profile verified: team activity, queue order, explanation/spouse validation and browser OCR storage read. Audit drafts unchanged; no client writes.');
 }finally{await writeFile('live-profile-audit.json',JSON.stringify(report,null,2)+'\n');}

@@ -49,3 +49,6 @@ next-env.d.ts
 .audit-native-preview.mjs
 
 .audit-gkb-preview.mjs
+
+# Generated pinned browser OCR runtime and model assets
+/public/browser-ocr-assets/

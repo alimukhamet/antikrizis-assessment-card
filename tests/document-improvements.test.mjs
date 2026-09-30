@@ -1,7 +1,7 @@
 import{test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import vm from'node:vm';import ts from'typescript';
 import{parseParticipants}from'../public/loan-participants.mjs';
 function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>{if(n in imports)return imports[n];throw Error(n);},Date,TextEncoder});return exports;}
-const rules=load('lib/documents/extract-native.ts',{'./kz-labels.json':JSON.parse(fs.readFileSync('lib/documents/kz-labels.json')),'./power-of-attorney':load('lib/documents/power-of-attorney.ts')});const policy=load('lib/documents/policy.ts');const reader=load('lib/documents/read-pdf.ts',{'unpdf':{}});
+const rules=load('lib/documents/extract-native.ts',{'./kz-labels.json':JSON.parse(fs.readFileSync('lib/documents/kz-labels.json')),'./power-of-attorney':load('lib/documents/power-of-attorney.ts')});const policy=load('lib/documents/policy.ts');const reader=load('lib/documents/read-pdf.ts',{'unpdf':{},'./read-document-limits':load('lib/documents/read-document-limits.ts')});
 const pages=(...texts)=>texts.map((text,i)=>({page:i+1,text,nativeCharacters:text.length,needsOcr:false}));
 test('rolling annual statements qualify, with calendar years, leap days, stale and future boundaries checked',()=>{
  for(const dates of [['2025-09-10','2026-09-10','2026-09-12'],['2025-09-01','2026-08-31','2026-09-12'],['2023-03-01','2024-02-29','2024-03-01']])assert.equal(policy.statementPeriod(...dates).length,0);

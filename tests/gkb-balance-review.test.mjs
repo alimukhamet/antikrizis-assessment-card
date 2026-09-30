@@ -1,7 +1,8 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';import ts from 'typescript';import {webcrypto} from 'node:crypto';import {DatabaseSync} from 'node:sqlite';
 import {compareGkb} from '../public/gkb-comparison.mjs';
 function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>imports[n],Date,Map,Set,BigInt,Uint8Array,TextEncoder,crypto:webcrypto,JSON});return exports;}
-const repositoryModule=load('lib/documents/repository.ts'),{EvidenceRepository}=repositoryModule,policy=load('lib/documents/policy.ts'),identity=load('lib/documents/loan-identity.ts');
+const image=load('lib/documents/read-image.ts',{'./read-document-limits':load('lib/documents/read-document-limits.ts')});
+const repositoryModule=load('lib/documents/repository.ts',{'./read-image':image}),{EvidenceRepository}=repositoryModule,policy=load('lib/documents/policy.ts'),identity=load('lib/documents/loan-identity.ts');
 const matching=load('lib/documents/credit-report-match.ts',{'./policy':policy,'./loan-identity':identity});
 const service=load('lib/documents/gkb-balance-review.ts',{'./repository':repositoryModule,'./analysis-version':{analysisVersion:'v'},'./credit-report-match':matching,'./loan-identity':identity});
 const {checkDocumentPackage}=load('lib/documents/package-check.ts',{'./analysis-service':{analysisVersion:'v'},'./credit-report-match':matching,'./gkb-balance-review':service,'./loan-identity':identity,'./policy':policy,'./document-review':{MANUAL_DOCUMENT_TYPES:{},currentDocumentReview:async()=>null}});

@@ -1,10 +1,12 @@
-import { analysisResponse,analysisVersion } from '../../../../../lib/documents/analysis-service';
+import { analysisResponse,analysisVersionForFormat } from '../../../../../lib/documents/analysis-service';
 import { evidenceRepository } from '../../../../../lib/documents/storage';
 import { sha256, RepositoryError } from '../../../../../lib/documents/repository';
 import { readSessionCookie, verifySession } from '../../../../../lib/worker-session';
 import { requireStaffRequest } from '../../../staff-access';
 import { readClientContext } from '../../../../../lib/crm/bitrix';
-import { readPdf, MAX_DOCUMENT_BYTES, DocumentReadError } from '../../../../../lib/documents/read-pdf';
+import { MAX_DOCUMENT_BYTES, DocumentReadError } from '../../../../../lib/documents/read-pdf';
+import {readDocument} from '../../../../../lib/documents/read-document';
+import {imageFormat} from '../../../../../lib/documents/read-image';
 import { extractNative } from '../../../../../lib/documents/extract-native';
 
 export const dynamic='force-dynamic';
@@ -28,11 +30,11 @@ export async function POST(request: Request, context: { params: Promise<{dealId:
     const repository=await evidenceRepository(),record=await repository.syncCase(client);
     const actor=await verifySession(readSessionCookie(request.headers.get('cookie')),process.env.SITE_SESSION_TOKEN??'');
     if(!actor)return Response.json({error:'SIGN_IN_REQUIRED'},{status:401,headers});
-    const version=analysisVersion;
+    const version=analysisVersionForFormat(imageFormat(bytes)??undefined);
     const originalHash=await sha256(bytes),cached=await repository.cached(record.id,originalHash,version);
-    const result=cached?.result as {read:Awaited<ReturnType<typeof readPdf>>;extraction:ReturnType<typeof extractNative>}|undefined;
-    const read=result?.read??await readPdf(bytes),extraction=result?.extraction??extractNative(read.pages);
-    const stored=cached??await repository.store(record.id,bytes,filename||'document.pdf',actor,version,{read,extraction});
+    const result=cached?.result as {read:Awaited<ReturnType<typeof readDocument>>;extraction:ReturnType<typeof extractNative>}|undefined;
+    const read=result?.read??await readDocument(bytes),extraction=result?.extraction??extractNative(read.pages);
+    const stored=cached??await repository.store(record.id,bytes,filename||(read.format==='image/png'?'document.png':read.format==='image/jpeg'?'document.jpg':'document.pdf'),actor,version,{read,extraction});
     return Response.json(await analysisResponse(client,record,repository,stored,Boolean(cached)),{headers});
   } catch(error) {
     return Response.json({error:error instanceof DocumentReadError||error instanceof RepositoryError?error.code:'DOCUMENT_PROCESSING_FAILED'},{status:error instanceof DocumentReadError||error instanceof RepositoryError?error.status:422,headers});

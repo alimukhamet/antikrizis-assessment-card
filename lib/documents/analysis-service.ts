@@ -1,11 +1,13 @@
-import {readPdf,PDF_READER_VERSION}from'./read-pdf';import{extractNative,identityCardDates}from'./extract-native';import{gkbFreshness}from'./policy';import{operatingDay}from'./request-context';import type{EvidenceRepository,CaseRow,DocumentRow,ExtractionRow}from'./repository';import type{ClientContext}from'../crm/bitrix';import {RepositoryError}from'./repository';
+import {PDF_READER_VERSION}from'./read-pdf';import {readDocument,originalDocumentFormat,type DocumentRead}from'./read-document';import {IMAGE_READER_VERSION}from'./read-image';import{extractNative,identityCardDates}from'./extract-native';import{gkbFreshness}from'./policy';import{operatingDay}from'./request-context';import type{EvidenceRepository,CaseRow,DocumentRow,ExtractionRow}from'./repository';import type{ClientContext}from'../crm/bitrix';import {RepositoryError}from'./repository';
 import type{Actor}from'../worker-session';
 import {requiresDocumentValidation,statementPeriod,salaryStatementPeriod,enpfPeriod,enpfAllHistory}from'./policy';
 import {checkPowerTemplate}from'./power-validation';
 import {analysisVersion} from './analysis-version';
 import {DOCUMENT_REVIEW_KEY,validateDocumentReview} from './document-review';
 export {analysisVersion};
-export type Analysis={read:Awaited<ReturnType<typeof readPdf>>;extraction:ReturnType<typeof extractNative>};
+export function analysisVersionForFormat(format?:string){return format?.startsWith('image/')?IMAGE_READER_VERSION+analysisVersion.slice(PDF_READER_VERSION.length):analysisVersion;}
+export function analysisVersionForDocument(document:Pick<DocumentRow,'original_key'>){return analysisVersionForFormat(originalDocumentFormat(document));}
+export type Analysis={read:DocumentRead;extraction:ReturnType<typeof extractNative>};
 export async function analysisResponse(client:ClientContext,record:CaseRow,repository:EvidenceRepository,stored:{document:DocumentRow;extraction:ExtractionRow;result:unknown},cacheHit:boolean){
  const{read,extraction}=stored.result as Analysis,today=operatingDay(),findings=[...extraction.findings];
  const powerValidation=extraction.kind==='power_of_attorney'?checkPowerTemplate(stored.result as Analysis,today):null;
@@ -35,10 +37,11 @@ export async function analysisResponse(client:ClientContext,record:CaseRow,repos
 export async function storedAnalysis(client:ClientContext,record:CaseRow,repository:EvidenceRepository,document:DocumentRow,actor:Actor,cacheOnly=false){
  const cached=await repository.cached(record.id,document.original_sha256,analysisVersion);if(cached)return analysisResponse(client,record,repository,cached,true);
  if(cacheOnly)throw new RepositoryError('CACHE_REPROCESS_REQUIRED',409);
- const previous=await repository.previousAnalysis(document,PDF_READER_VERSION),saved=(previous?.result as Analysis|undefined)?.read;
+ const readerVersion=originalDocumentFormat(document)==='application/pdf'?PDF_READER_VERSION:IMAGE_READER_VERSION;
+ const previous=await repository.previousAnalysis(document,readerVersion),saved=(previous?.result as Analysis|undefined)?.read;
  // Rule changes can reuse hash-verified native pages. Re-read the original only
  // if the PDF reader changed or the saved read is incomplete/inconsistent.
- const reusable=saved?.readerVersion===PDF_READER_VERSION&&saved.originalSha256===document.original_sha256&&saved.readAllPhysicalPages===true&&saved.pages.length===saved.totalPages;
- const read=reusable?saved:await readPdf(await repository.original(document)),extraction=extractNative(read.pages),stored=await repository.storeExtraction(document,analysisVersion,{read,extraction});
+ const reusable=saved?.readerVersion===readerVersion&&saved.originalSha256===document.original_sha256&&saved.readAllPhysicalPages===true&&saved.pages.length===saved.totalPages;
+ const read=reusable?saved:await readDocument(await repository.original(document)),extraction=extractNative(read.pages),stored=await repository.storeExtraction(document,analysisVersionForFormat(read.format),{read,extraction});
  return analysisResponse(client,record,repository,stored,false);
 }

@@ -1,11 +1,11 @@
 import { getDocumentProxy, getResolvedPDFJS } from 'unpdf';
 
 export const PDF_READER_VERSION = 'native-pdf-3';
-export const MAX_DOCUMENT_BYTES = 35 * 1024 * 1024;
+import {MAX_DOCUMENT_BYTES,DocumentReadError} from './read-document-limits';
+export {MAX_DOCUMENT_BYTES,DocumentReadError} from './read-document-limits';
 // Full GKB reports for clients with long histories exceed 500 pages.
 export const MAX_DOCUMENT_PAGES = 1000;
 export type PageText = { page: number; text: string; layoutText?: string; nativeCharacters: number; needsOcr: boolean };
-export class DocumentReadError extends Error { constructor(public code: string, public status = 422) { super(code); } }
 const prefix = new TextEncoder().encode('%PDF');
 function isPdf(data: Uint8Array) { return prefix.every((v, i) => data[i] === v); }
 /** Extract a PDF encapsulated in an ASN.1 OCTET STRING. This does NOT verify a signature. */
