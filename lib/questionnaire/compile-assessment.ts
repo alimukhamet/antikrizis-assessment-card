@@ -5,9 +5,13 @@ import {paymentScheduleText,PAYMENT_TYPES} from '../../public/payment-schedule.m
 import type {AssessmentValues} from '../crm/assessment-write';
 import type {ApprovedAnswerEvidence} from './review-bindings';
 const procedures:Record<string,string>={'199':'ВП — восстановление платёжеспособности','201':'СБ','203':'ВБ — внесудебное банкротство','205':'График'};
-const holdings:Record<string,string>={real:'Недвижимость',land:'Земля',car:'Автомобиль',ip:'ИП',too:'Доля в ТОО',kh:'КХ',other:'Другое',businessNone:'ИП, доли в ТОО и КХ отсутствуют',none:'Имущества из перечисленного нет',unknown:'Неизвестно — уточнить'};
+const holdings:Record<string,string>={real:'Недвижимость, включая земельные участки',land:'Недвижимость, включая земельные участки',car:'Автомобиль',ip:'ИП',too:'Доля в ТОО',kh:'КХ',other:'Другое',businessNone:'ИП, доли в ТОО и КХ отсутствуют',none:'Имущества из перечисленного нет',unknown:'Неизвестно — уточнить'};
 export const groupNames:Record<string,string>={profilefamily:'Член семьи',clientjobs:'Место работы клиента',clientunofficial:'Неофициальный доход клиента',clientbenefits:'Государственная выплата клиента',partnerjobs:'Место работы супруга(и)',partnerunofficial:'Неофициальный доход супруга(и)',partnerbenefits:'Государственная выплата супруга(и)',clientreal:'Недвижимость клиента',clientland:'Земельный участок клиента',clientcars:'Автомобиль клиента',clientip:'ИП клиента',clienttoo:'Доля в ТОО клиента',clientkh:'КХ клиента',partnerreal:'Недвижимость супруга(и)',partnerland:'Земельный участок супруга(и)',partnercars:'Автомобиль супруга(и)',partnerip:'ИП супруга(и)',partnertoo:'Доля в ТОО супруга(и)',partnerkh:'КХ супруга(и)',transfers:'Передача имущества',creditors:'Кредит / обязательство',enforcements:'Взыскание'};
 const salesOnly=new Set(['dognum','summa','contractDate','months','payDay','grafType']);
+/** Coalesce the printed category only; original answer keys remain available to evidence and JSON exports. */
+export function propertySummaryAnswers(answers:DisplayAnswer[]){
+ return answers.filter(a=>{const land=/^holding:(client|partner):land$/.exec(a.key);return !land||!answers.some(other=>other.key===`holding:${land[1]}:real`);});
+}
 export function displayAnswer(answer:DisplayAnswer){
  if(['gamblingTransfers','lawyerNotesStatus','enforcementStatus'].includes(answer.key))return answer.value==='yes'?'Да':answer.value==='no'?'Нет':answer.value==='legacy'?'Сведения из прежней анкеты':answer.value;
  if(['n8004Kind','n8019Kind','clientLandOwnership','partnerLandOwnership'].includes(answer.key))return ({sole:'Единоличная собственность',joint:'Совместная собственность',share:'Долевая собственность'} as Record<string,string>)[answer.value]||answer.value;
@@ -45,7 +49,7 @@ export function compileAssessment(payload:DraftPayload,trustedIin:string|null,ev
   }
   const append=(a:DisplayAnswer)=>{if(a.value)lines.push(`• ${a.label.replace(/\*/g,'').trim()}: ${displayAnswer(a)}`);};
   lines.push('','ОБЩИЕ СВЕДЕНИЯ');
-  checked.displayAnswers.filter(a=>!a.group&&!salesOnly.has(a.key)).forEach(append);
+  propertySummaryAnswers(checked.displayAnswers.filter(a=>!a.group&&!salesOnly.has(a.key))).forEach(append);
   for(const group of payload.groups){
    for(let row=0;row<group.rows.length;row++){
     const answers=checked.displayAnswers.filter(a=>a.group===group.id&&a.row===row);

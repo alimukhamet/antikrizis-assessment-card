@@ -252,7 +252,7 @@ test('a document for another client cannot complete the package and unassigned f
  const s=setup(t);await s.load();collect(s);s.mount();
  s.run(`af.results.set(selectedFiles[0].id,{identity:{iin:'990101300002'}});selectedFiles.push({id:90,type:'Другой документ',person:'Клиент',storedDocumentId:'unclassified',file:{name:'unknown.pdf',size:10}});renderDocuments();`);
  s.w.AssessmentWorkflow.refresh();const notice=s.d.getElementById('workflowCollection');
- assert.equal(s.w.AssessmentWorkflow.collection().ready,false);assert.match(notice.textContent,/ГКБ — краткий отчёт/);assert.match(notice.textContent,/другого клиента/);assert.match(notice.textContent,/Без типа · 1/);
+ assert.equal(s.w.AssessmentWorkflow.collection().ready,false);assert.match(notice.textContent,/ГКБ — краткий отчёт/);assert.match(notice.textContent,/ИИН или сделка документа отличаются/);assert.match(notice.textContent,/Без типа · 1/);
  [...notice.querySelectorAll('button')].find(b=>b.textContent==='Указать тип').click();assert.equal(s.d.getElementById('workflowDocumentTools').open,true);assert.equal(s.d.querySelector('.wf-file-assignments').open,true);
 });
 
@@ -514,4 +514,13 @@ test('explicit GKB absence selects No; a saved empty profile offers the same sou
  assert.equal(input.value,'');assert.equal(choice.value,'');const proposal=row.querySelector('.af-profile-proposal button');assert.match(proposal.textContent,/Заполнить из ГКБ: Нет/);
  let saves=0;s.w.ServerDrafts.save=async()=>{saves++;return true};await proposal.onclick();assert.equal(input.value,'Нет');assert.equal(choice.value,'none');assert.equal(saves,1);assert.equal(row.querySelectorAll('loan-participants').length,1);
  input.value='TEST PERSON — Гарант';input.dispatchEvent(new s.w.Event('change',{bubbles:true}));s.run('af.restoringEvidence=true;afRowFields(row,loan.fields,{...loan,fileId:1});afLoanParticipantsNotice(row,loan,1);af.restoringEvidence=false;');assert.equal(input.value,'TEST PERSON — Гарант');assert.equal(choice.value,'some');assert.equal(row.querySelector('.af-profile-proposal'),null);
+});
+
+test('document warnings distinguish unreadable identity, actual mismatch and short GKB limitations',async t=>{
+ const s=setup(t);await s.load();collect(s);s.mount();
+ s.run(`var doc=selectedFiles.find(f=>f.type==='ГКБ — краткий отчёт');af.results.set(doc.id,{kind:'gkbShort',type:doc.type,identity:{iin:null},blocked:true,findings:['DOCUMENT_IDENTITY_UNVERIFIED'],creditEvidence:{creditList:{declared:1,complete:true},credits:[{facts:[{key:'creditor',value:'TEST BANK'},{key:'contractIdentifier',value:'TEST-01'}]}]}});afRenderResults();AssessmentWorkflow.refresh();`);
+ const text=()=>s.d.getElementById('afFileResults').textContent;
+ assert.match(text(),/Не удалось прочитать ИИН/);assert.doesNotMatch(text(),/Другой клиент|ИИН отличается/);assert.match(text(),/Прочитано обязательств: 1 из 1/);assert.match(text(),/полного ГКБ этого клиента/);assert.match(text(),/платёж по графику/);
+ s.run(`af.results.get(doc.id).identity.iin='other';afRenderResults();AssessmentWorkflow.refresh()`);assert.match(text(),/ИИН отличается/);assert.match(text(),/для семейного документа укажите родственника/);
+ s.run(`af.results.get(doc.id).identity.iin='991231300003';af.results.get(doc.id).findings=[];af.results.get(doc.id).blocked=false;afRenderResults();AssessmentWorkflow.refresh()`);assert.doesNotMatch(text(),/ИИН отличается|Не удалось прочитать ИИН/);
 });

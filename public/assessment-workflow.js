@@ -257,7 +257,7 @@ window.AssessmentWorkflow=(()=>{
     for(const row of rows){
      const entry=make('li'),copy=make('span'),label=row.type==='ЭЦП файл'?'ЭЦП и пароль':row.type;
      entry.dataset.packageDocument=row.type;entry.dataset.packageState=row.state;copy.append(make('span',label));
-     if(row.wrongClient)copy.append(make('small','Загружен документ другого клиента'));
+     if(row.wrongClient)copy.append(make('small','ИИН или сделка документа отличаются. Проверьте владельца.'));
      else if(row.type==='ЭЦП файл'&&credentialAction)copy.append(make('small',credentialAction.message));
      else if(waiting&&row.type!=='ЭЦП файл')copy.append(make('small',af.results.get(row.fileId)?.error||'Файл выбран, но ещё не сохранён'));
      const add=action(row.type==='ЭЦП файл'?collectionAction(row):row.wrongClient?'Заменить':waiting?'Повторить загрузку':'Добавить',()=>openCollectionAction(row));

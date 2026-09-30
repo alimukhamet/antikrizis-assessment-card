@@ -187,3 +187,18 @@ test('v27 keeps unchanged v26 evidence but reprocesses a newly readable joint bo
   assert.equal((await repo.currentReviews(c.id,old.document.id,old.extraction.id,1))[0].id,review.id);assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_documents').get().n,1);assert.equal((await repo.cached(c.id,old.document.original_sha256,'native-pdf-3:rules-native-26')).extraction.id,old.extraction.id);
  }
 });
+
+test('v28 preserves unchanged evidence and old approvals while refreshing legacy short contract IDs',async()=>{
+ const compiled=buildSync({entryPoints:['lib/documents/extract-native.ts'],bundle:true,platform:'node',format:'cjs',write:false}).outputFiles[0].text,compiledModule={exports:{}};vm.runInNewContext(compiled,{module:compiledModule,exports:compiledModule.exports,Date,JSON});
+ for(const changed of [false,true]){
+  const {repo,sqlite}=setup(),c=await repo.syncCase(client());
+  const text='Персональный кредитный отчет (краткая форма)\nИИН: 991231300003\nДействующие обязательства: 1\nОбщая сумма задолженности/валюта: 100.00 KZT\nАО "Тест"   000123   100.00 KZT   0   Нет данных   Нет данных\nСтраница 1 из 1';
+  const pages=[{page:1,text,nativeCharacters:text.length,needsOcr:false}],current=compiledModule.exports.extractNative(pages),previous=JSON.parse(JSON.stringify(current));previous.version='rules-native-27';
+  if(changed)previous.credits[0].facts=previous.credits[0].facts.filter(f=>f.key!=='contractIdentifier');
+  const old=await repo.store(c.id,new Uint8Array([93]),'synthetic.pdf',actor,'native-pdf-3:rules-native-27',{read:{pages},extraction:previous});
+  const review=await repo.appendReview({caseId:c.id,documentId:old.document.id,extractionId:old.extraction.id,identityRevision:1,requestId:'review',factKey:'credits.0.debtOutstanding',value:'100.00',disposition:'confirmed',reason:'synthetic'},actor);
+  const cached=await repo.cached(c.id,old.document.original_sha256,'native-pdf-3:rules-native-28');
+  if(changed)assert.equal(cached,null);else assert.equal(cached.extraction.id,old.extraction.id);
+  assert.equal((await repo.currentReviews(c.id,old.document.id,old.extraction.id,1))[0].id,review.id);assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_documents').get().n,1);
+ }
+});

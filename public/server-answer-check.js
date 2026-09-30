@@ -8,9 +8,11 @@
  function answerTarget(issue){
   if(!issue.group){
    if(issue.key?.startsWith('choice:'))return [...document.querySelectorAll('#questionnaireStep input')].find(input=>input.name===issue.key.split(':')[1]);
+   if(issue.key?.startsWith('holding:')&&!issue.key.endsWith(':business')){const choice=document.querySelector(`[data-real-estate-owner="${issue.key.split(':')[1]}"]`);if(choice)return choice;}
    if(issue.key?.startsWith('holding:'))return [...document.querySelectorAll('#questionnaireStep [data-holding]')].find(input=>input.dataset.owner===issue.key.split(':')[1]&&(issue.key.endsWith(':business')?['ip','too','kh','businessNone'].includes(input.dataset.holding):['real','land','car','other','none','unknown'].includes(input.dataset.holding)));
    return document.getElementById(issue.key?.replace(/^exact:/,''));
   }
+  if(issue.code==='ROW_REQUIRED'&&/^(client|partner)(real|land)$/.test(issue.group))return document.querySelector(`[data-add-real-estate="${issue.group.startsWith('client')?'client':'partner'}"]`);
   const row=document.getElementById(issue.group)?.querySelector('.repeat-rows')?.children[issue.row??0];
   return [...row?.querySelectorAll('input,select,textarea')||[]].find(e=>e.id.replace(/_r\d+$/,'')===issue.key);
  }

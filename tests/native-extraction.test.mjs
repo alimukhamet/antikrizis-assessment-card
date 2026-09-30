@@ -157,3 +157,14 @@ test('both short report layouts recognize Lombards without changing contracts, d
  const modern=modernShortPages(),lender='АО "Тест\nБанк"';
  compare(modern,modern.map(p=>({...p,text:p.text.replace(lender,'ТОО "Lemon Land Lombard"')})));
 });
+
+test('older Kazakh short GKB exposes every printed contract ID without inventing absent profile facts',()=>{
+ const rows=Array.from({length:23},(_,i)=>`${i%2?'ТОО "Микрофинансовая\nорганизация Тест"':'АО "Тест Банк"'}\n00${1000+i}   1000.00 KZT   ${i}   2026-03-26   500.00 KZT`).join('\n');
+ const text=shortReport(rows,'23','23000.00').replace('Действующие обязательства','Қолданыстағы міндеттемелер').replace('Общая сумма задолженности/валюта','Жалпы қарыз/валюта').replace('Дата выдачи:','ЖСН 991231300003\nДата выдачи:');
+ const r=rules.extractNative(page(text));assert.equal(r.identity.iin,'991231300003');assert.equal(r.creditList.complete,true);assert.equal(r.credits.length,23);
+ for(const [i,c]of r.credits.entries()){
+  const id=c.facts.find(f=>f.key==='contractIdentifier');assert.equal(id.value,'00'+(1000+i));assert.equal(id.page,1);assert.match(id.source,new RegExp(id.value));
+  assert.equal(c.facts.some(f=>['monthlyPayment','startedAtMonth','relatedParties'].includes(f.key)),false);
+ }
+ const truncated=rules.extractNative(page(shortReport(shortRows.replace('ABC-2','ABC-2 ..'))));assert.equal(truncated.credits[1].facts.some(f=>f.key==='contractIdentifier'),false);
+});

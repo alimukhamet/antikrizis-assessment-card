@@ -201,3 +201,32 @@ test('legacy land remains in the original property group and spouse land is cond
  const restored=validateDraft(p);assert.equal(JSON.stringify(restored.groups),JSON.stringify(p.groups));assert.match(contractData(restored,iin).property,/Земельный участок/);
  p.answers.push({key:'holding:partner:land',value:'land',checked:true});assert.ok(!has(run(p),'partnerland','ROW_REQUIRED'));set(p,'marital','В браке');assert.ok(has(run(p),'partnerland','ROW_REQUIRED'));
 });
+
+
+test('one real-estate category retains legacy land and real rows exactly once with their evidence keys',()=>{
+ const p=fixture();set(p,'holding:client:none','none',false);set(p,'holding:client:real','real',true);set(p,'holding:client:land','land',true);
+ const add=(id,data)=>{const g=p.groups.find(g=>g.id===id);g.rows=[schema.groups.find(g=>g.id===id).fields.map(f=>({key:f.key,value:data[f.key]||'',checked:false}))];g.rowKeys=[id+'|SYNTHETIC SAVED OBJECT'];};
+ add('clientreal',{clientRealDescription:'SYNTHETIC HOUSE',n8003:'Дом',n8004Kind:'joint',n8005:'0',n8006:'Нет'});
+ add('clientland',{clientLandDescription:'SYNTHETIC LEGACY LAND',clientLandOwnership:'share',clientLandShare:'25',clientLandValue:'0',clientLandPledged:'Да'});
+ const saved=validateDraft(p);assert.equal(JSON.stringify(saved.groups),JSON.stringify(p.groups));assert.equal(JSON.stringify(saved.answers),JSON.stringify(p.answers));
+ const result=run(saved);assert.equal(result.answersComplete,true,JSON.stringify(result.issues));
+ assert.deepEqual(Array.from(result.displayAnswers.filter(a=>/^holding:client:(real|land)$/.test(a.key)),a=>a.key),['holding:client:real','holding:client:land'],'original keys remain available to source reviews');
+ const card=compileAssessment(saved,iin).lawyerCard;
+ assert.equal(card.split('Недвижимость, включая земельные участки').length-1,1,'one printed property category');
+ for(const output of [card,contractData(saved,iin).property])for(const value of ['SYNTHETIC HOUSE','SYNTHETIC LEGACY LAND'])assert.equal(output.split(value).length-1,1);
+ assert.match(card,/Совместная собственность/);assert.match(card,/Долевая собственность/);
+ const source={key:'clientLandDescription',group:'clientland',row:0,value:'SYNTHETIC LEGACY LAND',documentName:'SYNTHETIC original.pdf',page:1,disposition:'confirmed'};
+ assert.match(compileAssessment(saved,iin,[source]).lawyerCard,/SYNTHETIC original.pdf, стр. 1/);
+ set(saved,'holding:client:real','real',false);saved.groups.find(g=>g.id==='clientreal').rows=[];saved.groups.find(g=>g.id==='clientreal').rowKeys=[];
+ assert.equal(run(saved).answersComplete,true,'legacy land-only requires no extra real-estate row');
+ assert.match(compileAssessment(saved,iin).lawyerCard,/Недвижимость, включая земельные участки/);
+ const row=saved.groups.find(g=>g.id==='clientland').rows[0];row.find(a=>a.key==='clientLandShare').value='';assert.ok(has(run(saved),'clientLandShare','ANSWER_REQUIRED'));
+});
+test('new land uses the unified real-estate schema and retains optional object identification',()=>{
+ const p=fixture();set(p,'holding:client:none','none',false);set(p,'holding:client:real','real',true);
+ const g=p.groups.find(g=>g.id==='clientreal'),values={clientRealDescription:'SYNTHETIC NEW LAND',n8003:'Земельный участок',n8004Kind:'share',n8004:'50',n8005:'0',n8006:'Нет'};
+ g.rows=[schema.groups.find(g=>g.id==='clientreal').fields.map(f=>({key:f.key,value:values[f.key]||'',checked:false}))];g.rowKeys=[null];
+ assert.equal(run(p).answersComplete,true,JSON.stringify(run(p).issues));
+ for(const output of [contractData(p,iin).property,compileAssessment(p,iin).lawyerCard]){assert.match(output,/Земельный участок/);assert.match(output,/SYNTHETIC NEW LAND/);}
+ g.rows[0].find(a=>a.key==='n8004').value='101';assert.ok(has(run(p),'n8004','INVALID_NUMBER'));
+});

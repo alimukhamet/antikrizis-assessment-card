@@ -6,7 +6,7 @@ window.ServerDrafts=(()=>{
  const $=id=>document.getElementById(id);
  const profileMode=new URLSearchParams(location.search).get('mode')==='profile';
  function controlKey(e){if(e.closest('.af-source'))return null;if(e.closest('.exact-count'))return 'exact:'+e.closest('.exact-count').previousElementSibling.id;if(e.type==='checkbox'){if(e.dataset.holding)return `holding:${e.dataset.owner}:${e.dataset.holding}`;if(e.dataset.unknown)return `unknown:${e.dataset.unknown}`;if(e.dataset.legacyUnknown)return `unknown:${e.dataset.legacyUnknown}`;if(e.name)return `choice:${e.name}:${e.value}`;}return e.id.replace(/_r\d+$/,'');}
- function controls(root){return [...root.querySelectorAll('input,select,textarea')].filter(e=>!e.closest('.af-source')&&!['file','password'].includes(e.type));}
+ function controls(root){return [...root.querySelectorAll('input,select,textarea')].filter(e=>!e.closest('.af-source')&&!['file','password'].includes(e.type)&&!e.hasAttribute('data-real-estate-owner'));}
  function capture(){
   const root=$('questionnaireStep'),answer=e=>({key:controlKey(e),value:e.value,checked:Boolean(e.checked),...(e.dataset.sourceReplaced?{sourceReplaced:true}:{})});
   const values=controls(root).filter(e=>!e.closest('.repeat-item')).map(answer).filter(a=>a.key);
@@ -102,7 +102,7 @@ window.ServerDrafts=(()=>{
   const failed=[];for(const doc of p.documents){if(!doc.originalName)failed.push(doc.documentId);selectedFiles.push({id:++fileSequence,file:{name:doc.originalName||'Сохранённый документ — '+doc.type,size:0,type:'application/pdf'},type:doc.type,person:doc.person||'',storedDocumentId:doc.documentId});}
   if(typeof afMergeDuplicateSelections==='function')mergedDocumentCount=afMergeDuplicateSelections().size;
   for(const item of selectedFiles)if(!item.person)item.person='Клиент';
-  revision=draft.revision;request=null;baselineLoaded=true;$('loadDraft').classList.add('hidden');renderDocuments();afRenderResults();afRenderConflicts();afClientChoices();children();spouse();kaspi();visibilityRules();afRefresh();document.dispatchEvent(new Event('assessment-draft-restored'));
+  revision=draft.revision;request=null;baselineLoaded=true;$('loadDraft').classList.add('hidden');renderDocuments();afRenderResults();afRenderConflicts();afClientChoices();children();spouse();kaspi();for(const owner of ['client','partner'])refreshRealEstate(owner);visibilityRules();afRefresh();document.dispatchEvent(new Event('assessment-draft-restored'));
   const restoredSnapshot=capture();if(mergedDocumentCount){const savedDocuments=p.documents.map(doc=>({documentId:doc.documentId,type:doc.type,person:doc.person||'Клиент'}));baselineSnapshot=JSON.stringify({...restoredSnapshot,documents:savedDocuments});}else baselineSnapshot=JSON.stringify(restoredSnapshot);
   if(recovered&&HostedAssessment.getContext().client.iin)$('iin').value=HostedAssessment.getContext().client.iin;
   loadStatus('documents');
@@ -115,7 +115,7 @@ window.ServerDrafts=(()=>{
   $('saveDraft').onclick=()=>save();$('loadDraft').onclick=()=>restore();$('saveDraft').disabled=false;
   document.addEventListener('assessment-case-opened',inspect);
   for(const event of ['input','change'])document.addEventListener(event,e=>{if(e.target.closest?.('#questionnaireStep,#documentStep')&&!af.applying)queueMicrotask(changed);});
-  document.addEventListener('click',e=>{if(e.target.closest?.('.add-row,.remove-row'))queueMicrotask(changed);});
+  document.addEventListener('click',e=>{if(e.target.closest?.('.add-row,.remove-row,[data-add-real-estate]'))queueMicrotask(changed);});
   document.addEventListener('assessment-analysis-complete',changed);
   const previousRender=renderDocuments;renderDocuments=function(){previousRender();queueMicrotask(changed);};
   window.addEventListener('beforeunload',event=>{if(isDirty()||hasTransientFiles()||af.busy){event.preventDefault();event.returnValue='';}});
