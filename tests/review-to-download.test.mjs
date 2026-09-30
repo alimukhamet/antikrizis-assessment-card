@@ -10,7 +10,7 @@ function load(file,imports={}){
 }
 const policy=load('lib/documents/policy.ts'),repo=load('lib/documents/repository.ts');
 const reviews=load('lib/documents/document-review.ts',{'./repository':repo,'./analysis-version':{analysisVersion:'test'},'./policy':policy});
-const packages=load('lib/documents/package-check.ts',{'./analysis-service':{analysisVersion:'test'},'./document-review':reviews,'./policy':policy,'./loan-identity':load('lib/documents/loan-identity.ts')});
+const packages=load('lib/documents/package-check.ts',{'./analysis-service':{analysisVersion:'test',documentReviewContext:load('lib/documents/analysis-service.ts',{'./policy':policy,'./extract-native':load('lib/documents/extract-native.ts')}).documentReviewContext},'./document-review':reviews,'./policy':policy,'./loan-identity':load('lib/documents/loan-identity.ts')});
 
 test('three unrecognized document details can be reviewed explicitly, then uploaded and downloaded through the real browser flows',async t=>{
  const dom=new JSDOM('<section id="documentStep"></section><div id="questionnaireStep"><button id="checkQuestions">Check</button><p id="checkStatus"></p></div>',{url:'https://synthetic.invalid',runScripts:'outside-only'}),w=dom.window,d=w.document;t.after(()=>w.close());

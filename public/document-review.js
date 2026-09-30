@@ -43,10 +43,13 @@ window.DocumentReview={render(container,result,dealId,selection,onSaved){
  }
  const supported=['Удостоверение личности','Ф6 об отсутствии имущества','Сведения об обременениях','Справка ЕНПФ','Справка по выплатам пенсии и пособий','Выписка зарплатного банка','Выписка Kaspi Gold','Доверенность'];
  const files=typeof selectedFiles==='undefined'?[]:selectedFiles,results=typeof af==='undefined'?new Map():af.results;
- for(const item of files){const source=results.get(item.id);if(!source?.server)continue;source.documentReview=result.documents?.manuallyReviewed?.find(review=>review.documentId===source.server.documentId&&review.type===item.type)||null;}
+ const inspections=result.documents?.inspections;
+ const inspectionFor=(documentId,type)=>inspections?.find(item=>item.documentId===documentId&&item.type===type);
+ const reviewFor=(documentId,type)=>Array.isArray(inspections)?inspectionFor(documentId,type)?.review:result.documents?.manuallyReviewed?.find(review=>review.documentId===documentId&&review.type===type);
+ for(const item of files){const source=results.get(item.id);if(!source?.server)continue;source.documentReview=reviewFor(source.server.documentId,item.type)||null;const inspection=inspectionFor(source.server.documentId,item.type);if(inspection)source.reviewContext=inspection.context;}
  if(typeof afRenderResults==='function')afRenderResults();if(typeof refreshRequiredDocuments==='function')refreshRequiredDocuments();window.AssessmentWorkflow?.refresh();
  for(const selected of selection.filter(s=>s.person==='Клиент'&&supported.includes(s.type))){
-  const approved=result.documents.manuallyReviewed?.find(r=>r.documentId===selected.documentId&&r.type===selected.type);
+  const approved=reviewFor(selected.documentId,selected.type);
   if(result.documents.structurallyChecked?.includes(selected.type)&&!result.documents.issues?.some(i=>i.documentId===selected.documentId)&&!approved)continue;
   const section=document.createElement('details');section.dataset.documentReview='';section.dataset.reviewDocumentId=selected.documentId;
   const title=document.createElement('summary');title.textContent=selected.type+' — '+(approved?'проверено сотрудником':'сверить');section.append(title);
@@ -54,7 +57,8 @@ window.DocumentReview={render(container,result,dealId,selection,onSaved){
   if(!approved&&issues.length){const note=document.createElement('p');note.textContent=[...new Set(issues.map(issue=>issue.message))].join(' ');section.append(note);}
   const link=document.createElement('a');link.textContent='Открыть документ';link.href=`/document-viewer.html?dealId=${encodeURIComponent(dealId)}&documentId=${encodeURIComponent(selected.documentId)}`;link.target='_blank';link.rel='noopener';section.append(link);container.append(section);
   const status=document.createElement('p');status.setAttribute('role','status');
-  const item=files.find(item=>(results.get(item.id)?.server?.documentId||item.storedDocumentId)===selected.documentId),source=item?results.get(item.id):null,known=source?.reviewContext||{};
+  const item=files.find(item=>(results.get(item.id)?.server?.documentId||item.storedDocumentId)===selected.documentId),source=item?results.get(item.id):null;
+  const known=(Array.isArray(inspections)?inspectionFor(selected.documentId,selected.type)?.context:source?.reviewContext)||{};
   if(approved){
    const note=document.createElement('p');note.textContent='Проверка сохранена · '+new Date(approved.reviewedAt).toLocaleDateString('ru-RU');section.append(note);
    for(const [key,label]of [['issuedAt','Дата выдачи'],['expiresAt','Действует до']])if(known[key]){const date=document.createElement('p');date.textContent=label+': '+known[key].split('-').reverse().join('.');section.append(date);}
@@ -73,7 +77,8 @@ window.DocumentReview={render(container,result,dealId,selection,onSaved){
   const draft=window.ServerDrafts?.getDocumentReviewDraft?.(selected.documentId,selected.type)||{};
   const input=(key,label,type='text',value='')=>{const wrapper=document.createElement('label');wrapper.textContent=label;const field=document.createElement('input');field.type=type;field.value=type==='checkbox'?value:(draft[key]??value);field.dataset.reviewField=key;wrapper.append(field);form.append(wrapper);fields[key]=field;return field;};
   input('iin','ИИН в документе','text',known.iin||window.HostedAssessment?.getContext()?.client.iin||'');
-  const pages=Number(known.pages||source?.pages||0);const pageNote=document.createElement('p');pageNote.className='hint';pageNote.textContent=pages+' стр. · Сверьте данные с открытым документом.';form.prepend(pageNote);
+  const pages=Number(known.pages??(Array.isArray(inspections)?0:source?.pages)),contextReady=Number.isInteger(pages)&&pages>0;
+  const pageNote=document.createElement('p');pageNote.className='hint';pageNote.textContent=contextReady?pages+' стр. · Сверьте данные с открытым документом.':'Данные страниц не загружены. Обновите проверку; если файл ещё не обработан, запустите его обработку в списке документов. Введённые данные останутся в черновике.';form.prepend(pageNote);
   const periodType=['Выписка зарплатного банка','Выписка Kaspi Gold','Справка ЕНПФ'].includes(selected.type);
   if(['Удостоверение личности','Доверенность','Справка ЕНПФ'].includes(selected.type))input('issuedAt','Дата выдачи','date',known.issuedAt||'');
   if(['Удостоверение личности','Доверенность'].includes(selected.type))input('expiresAt','Действует до','date',known.expiresAt||'');
@@ -83,6 +88,7 @@ window.DocumentReview={render(container,result,dealId,selection,onSaved){
   if(selected.type==='Доверенность'){
    const label=document.createElement('label');label.textContent='Поверенный';const kind=document.createElement('select');for(const [value,text]of[['person','Физическое лицо'],['organization','Организация']]){const option=document.createElement('option');option.value=value;option.textContent=text;kind.append(option);}kind.value=draft.kind??known.representative?.kind??'person';label.append(kind);form.append(label);fields.kind=kind;
    input('legalName','Имя / наименование поверенного','text',known.representative?.legalName||'');input('identifier','ИИН / БИН поверенного','text',known.representative?.identifier||'');
+   if(known.representative?.legalName&&known.representative?.identifier){const useSource=document.createElement('button');useSource.type='button';useSource.className='btn btn-ghost';useSource.textContent='Взять реквизиты поверенного из документа';useSource.onclick=()=>{fields.kind.value=known.representative.kind;fields.legalName.value=known.representative.legalName;fields.identifier.value=known.representative.identifier;fields.legalName.dispatchEvent(new Event('input',{bubbles:true}));};form.append(useSource);}
   }
   input('confirmed',selected.type==='Доверенность'?'Я просмотрел все страницы и проверил владельца, срок и полномочия поверенного.':'Я просмотрел все страницы и проверил владельца, содержание и срок документа.','checkbox');
   const extra=document.createElement('details'),extraTitle=document.createElement('summary');extraTitle.textContent='Добавить примечание';extra.append(extraTitle);form.append(extra);const reason=input('reason','Примечание');extra.append(reason.parentElement);
@@ -94,8 +100,10 @@ window.DocumentReview={render(container,result,dealId,selection,onSaved){
    if(retained===false)draftNote.textContent='Даты пока не сохранены. Дождитесь загрузки черновика и повторите ввод.';
    else if(retained)draftNote.textContent='Сохраняем введённые данные…';
   });
-  const save=document.createElement('button');save.type='button';save.className='btn btn-main';save.textContent='Документ проверен';section.append(save,status);let attempt=null;
+  const save=document.createElement('button');save.type='button';save.className='btn btn-main';save.textContent='Документ проверен';save.disabled=!contextReady;section.append(save,status);let attempt=null;
+  if(!contextReady){const retry=document.createElement('button');retry.type='button';retry.className='btn btn-ghost';retry.textContent='Обновить данные документа';retry.onclick=async()=>{retry.disabled=true;try{await onSaved();}catch(error){status.textContent=error.message;}finally{retry.disabled=false;}};section.append(retry);}
   save.onclick=async()=>{
+   if(!contextReady){status.textContent='Сначала загрузите данные страниц документа.';return;}
    if(!fields.confirmed.checked){status.textContent='Подтвердите, что сверили документ.';fields.confirmed.focus();return;}
    const value=key=>fields[key]?.value.trim()||'';
    const review={type:selected.type,iin:value('iin'),pages,issuedAt:fields.issuedAt?value('issuedAt'):known.issuedAt||'',expiresAt:value('expiresAt'),from:allHistory?'':value('from'),to:allHistory?known.to||known.issuedAt||'':value('to'),complete:true,contentMatches:true,periodChecked:true,reason:value('reason')||'Сотрудник просмотрел все страницы и подтвердил владельца, содержание и сроки документа.',authorityChecked:selected.type==='Доверенность',representative:fields.kind?{kind:value('kind'),legalName:value('legalName'),identifier:value('identifier')}:null};

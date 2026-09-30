@@ -36,8 +36,8 @@ test('analysis response and package check agree on accepted cached template whil
  const record={id:'case',client_iin:'000000000001',identity_revision:1},result=analysis(),stored={document:{id:'doc'},extraction:{id:'extraction'},result};
  const repository={currentReviews:async()=>[],document:async()=>({id:'doc',original_sha256:'sha'}),cached:async()=>stored,credentialStatus:async()=>({verified:true})};
  const imports={'./policy':policy,'./power-validation':validation,'./analysis-version':{analysisVersion:'test'},'./request-context':{operatingDay:()=> '2026-09-15'},'./document-review':{MANUAL_DOCUMENT_TYPES:{},DOCUMENT_REVIEW_KEY:'document'}};
- const {analysisResponse}=load('lib/documents/analysis-service.ts',imports);
- const {checkDocumentPackage}=load('lib/documents/package-check.ts',{...imports,'./analysis-service':{analysisVersion:'test'}});
+ const {analysisResponse,documentReviewContext}=load('lib/documents/analysis-service.ts',imports);
+ const {checkDocumentPackage}=load('lib/documents/package-check.ts',{...imports,'./analysis-service':{analysisVersion:'test',documentReviewContext}});
  const payload={answers:[],groups:[],documents:[{documentId:'doc',type:'Доверенность',person:'Клиент'}],pendingFiles:[],docContext:{social:'0',salary:'none'}};
  const response=await analysisResponse({iin:record.client_iin},record,repository,stored,true),pack=await checkDocumentPackage(repository,record,payload,'2026-09-15','handoff');
  assert.equal(response.eligibleForAutofill,true);assert.equal(response.powerValidation.accepted,true);assert.equal(response.findings.includes('POWER_AUTHORITY_REVIEW_REQUIRED'),false);assert.equal(response.reviewContext.expiresAt,'2029-09-15');assert.ok(pack.structurallyChecked.includes('Доверенность'));assert.equal(pack.issues.some(issue=>issue.documentId==='doc'),false);assert.equal(pack.authenticity,'not_verified');

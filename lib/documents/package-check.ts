@@ -1,5 +1,5 @@
 import type {EvidenceRepository,CaseRow} from './repository';
-import {analysisVersion,type Analysis} from './analysis-service';
+import {analysisVersion,documentReviewContext,type Analysis} from './analysis-service';
 import {gkbFreshness,requiresDocumentValidation,statementPeriod,salaryStatementPeriod,enpfPeriod} from './policy';
 import type {DraftPayload} from '../questionnaire/draft';
 import {currentDocumentReview,MANUAL_DOCUMENT_TYPES} from './document-review';
@@ -30,15 +30,23 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
  const seen=new Set<string>(),available=new Set<string>();
  const credits=new Map<string,Array<{documentId:string;creditor:string;issuedAt:string|null;values:Record<string,string>;pages:Record<string,number>}>>();
  const selectedDocuments=payload.documents.filter(document=>scope==='handoff'?document.type==='Доверенность':!['Доверенность','Подписанный договор'].includes(document.type));
+ // Inspection is also offered for selected handoff files in the profile. Read
+ // their current context without adding them to contract readiness/evidence.
+ const inspectable=(scope==='handoff'?selectedDocuments:payload.documents).filter(d=>d.person==='Клиент'&&MANUAL_DOCUMENT_TYPES[d.type]);
  // Bounded parallel reads of immutable saved results; no cross-request identity cache.
  const loaded=new Map<string,{document:Awaited<ReturnType<EvidenceRepository['document']>>;cached:Awaited<ReturnType<EvidenceRepository['cached']>>;review:Awaited<ReturnType<typeof currentDocumentReview>>}>();
- const ids=[...new Set(selectedDocuments.map(d=>d.documentId))];let nextDocument=0;
+ const ids=[...new Set([...selectedDocuments,...inspectable].map(d=>d.documentId))];let nextDocument=0;
  await Promise.all(Array.from({length:Math.min(4,ids.length)},async()=>{while(nextDocument<ids.length){
-  const id=ids[nextDocument++],types=selectedDocuments.filter(d=>d.documentId===id&&d.person==='Клиент'&&MANUAL_DOCUMENT_TYPES[d.type]).map(d=>d.type),document=await repository.document(record.id,id);
+  const id=ids[nextDocument++],types=inspectable.filter(d=>d.documentId===id).map(d=>d.type),document=await repository.document(record.id,id);
   const cached=document?await repository.cached(record.id,document.original_sha256,analysisVersion):null;
   const review=cached&&types.length?await currentDocumentReview(repository,record,id,cached.extraction.id,cached.result as Analysis,types,day):null;
   loaded.set(id,{document,cached,review});
  }}));
+ const inspections=inspectable.map(selected=>{
+  const {cached,review}=loaded.get(selected.documentId)!;
+  const approved=review?.value.type===selected.type?review:null;
+  return {documentId:selected.documentId,type:selected.type,context:cached?documentReviewContext(cached.result as Analysis,record.client_iin||'',day,approved?.value):null,review:approved?{documentId:selected.documentId,reviewId:approved.id,type:selected.type,actorId:approved.actorId,reviewedAt:approved.reviewedAt}:null};
+ });
  for(const selected of selectedDocuments){
   const issue=(code:string,message:string)=>issues.push({code,message,documentId:selected.documentId,type:selected.type});
   const {document,cached,review}=loaded.get(selected.documentId)!;
@@ -158,5 +166,5 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
  // Credentials remain in the existing separate upload flow, never in extraction/drafts.
  const credentials=await repository.credentialStatus?.(record);
  // The handoff service separately verifies the saved key and signed contract.
- return {required,missing,matchedShortReports,gkbReconciliations,gkbEvidence,loanCoverage,manuallyReviewed,credentials:credentials??null,structurallyChecked:[...available],issues,conflicts,packageReady:issues.length===0,authenticity:'not_verified'};
+ return {required,missing,matchedShortReports,gkbReconciliations,gkbEvidence,loanCoverage,manuallyReviewed,inspections,credentials:credentials??null,structurallyChecked:[...available],issues,conflicts,packageReady:issues.length===0,authenticity:'not_verified'};
 }

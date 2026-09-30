@@ -2,17 +2,17 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {JSDOM} from 'jsdom';
-function setup(t,approved=false){
+function setup(t,approved=false,type='Удостоверение личности'){
  const dom=new JSDOM('<main id="review"></main>',{runScripts:'outside-only',url:'https://test.example/'}),w=dom.window,d=w.document;t.after(()=>w.close());
  w.HTMLElement.prototype.scrollIntoView=function(){};
- const type='Удостоверение личности',source={server:{documentId:'pdf'},pages:2,reviewContext:{iin:'test-client',pages:2,issuedAt:'2020-01-01'}};
+ const source={server:{documentId:'pdf'},pages:2,reviewContext:{iin:'test-client',pages:2,issuedAt:'2020-01-01'}};
  w.selectedFiles=[{id:1,type,person:'Клиент',storedDocumentId:'pdf'}];w.af={results:new Map([[1,source]])};w.afRenderResults=()=>{};w.refreshRequiredDocuments=()=>{};w.HostedAssessment={getContext:()=>({client:{iin:'test-client'}})};
  const posts=[];w.fetch=async(url,options)=>{posts.push({url,body:JSON.parse(options.body)});return {ok:true,json:async()=>({ok:true})};};
  const drafts=new Map();w.ServerDrafts={getDocumentReviewDraft:(id,type)=>drafts.get(JSON.stringify([id,type]))||{},setDocumentReviewDraft:(id,type,values)=>{drafts.set(JSON.stringify([id,type]),values);return true;}};
  w.eval(fs.readFileSync('public/document-review.js','utf8'));
  const result={identityRevision:2,documents:{manuallyReviewed:approved?[{reviewId:'approved',documentId:'pdf',type,reviewedAt:'2026-09-10T10:00:00Z'}]:[],issues:[{documentId:'pdf'}]}};let saved=0;
  const render=()=>{d.getElementById('review').replaceChildren();w.DocumentReview.render(d.getElementById('review'),result,'test-deal',[{documentId:'pdf',type,person:'Клиент'}],async()=>{saved++;});};render();
- return {w,d,posts,source,render,drafts,saved:()=>saved};
+ return {w,d,posts,source,result,render,drafts,saved:()=>saved};
 }
 test('ID dates remain after checking documents again; typed dates never confirm inspection',async t=>{
  const s=setup(t),issued=s.d.querySelector('[data-review-field=issuedAt]'),expiry=s.d.querySelector('[data-review-field=expiresAt]');
@@ -38,4 +38,37 @@ test('an approved document reopens as approved and withdrawal remains explicit',
  const s=setup(t,true);assert.equal(s.source.documentReview.reviewId,'approved');assert.match(s.d.querySelector('summary').textContent,/проверено сотрудником/);assert.equal(s.d.querySelectorAll('.document-review-fields').length,0);
  const button=s.d.querySelector('button');await button.onclick();assert.equal(s.posts.length,0);
  s.d.querySelector('input').value='SYNTHETIC: selected the wrong document';await button.onclick();assert.equal(s.posts[0].body.action,'withdraw');assert.equal(s.posts[0].body.reviewId,'approved');assert.equal(s.saved(),1);
+});
+test('saved inspection context supplies real pages with an empty browser analysis cache and retains typed power details',async t=>{
+ const s=setup(t,false,'Доверенность');
+ for(const [key,value]of Object.entries({issuedAt:'2026-09-30',expiresAt:'2027-09-29',legalName:'SYNTHETIC REPRESENTATIVE',identifier:'000000000002'})){
+  const field=s.d.querySelector('[data-review-field='+key+']');field.value=value;field.dispatchEvent(new s.w.Event('input',{bubbles:true}));
+ }
+ s.w.af.results.clear();
+ s.result.documents.inspections=[{documentId:'pdf',type:'Доверенность',context:{iin:'test-client',pages:3,issuedAt:'2026-09-30',expiresAt:'2029-09-30'},review:null}];
+ s.render();assert.match(s.d.body.textContent,/3 стр\./);assert.doesNotMatch(s.d.body.textContent,/0 стр\./);
+ assert.equal(s.d.querySelector('[data-review-field=expiresAt]').value,'2027-09-29');assert.equal(s.d.querySelector('[data-review-field=legalName]').value,'SYNTHETIC REPRESENTATIVE');
+ assert.equal(s.d.querySelector('[type=checkbox]').checked,false);s.d.querySelector('[type=checkbox]').checked=true;
+ await [...s.d.querySelectorAll('button')].find(b=>b.textContent==='Документ проверен').onclick();
+ assert.equal(s.posts.length,1);assert.equal(s.posts[0].body.review.pages,3);assert.equal(s.posts[0].body.review.expiresAt,'2027-09-29');assert.equal(s.posts[0].body.review.representative.identifier,'000000000002');
+});
+test('missing current metadata blocks approval even if an old browser analysis has pages',async t=>{
+ const s=setup(t);s.result.documents.inspections=[{documentId:'pdf',type:'Удостоверение личности',context:null,review:null}];s.render();
+ const button=[...s.d.querySelectorAll('button')].find(b=>b.textContent==='Документ проверен');assert.equal(button.disabled,true);assert.doesNotMatch(s.d.body.textContent,/0 стр\./);
+ s.d.querySelector('[type=checkbox]').checked=true;await button.onclick();assert.equal(s.posts.length,0);
+ await [...s.d.querySelectorAll('button')].find(b=>b.textContent==='Обновить данные документа').onclick();assert.equal(s.saved(),1);
+});
+test('power review stays approved independently of the contract package and clears after withdrawal',t=>{
+ const s=setup(t,false,'Доверенность'),review={documentId:'pdf',type:'Доверенность',reviewId:'power-review',reviewedAt:'2026-09-30'};
+ s.result.documents.inspections=[{documentId:'pdf',type:'Доверенность',context:{pages:3,issuedAt:'2026-09-30',expiresAt:'2029-09-30'},review}];
+ s.render();assert.equal(s.result.documents.manuallyReviewed.length,0);assert.equal(s.source.documentReview.reviewId,'power-review');assert.match(s.d.querySelector('summary').textContent,/проверено сотрудником/);assert.equal(s.d.querySelectorAll('.document-review-fields').length,0);
+ s.result.documents.inspections[0].review=null;s.render();assert.equal(s.source.documentReview,null);assert.match(s.d.querySelector('summary').textContent,/сверить/);
+});
+test('copying the source representative is explicit, saves the draft and does not confirm inspection',async t=>{
+ const s=setup(t,false,'Доверенность');s.drafts.set(JSON.stringify(['pdf','Доверенность']),{legalName:'Typed short name',identifier:'typed'});
+ s.result.documents.inspections=[{documentId:'pdf',type:'Доверенность',context:{pages:3,representative:{kind:'person',legalName:'SYNTHETIC FULL REPRESENTATIVE NAME',identifier:'000000000002'}},review:null}];s.render();
+ assert.equal(s.d.querySelector('[data-review-field=legalName]').value,'Typed short name');
+ await [...s.d.querySelectorAll('button')].find(b=>b.textContent==='Взять реквизиты поверенного из документа').onclick();
+ assert.equal(s.d.querySelector('[data-review-field=legalName]').value,'SYNTHETIC FULL REPRESENTATIVE NAME');assert.equal(s.d.querySelector('[data-review-field=identifier]').value,'000000000002');assert.equal(s.d.querySelector('[type=checkbox]').checked,false);assert.equal(s.posts.length,0);
+ assert.equal(s.drafts.values().next().value.legalName,'SYNTHETIC FULL REPRESENTATIVE NAME');
 });

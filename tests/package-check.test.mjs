@@ -1,12 +1,12 @@
 import{test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import vm from'node:vm';import ts from'typescript';
 function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>imports[n],Date,Map,Set});return exports;}
-const policy=load('lib/documents/policy.ts'),{checkDocumentPackage,REQUIRED_DOCUMENTS}=load('lib/documents/package-check.ts',{'./loan-identity':load('lib/documents/loan-identity.ts'),'./analysis-service':{analysisVersion:'current'},'./policy':policy,'./credit-report-match':load('lib/documents/credit-report-match.ts',{'./policy':policy,'./loan-identity':load('lib/documents/loan-identity.ts')}),'./document-review':{MANUAL_DOCUMENT_TYPES:{'Удостоверение личности':'identity','Сведения об обременениях':'encumbrance'},currentDocumentReview:async(repository,...args)=>repository.review?.(...args)||null}});
+const policy=load('lib/documents/policy.ts'),{checkDocumentPackage,REQUIRED_DOCUMENTS}=load('lib/documents/package-check.ts',{'./loan-identity':load('lib/documents/loan-identity.ts'),'./analysis-service':{analysisVersion:'current',documentReviewContext:load('lib/documents/analysis-service.ts',{'./policy':policy,'./extract-native':load('lib/documents/extract-native.ts')}).documentReviewContext},'./policy':policy,'./credit-report-match':load('lib/documents/credit-report-match.ts',{'./policy':policy,'./loan-identity':load('lib/documents/loan-identity.ts')}),'./document-review':{MANUAL_DOCUMENT_TYPES:{'Удостоверение личности':'identity','Сведения об обременениях':'encumbrance','Доверенность':'power_of_attorney'},currentDocumentReview:async(repository,...args)=>repository.review?.(...args)||null}});
 function fixture(){
  const sources=new Map();let reads=0;
  const payload={documents:[],pendingFiles:[],docContext:{social:'0',salary:'0'}};
  function add(id,type,kind,amount='10.00',issuedAt='2026-09-10'){
   payload.documents.push({documentId:id,type,person:'Клиент'});
-  sources.set(id,{read:{pages:[{needsOcr:false}]},extraction:{identity:{iin:'test-client'},kind,issuedAt,findings:[],credits:[{contractNumber:'CONTRACT1',facts:[{key:'creditor',value:'TEST BANK'},{key:'monthlyPayment',value:amount}]}]}});
+  sources.set(id,{read:{totalPages:1,pages:[{text:'SYNTHETIC',needsOcr:false}]},extraction:{identity:{iin:'test-client'},kind,issuedAt,findings:[],credits:[{contractNumber:'CONTRACT1',facts:[{key:'creditor',value:'TEST BANK'},{key:'monthlyPayment',value:amount}]}]}});
  }
  const repository={document:async(caseId,id)=>sources.has(id)?{id,original_sha256:id}:null,cached:async(caseId,hash,version)=>{reads++;assert.equal(version,'current');return sources.get(hash)?{result:sources.get(hash),extraction:{id:hash}}:null;}};
  return{payload,add,sources,repository,reads:()=>reads,run:()=>checkDocumentPackage(repository,{id:'case',client_iin:'test-client'},payload,'2026-09-10')};
@@ -26,7 +26,7 @@ test('saved document reads run in bounded parallel groups and keep deterministic
  const payload={documents:Array.from({length:8},(_,i)=>({documentId:String(i),type:'ГКБ — полный отчёт',person:'Клиент'})),pendingFiles:[],docContext:{social:'0',salary:'0'}};
  const repository={document:async(c,id)=>({id,original_sha256:id}),cached:async()=>{
   reads++;active++;peak=Math.max(peak,active);await new Promise(r=>setTimeout(r,5));active--;
-  return {extraction:{id:'parsed'},result:{read:{pages:[{needsOcr:false}]},extraction:{identity:{iin:'wrong-person'},kind:'gkb_full',findings:[]}}};
+  return {extraction:{id:'parsed'},result:{read:{totalPages:1,pages:[{text:'SYNTHETIC',needsOcr:false}]},extraction:{identity:{iin:'wrong-person'},kind:'gkb_full',findings:[]}}};
  }};
  const result=await checkDocumentPackage(repository,{id:'case',client_iin:'client'},payload,'2026-09-16');
  assert.equal(reads,8);assert.equal(peak,4);
@@ -122,4 +122,12 @@ test('a duplicate with the wrong type cannot hide the saved ID inspection or app
   assert.equal(result.manuallyReviewed.length,1);assert.equal(result.manuallyReviewed[0].type,'Удостоверение личности');
   assert.equal(result.manuallyReviewed[0].reviewId,'saved-id-review');
  }
+});
+test('profile inspection includes saved power pages and current review without making it contract evidence',async()=>{
+ const s=fixture();s.add('power','Доверенность','unknown');s.sources.get('power').read.totalPages=3;
+ let r=await s.run();assert.equal(s.reads(),1);assert.equal(r.inspections[0].context.pages,3);assert.equal(r.inspections[0].review,null);assert.equal(r.required.includes('Доверенность'),false);assert.equal(r.issues.some(i=>i.documentId==='power'),false);
+ s.repository.review=async()=>({id:'power-review',actorId:'worker:test',reviewedAt:'2026-09-10',value:{type:'Доверенность',issuedAt:'2026-09-10',expiresAt:'2027-09-09',from:'',to:'',representative:{kind:'person',legalName:'SYNTHETIC',identifier:'000000000002'}}});
+ r=await s.run();assert.equal(r.inspections[0].review.reviewId,'power-review');assert.equal(r.inspections[0].context.expiresAt,'2027-09-09');assert.equal(r.inspections[0].context.representative.legalName,'SYNTHETIC');assert.equal(r.manuallyReviewed.length,0);assert.equal(r.structurallyChecked.includes('Доверенность'),false);
+ s.repository.review=async()=>null;r=await s.run();assert.equal(r.inspections[0].review,null);
+ s.repository.cached=async()=>null;r=await s.run();assert.equal(r.inspections[0].context,null);assert.equal(r.inspections[0].review,null);
 });
