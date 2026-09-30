@@ -8,6 +8,14 @@ export {analysisVersion};
 export function analysisVersionForFormat(format?:string){return format?.startsWith('image/')?IMAGE_READER_VERSION+analysisVersion.slice(PDF_READER_VERSION.length):analysisVersion;}
 export function analysisVersionForDocument(document:Pick<DocumentRow,'original_key'>){return analysisVersionForFormat(originalDocumentFormat(document));}
 export type Analysis={read:DocumentRead;extraction:ReturnType<typeof extractNative>};
+/** Saved-original inspection defaults, shared by analysis and package checking. */
+export function documentReviewContext(analysis:Analysis,iin:string,today:string,reviewed?:{issuedAt:string;expiresAt:string;from:string;to:string;representative?:unknown}|null){
+ const {read,extraction}=analysis;
+ const power=extraction.kind==='power_of_attorney'?checkPowerTemplate(analysis,today):null;
+ const identity=extraction.kind==='identity'?identityCardDates(read.pages):null;
+ const allHistory=extraction.kind==='enpf'&&!extraction.coverage?.from&&!extraction.coverage?.to&&enpfAllHistory(read.pages?.[0]?.text||'');
+ return {iin:extraction.identity.iin||iin||'',pages:read.totalPages,issuedAt:reviewed?.issuedAt??power?.issuedAt??identity?.issuedAt??extraction.issuedAt??'',expiresAt:reviewed?.expiresAt??power?.expiresAt??identity?.expiresAt??extraction.expiresAt??'',from:reviewed?.from??extraction.coverage?.from??extraction.bankStatement?.from??'',to:reviewed?.to??extraction.coverage?.to??extraction.bankStatement?.to??(allHistory?extraction.issuedAt:'')??'',allHistory,representative:reviewed?.representative??extraction.power?.representative??null};
+}
 export async function analysisResponse(client:ClientContext,record:CaseRow,repository:EvidenceRepository,stored:{document:DocumentRow;extraction:ExtractionRow;result:unknown},cacheHit:boolean){
  const{read,extraction}=stored.result as Analysis,today=operatingDay(),findings=[...extraction.findings];
  const powerValidation=extraction.kind==='power_of_attorney'?checkPowerTemplate(stored.result as Analysis,today):null;
@@ -16,7 +24,6 @@ export async function analysisResponse(client:ClientContext,record:CaseRow,repos
  if(extraction.kind.startsWith('gkb_'))findings.push(...gkbFreshness(extraction.issuedAt||'',today).map(f=>f.code));
  if(extraction.kind==='kaspi')findings.push(...statementPeriod(extraction.bankStatement?.from||null,extraction.bankStatement?.to||null,today).map(f=>f.code));
  if(extraction.kind==='salary')findings.push(...salaryStatementPeriod(extraction.coverage?.from||null,extraction.coverage?.to||null,today).map(f=>f.code));
- const allHistory=extraction.kind==='enpf'&&!extraction.coverage?.from&&!extraction.coverage?.to&&enpfAllHistory(read.pages?.[0]?.text||'');
  if(extraction.kind==='enpf')findings.push(...enpfPeriod(extraction.coverage?.from||null,extraction.coverage?.to||null,extraction.issuedAt,today,read.pages?.[0]?.text||'').map(f=>f.code));
  const blockers=['DEAL_IDENTITY_UNVERIFIED','DOCUMENT_IDENTITY_UNVERIFIED','WRONG_CLIENT','GKB_TOO_OLD','FUTURE_DOCUMENT_DATE','DATE_UNVERIFIED','PAGE_COMPLETENESS_UNVERIFIED'];
  const eligible=(!powerValidation||powerValidation.accepted)&&!requiresDocumentValidation(findings)&&!findings.some(f=>blockers.includes(f)||f.startsWith('STATEMENT_PERIOD_'));
@@ -30,8 +37,7 @@ export async function analysisResponse(client:ClientContext,record:CaseRow,repos
   const saved=current.find(review=>review.fact_key===DOCUMENT_REVIEW_KEY);
   if(saved)try{const value=validateDocumentReview(JSON.parse(saved.value_json),stored.result as Analysis,record,today);documentReview={reviewId:saved.id,type:value.type,actorId:saved.actor_id,reviewedAt:saved.created_at};reviewedDates={issuedAt:value.issuedAt,expiresAt:value.expiresAt,from:value.from,to:value.to};}catch(error){if(!(error instanceof RepositoryError||error instanceof SyntaxError))throw error;}
  }
- const identityDates=extraction.kind==='identity'?identityCardDates(read.pages):null;
- const reviewContext={iin:extraction.identity.iin||client.iin||'',pages:read.totalPages,issuedAt:powerValidation?.issuedAt||identityDates?.issuedAt||extraction.issuedAt||'',expiresAt:powerValidation?.expiresAt||identityDates?.expiresAt||extraction.expiresAt||'',from:extraction.coverage?.from||extraction.bankStatement?.from||'',to:extraction.coverage?.to||extraction.bankStatement?.to||(allHistory?extraction.issuedAt:'')||'',allHistory,representative:extraction.power?.representative||null,...reviewedDates};
+ const reviewContext=documentReviewContext(stored.result as Analysis,client.iin||'',today,reviewedDates);
  return{reviews,documentReview,reviewContext,client,document:{...read,extraction},powerValidation,assessmentDay:today,findings:[...new Set(findings)],eligibleForAutofill:eligible,eligibleForDraftAutofill:draftEligible,reviewRequired:true,authenticity:'not_verified',persisted:true,caseId:record.id,identityRevision:record.identity_revision,documentId:stored.document.id,extractionId:stored.extraction.id,cacheHit};
 }
 export async function storedAnalysis(client:ClientContext,record:CaseRow,repository:EvidenceRepository,document:DocumentRow,actor:Actor,cacheOnly=false){

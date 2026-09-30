@@ -120,6 +120,17 @@ try{
        if(!item.draftUnchanged)throw Error('Draft changed during analysis refresh; investigate concurrent changes.');
       }
       const check=await request(root+'/check',{payload:p,bindings:[]});
+      if(id===diagnosticId){
+       if(!Array.isArray(check.documents?.inspections))throw Error('Inspection context missing from document check');
+       item.inspectionContexts=check.documents.inspections.map(inspection=>{
+        const source=item.documentDiagnostics.find(d=>d.documentId===inspection.documentId);
+        const pagesMatch=inspection.context?.pages===source?.pages,reviewMatches=(inspection.review?.reviewId||null)===(source?.documentReview?.reviewId||null);
+        if(source&&!source.error&&(!pagesMatch||!reviewMatches))throw Error('Saved inspection context differs from original analysis');
+        return {documentId:inspection.documentId,type:inspection.type,pages:inspection.context?.pages??null,pagesMatch,reviewMatches};
+       });
+       const afterCheck=(await request(root+'/draft')).draft;
+       if(createHash('sha256').update(JSON.stringify(d)).digest('hex')!==createHash('sha256').update(JSON.stringify(afterCheck)).digest('hex'))throw Error('Draft changed during inspection check; investigate concurrent changes');
+      }
       item.loanCoverage=check.documents?.loanCoverage?{expected:check.documents.loanCoverage.expected,present:check.documents.loanCoverage.present,missing:check.documents.loanCoverage.missing,duplicates:check.documents.loanCoverage.duplicates,complete:check.documents.loanCoverage.complete}:null;
       item.check={readyToSubmit:check.readyToSubmit,answersComplete:check.answersComplete,remainingGates:check.remainingGates,missing:check.missing,issues:check.issues,documentIssues:check.documents?.issues?.map(v=>({code:v.code,message:v.message})),evidenceIssues:check.evidence?.issues};
      }
