@@ -1,4 +1,4 @@
-name: Saved GKB cache audit
+name: Guarded repair of old profile draft contract numbers
 on:
   workflow_dispatch:
     inputs:
@@ -21,6 +21,14 @@ on:
         description: 'Optional: verify bytes and timing of up to two existing Bitrix files in one case, without saving answers'
         default: ''
         type: string
+      apply_draft_repair:
+        description: 'Apply only exact previewed empty-contract-ID repairs; no profile completion or CRM writes'
+        default: false
+        type: boolean
+      plan_pins:
+        description: 'JSON object of exact preview plan hashes and single-use request UUIDs'
+        default: '{}'
+        type: string
 permissions:
   contents: read
 jobs:
@@ -33,17 +41,21 @@ jobs:
         with:
           node-version: '22'
           package-manager-cache: false
-      - name: Verify saved reports and repeat reads
+      - run: npm ci --no-audit --no-fund
+      - name: Verify guarded maintenance logic and actual draft schema
+        run: |
+          node --test tests/old-profile-contract-repair.test.mjs
+          npx --no-install esbuild scripts/old-profile-validation-entry.mjs --bundle --platform=node --format=esm --external:cloudflare:workers --outfile=.old-profile-validation.mjs
+      - name: Preview or apply exact draft repairs
         env:
           ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
-          ASSESSMENT_AUDIT_DEAL_IDS: ${{ inputs.deal_ids }}
-          ASSESSMENT_VERIFY_DOWNLOAD_FILES: ${{ inputs.verify_download_file_ids }}
-          ASSESSMENT_REFRESH_GKB: ${{ inputs.refresh_analysis }}
-          ASSESSMENT_DOCUMENT_SCOPE: ${{ inputs.document_scope }}
-        run: node scripts/audit-gkb-cache.mjs
+          REPAIR_DEAL_IDS: ${{ inputs.deal_ids }}
+          APPLY_DRAFT_REPAIR: ${{ inputs.apply_draft_repair }}
+          REPAIR_PLAN_PINS: ${{ inputs.plan_pins }}
+        run: node scripts/repair-old-profile-drafts.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: gkb-cache-audit
-          path: gkb-cache-audit.json
+          name: old-profile-repair
+          path: old-profile-repair.json
           retention-days: 3
