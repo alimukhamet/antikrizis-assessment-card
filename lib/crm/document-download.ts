@@ -3,7 +3,7 @@ import {bitrixHeaders} from './http-headers';
 const MAX_BYTES=35*1024*1024;
 const RANGE_BYTES=8192;
 /** Refresh signed links from the selected CRM item; never accept a caller-supplied link. */
-export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin:string,send:typeof fetch=fetch,options:{pdfOnly?:boolean;credentialsOnly?:boolean;onFilename?:(name:string)=>void;onProgress?:(event:Record<string,number|string>)=>void}={}){
+export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin:string,send:typeof fetch=fetch,options:{pdfOnly?:boolean;documentsOnly?:boolean;credentialsOnly?:boolean;onFilename?:(name:string)=>void;onProgress?:(event:Record<string,number|string>)=>void}={}){
  let portal:URL;try{portal=new URL(webhook);}catch{throw new DocumentUploadError('INVALID_DOWNLOAD_CONFIGURATION');}
  if(portal.protocol!=='https:'||portal.username||portal.password||! /^[1-9]\d*$/.test(dealId)||! /^\d{12}$/.test(expectedIin))throw new DocumentUploadError('INVALID_DOWNLOAD_CONFIGURATION');
  async function bytes(response:Response){
@@ -12,8 +12,9 @@ export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin
   const encoded=/filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1],plain=/filename="([^"]+)"|filename=([^;]+)/i.exec(disposition);
   let filename=encoded||plain?.[1]||plain?.[2]||'';try{filename=decodeURIComponent(filename);}catch{/* Some legacy names contain a literal percent. */}
   filename=filename.replace(/[\r\n/\\\x00-\x1f]/g,'_').trim().slice(0,240);
-  if(options.pdfOnly&&(/\.(p12|pfx|jks|key)$/i.test(filename)||/эцп|private.?key/i.test(filename))){await response.body.cancel();throw new DocumentUploadError('CREDENTIAL_NOT_ANALYSED');}
+  if((options.pdfOnly||options.documentsOnly)&&(/\.(p12|pfx|jks|key)$/i.test(filename)||/эцп|private.?key/i.test(filename))){await response.body.cancel();throw new DocumentUploadError('CREDENTIAL_NOT_ANALYSED');}
   if(options.pdfOnly&&filename&&!/\.pdf$/i.test(filename)){await response.body.cancel();throw new DocumentUploadError('NOT_A_SUPPORTED_PDF');}
+  if(options.documentsOnly&&filename&&!/\.(pdf|png|jpe?g)$/i.test(filename)){await response.body.cancel();throw new DocumentUploadError('NOT_A_SUPPORTED_DOCUMENT');}
   if(options.credentialsOnly&&!/\.(p12|pfx|key|jks)$/i.test(filename)){await response.body.cancel();throw new DocumentUploadError('INVALID_CREDENTIAL_FILE');}
   if(filename)options.onFilename?.(filename);
   const limit=options.credentialsOnly?2*1024*1024:MAX_BYTES;
@@ -82,7 +83,7 @@ export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin
     // PDF intake uses six bounded read-only transfers; verification keeps three.
     // The complete assembled bytes
     // still have to pass the upload manifest's length and SHA-256 checks.
-    try{await Promise.all(Array.from({length:Math.min(options.pdfOnly?6:3,Math.ceil((total-cursor)/RANGE_BYTES))},async()=>{while(cursor<total){if(stopped.signal.aborted)throw new DocumentUploadError('CRM_FILE_DOWNLOAD_FAILED');const start=cursor;cursor+=RANGE_BYTES;await part(start);}}));}
+    try{await Promise.all(Array.from({length:Math.min(options.pdfOnly||options.documentsOnly?6:3,Math.ceil((total-cursor)/RANGE_BYTES))},async()=>{while(cursor<total){if(stopped.signal.aborted)throw new DocumentUploadError('CRM_FILE_DOWNLOAD_FAILED');const start=cursor;cursor+=RANGE_BYTES;await part(start);}}));}
     catch(error){stopped.abort();throw error;}
     options.onProgress?.({phase:'file-complete',bytes:total,parts:Math.ceil(total/RANGE_BYTES)});
     return result;

@@ -3,9 +3,11 @@ import {evidenceContext,evidenceError,boundedJson} from '../../../../../lib/docu
 import {dealDocumentReferences} from '../../../../../lib/crm/client-directory';
 import {createCrmDocumentReader} from '../../../../../lib/crm/document-download';
 import {DocumentUploadError} from '../../../../../lib/crm/document-upload';
-import {readPdf,DocumentReadError} from '../../../../../lib/documents/read-pdf';
+import {DocumentReadError} from '../../../../../lib/documents/read-pdf';
+import {readDocument} from '../../../../../lib/documents/read-document';
+import {imageFormat} from '../../../../../lib/documents/read-image';
 import {extractNative} from '../../../../../lib/documents/extract-native';
-import {analysisResponse,analysisVersion,storedAnalysis,type Analysis} from '../../../../../lib/documents/analysis-service';
+import {analysisResponse,analysisVersionForFormat,storedAnalysis,type Analysis} from '../../../../../lib/documents/analysis-service';
 import {sha256,RepositoryError} from '../../../../../lib/documents/repository';
 import {readClientContext} from '../../../../../lib/crm/bitrix';
 const headers={'cache-control':'no-store'};
@@ -59,17 +61,18 @@ export async function POST(request:Request,ctx:{params:Promise<{dealId:string}>}
    return Response.json({...await storedAnalysis(client,record,repository,imported,actor),originalName:imported.original_name,crmFileId:body.fileId},{headers});
   }
   const started=Date.now();let filename='Bitrix-'+body.fileId+'.pdf';
-  const bytes=await createCrmDocumentReader(process.env.BITRIX_WEBHOOK??'',dealId,client.iin,fetch,{pdfOnly:true,onFilename:name=>{filename=name;}})({id:body.fileId});
+  const bytes=await createCrmDocumentReader(process.env.BITRIX_WEBHOOK??'',dealId,client.iin,fetch,{documentsOnly:true,onFilename:name=>{filename=name;}})({id:body.fileId});
   const hash=await sha256(bytes);
   if(body.verifyOriginal===true&&imported&&(hash!==imported.original_sha256||bytes.length!==imported.byte_size))throw new RepositoryError('ORIGINAL_INTEGRITY_FAILED',409);
-  const cached=await repository.cached(record.id,hash,analysisVersion),result=cached?.result as Analysis|undefined;
-  const read=result?.read??await readPdf(bytes),extraction=result?.extraction??extractNative(read.pages);
+  const version=analysisVersionForFormat(imageFormat(bytes)??undefined);
+  const cached=await repository.cached(record.id,hash,version),result=cached?.result as Analysis|undefined;
+  const read=result?.read??await readDocument(bytes),extraction=result?.extraction??extractNative(read.pages);
   const fresh=await readClientContext(dealId,process.env.BITRIX_WEBHOOK??'');
   if(fresh.iin!==client.iin)throw new RepositoryError('CASE_IDENTITY_CHANGED');
   const current=await repository.syncCase(fresh);
   if(current.identity_revision!==record.identity_revision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
   if(body.verifyOriginal===true&&imported)return Response.json({...await storedAnalysis(fresh,current,repository,imported,actor),originalName:imported.original_name,crmFileId:body.fileId,downloadVerification:{verified:true,byteSize:bytes.length,elapsedMs:Date.now()-started}},{headers});
-  const stored=cached??await repository.store(record.id,bytes,filename,actor,analysisVersion,{read,extraction});
+  const stored=cached??await repository.store(record.id,bytes,filename,actor,version,{read,extraction});
   // Record an inbound origin receipt in the existing immutable evidence history.
   // Final saving can reuse this exact CRM file after membership and byte-hash readback.
   await repository.appendReview({caseId:record.id,documentId:stored.document.id,extractionId:stored.extraction.id,identityRevision:record.identity_revision,requestId:crypto.randomUUID(),factKey:'document.origin.bitrix.v1',value:{system:'bitrix',fileId:body.fileId,sha256:stored.document.original_sha256,byteSize:stored.document.byte_size},disposition:'confirmed',reason:'Источник: файл прочитан из текущей сделки Bitrix.'},actor);

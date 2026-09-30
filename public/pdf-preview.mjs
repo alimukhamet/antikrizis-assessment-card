@@ -1,14 +1,20 @@
-/* Render private PDFs locally in the browser; no document is sent to a viewer service. */
+/* Render private PDFs and photos locally in the browser; no document is sent to a viewer service. */
 import {getDocument,GlobalWorkerOptions} from '/pdf-assets/pdf.mjs';
 GlobalWorkerOptions.workerSrc='/pdf-assets/pdf.worker.mjs';
 export async function mount(container,{url,page=1,onPage=()=>{}}){
  const source=new URL(url,location.origin);
  if(source.origin!==location.origin||!/^\/api\/assessment\/[1-9]\d*\/documents\/[a-f0-9-]+\?view=pdf$/i.test(source.pathname+source.search))throw Error('Недоступный источник документа.');
- let destroyed=false,pdf=null,rendering=null,loading=null,sequence=0,current=Math.max(1,Number(page)||1),zoom=1;
+ let destroyed=false,pdf=null,photo=null,rendering=null,loading=null,sequence=0,current=Math.max(1,Number(page)||1),zoom=1;
  container.innerHTML='<div class="pdf-tools"><button type="button" aria-label="Предыдущая страница">←</button><label>Страница <input aria-label="Номер страницы PDF" type="number" min="1" value="1" data-optional></label><span class="pdf-total"></span><button type="button" aria-label="Следующая страница">→</button><button type="button" aria-label="Уменьшить PDF">−</button><button type="button" aria-label="Увеличить PDF">+</button><a download>Скачать PDF</a></div><p class="pdf-status" role="status">Открываем PDF…</p><div class="pdf-sheet"><canvas role="img" aria-label="Страница документа"></canvas></div>';
  const status=container.querySelector('.pdf-status'),canvas=container.querySelector('canvas'),sheet=container.querySelector('.pdf-sheet'),input=container.querySelector('input'),buttons=container.querySelectorAll('button');
  container.querySelector('a').href=source.href;
  async function render(){
+  if(photo&&!destroyed){
+   const width=Math.max(260,sheet.clientWidth-24)*zoom,ratio=Math.min(window.devicePixelRatio||1,2),height=width*photo.height/photo.width;
+   canvas.width=Math.floor(width*ratio);canvas.height=Math.floor(height*ratio);canvas.style.width=Math.floor(width)+'px';canvas.style.height=Math.floor(height)+'px';
+   const ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(photo,0,0,canvas.width,canvas.height);
+   input.value=1;input.disabled=buttons[0].disabled=buttons[1].disabled=true;canvas.setAttribute('aria-label','Фотография документа');container.dataset.renderedPage='1';status.textContent='Фотография документа';onPage(1);return;
+  }
   if(!pdf||destroyed)return;const token=++sequence;
   if(rendering){rendering.cancel();try{await rendering.promise;}catch{/* Page navigation cancels an earlier render. */}}
   if(token!==sequence||destroyed)return;
@@ -23,7 +29,7 @@ export async function mount(container,{url,page=1,onPage=()=>{}}){
  }
  buttons[0].onclick=()=>{current--;render();};buttons[1].onclick=()=>{current++;render();};buttons[2].onclick=()=>{zoom=Math.max(.5,zoom-.25);render();};buttons[3].onclick=()=>{zoom=Math.min(3,zoom+.25);render();};input.onchange=()=>{current=Number(input.value)||1;render();};
  const controller=new AbortController();
- const dispose=()=>{destroyed=true;sequence++;controller.abort();rendering?.cancel();loading?.destroy();};container.pdfDispose=dispose;
+ const dispose=()=>{destroyed=true;sequence++;controller.abort();photo?.close();photo=null;rendering?.cancel();loading?.destroy();};container.pdfDispose=dispose;
  try{const response=await fetch(source.href,{credentials:'same-origin',cache:'no-store',signal:controller.signal});
   if(response.status===401){
    status.textContent='Сессия завершилась. Войдите в новой вкладке и повторите. Ответы останутся здесь.';
@@ -33,10 +39,15 @@ export async function mount(container,{url,page=1,onPage=()=>{}}){
    retry.onclick=()=>{dispose();mount(container,{url,page:current,onPage});};
    const actions=document.createElement('div');actions.className='pdf-tools';actions.append(login,retry);status.after(actions);sheet.hidden=true;return dispose;
   }
-  if(!response.ok)throw Error('PDF недоступен. Проверьте вход и доступ к клиенту.');
+  if(!response.ok)throw Error('Документ недоступен. Проверьте вход и доступ к клиенту.');
   const bytes=new Uint8Array(await response.arrayBuffer());if(destroyed)return dispose;
+  const type=response.headers.get('content-type')?.split(';')[0];
+  if(['image/jpeg','image/png'].includes(type)){
+   photo=await createImageBitmap(new Blob([bytes],{type}));if(destroyed){photo.close();photo=null;return dispose;}
+   container.querySelector('a').textContent='Скачать оригинал';container.querySelector('.pdf-total').textContent='из 1';await render();return dispose;
+  }
   loading=getDocument({data:bytes,cMapUrl:'/pdf-assets/cmaps/',cMapPacked:true,standardFontDataUrl:'/pdf-assets/standard_fonts/',wasmUrl:'/pdf-assets/wasm/',isEvalSupported:false,useSystemFonts:true});pdf=await loading.promise;if(destroyed)return dispose;
   input.max=pdf.numPages;container.querySelector('.pdf-total').textContent='из '+pdf.numPages;await render();
- }catch(error){if(!destroyed)status.textContent=error.name==='PasswordException'?'PDF защищён паролем. Откройте исходный файл на компьютере.':'Не удалось открыть PDF. Проверьте вход или скачайте файл.';}
+ }catch(error){if(!destroyed)status.textContent=error.name==='PasswordException'?'PDF защищён паролем. Откройте исходный файл на компьютере.':'Не удалось открыть документ. Проверьте вход или скачайте файл.';}
  return dispose;
 }

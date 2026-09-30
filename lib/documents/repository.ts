@@ -5,6 +5,7 @@ import type { ClientContext } from '../crm/bitrix';
 import type { Actor } from '../worker-session';
 import {extractNative,type NativeExtraction} from './extract-native';
 import type {PageText} from './read-pdf';
+import {IMAGE_READER_VERSION,imageFormat,inspectImage} from './read-image';
 export class RepositoryError extends Error {constructor(public code:string, public status=409){super(code);}}
 export type CaseRow={id:string;external_system:string;external_id:string;client_iin:string|null;identity_revision:number;title:string;created_at:string;updated_at:string};
 export type DocumentRow={id:string;case_id:string;original_sha256:string;original_key:string;original_name:string;byte_size:number;uploaded_by:string;created_at:string};
@@ -72,6 +73,9 @@ export class EvidenceRepository {
  }
  async cached(caseId:string,originalHash:string,version:string):Promise<{document:DocumentRow;extraction:ExtractionRow;result:unknown}|null>{
   const document=await this.db.prepare('SELECT * FROM assessment_documents WHERE case_id=? AND original_sha256=?').bind(caseId,originalHash).first<DocumentRow>();if(!document)return null;
+  // Existing review/package callers request the PDF pipeline version. Image
+  // originals have their own reader while sharing the same extraction rules.
+  if(/\.(png|jpg)$/.test(document.original_key)&&/^native-pdf-\d+:/.test(version))version=version.replace(/^native-pdf-\d+:/,IMAGE_READER_VERSION+':');
   let extraction=await this.db.prepare('SELECT * FROM assessment_extractions WHERE document_id=? AND version=?').bind(document.id,version).first<ExtractionRow>();
   if(extraction)return {document,extraction,result:await this.readResult(extraction)};
   // Compare actual facts, not a broad document kind. An unchanged report keeps
@@ -143,10 +147,13 @@ export class EvidenceRepository {
   return JSON.parse(text);
  }
  async store(caseId:string,bytes:Uint8Array,name:string,actor:Actor,version:string,result:unknown){
-  const originalHash=await sha256(bytes),now=new Date().toISOString(),originalKey=`cases/${caseId}/originals/${originalHash}.pdf`;
+  const format=imageFormat(bytes);if(format)inspectImage(bytes);
+  if(format&&/^native-pdf-\d+:/.test(version))version=version.replace(/^native-pdf-\d+:/,IMAGE_READER_VERSION+':');
+  const extension=format==='image/png'?'png':format==='image/jpeg'?'jpg':'pdf';
+  const originalHash=await sha256(bytes),now=new Date().toISOString(),originalKey=`cases/${caseId}/originals/${originalHash}.${extension}`;
   const existing=await this.db.prepare('SELECT * FROM assessment_documents WHERE case_id=? AND original_sha256=?').bind(caseId,originalHash).first<DocumentRow>();
   if(!existing){
-   await this.files.put(originalKey,bytes,{httpMetadata:{contentType:'application/pdf'},customMetadata:{sha256:originalHash}});
+   await this.files.put(originalKey,bytes,{httpMetadata:{contentType:format??'application/pdf'},customMetadata:{sha256:originalHash}});
    await this.db.prepare('INSERT INTO assessment_documents (id,case_id,original_sha256,original_key,original_name,byte_size,uploaded_by,created_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(case_id,original_sha256) DO NOTHING').bind(crypto.randomUUID(),caseId,originalHash,originalKey,name.slice(0,240),bytes.length,actor.id,now).run();
   }
   const document=await this.db.prepare('SELECT * FROM assessment_documents WHERE case_id=? AND original_sha256=?').bind(caseId,originalHash).first<DocumentRow>();if(!document)throw new RepositoryError('DOCUMENT_PERSISTENCE_FAILED',503);

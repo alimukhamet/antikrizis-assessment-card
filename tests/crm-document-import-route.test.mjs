@@ -9,9 +9,9 @@ function setup(options={}){
  '../../../../../lib/crm/client-directory':{dealDocumentReferences:async()=>[{id:'94851'}]},
  '../../../../../lib/crm/document-download':{createCrmDocumentReader:()=>async()=>{stats.downloads++;return new Uint8Array([1,2,3]);}},
  '../../../../../lib/crm/document-upload':{DocumentUploadError:class extends Error{}},
- '../../../../../lib/documents/read-pdf':{DocumentReadError:class extends Error{},readPdf:async()=>{stats.readPdf++;throw Error('Already cached');}},
+ '../../../../../lib/documents/read-pdf':{DocumentReadError:class extends Error{}},'../../../../../lib/documents/read-image':{imageFormat:()=>null},'../../../../../lib/documents/read-document':{readDocument:async()=>{stats.readPdf++;throw Error('Already cached');}},
  '../../../../../lib/documents/extract-native':{extractNative:()=>{throw Error('Already cached');}},
- '../../../../../lib/documents/analysis-service':{analysisVersion:'test',storedAnalysis:async()=>({documentId:'doc',cacheHit:true}),analysisResponse:async()=>({})},
+ '../../../../../lib/documents/analysis-service':{analysisVersionForFormat:()=> 'test',storedAnalysis:async()=>({documentId:'doc',cacheHit:true}),analysisResponse:async()=>({})},
  '../../../../../lib/documents/repository':{RepositoryError,sha256:async()=>options.badHash?'wrong':'hash'},
  '../../../../../lib/crm/bitrix':{readClientContext:async()=>options.wrongClient?{...client,iin:'000000000010'}:client}
  };

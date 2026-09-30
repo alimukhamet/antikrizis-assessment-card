@@ -12,7 +12,7 @@ function setup(){
   '../../../../../lib/documents/request-context':{evidenceContext:async()=>{state.contextReads++;return context;},evidenceError:error=>Response.json({error:error.code},{status:error.status||500})},
   '../../../../../lib/crm/client-directory':{dealDocumentReferences:async()=>state.member?[{id:'123'}]:[]},
   '../../../../../lib/crm/document-download':{createCrmDocumentReader:()=>{throw Error('No CRM download is permitted during recovery');}},
-  '../../../../../lib/crm/document-upload':{DocumentUploadError},'../../../../../lib/documents/read-pdf':{DocumentReadError},
+  '../../../../../lib/crm/document-upload':{DocumentUploadError},'../../../../../lib/documents/read-pdf':{DocumentReadError},'../../../../../lib/documents/read-image':{},'../../../../../lib/documents/read-document':{},
   '../../../../../lib/documents/extract-native':{},'../../../../../lib/documents/repository':{RepositoryError},'../../../../../lib/crm/bitrix':{},
   '../../../../../lib/documents/analysis-service':{storedAnalysis:async(c,r,repo,doc,actor,cacheOnly)=>{state.reads++;assert.equal(c,client);assert.equal(r,record);assert.equal(doc,document);assert.equal(cacheOnly,true);if(state.cacheError)throw new RepositoryError('CACHE_REPROCESS_REQUIRED');return{documentId:doc.id,identityRevision:r.identity_revision};}}
  };
