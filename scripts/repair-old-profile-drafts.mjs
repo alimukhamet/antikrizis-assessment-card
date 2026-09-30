@@ -49,7 +49,7 @@ try {
       }
       const plan = planContractRepair(draft, context, analyses, validateDraft);
       Object.assign(item, {planHash: plan.planHash, beforeHash: plan.beforeHash, afterHash: plan.afterHash,
-        changes: plan.changes.map(({row, documentId, extractionId, factKey}) => ({row, documentId, extractionId, factKey})), skippedRows: plan.skipped});
+        changes: plan.changes.map(({row, documentId, extractionId, factKey}) => ({row, documentId, extractionId, factKey})), migratedUnansweredControls:plan.migratedControls, skippedRows: plan.skipped});
       if (!plan.changes.length) { item.unchanged = true; continue; }
       const latest = (await request(root + '/draft')).draft;
       assert.equal(latest.revision, draft.revision, 'Draft changed while planning');

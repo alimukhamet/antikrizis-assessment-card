@@ -57,6 +57,15 @@ test('an existing duplicate contract prevents a repair',()=>{
 test('any unrelated schema normalization rejects the whole repair',()=>{
  const f=fixture();f.draft.payload.unrelated='keep';assert.throws(()=>plan(f),/DRAFT_SCHEMA_CHANGE_REQUIRED/);
 });
+test('old missing unanswered controls are added without asserting client facts',()=>{
+ const f=fixture();f.draft.payload.answers=f.draft.payload.answers.filter(a=>a.key==='iin');const p=plan(f);
+ assert.equal(p.changes.length,1);assert.deepEqual(p.migratedControls,['holding:client:businessNone','holding:partner:businessNone','enforcementStatus']);
+ assert.ok(p.payload.answers.filter(a=>p.migratedControls.includes(a.key)).every(a=>a.checked===false));
+});
+test('a normalization that checks a new choice stays blocked',()=>{
+ const f=fixture();const migrate=payload=>{const out=validateDraft(payload);out.answers.find(a=>a.key==='holding:client:businessNone').checked=true;return out;};
+ f.draft.payload.answers=f.draft.payload.answers.filter(a=>a.key==='iin');assert.throws(()=>planContractRepair(f.draft,context,f.analyses,migrate),/DRAFT_SCHEMA_CHANGE_REQUIRED/);
+});
 test('plan pin changes if another answer or extraction changes',()=>{
  const f=fixture(),before=plan(f).planHash;f.draft.payload.groups[0].rows[0][2].value='999.99';assert.notEqual(plan(f).planHash,before);
  const next=plan(f).planHash;f.analyses[0].extractionId='new';assert.notEqual(plan(f).planHash,next);

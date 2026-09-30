@@ -18,9 +18,16 @@ export function planContractRepair(draft, context, analyses, validateDraft) {
   requireCondition(/^\d{12}$/.test(context.client.iin || ''), 'CLIENT_IDENTITY_UNVERIFIED');
   requireCondition(draft.identityRevision === context.identityRevision, 'CASE_IDENTITY_CHANGED');
   const before = storedPayload(draft.payload), normalized = validateDraft(before);
-  // Do not use this maintenance operation to migrate or normalize other answers.
-  requireCondition(isDeepStrictEqual(normalized, before), 'DRAFT_SCHEMA_CHANGE_REQUIRED');
-  const payload = structuredClone(before), group = payload.groups.find(g => g.id === 'creditors');
+  // Old drafts may predate these controls. Only unanswered additions are safe;
+  // checked/nonempty derived answers and any change to an old answer are rejected.
+  const emptyControls = new Map([['holding:client:businessNone','businessNone'],['holding:partner:businessNone','businessNone'],['enforcementStatus','']]);
+  const oldKeys = new Set(before.answers.map(a => a.key));
+  const additions = normalized.answers.filter(a => !oldKeys.has(a.key));
+  requireCondition(additions.every(a => emptyControls.has(a.key) && isDeepStrictEqual(a,{key:a.key,value:emptyControls.get(a.key),checked:false})), 'DRAFT_SCHEMA_CHANGE_REQUIRED');
+  const withoutAdditions = structuredClone(normalized);
+  withoutAdditions.answers = withoutAdditions.answers.filter(a => oldKeys.has(a.key));
+  requireCondition(isDeepStrictEqual(withoutAdditions, before), 'DRAFT_SCHEMA_CHANGE_REQUIRED');
+  const payload = structuredClone(normalized), group = payload.groups.find(g => g.id === 'creditors');
   const selected = new Set(before.documents.filter(d => d.person === 'Клиент').map(d => d.documentId));
   const candidates = [];
   for (const analysis of analyses) {
@@ -68,6 +75,7 @@ export function planContractRepair(draft, context, analyses, validateDraft) {
     changes.push({row: rowIndex, previous: field(before.groups.find(g => g.id === 'creditors').rows[rowIndex], 'loanContractId')?.value, added: !answer, ...chosen});
   }
   const undo = structuredClone(payload);
+  undo.answers = undo.answers.filter(a => oldKeys.has(a.key));
   for (const change of changes) {
     const row = undo.groups.find(g => g.id === 'creditors').rows[change.row];
     if (change.added) row.splice(row.findIndex(answer => answer.key === 'loanContractId'), 1);
@@ -77,5 +85,5 @@ export function planContractRepair(draft, context, analyses, validateDraft) {
   requireCondition(isDeepStrictEqual(validateDraft(payload), payload), 'REPAIR_SCHEMA_CHANGE_REQUIRED');
   const planHash = digest({caseId: context.caseId, identityRevision: context.identityRevision,
     revision: draft.revision, before, payload, changes});
-  return {payload, changes, skipped, planHash, beforeHash: digest(before), afterHash: digest(payload)};
+  return {payload, changes, skipped, migratedControls:additions.map(a=>a.key), planHash, beforeHash: digest(before), afterHash: digest(payload)};
 }
