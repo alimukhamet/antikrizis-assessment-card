@@ -37,12 +37,12 @@ const actor={id:'synthetic-worker',authentication:'test'};
 test('image storage preserves MIME and bytes; global PDF-version callers resolve the same image review',async()=>{
  const {repo,metadata,sqlite}=setup(),record=await repo.syncCase({external:{system:'test',dealId:'1'},iin:'test',title:'SYNTHETIC'});
  for(const [bytes,extension,mime] of [[png(),'png','image/png'],[jpeg,'jpg','image/jpeg']]){
-  const read=await image.readImage(bytes),stored=await repo.store(record.id,bytes,'original.'+extension,actor,'native-pdf-3:rules-native-27',{read,extraction:{kind:'unknown',findings:['OCR_REQUIRED']}});
-  assert.ok(stored.document.original_key.endsWith('.'+extension));assert.equal(metadata.get(stored.document.original_key).httpMetadata.contentType,mime);assert.deepEqual(await repo.original(stored.document),bytes);assert.equal(stored.extraction.version,'native-image-1:rules-native-27');
+  const read=await image.readImage(bytes),stored=await repo.store(record.id,bytes,'original.'+extension,actor,'native-pdf-3:rules-native-28',{read,extraction:{kind:'unknown',findings:['OCR_REQUIRED']}});
+  assert.ok(stored.document.original_key.endsWith('.'+extension));assert.equal(metadata.get(stored.document.original_key).httpMetadata.contentType,mime);assert.deepEqual(await repo.original(stored.document),bytes);assert.equal(stored.extraction.version,'native-image-1:rules-native-28');
   const review=await repo.appendReview({caseId:record.id,documentId:stored.document.id,extractionId:stored.extraction.id,identityRevision:1,requestId:'review-'+extension,factKey:'document.manual-check.v1',value:{test:true},disposition:'confirmed',reason:'synthetic'},actor);
-  for(const version of ['native-pdf-3:rules-native-27','native-image-1:rules-native-27']){const cached=await repo.cached(record.id,stored.document.original_sha256,version);assert.equal(cached.extraction.id,stored.extraction.id);assert.equal((await repo.currentReviews(record.id,stored.document.id,cached.extraction.id,1))[0].id,review.id);}
+  for(const version of ['native-pdf-3:rules-native-28','native-image-1:rules-native-28']){const cached=await repo.cached(record.id,stored.document.original_sha256,version);assert.equal(cached.extraction.id,stored.extraction.id);assert.equal((await repo.currentReviews(record.id,stored.document.id,cached.extraction.id,1))[0].id,review.id);}
  }
- const pdf=await repo.store(record.id,new TextEncoder().encode('%PDF-synthetic'),'original.pdf',actor,'native-pdf-3:rules-native-27',{});assert.ok(pdf.document.original_key.endsWith('.pdf'));assert.equal(pdf.extraction.version,'native-pdf-3:rules-native-27');assert.equal(metadata.get(pdf.document.original_key).httpMetadata.contentType,'application/pdf');
+ const pdf=await repo.store(record.id,new TextEncoder().encode('%PDF-synthetic'),'original.pdf',actor,'native-pdf-3:rules-native-28',{});assert.ok(pdf.document.original_key.endsWith('.pdf'));assert.equal(pdf.extraction.version,'native-pdf-3:rules-native-28');assert.equal(metadata.get(pdf.document.original_key).httpMetadata.contentType,'application/pdf');
  assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_extractions').get().n,3);
 });
 test('original view serves exact image bytes and MIME behind the existing case authorization',async()=>{
@@ -68,8 +68,8 @@ test('format-aware dispatch leaves PDF results untouched and validates images be
 
 test('CRM image intake validates the original, stores image reader version and pins the exact inbound bytes',async()=>{
  const bytes=png(),record={id:'case',identity_revision:1},client={iin:'991231300003',external:{dealId:'8595'}},exports={};let stores=0,receipts=0;
- const repository={importedDocument:async()=>null,cached:async(caseId,hash,version)=>{assert.equal(hash,digest(bytes));assert.equal(version,'native-image-1:rules-native-27');return null;},findCaseByExternal:async()=>record,syncCase:async()=>record,
-  store:async(caseId,source,name,actor,version,result)=>{stores++;assert.deepEqual(source,bytes);assert.equal(result.read.format,'image/png');assert.equal(result.read.pages[0].needsOcr,true);assert.equal(version,'native-image-1:rules-native-27');return{document:{id:'doc',original_sha256:digest(bytes),byte_size:bytes.length,original_name:name},extraction:{id:'extract'},result};},
+ const repository={importedDocument:async()=>null,cached:async(caseId,hash,version)=>{assert.equal(hash,digest(bytes));assert.equal(version,'native-image-1:rules-native-28');return null;},findCaseByExternal:async()=>record,syncCase:async()=>record,
+  store:async(caseId,source,name,actor,version,result)=>{stores++;assert.deepEqual(source,bytes);assert.equal(result.read.format,'image/png');assert.equal(result.read.pages[0].needsOcr,true);assert.equal(version,'native-image-1:rules-native-28');return{document:{id:'doc',original_sha256:digest(bytes),byte_size:bytes.length,original_name:name},extraction:{id:'extract'},result};},
   appendReview:async input=>{receipts++;assert.equal(input.value.sha256,digest(bytes));assert.equal(input.value.byteSize,bytes.length);assert.equal(input.value.fileId,'94851');},
  };
  class Failure extends Error{constructor(code,status=409){super(code);this.code=code;this.status=status;}}
@@ -83,7 +83,7 @@ test('CRM image intake validates the original, stores image reader version and p
  '../../../../../lib/documents/read-document':{readDocument:image.readImage},
  '../../../../../lib/documents/read-image':image,
  '../../../../../lib/documents/extract-native':{extractNative:pages=>({kind:'unknown',findings:pages[0].needsOcr?['OCR_REQUIRED']:[]})},
- '../../../../../lib/documents/analysis-service':{analysisVersionForFormat:format=>format==='image/png'?'native-image-1:rules-native-27':'native-pdf-3:rules-native-27',analysisResponse:async(c,r,repo,stored)=>({documentId:stored.document.id,document:stored.result.read})},
+ '../../../../../lib/documents/analysis-service':{analysisVersionForFormat:format=>format==='image/png'?'native-image-1:rules-native-28':'native-pdf-3:rules-native-28',analysisResponse:async(c,r,repo,stored)=>({documentId:stored.document.id,document:stored.result.read})},
  '../../../../../lib/documents/repository':{RepositoryError:Failure,sha256:async data=>digest(data)},
  '../../../../../lib/crm/bitrix':{readClientContext:async()=>client},
  };
@@ -96,7 +96,7 @@ test('existing manual-review service and upload plan accept photo evidence witho
  const {reviewDocument,currentDocumentReview}=bundle('lib/documents/document-review.ts'),{documentUploadPlan}=bundle('lib/documents/upload-plan.ts');
  const {repo}=setup(),record=await repo.syncCase({external:{system:'test',dealId:'1'},iin:'991231300003',title:'SYNTHETIC'}),bytes=png(),read=await image.readImage(bytes);
  const analysis={read,extraction:{kind:'unknown',identity:{iin:null},findings:['OCR_REQUIRED']}};
- const stored=await repo.store(record.id,bytes,'photo.png',actor,'native-image-1:rules-native-27',analysis);
+ const stored=await repo.store(record.id,bytes,'photo.png',actor,'native-image-1:rules-native-28',analysis);
  const raw={type:'Ф6 об отсутствии имущества',iin:record.client_iin,pages:1,complete:true,contentMatches:true,periodChecked:true,reason:'Synthetic complete visual inspection.',issuedAt:'2026-09-30',expiresAt:'',from:'',to:''};
  const review=await reviewDocument(repo,record,stored.document.id,'synthetic_photo_review_1',1,raw,actor,'2026-09-30');
  assert.equal(review.extraction_id,stored.extraction.id);

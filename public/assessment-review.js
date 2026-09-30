@@ -303,11 +303,12 @@ $af('afApply').onclick=async()=>{
 // Keep employee-facing reasons consistent in the package summary and the original-file row.
 function afDocumentAttention(item){
  const r=af.results.get(item.id);if(!r||afExcluded(item))return null;
- if(r.identity?.iin&&HostedAssessment.getContext()?.client.iin&&r.identity.iin!==HostedAssessment.getContext().client.iin&&item.person==='Клиент')return {kind:'error',message:'Другой владелец'+(r.identity.fio?': '+r.identity.fio:'')+'. Замените файл или укажите, чей он.'};
+ if(r.identity?.iin&&HostedAssessment.getContext()?.client.iin&&r.identity.iin!==HostedAssessment.getContext().client.iin&&item.person==='Клиент')return {kind:'error',message:'ИИН документа отличается от ИИН клиента'+(r.identity.fio?' · '+r.identity.fio:'')+'. Проверьте оригинал; для семейного документа укажите родственника.'};
  if(r.error)return {kind:'error',message:r.error};
  if(r.documentReview?.type===item.type)return null;
  if(!afSelectionTypeIsGeneric(item)&&r.type&&r.kind!=='other'&&r.type!==item.type)return {kind:'manual',message:'Распознан тип «'+r.type+'». Проверьте выбранный тип.'};
  const findings=r.findings||[];
+ if(findings.includes('DOCUMENT_IDENTITY_UNVERIFIED')&&HostedAssessment.getContext()?.client.iin)return {kind:'manual',message:'Не удалось прочитать ИИН владельца. Откройте оригинал и проверьте владельца и тип документа.'};
  if(item.type==='ГКБ — краткий отчёт'&&window.GkbComparison?.resolved?.(item.id))return null;
  const powerReason=['POWER_DATES_UNVERIFIED','POWER_DATE_NOT_ACCEPTABLE','POWER_SCOPE_REVIEW_REQUIRED','REPRESENTATIVE_NOT_APPROVED','REPRESENTATIVE_IDENTITY_UNVERIFIED'].find(code=>findings.includes(code));
  if(powerReason)return {kind:'manual',message:HostedAssessment.error(powerReason)};
@@ -317,6 +318,14 @@ function afDocumentAttention(item){
  if(!HostedAssessment.getContext()?.client.iin)return null; // The missing deal identity is shown once, with its next action.
  if(r.blocked)return {kind:'manual',message:item.type==='Доверенность'?'Сверьте владельца, срок и полномочия по оригиналу.':findings.includes('DOCUMENT_TYPE_UNVERIFIED')?'Не удалось определить тип. Откройте файл и укажите тип документа.':findings.includes('OCR_OR_PAGE_REVIEW_REQUIRED')?'Часть страниц не прочитана. Проверьте их по оригиналу.':'Сверьте владельца и срок по оригиналу.'};
  return null;
+}
+function afGkbReadingSummary(r){
+ if(r.kind!=='gkbShort'||!r.creditEvidence)return '';
+ const credits=r.creditEvidence.credits||[],declared=r.creditEvidence.creditList?.declared;
+ const count='Прочитано обязательств: '+credits.length+(Number.isInteger(declared)?' из '+declared:'')+'.';
+ const labels={startedAtMonth:'дата получения',creditType:'тип кредита',monthlyPayment:'платёж по графику',relatedParties:'сведения о гарантах и других участниках'};
+ const missing=Object.entries(labels).filter(([key])=>credits.some(c=>!c.facts.some(f=>f.key===key))).map(([,label])=>label);
+ return count+(missing.length?' Из этого краткого отчёта не для всех кредитов прочитаны: '+missing.join(', ')+'. Эти сведения нужно взять из полного ГКБ этого клиента; оставшиеся вопросы уточнить у клиента.':'');
 }
 function afAnalysisProgress(done,total){
  af.progress={done,total};$af('afProgress').value=done;$af('afProgress').max=Math.max(1,total);window.AssessmentWorkflow?.refresh();
@@ -391,11 +400,12 @@ function afRenderResults(){
   const displayType=r.kind==='other'&&!r.documentReview?'Тип не определён':item.type&&item.type!=='Другой документ'?shortType[item.type]||item.type:r.type&&r.kind!=='other'?shortType[r.type]||r.type:item.file.name;
   const box=afEl('details',undefined,'af-file'),summary=afEl('summary'),name=afEl('strong',afExcluded(item)?'Ключ ЭЦП':displayType);summary.title=item.file.name;box.dataset.fileId=String(item.id);
   const wrongOwner=Boolean(r.identity?.iin&&HostedAssessment.getContext()?.client.iin&&r.identity.iin!==HostedAssessment.getContext().client.iin&&item.person==='Клиент');
-  const state=r.pending?'Выбран':r.sourceOnly?'Сохранён':r.error?'Не прочитан':wrongOwner?'Другой клиент':r.documentReview?.type===item.type?'Проверено сотрудником':r.draftOnly?'Прочитан · для черновика':item.type==='ГКБ — краткий отчёт'&&window.GkbComparison?.resolved?.(item.id)?'Сверён с полным':r.blocked?'Сверить вручную':r.excluded?'Отдельно':r.duplicate?'Повтор':'Прочитан';
-  const attention=afDocumentAttention(item),shortState=r.pending?'Загружается':r.sourceOnly?'Сохранён':r.error?'Не прочитан':wrongOwner?'Другой клиент':attention?'Нужно проверить':'Нет замечаний';
+  const state=r.pending?'Выбран':r.sourceOnly?'Сохранён':r.error?'Не прочитан':wrongOwner?'ИИН отличается':r.documentReview?.type===item.type?'Проверено сотрудником':r.draftOnly?'Прочитан · для черновика':item.type==='ГКБ — краткий отчёт'&&window.GkbComparison?.resolved?.(item.id)?'Сверён с полным':r.blocked?'Сверить вручную':r.excluded?'Отдельно':r.duplicate?'Повтор':'Прочитан';
+  const attention=afDocumentAttention(item),shortState=r.pending?'Загружается':r.sourceOnly?'Сохранён':r.error?'Не прочитан':wrongOwner?'ИИН отличается':attention?'Нужно проверить':'Нет замечаний';
   summary.append(name,afEl('span',shortState,'af-file-state'+(attention?' needs-review':'')));box.append(summary);box.append(afEl('p',state,'af-read-state hint'));
   box.append(afEl('p',afExcluded(item)?'Ключ ЭЦП':item.file.name,'af-original-name'));box.append(afEl('p',(r.pages||0)+' стр.'+(item.person?' · '+item.person:''),'hint'));
   if(r.kind==='other'&&item.type)box.append(afEl('p','Выбран как: '+item.type+'. Это назначение файла, а не результат распознавания.','hint'));
+  const gkbSummary=afGkbReadingSummary(r);if(gkbSummary)box.append(afEl('p','По содержимому это краткий ГКБ. '+gkbSummary,'af-gkb-reading hint'));
   if(attention)box.append(afEl('p',attention.message,'af-document-attention'+(attention.kind==='error'?' error':'')));
   if(attention?.kind==='credits'){const compare=afEl('button','Сверить кредиты','btn btn-ghost');compare.type='button';compare.onclick=()=>window.GkbComparison?.open?.();box.append(compare);}
   if(r.error&&item.storedDocumentId){const retry=afEl('button','Повторить чтение','btn btn-ghost');retry.type='button';retry.onclick=()=>afAnalyze({onlyPending:true});box.append(retry);}

@@ -54,5 +54,48 @@ for(const mode of ['contract','handoff'])test(mode+' draft restore preserves ans
  assert.equal(w.ServerDrafts.getDocumentReviewDraft('identity',reviewType).expiresAt,'2030-01-02');
  assert.equal('complete'in w.ServerDrafts.getDocumentReviewDraft('identity',reviewType),false);
  assert.equal(w.ServerDrafts.setDocumentReviewDraft('other-client-file',reviewType,{issuedAt:'2020-01-02'}),false);
+
+ // An older land-only draft is shown through the single real-estate choice,
+ // while its explicit flags, reviewed field keys and row identities stay intact.
+ const legacy=JSON.parse(JSON.stringify(w.ServerDrafts.capture()));
+ for(const owner of ['client','partner']){
+  legacy.answers.find(a=>a.key===`holding:${owner}:real`).checked=false;
+  const group=legacy.groups.find(g=>g.id===owner+'real');group.rows=[];group.rowKeys=[];
+  const land=legacy.groups.find(g=>g.id===owner+'land');land.rowKeys=land.rows.map((_,i)=>owner+'land|SYNTHETIC '+i);
+ }
+ const retainedLand=JSON.stringify(legacy.groups.filter(g=>g.id.endsWith('land')));
+ await w.ServerDrafts.restore({automatic:true,draft:{payload:legacy,revision,identityRevision:1}});
+ for(const owner of ['client','partner']){
+  const choice=d.querySelector(`[data-real-estate-owner="${owner}"]`);
+  assert.equal(choice.checked,true);assert.match(choice.parentElement.textContent,/Недвижимость, включая земельные участки/);
+  for(const kind of ['real','land'])assert.equal(d.querySelector(`[data-owner="${owner}"][data-holding="${kind}"]`).parentElement.hidden,true,'old choices are storage controls');
+  assert.equal(d.getElementById(owner+'-real-estate').classList.contains('hidden'),false);
+  assert.equal(d.getElementById(owner+'-asset-real').classList.contains('hidden'),true);
+  assert.equal(d.querySelectorAll('#'+owner+'real .repeat-item').length,0,'land-only draft must not grow a required blank property');
+  assert.equal(w.ServerDrafts.capture().answers.find(a=>a.key===`holding:${owner}:real`).checked,false);
+ }
+ assert.equal(JSON.stringify(w.ServerDrafts.capture().groups.filter(g=>g.id.endsWith('land'))),retainedLand);
+ assert.ok(w.ServerDrafts.capture().answers.every(a=>a.key),'display-only choices never become invented saved answers');
+ for(const owner of ['client','partner']){
+  d.querySelector(`[data-add-real-estate="${owner}"]`).click();
+  const row=d.querySelector('#'+owner+'real .repeat-item');
+  row.querySelector('select').value='Земельный участок';
+  row.querySelector(`[id^=${owner}RealDescription]`).value=owner+' NEW UNIFIED LAND';
+  assert.equal(d.querySelectorAll('#'+owner+'real .repeat-item').length,1);
+  assert.equal(row.querySelector('.item-number').textContent,'1');
+  assert.equal(d.querySelector('#'+owner+'land .item-number').textContent,'2');
+ }
+ const added=w.ServerDrafts.capture();
+ assert.equal(JSON.stringify(added.groups.filter(g=>g.id.endsWith('land'))),retainedLand);
+ assert.equal(added.groups.find(g=>g.id==='clientreal').rows[0].find(a=>a.key==='n8003').value,'Земельный участок');
+ assert.equal(added.groups.find(g=>g.id==='partnerreal').rows[0].find(a=>a.key==='n8018').value,'Земельный участок');
+ // Contradictory explicit old choices must remain contradictory for validation,
+ // rather than restore choosing an answer on behalf of the employee.
+ legacy.answers.find(a=>a.key==='holding:client:none').checked=true;
+ await w.ServerDrafts.restore({automatic:true,draft:{payload:legacy,revision,identityRevision:1}});
+ const contradictory=w.ServerDrafts.capture();
+ assert.equal(contradictory.answers.find(a=>a.key==='holding:client:none').checked,true);
+ assert.equal(contradictory.answers.find(a=>a.key==='holding:client:land').checked,true);
+ assert.equal(JSON.stringify(contradictory.groups.filter(g=>g.id.endsWith('land'))),retainedLand);
  dom.window.close();
 });

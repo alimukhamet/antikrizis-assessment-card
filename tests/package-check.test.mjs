@@ -131,3 +131,13 @@ test('profile inspection includes saved power pages and current review without m
  s.repository.review=async()=>null;r=await s.run();assert.equal(r.inspections[0].review,null);
  s.repository.cached=async()=>null;r=await s.run();assert.equal(r.inspections[0].context,null);assert.equal(r.inspections[0].review,null);
 });
+
+test('unreadable ownership is distinguished from another IIN without accepting either document',async()=>{
+ for(const [iin,code]of [[null,'DOCUMENT_IDENTITY_UNVERIFIED'],['other-client','DOCUMENT_CLIENT_UNVERIFIED'],['test-client',null]]){
+  const s=fixture();s.add('doc','ГКБ — полный отчёт','gkb_full');s.sources.get('doc').extraction.identity.iin=iin;
+  const r=await s.run();assert.equal(r.issues.some(i=>i.code===code),!!code);
+  assert.equal(r.structurallyChecked.includes('ГКБ — полный отчёт'),!code);
+  if(!iin)assert.match(r.issues.find(i=>i.code===code).message,/Не удалось прочитать/);
+ }
+ const s=fixture();s.add('doc','ГКБ — полный отчёт','gkb_full');const r=await checkDocumentPackage(s.repository,{id:'case',client_iin:null},s.payload,'2026-09-10');assert.ok(r.issues.some(i=>i.code==='DEAL_IDENTITY_UNVERIFIED'));
+});

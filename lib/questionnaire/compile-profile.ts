@@ -1,6 +1,6 @@
 import { validateDraft, type DraftPayload } from './draft';
 import { checkAnswers, SALES_ONLY_KEYS, type DisplayAnswer } from './check-answers';
-import { displayAnswer, groupNames } from './compile-assessment';
+import { displayAnswer, groupNames, propertySummaryAnswers } from './compile-assessment';
 import { RepositoryError } from '../documents/repository';
 import type { ProfileValues } from '../crm/profile-fields';
 
@@ -56,7 +56,7 @@ export function compileProfile(raw: DraftPayload, trustedIin: string | null, dea
   ];
   const append = (a: DisplayAnswer) => { if (a.value) lines.push(`• ${clean(a.label)}: ${show(a)}`); };
   lines.push('', 'ОБЩИЕ СВЕДЕНИЯ');
-  answers.filter(a => !a.group).forEach(append);
+  propertySummaryAnswers(answers.filter(a => !a.group)).forEach(append);
   for (const group of payload.groups) {
     for (let row = 0; row < group.rows.length; row++) {
       const rowAnswers = answers.filter(a => a.group === group.id && a.row === row);

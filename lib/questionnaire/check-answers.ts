@@ -48,6 +48,7 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   if(c==='proof-details')return ['Есть на руках','Можно получить'].includes(value('n12009'));
   if(c==='kaspiWhyField'||c==='partnerKaspiWhyField')return highKaspi(c.startsWith('partner'));
   if(c==='panel-c8037')return value('c8037')==='1';
+  const realEstate=/^(client|partner)-real-estate$/.exec(c);if(realEstate)return checked(`holding:${realEstate[1]}:real`)||checked(`holding:${realEstate[1]}:land`);
   const asset=/^(client|partner)-asset-(.+)$/.exec(c);if(asset)return checked(`holding:${asset[1]}:${asset[2]}`);
   if(c==='ownership-share')return ['n8004Kind','n8019Kind','clientLandOwnership','partnerLandOwnership'].some(key=>value(key,row)==='share');
   if(c==='transfer-other')return value('n8033',row)==='Другое';

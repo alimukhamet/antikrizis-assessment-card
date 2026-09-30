@@ -294,3 +294,17 @@ test('reconcile releases a save that never reached Bitrix and confirms one that 
  assert.equal(result.verified,true);assert.equal(result.untouched,false);
  assert.ok(!fake.calls.some(c=>c.method==='crm.deal.update'));
 });
+
+
+test('profile renders one real-estate category but preserves both saved property groups and original JSON choices',()=>{
+ const p=fixture({profile:true});set(p,'holding:client:none','none',false);set(p,'holding:client:real','real',true);set(p,'holding:client:land','land',true);
+ for(const [id,values]of [['clientreal',{clientRealDescription:'SYNTHETIC PROFILE HOUSE',n8003:'Дом',n8004Kind:'joint',n8005:'0',n8006:'Нет'}],['clientland',{clientLandDescription:'SYNTHETIC PROFILE LAND',clientLandOwnership:'sole',clientLandValue:'0',clientLandPledged:'Нет'}]]){
+  const g=p.groups.find(g=>g.id===id);g.rows=[schema.groups.find(g=>g.id===id).fields.map(f=>({key:f.key,value:values[f.key]||'',checked:false}))];g.rowKeys=[id+'|SYNTHETIC'];
+ }
+ const compiled=compileProfile(p,iin,'11665',author);
+ assert.equal(compiled.card.split('Недвижимость, включая земельные участки').length-1,1);
+ for(const value of ['SYNTHETIC PROFILE HOUSE','SYNTHETIC PROFILE LAND'])assert.equal(compiled.card.split(value).length-1,1);
+ for(const key of ['holding:client:real','holding:client:land'])assert.ok(compiled.json.answers.some(a=>a.key===key));
+ for(const group of ['clientreal','clientland'])assert.ok(compiled.json.answers.some(a=>a.group===group));
+ assert.equal(JSON.stringify(validateDraft(p).groups),JSON.stringify(p.groups));
+});

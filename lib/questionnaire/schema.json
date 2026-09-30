@@ -1422,9 +1422,17 @@
     {
       "id": "clientreal",
       "conditions": [
-        "client-asset-real"
+        "client-asset-real",
+        "client-real-estate"
       ],
       "fields": [
+        {
+          "key": "clientRealDescription",
+          "type": "text",
+          "label": "Адрес или описание объекта",
+          "required": false,
+          "conditions": []
+        },
         {
           "key": "n8003",
           "type": "select-one",
@@ -1489,7 +1497,8 @@
     {
       "id": "clientland",
       "conditions": [
-        "client-asset-land"
+        "client-asset-land",
+        "client-real-estate"
       ],
       "fields": [
         {
@@ -1584,9 +1593,17 @@
       "id": "partnerreal",
       "conditions": [
         "partner-asset-real",
+        "partner-real-estate",
         "partnerAssets"
       ],
       "fields": [
+        {
+          "key": "partnerRealDescription",
+          "type": "text",
+          "label": "Адрес или описание объекта",
+          "required": false,
+          "conditions": []
+        },
         {
           "key": "n8018",
           "type": "select-one",
@@ -1652,6 +1669,7 @@
       "id": "partnerland",
       "conditions": [
         "partner-asset-land",
+        "partner-real-estate",
         "partnerAssets"
       ],
       "fields": [

@@ -15,7 +15,9 @@ export function assertReviewAllowed(record:CaseRow,document:DocumentRow,extracti
  if(document.case_id!==record.id||extraction.document_id!==document.id)throw new RepositoryError('DOCUMENT_NOT_IN_CASE');
  if(record.identity_revision!==input.identityRevision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
  const parsed=result.extraction;
- if(!record.client_iin||record.client_iin!==parsed.identity.iin)throw new RepositoryError('CLIENT_IDENTITY_UNVERIFIED');
+ if(!record.client_iin)throw new RepositoryError('DEAL_IDENTITY_UNVERIFIED');
+ if(!parsed.identity.iin)throw new RepositoryError('DOCUMENT_IDENTITY_UNVERIFIED');
+ if(record.client_iin!==parsed.identity.iin)throw new RepositoryError('WRONG_CLIENT');
  if(parsed.kind==='power_of_attorney'){
   if(!checkPowerTemplate(result as Analysis,assessmentDay).accepted)throw new RepositoryError('DOCUMENT_REQUIRES_VALIDATION');
  }else if(requiresDocumentValidation(parsed.findings))throw new RepositoryError('DOCUMENT_REQUIRES_VALIDATION');

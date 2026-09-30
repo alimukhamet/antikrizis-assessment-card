@@ -31,7 +31,7 @@ test('batch preserves exact values, identity, ownership, date and correction gat
   [s=>s.inputs[0].identityRevision=2,'CASE_IDENTITY_CHANGED'],
   [s=>s.inputs[0].documentId='other-client','DOCUMENT_NOT_IN_CASE'],
   [s=>s.inputs[0].extractionId='other-extraction','EXTRACTION_NOT_IN_DOCUMENT'],
-  [s=>s.result.extraction.identity.iin='OTHER','CLIENT_IDENTITY_UNVERIFIED'],
+  [s=>s.result.extraction.identity.iin='OTHER','WRONG_CLIENT'],
   [s=>s.result.extraction.issuedAt='2026-05-20','GKB_DATE_NOT_ACCEPTABLE'],
   [s=>s.result.extraction.findings=['PAGE_COMPLETENESS_UNVERIFIED'],'DOCUMENT_REQUIRES_VALIDATION'],
   [s=>{s.inputs[0].value='changed';s.inputs[0].disposition='corrected';},'CORRECTION_REQUIRES_VALUE_AND_REASON']
@@ -50,5 +50,5 @@ test('compatible saved recognition can be confirmed without reupload, but supers
   if(!r.ok){assert.equal(s.saved.size,0);assert.ok(r.outcomes.every(o=>o.error==='EXTRACTION_VERSION_CHANGED'));}
  }
  const s=setup();s.repository.extraction=async()=>({id:'extraction',document_id:'doc',version:'previous-compatible'});s.repository.cached=async()=>({extraction:{id:'extraction'}});s.result.extraction.identity.iin='OTHER';
- assert.equal((await s.run()).outcomes[0].error,'CLIENT_IDENTITY_UNVERIFIED');assert.equal(s.saved.size,0);
+ assert.equal((await s.run()).outcomes[0].error,'WRONG_CLIENT');assert.equal(s.saved.size,0);
 });
