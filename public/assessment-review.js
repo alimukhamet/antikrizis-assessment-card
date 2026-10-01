@@ -173,9 +173,9 @@ function afLoanParticipantsNotice(row,loan,fileId){
  // Older drafts intentionally keep blank/deleted answers. Put the exact report
  // proposal beside the field so filling it does not require retyping or reimport.
  row.querySelectorAll('.af-profile-proposal').forEach(node=>node.remove());
- for(const key of ['loanParticipants','n8039']){
+ for(const key of ['loanParticipants','n8039','n8038','loanContractId','n8038Start','loanStatus','n8040','n8041','n8042']){
   const value=loan.fields[key];if(!value)continue;
-  const input=[...row.querySelectorAll('textarea,select')].find(e=>e.id.replace(/_r\d+$/,'')===key);
+  const input=[...row.querySelectorAll('input,textarea,select')].find(e=>e.id.replace(/_r\d+$/,'')===key);
   if(!input||input.dataset.sourceReplaced||input.value&&(key!=='n8039'||value!=='Ломбард'||input.value===value))continue;
   const previous=input.value;
   const box=afEl('div',undefined,'af-source af-profile-proposal');box.dataset.for=input.id;

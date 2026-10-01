@@ -1,4 +1,5 @@
-// Read-only production check. Never create fake presence or modify real profiles.
+// Production check: reads and current derived-cache refresh only. Never create
+// fake presence, approve evidence, or modify real profiles.
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
 import {createHash,randomUUID} from 'node:crypto';
@@ -70,6 +71,10 @@ try{
  assert.ok(ocrDocument,'OCR route verification needs an existing saved original');
  const ocrPath=ocrRoot+'/documents/'+encodeURIComponent(ocrDocument.documentId)+'/ocr?suggestions=0';
  assert.equal((await request(ocrPath)).status,401);
+ // A parser release intentionally invalidates old derived analyses. Refresh
+ // this selected immutable original before testing the OCR sidecar route.
+ const analysis=await json(ocrRoot+'/documents/'+encodeURIComponent(ocrDocument.documentId)+'/analyze',{cacheOnly:false});
+ assert.equal(analysis.documentId,ocrDocument.documentId);assert.equal(analysis.identityRevision,ocrContext.identityRevision);
  const ocr=await json(ocrPath);
  assert.equal(ocr.documentId,ocrDocument.documentId);assert.equal(ocr.identityRevision,ocrContext.identityRevision);
  assert.equal(ocr.engineVersion,'paddleocr-js-0.4.2-cyrillic-v1');assert.equal(ocr.reviewNeeded,true);assert.equal(ocr.authenticity,'not_verified');
