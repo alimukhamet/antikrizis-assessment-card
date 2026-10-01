@@ -1,5 +1,15 @@
 import{test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import{JSDOM}from'jsdom';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+test('preflight rejection names the preparation failure without claiming Bitrix received files',async()=>{
+ for(const hosted of [false,true]){
+  const s=setup();
+  if(hosted)s.w.HostedAssessment.requestJson=async(url,options,{message})=>{s.calls.push(JSON.parse(options.body));throw Object.assign(Error(message('INVALID_UPLOAD_SELECTION')),{code:'INVALID_UPLOAD_SELECTION'});};
+  else s.w.fetch=async(url,options)=>{if(!options)return{ok:true,json:async()=>({unsent:null})};s.calls.push(JSON.parse(options.body));return{ok:false,json:async()=>({error:'INVALID_UPLOAD_SELECTION'})};};
+  await assert.rejects(s.flow.submit(),/Отправка не началась/);
+  assert.equal(s.calls.length,1);assert.equal(s.calls[0].action,undefined);
+  assert.doesNotMatch(s.w.document.getElementById('status').textContent,/Bitrix не подтвердил|сохранённые файлы будут проверены/);s.w.close();
+ }
+});
 function setup(lost=false){const dom=new JSDOM('<button id="anchor"></button><p id="status"></p>',{runScripts:'outside-only',url:'https://assessment.example'}),w=dom.window,calls=[];const payload={documents:['synthetic']};w.HostedAssessment={ready:()=>true,getContext:()=>({client:{external:{dealId:'11665'}}})};w.ServerDrafts={capture:()=>payload};w.fetch=async(url,options)=>{if(!options)return{ok:true,json:async()=>({unsent:null})};const body=JSON.parse(options.body);calls.push(body);if(lost&&calls.length===2)throw Error('lost response');return{ok:true,json:async()=>({state:'verified',nextBatch:body.batchIndex+1,documentsUploaded:body.batchIndex===1})};};w.eval(fs.readFileSync(new URL('../public/document-upload.js',import.meta.url),'utf8'));const flow=w.DocumentUpload.mount(w.document.getElementById('anchor'),w.document.getElementById('status'));flow.checked({identityRevision:1,documents:{issues:[{code:'EDS_SEPARATE_UPLOAD_REQUIRED'}]}},{dealId:'11665',payload,signature:JSON.stringify(payload)});return{calls,button:w.document.querySelectorAll('button')[1],flow,w,payload};}
 test('document upload advances through verified batches with one stable request ID',async()=>{const s=setup();await s.button.onclick();assert.deepEqual(s.calls.map(c=>c.batchIndex),[0,1]);assert.equal(s.calls[0].requestId,s.calls[1].requestId);assert.match(s.w.document.getElementById('status').textContent,/Документы сохранены в сделке/);});
 test('uncertain upload automatically checks the same batch once without allowing a new write',async()=>{
