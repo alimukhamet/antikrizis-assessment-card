@@ -170,13 +170,21 @@ async function signedRequest(input: {
   const timeout = setTimeout(() => controller.abort(), input.requestTimeoutMs ?? REQUEST_TIMEOUT_MS);
   const release = () => clearTimeout(timeout);
   try {
-    const response = await input.fetcher(input.url, {
+    // Native Worker fetch rejects an arbitrary object as its `this` receiver.
+    const fetcher = input.fetcher;
+    const response = await fetcher(input.url, {
       method: input.method,
       headers: { ...auth, ...(input.headers ?? {}) },
       body: input.body as BodyInit,
-      redirect: 'error',
+      redirect: 'manual',
       signal: controller.signal,
     });
+    // Worker fetch supports manual redirects. Never forward signed metadata or
+    // original document bytes to a redirect target, including the same origin.
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new AssessmentIntakeSyncError('crm_redirect_forbidden');
+    }
     if (!response.body) {
       release();
       return response;

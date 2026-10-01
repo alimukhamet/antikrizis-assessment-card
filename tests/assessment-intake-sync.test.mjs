@@ -175,13 +175,13 @@ test('pushes one exact original artifact through prepare and finalize without Bi
       if (pathname.includes('/artifacts/')) {
         assert.equal(init.headers['content-type'], 'application/pdf');
         assert.equal(init.headers['x-antikrizis-file-sha256'], documentHash);
-        assert.equal(init.redirect, 'error');
+        assert.equal(init.redirect, 'manual');
         const transferred = new Uint8Array(await new Response(init.body).arrayBuffer());
         assert.deepEqual(transferred, bytes);
         return jsonResponse({ artifact: { duplicate: false } }, 201);
       }
       assert.equal(pathname, '/api/crm/handovers/assessment-intake');
-      assert.equal(init.redirect, 'error');
+      assert.equal(init.redirect, 'manual');
       const final = JSON.parse(init.body);
       assert.equal(final.sourcePayloadHash, row.payload_hash);
       return jsonResponse({ assessmentIntake: { duplicate: false } }, 201);
