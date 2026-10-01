@@ -335,3 +335,25 @@ test('profile renders one real-estate category but preserves both saved property
  for(const group of ['clientreal','clientland'])assert.ok(compiled.json.answers.some(a=>a.group===group));
  assert.equal(JSON.stringify(validateDraft(p).groups),JSON.stringify(p.groups));
 });
+
+test('support-only court answers never block contract/profile completion and remain in saved profile feeds',()=>{
+ const keys=['filingDestination','recommendedDistrict','recommendedCourt','clientRequestedDistrict','clientRequestedCourt','registrationChangePosition'];
+ for(const profile of [false,true])for(const historical of [false,true]){
+  const p=fixture({profile});
+  for(const key of keys){set(p,key,historical?'Не знаю':'');if(historical)p.answers.find(a=>a.key===key).sourceReplaced=true;}
+  const original=structuredClone(p.answers.filter(a=>keys.includes(a.key)));
+  const validated=validateDraft(p);
+  assert.deepEqual(JSON.parse(JSON.stringify(validated.answers.filter(a=>keys.includes(a.key)))),original,'storage validation preserves original court values/provenance');
+  const checked=checkAnswers(validated,iin,'2026-09-25',{profile});
+  assert.equal(checked.answersComplete,true,JSON.stringify(checked.issues));
+  assert.ok(!checked.issues.some(a=>keys.includes(a.key)));
+  assert.ok(!checked.unresolved.some(a=>keys.includes(a.key)),'support questions are not assessment follow-ups');
+  if(profile){
+   const compiled=compileProfile(p,iin,'11665',author,'2026-09-25');
+   if(historical)for(const key of keys){assert.ok(compiled.json.answers.some(a=>a.key===key&&a.value==='Не знаю'),key);}
+  }else{
+   const compiled=compileAssessment(p,iin,[],'2026-09-25');
+   assert.ok(compiled.schedule,'contract generation retains its payment schedule');
+  }
+ }
+});
