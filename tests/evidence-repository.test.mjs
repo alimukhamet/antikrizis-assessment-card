@@ -23,6 +23,19 @@ function setup(){
  return{repo:new EvidenceRepository(db,files),sqlite,objects,db,files};
 }
 const client=(id='11665',iin='test-identity-one')=>({external:{system:'bitrix',dealId:id},iin,title:'SYNTHETIC ONLY'});
+test('reader v4 retains unaffected evidence and reviews but rereads low-text GKB originals',async()=>{
+ const {repo,sqlite}=setup(),c=await repo.syncCase(client());
+ for(const [index,kind,needsOcr,compatible] of [[101,'gkb_full',false,true],[102,'gkb_full',true,false],[103,'gkb_short',true,false],[104,'identity',true,true],[105,'kaspi',false,true]]){
+  const old=await repo.store(c.id,new Uint8Array([index]),'synthetic.pdf',actor,'native-pdf-3:rules-native-30',{read:{pages:[{text:'synthetic native text',needsOcr}]},extraction:{kind}});
+  const review=await repo.appendReview({caseId:c.id,documentId:old.document.id,extractionId:old.extraction.id,identityRevision:1,requestId:'reader4-'+index,factKey:'synthetic',value:'saved fact',disposition:'confirmed',reason:''},actor);
+  const cached=await repo.cached(c.id,old.document.original_sha256,'native-pdf-4:rules-native-30');assert.equal(Boolean(cached),compatible);
+  if(compatible){assert.equal(cached.extraction.id,old.extraction.id);assert.equal((await repo.currentReviews(c.id,old.document.id,cached.extraction.id,1))[0].id,review.id);}
+  assert.ok(await repo.extraction(c.id,old.document.id,old.extraction.id));
+  assert.equal(await repo.cached(c.id,old.document.original_sha256,'native-pdf-5:rules-native-30'),null);
+ }
+ assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_reviews').get().n,5);
+ assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_extractions').get().n,5);
+});
 test('v23 refreshes newly supported native layouts but preserves unrelated evidence and approvals',async()=>{
  const {repo,sqlite}=setup(),c=await repo.syncCase(client());
  const pension='Сведения об остатках и о движении денег на счете\nУсловный пенсионный счет\nВыписка с индивидуального пенсионного счета';
