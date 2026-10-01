@@ -7,7 +7,7 @@ import {validIin} from '../documents/extract-native';
 import {createPaymentSchedule} from '../../public/payment-schedule.mjs';
 export type AnswerIssue={key:string;group?:string;row?:number;code:string;label:string};
 export type DisplayAnswer={key:string;group?:string;row?:number;label:string;value:string};
-type Definition={key:string;type:string;label:string;required?:boolean;legacy?:boolean;conditions?:string[];min?:string;max?:string;compactCount?:boolean};
+type Definition={key:string;type:string;label:string;required?:boolean;legacy?:boolean;supportOnly?:boolean;conditions?:string[];min?:string;max?:string;compactCount?:boolean};
 /** Answer completeness only. Document eligibility and fact review are separate gates. */
 /** Contract/payment answers belong to sales. The profile backfill never asks for or writes them. */
 export const SALES_ONLY_KEYS=new Set(['dognum','summa','contractDate','months','payDay','grafType']);
@@ -63,7 +63,9 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   const explanation=profile&&!group?PROFILE_EXPLANATIONS[f.key as keyof typeof PROFILE_EXPLANATIONS]:undefined;
   if(explanation)f={...f,label:explanation.label};
   const required=f.required||(!profile&&f.key==='partnerSocialOther');
-  const retired=profile&&(group==='profilefamily'||RETIRED_PROFILE_KEYS.has(f.key)||f.key.startsWith('choice:partnerSocialStatus:'));
+  // Support owns these historical court answers. Keep the display/profile feed,
+  // but never ask assessment workers to resolve or validate them.
+  const retired=f.supportOnly===true||profile&&(group==='profilefamily'||RETIRED_PROFILE_KEYS.has(f.key)||f.key.startsWith('choice:partnerSocialStatus:'));
   if(!retired&&(row?.get(f.key)||all.get(f.key))?.sourceReplaced)issue(f.key,'ANSWER_SOURCE_REPLACED','Источник заменён: '+f.label,group,index);
   if(f.type==='checkbox'){
    if(group==='creditors'&&f.key==='loanClaimIncluded'){

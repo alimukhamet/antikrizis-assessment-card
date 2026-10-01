@@ -308,6 +308,7 @@
     {
       "key": "recommendedDistrict",
       "type": "text",
+      "supportOnly": true,
       "label": "Рекомендованный район / территория суда",
       "required": false,
       "conditions": []
@@ -315,6 +316,7 @@
     {
       "key": "recommendedCourt",
       "type": "text",
+      "supportOnly": true,
       "label": "Рекомендованный суд",
       "required": false,
       "conditions": []
@@ -322,6 +324,7 @@
     {
       "key": "clientRequestedDistrict",
       "type": "text",
+      "supportOnly": true,
       "label": "Пожелание клиента: район / территория суда",
       "required": false,
       "conditions": []
@@ -329,6 +332,7 @@
     {
       "key": "clientRequestedCourt",
       "type": "text",
+      "supportOnly": true,
       "label": "Пожелание клиента: суд",
       "required": false,
       "conditions": []
@@ -336,6 +340,7 @@
     {
       "key": "registrationChangePosition",
       "type": "select-one",
+      "supportOnly": true,
       "label": "Позиция клиента по смене регистрации",
       "options": [
         "",
@@ -384,6 +389,7 @@
     {
       "key": "filingDestination",
       "type": "text",
+      "supportOnly": true,
       "label": "Куда направляем иск: суд и адрес",
       "required": false,
       "conditions": [

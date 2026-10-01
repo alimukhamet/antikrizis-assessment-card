@@ -7,7 +7,7 @@ import {JSDOM} from 'jsdom';
 const html=fs.readFileSync('public/questionnaire.html','utf8');
 const tick=()=>new Promise(r=>setTimeout(r,20));
 
-async function setup(t,{mode='profile',draftSaveFails=false,check={ready:false,issues:[{key:'regAddress',code:'ANSWER_REQUIRED',label:'Адрес прописки*'}],unresolved:[]}}={}){
+async function setup(t,{mode='profile',draftSaveFails=false,savedDraft=null,check={ready:false,issues:[{key:'regAddress',code:'ANSWER_REQUIRED',label:'Адрес прописки*'}],unresolved:[]}}={}){
  const dom=new JSDOM(html,{url:'https://synthetic.invalid/questionnaire.html'+(mode?'?mode='+mode:''),runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window,d=w.document,run=code=>vm.runInContext(code,dom.getInternalVMContext()),calls=[],errors=[];
  w.HTMLElement.prototype.scrollIntoView=function(){};
  w.HTMLElement.prototype.getClientRects=function(){return this.isConnected&&!this.closest('.hidden,[hidden]')?[{}]:[];};
@@ -20,7 +20,7 @@ async function setup(t,{mode='profile',draftSaveFails=false,check={ready:false,i
   if(draftSaveFails&&path.endsWith('/draft')&&options.method==='POST')return{ok:false,status:409,json:async()=>({error:'DRAFT_CHANGED'})};
   if(path==='/api/assessment/900001')result=context;
   else if(path==='/api/assessment/clients')result={drafts:[],recent:[]};
-  else if(path.endsWith('/draft')){result=options.method==='POST'?{revision:2,latestRevision:2}:{draft:null};}
+  else if(path.endsWith('/draft')){result=options.method==='POST'?{revision:2,latestRevision:2}:{draft:savedDraft};}
   else if(path.endsWith('/submission'))result={submission:null};
   else if(path.endsWith('/uploads'))result={unsent:null};
   else if(path.endsWith('/credentials'))result={credentials:{verified:false},identityRevision:1};
@@ -100,23 +100,26 @@ test('«Не знаю» fills an open answer and the check lists missing answers
  assert.equal(panel.querySelectorAll('.pb-issues li').length,1);
 });
 
-test('profile reuses the contract form with phone and three addresses, without family or extra contact questions',async t=>{
+test('profile reuses the contract form with phone and residence facts, retaining hidden court answers',async t=>{
  const s=await setup(t);await s.load();
  const {d,w}=s;d.getElementById('count-profilefamily').value='1';d.getElementById('count-profilefamily').dispatchEvent(new w.Event('change',{bubbles:true}));await tick();
  const phone=d.getElementById('clientPhone'),addresses=d.getElementById('regAddress').closest('section.card');
  assert.equal(phone.closest('section.card'),d.getElementById('fio').closest('section.card'));
  assert.notEqual(w.getComputedStyle(phone.closest('.field')).display,'none');
  assert.equal(phone.required,false,'the existing contact does not become a new save gate');
- for(const id of ['factAddressSame','factAddress','filingDestination'])assert.equal(d.getElementById(id).closest('section.card'),addresses,id);
+ for(const id of ['factAddressSame','factAddress'])assert.equal(d.getElementById(id).closest('section.card'),addresses,id);
  for(const id of ['profilefamily','contactChannel','postAddress'])assert.ok(d.getElementById(id).closest('[data-profile-hidden]'),id);
  const spouseStatus=d.getElementById('partnerSocialStatusField');
  assert.equal(spouseStatus.closest('[data-profile-hidden]'),null,'married profile keeps the shared spouse status block available');
  assert.notEqual(w.getComputedStyle(spouseStatus).display,'none','married profile shows the shared spouse status block');
  assert.equal(d.getElementById('partnerSocialStatusRequired').hidden,true,'profile keeps spouse status optional');
  assert.equal(d.querySelector('input[type="email"]'),null);
- const suggestions=d.getElementById('recommendedCourt').closest('details');
- assert.ok(suggestions.classList.contains('pb-address-details'));
- assert.equal(suggestions.open,false);
+ assert.equal(d.querySelector('.pb-address-details'),null);
+ assert.ok(d.getElementById('filingDestination').closest('[data-profile-hidden]'));
+ for(const id of ['filingDestination','recommendedDistrict','recommendedCourt','clientRequestedDistrict','clientRequestedCourt','registrationChangePosition']){
+  const field=d.getElementById(id).closest('[data-support-only]');
+  assert.ok(field.hidden,id);assert.equal(w.getComputedStyle(field).display,'none',id);
+ }
  assert.equal(d.querySelectorAll('#filingDestination').length,1);
  assert.equal(d.querySelectorAll('#clientPhone').length,1);
  const saved=w.ServerDrafts.capture();
@@ -203,4 +206,31 @@ test('built Worker protects the profile queue page and its APIs; signed-in page 
  const frame=await worker.fetch(new Request('https://site.test/profile-backfill?dealId=11665&edit=1',{headers:{cookie}}),env,ctx);
  assert.match(await frame.text(),/questionnaire\.html\?dealId=11665&amp;mode=profile&amp;edit=1/);
  }finally{if(previous===undefined)delete process.env.SITE_SESSION_TOKEN;else process.env.SITE_SESSION_TOKEN=previous;}
+});
+
+for(const mode of ['', 'profile'])test(`${mode || 'contract'} reopening saved court answers preserves hidden values and residence facts`,async t=>{
+ const original=await setup(t,{mode});await original.load();
+ const courtValues={filingDestination:'SYNTHETIC COURT AND ADDRESS',recommendedDistrict:'SYNTHETIC RECOMMENDATION DISTRICT',recommendedCourt:'Не знаю',clientRequestedDistrict:'SYNTHETIC CLIENT DISTRICT',clientRequestedCourt:'SYNTHETIC CLIENT COURT',registrationChangePosition:'unknown'};
+ for(const [key,value] of Object.entries(courtValues)){original.d.getElementById(key).value=value;original.d.getElementById(key).dataset.sourceReplaced='true';}
+ original.d.getElementById('regAddress').value='SYNTHETIC REGISTRATION ADDRESS';
+ original.d.getElementById('factAddressSame').value='other';
+ original.d.getElementById('factAddress').value='SYNTHETIC RESIDENCE ADDRESS';
+ const payload=original.w.ServerDrafts.capture();
+ // The stored/API value can be unknown although the old select lacked that option.
+ payload.answers.find(a=>a.key==='registrationChangePosition').value=courtValues.registrationChangePosition;
+ const reopened=await setup(t,{mode,savedDraft:{revision:9,identityRevision:1,payload}});await reopened.load();
+ reopened.w.AssessmentWorkflow.show('answers',{focus:false});
+ const restored=reopened.w.ServerDrafts.capture();
+ for(const [key,value] of Object.entries(courtValues)){
+  const control=reopened.d.getElementById(key),field=control.closest('[data-support-only]');
+  assert.equal(control.value,value,key);assert.equal(control.required,false,key);
+  assert.equal(control.getClientRects().length,0,key);
+  assert.equal(field.hidden,true,key);assert.equal(reopened.w.getComputedStyle(field).display,'none',key);
+  assert.equal(field.querySelector('.pb-unknown'),null,'hidden court answers have no employee entry shortcut');
+  assert.deepEqual(JSON.parse(JSON.stringify(restored.answers.find(a=>a.key===key))),JSON.parse(JSON.stringify(payload.answers.find(a=>a.key===key))),key);
+ }
+ for(const key of ['regAddress','factAddressSame','factAddress']){
+  assert.equal(reopened.d.getElementById(key).getClientRects().length,1,key+' remains available');
+  assert.equal(restored.answers.find(a=>a.key===key).value,payload.answers.find(a=>a.key===key).value,key);
+ }
 });

@@ -61,6 +61,10 @@ test('built Worker persists a complete contract and recovers a handoff without d
  const context=await api('/api/assessment/900001');
  assert.equal(context.identityRevision,1);
  const fixture=await seed(db,await mf.getR2Bucket('FILES'));
+ const historicalCourtValues={filingDestination:'SYNTHETIC COURT AND ADDRESS',recommendedDistrict:'SYNTHETIC DISTRICT',recommendedCourt:'SYNTHETIC COURT',clientRequestedDistrict:'SYNTHETIC CLIENT DISTRICT',clientRequestedCourt:'SYNTHETIC CLIENT COURT',registrationChangePosition:'undecided'};
+ for(const [key,value] of Object.entries(historicalCourtValues)){
+  const answer=fixture.payload.answers.find(a=>a.key===key);answer.value=value;answer.sourceReplaced=true;
+ }
  const root='/api/assessment/900001';
  const batchIds=fixture.documents.slice(0,3).map(doc=>doc.documentId);
  const cachedBatch=await api(root+'/documents/analyze',{documentIds:batchIds,identityRevision:1});
@@ -93,6 +97,9 @@ test('built Worker persists a complete contract and recovers a handoff without d
  }
  await api(root+'/draft',{requestId:crypto.randomUUID(),identityRevision:1,expectedRevision:0,payload:fixture.payload});
  const saved=await api(root+'/draft');assert.equal(saved.draft.revision,1);assert.equal(saved.draft.payload.documents.length,8);
+ for(const key of Object.keys(historicalCourtValues)){
+  assert.deepEqual(saved.draft.payload.answers.find(a=>a.key===key),fixture.payload.answers.find(a=>a.key===key),'built Worker preserves historical court answer/provenance: '+key);
+ }
  const checked=await api(root+'/check',{payload:fixture.payload,bindings:[]});
  assert.equal(checked.readyToSubmit,true,JSON.stringify(checked));
  assert.equal(checked.documents.matchedShortReports.length,1);assert.equal(checked.documents.loanCoverage.present,1);
