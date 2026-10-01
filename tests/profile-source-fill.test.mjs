@@ -72,3 +72,11 @@ test('canonical legacy split controls retain their existing business meaning and
 test('a manually truncated contract identifier cannot cause a duplicate source loan',()=>{
  const f=fixture();f.draft.payload.groups=[{id:'creditors',rows:[[{key:'n8038',value:'TEST BANK',checked:false},{key:'loanContractId',value:'LOA…',checked:false}]],rowKeys:[null]}];const p=f.run();assert.equal(p.newLoans,0);assert.equal(p.changes.length,0);assert.equal(p.skipped[0].code,'MANUAL_LOAN_ID_REQUIRED');
 });
+
+test('a saved answer for another IIN blocks filling even when case revision and source match',()=>{
+ const f=fixture();f.draft.payload.answers.push({key:'iin',value:'991231300004',checked:false});assert.throws(()=>f.run(),/DRAFT_CLIENT_IDENTITY_CONFLICT/);
+});
+
+test('a saved answer for another IIN blocks filling even when case revision and source match',()=>{
+ const f=fixture();f.draft.payload.answers.push({key:'iin',value:'991231300004',checked:false});assert.throws(()=>f.run(),/DRAFT_CLIENT_IDENTITY_CONFLICT/);
+});
