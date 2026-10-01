@@ -12,13 +12,13 @@ const code=e=>/^[A-Z][A-Z0-9_]{1,80}$/.test(e?.code||'')?e.code:'AUDIT_REQUEST_F
 async function request(path,body){
  const r=await fetch(origin+path,{method:body?'POST':'GET',headers:{cookie,origin,'content-type':'application/json'},body:body?JSON.stringify(body):undefined,redirect:'error',signal:AbortSignal.timeout(60000)});
  if(path==='/api/session')cookie=r.headers.getSetCookie().map(c=>c.split(';')[0]).join('; ');
- const data=await r.json();if(!r.ok)throw Object.assign(Error('REQUEST_FAILED'),{code:data.error||'HTTP_FAILURE',status:r.status});return data;
+ const data=await r.json();if(!r.ok)throw Object.assign(Error('REQUEST_FAILED'),{code:data.error||'HTTP_FAILURE',status:r.status,...(path.startsWith('/api/bitrix/')?{upstreamReason:({'Not found':'NOT_FOUND','Access denied':'ACCESS_DENIED','ID is not defined or invalid':'INVALID_ID'})[data.error_description]}:{})});return data;
 }
 const issue=i=>({code:i.code,...(i.key?{key:i.key}:{}),...(i.group?{group:i.group}:{}),...(Number.isInteger(i.row)?{row:i.row}:{})});
 try{
  if(!process.env.ASSESSMENT_TEST_PASSWORD)throw Error('NO_AUTH');
  await request('/api/session',{worker:'ali',password:process.env.ASSESSMENT_TEST_PASSWORD});
- const queue=(await request('/api/profile-queue')).items;
+ const queue=process.env.AUDIT_INCLUDE_QUEUE==='false'?[]:(await request('/api/profile-queue')).items;
  report.queueCount=queue.length;
  const targets=[...new Set([...ids,...queue.map(x=>x.dealId)])];let next=0;
  await Promise.all(Array.from({length:3},async()=>{while(next<targets.length){
@@ -36,7 +36,7 @@ try{
    }
    const check=await request(root+'/check',{payload:draft.payload,bindings:[]});
    out.contractAnswersComplete=check.answersComplete;out.contractIssues=(check.issues||[]).map(issue);
-   out.documentIssues=(check.documents?.issues||[]).map(issue);out.loanCoverage=check.documents?.loanCoverage;
+   out.documentIssues=(check.documents?.issues||[]).map(issue);const coverage=check.documents?.loanCoverage;out.loanCoverage=coverage?{expected:coverage.expected,present:coverage.present,missing:coverage.missing,duplicates:coverage.duplicates,complete:coverage.complete}:null;
    // No derived-analysis refresh, source review or confirmation is performed.
    const docIds=[...new Set(p.documents.map(d=>d.documentId).filter(Boolean))];out.analysis=[];
    for(let i=0;i<docIds.length;i+=8){const batch=await request(root+'/documents/analyze',{identityRevision:context.identityRevision,documentIds:docIds.slice(i,i+8)});
@@ -46,7 +46,7 @@ try{
   }catch(e){out.error=code(e);out.status=e.status;
    // Distinguish inaccessible/missing CRM records from failures inside our app.
    try{const crm=await request('/api/bitrix/crm.deal.get',{id:dealId});out.crmProbe={found:String(crm.result?.ID)===dealId,error:crm.error&&/^[A-Z_]+$/.test(crm.error)?crm.error:undefined};}
-   catch(cause){out.crmProbe={error:code(cause),status:cause.status};}
+   catch(cause){out.crmProbe={error:code(cause),status:cause.status,reason:cause.upstreamReason};}
   }finally{writeFileSync('workflow-cohort-audit.json',JSON.stringify(report,null,2));console.log(JSON.stringify({dealId,checked:report.cases.length,total:targets.length,error:out.error||null,profileIssues:out.profileIssues?.length??null}));}
  }}));
  report.cases.sort((a,b)=>Number(a.dealId)-Number(b.dealId));
