@@ -1,5 +1,5 @@
 // The same completion rule runs in the profile UI and on the server.
-export const PROFILE_EXPLANATION_MIN = 60;
+export const PROFILE_EXPLANATION_MIN = 30;
 export const PROFILE_EXPLANATIONS = {
   debtPurposeOther: {
     label: 'На что потратили кредитные деньги и почему возникли долги?',
@@ -19,7 +19,7 @@ export function explanationLength(value) {
 export function explanationError(value) {
   const text = explanationText(value);
   if (/^(?:(?:не\s+знаю|неизвестно|unknown|idk|уточнить\s+позже)[\s.,;:!?—-]*)+$/iu.test(text)) {
-    return 'Уточните факты у клиента и напишите объяснение — минимум 60 символов.';
+    return `Уточните факты у клиента и напишите объяснение — минимум ${PROFILE_EXPLANATION_MIN} символов.`;
   }
   const length = explanationLength(text);
   return length < PROFILE_EXPLANATION_MIN

@@ -39,8 +39,10 @@ try{
  const draft={schemaVersion:1,answers:[],groups:[],docContext:{social:'',salary:''},documents:[],pendingFiles:[]};
  const set=(key,value)=>{let a=draft.answers.find(a=>a.key===key);if(!a){a={key,value:'',checked:false};draft.answers.push(a);}a.value=value;};
  set('hardshipReason','Снижение дохода');
- const detail='Тестовая проверка длины объяснения без сохранения клиентских данных. '.slice(0,58)+'..';assert.equal(detail.length,60);assert.equal(detail.trim().length,60);
- for(const [name,text,expected] of [['short',detail.slice(0,59),true],['whitespace',detail.slice(0,59)+' \n   ',true],['unknown','Не знаю. '.repeat(10),true],['minimum',detail,false]]){
+ const detail='Тестовая проверка длины объяснения без сохранения клиентских данных. '.slice(0,28)+'..';assert.equal(detail.length,30);assert.equal(detail.trim().length,30);
+ const unicode='Доход с января упал 🏠 на треть';assert.equal(Array.from(unicode).length,30);assert.equal(unicode.length,31);
+ const padded=text=>'\u00a0\t'+text.replaceAll(' ',' \u2003\n ')+'\u00a0\n';
+ for(const [name,text,expected] of [['short',detail.slice(0,29),true],['whitespace',detail.slice(0,29)+' \n   ',true],['unknown','Не знаю. '.repeat(10),true],['minimum',detail,false],['unicode-short',padded(Array.from(unicode).slice(0,29).join('')),true],['unicode-minimum',padded(unicode),false]]){
   for(const key of ['debtPurposeOther','n12008'])set(key,text);
   const check=await json(root+'/profile',{action:'check',requestId:randomUUID(),draft});
   assert.equal(check.ready,false,'The incomplete audit payload must never become a complete client profile');
@@ -60,7 +62,7 @@ try{
  assert.ok(!(await json(root+'/check',{payload:unmarried,bindings:[]})).issues.some(i=>i.key==='choice:partnerSocialStatus:'));
  const after=(await json(root+'/draft')).draft;
  assert.equal(digest(before),digest(after),'Audit draft changed; investigate concurrent edits');
- report.explanations={minimum:60,shortBlocked:true,whitespacePaddingBlocked:true,unknownBlocked:true,minimumAccepted:true,draftUnchanged:true};
+ report.explanations={minimum:30,shortBlocked:true,whitespacePaddingBlocked:true,unknownBlocked:true,minimumAccepted:true,normalizedUnicodeBoundary:true,draftUnchanged:true};
  report.spouseStatus={marriedRequiresAnswer:true,unknownBlocked:true,explicitNoneAccepted:true,pensionerAccepted:true,unmarriedExempt:true,draftUnchanged:true};
  // Read the new OCR sidecar without claiming work or writing page results on a real case.
  const ocrRoot='/api/assessment/8595',ocrBefore=(await json(ocrRoot+'/draft')).draft;
