@@ -2,6 +2,9 @@ name: Profile source fill audit and guarded maintenance
 on:
   workflow_dispatch:
     inputs:
+      audit_only:
+        type: boolean
+        default: false
       apply:
         type: boolean
         default: false
@@ -44,6 +47,7 @@ jobs:
       - name: Inspect or apply exact source-backed plans
         env:
           ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
+          PROFILE_FILL_AUDIT_ONLY: ${{ inputs.audit_only }}
           PROFILE_FILL_APPLY: ${{ inputs.apply }}
           PROFILE_FILL_IDS: ${{ inputs.deal_ids }}
           PROFILE_FILL_PINS: ${{ inputs.pins }}

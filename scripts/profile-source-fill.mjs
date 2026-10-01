@@ -13,11 +13,12 @@ const sameValue=(key,a,b)=>key==='n8038'?creditorKey(a)===creditorKey(b):String(
 export function planProfileSourceFill(draft,context,analyses,validateDraft,history={protectedFields:[],allowNewLoans:true}){
  if(!draft||draft.recovery||draft.identityRevision!==context.identityRevision||!/^\d{12}$/.test(context.client?.iin||''))fail('CURRENT_IDENTITY_REQUIRED');
  const before=storedPayload(draft.payload),payload=validateDraft(before);
- // Permit only the canonical empty-control migration; never discard old data.
+ // Permit canonical split controls from existing legacy answers; never
+ // change or discard an original answer while migrating those controls.
  const previousKeys=new Set(before.answers.map(a=>a.key));
  const migrated=payload.answers.filter(a=>!previousKeys.has(a.key));
  const migrationKeys=new Set(['holding:client:businessNone','holding:partner:businessNone','enforcementStatus']);
- if(migrated.some(a=>!migrationKeys.has(a.key)||a.checked||a.value!==(a.key.endsWith('businessNone')?'businessNone':'')))fail('DRAFT_NORMALIZATION_REQUIRED');
+ if(migrated.some(a=>!migrationKeys.has(a.key)||(a.key.endsWith('businessNone')?a.value!=='businessNone':a.checked||!['','no','legacy'].includes(a.value))))fail('DRAFT_NORMALIZATION_REQUIRED');
  const comparison=structuredClone(payload);comparison.answers=comparison.answers.filter(a=>previousKeys.has(a.key));
  if(!isDeepStrictEqual(comparison,before))fail('DRAFT_NORMALIZATION_REQUIRED');
  const selected=new Set(payload.documents.filter(d=>d.person==='Клиент'&&!/Подписанный договор|ЭЦП|парол/iu.test(d.type)).map(d=>d.documentId));

@@ -3,9 +3,9 @@
 import {writeFileSync} from 'node:fs';import {randomUUID} from 'node:crypto';import {writeFile} from 'node:fs/promises';import assert from 'node:assert/strict';
 import {validateDraft} from '../.profile-fill-validation.mjs';
 import {planProfileSourceFill,digest,storedPayload} from './profile-source-fill.mjs';
-const origin='https://assessment.anti-krizis.kz',apply=process.env.PROFILE_FILL_APPLY==='true';
+const origin='https://assessment.anti-krizis.kz',apply=process.env.PROFILE_FILL_APPLY==='true',auditOnly=process.env.PROFILE_FILL_AUDIT_ONLY==='true';
 const ids=(process.env.PROFILE_FILL_IDS||'').split(',').filter(Boolean),pins=JSON.parse(process.env.PROFILE_FILL_PINS||'{}'),guards=JSON.parse(process.env.PROFILE_FILL_GUARDS||'{}');
-const report={apply,checkedAt:new Date().toISOString(),cases:[],failures:[],noProfileWrite:true,noReviewWrite:true,noCrmWrite:true};let cookie='';
+const report={apply,auditOnly,checkedAt:new Date().toISOString(),cases:[],failures:[],noProfileWrite:true,noReviewWrite:true,noCrmWrite:true};let cookie='';
 const errorCode=e=>/^[A-Z][A-Z0-9_]{1,80}$/.test(e.code||'')?e.code:'PROFILE_FILL_STOPPED';
 async function request(path,body){const r=await fetch(origin+path,{method:body?'POST':'GET',headers:{origin,cookie,'content-type':'application/json'},body:body?JSON.stringify(body):undefined,redirect:'error',signal:AbortSignal.timeout(90000)});if(path==='/api/session')cookie=r.headers.getSetCookie().map(v=>v.split(';')[0]).join('; ');const data=await r.json();if(!r.ok)throw Object.assign(new Error('HTTP_'+r.status),{code:data.error||'HTTP_'+r.status});return data;}
 function checkGuard(guard,context,draft){
@@ -14,9 +14,9 @@ function checkGuard(guard,context,draft){
  if(!Number.isFinite(Date.parse(guard.checkedAt))||!Array.isArray(guard.pendingWrites)||guard.pendingWrites.length||guard.completed!==false||guard.pendingHistory!==false||guard.originalsChanged!==false||!Array.isArray(guard.history?.protectedFields)||typeof guard.history.allowNewLoans!=='boolean')throw Object.assign(new Error(),{code:'GUARD_BLOCKED'});
 }
 try{
- assert.ok(process.env.ASSESSMENT_TEST_PASSWORD);assert.ok(!apply||ids.length>0&&ids.length<=8);
+ assert.ok(process.env.ASSESSMENT_TEST_PASSWORD);assert.ok(!apply||!auditOnly&&ids.length>0&&ids.length<=8);
  await request('/api/session',{worker:'ali',password:process.env.ASSESSMENT_TEST_PASSWORD});
- const queue=(await request('/api/profile-queue')).items;report.queue=queue.map(x=>({dealId:x.dealId,completed:Boolean(x.profileSavedAt)}));
+ const queue=(await request('/api/profile-queue')).items;report.queue=queue.map(x=>({dealId:x.dealId,completed:Boolean(x.profileSavedAt),zviDate:x.zviDate||null}));
  const targets=ids.length?queue.filter(x=>ids.includes(x.dealId)):queue;
  if(ids.some(id=>!targets.some(x=>x.dealId===id)))throw Object.assign(new Error(),{code:'CASE_NOT_IN_CURRENT_QUEUE'});
  let index=0;await Promise.all(Array.from({length:apply?1:3},async()=>{while(index<targets.length){
@@ -27,6 +27,12 @@ try{
    if(!draft){const crm=await request(root+'/crm-documents');out.notFilled='NO_SAVED_DRAFT';out.availableCrmDocuments=crm.files?.length??null;continue;}
    out.documents=draft.payload.documents.length;out.pendingFiles=draft.payload.pendingFiles.length;
    if(draft.recovery){out.notFilled='IDENTITY_RECOVERY_REQUIRED';continue;}
+   if(auditOnly){
+    if(!context.client?.iin){out.notFilled='DEAL_IDENTITY_UNVERIFIED';continue;}
+    const beforeHash=digest(storedPayload(draft.payload)),check=await request(root+'/profile',{action:'check',requestId:randomUUID(),draft:storedPayload(draft.payload)});
+    out.ready=check.ready;out.remainingIssues=(check.issues||[]).map(({code,key,group,row})=>({code,key,group,row}));
+    const after=(await request(root+'/draft')).draft;if(!after||after.revision!==draft.revision||digest(storedPayload(after.payload))!==beforeHash)throw Object.assign(new Error(),{code:'DRAFT_CHANGED'});out.draftUnchanged=true;continue;
+   }
    if(apply&&item.profileSavedAt){out.notFilled='COMPLETED_PROFILE_PRESERVED';continue;}
    const docs=draft.payload.documents.filter(d=>d.documentId&&d.person==='Клиент'&&!/ЭЦП|парол|Подписанный договор/iu.test(d.type));
    const analyses=[];out.documentFindings=[];
