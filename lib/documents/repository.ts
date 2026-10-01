@@ -3,8 +3,9 @@ import type {SubmissionRow}from'../questionnaire/submission-repository';
 import type {UploadRow}from'./upload-manifest';
 import type { ClientContext } from '../crm/bitrix';
 import type { Actor } from '../worker-session';
-import {extractNative,type NativeExtraction} from './extract-native';
+import {extractNative,kazakhPropertyCertificateHeader,loanAccountStatementHeader,type NativeExtraction} from './extract-native';
 import type {PageText} from './read-pdf';
+import {sparseKaspiClosingText} from './pdf-text-heuristics';
 import {IMAGE_READER_VERSION,imageFormat,inspectImage} from './read-image';
 export class RepositoryError extends Error {constructor(public code:string, public status=409){super(code);}}
 export type CaseRow={id:string;external_system:string;external_id:string;client_iin:string|null;identity_revision:number;title:string;created_at:string;updated_at:string};
@@ -78,8 +79,21 @@ export class EvidenceRepository {
   if(/\.(png|jpg)$/.test(document.original_key)&&/^native-pdf-\d+:/.test(version))version=version.replace(/^native-pdf-\d+:/,IMAGE_READER_VERSION+':');
   let extraction=await this.db.prepare('SELECT * FROM assessment_extractions WHERE document_id=? AND version=?').bind(document.id,version).first<ExtractionRow>();
   if(extraction)return {document,extraction,result:await this.readResult(extraction)};
-  // v31 adds only singular Kazakh own-account operation labels in Kaspi.
-  // Keep unrelated evidence/reviews and unchanged statements. A changed Kaspi
+  // Reader v5 changes only the strict, sparse final Kaspi disclaimer. Cached
+  // text can identify a candidate, but the original operators must be reread
+  // before removing its OCR flag. Preserve every unrelated evidence/review ID.
+  if(version.startsWith('native-pdf-5:')){
+   const previous=await this.cached(caseId,originalHash,version.replace(/^native-pdf-5:/,'native-pdf-4:'));
+   if(!previous)return null;
+   const result=previous.result as {extraction?:NativeExtraction;read?:{pages?:PageText[]}},pages=result.read?.pages;
+   if(!result.extraction?.kind||!pages?.length)return null;
+   const last=pages.at(-1)!;
+   if(last.needsOcr&&sparseKaspiClosingText(last.text,pages.at(-2)?.text||'',pages.slice(0,-1).map(page=>page.text).join('\n')))return null;
+   return previous;
+  }
+  // v31 adds Kaspi labels/layouts, rejects loan-account turnover and identifies
+  // Kazakh eGov F6 certificates.
+  // Keep unrelated evidence/reviews and unchanged statements. A changed
   // interpretation requires a new extraction without rewriting old approvals.
   // Check rules before reader fallback so existing reader-v4 results are found.
   if(version.endsWith(':rules-native-31')){
@@ -87,7 +101,8 @@ export class EvidenceRepository {
    if(!previous)return null;
    const result=previous.result as {extraction?:NativeExtraction;read?:{pages?:PageText[]}};
    if(!result.extraction?.kind)return null;
-   if(result.extraction.kind!=='kaspi')return previous;
+   const front=result.read?.pages?.[0]?.text||'';
+   if(result.extraction.kind!=='kaspi'&&!kazakhPropertyCertificateHeader(front)&&!loanAccountStatementHeader(front))return previous;
    if(!result.read?.pages?.length)return null;
    const current=extractNative(result.read.pages);
    return JSON.stringify({...result.extraction,version:current.version})===JSON.stringify(current)?previous:null;

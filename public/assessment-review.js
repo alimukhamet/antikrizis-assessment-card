@@ -312,6 +312,7 @@ function afDocumentAttention(item){
  if(r.documentReview?.type===item.type)return null;
  if(!afSelectionTypeIsGeneric(item)&&r.type&&r.kind!=='other'&&r.type!==item.type)return {kind:'manual',message:'Распознан тип «'+r.type+'». Проверьте выбранный тип.'};
  const findings=r.findings||[];
+ if(findings.includes('KASPI_LOAN_STATEMENT_NOT_GOLD'))return {kind:'error',message:HostedAssessment.error('KASPI_LOAN_STATEMENT_NOT_GOLD')};
  if(findings.includes('DOCUMENT_IDENTITY_UNVERIFIED')&&HostedAssessment.getContext()?.client.iin)return {kind:'manual',message:'Не удалось прочитать ИИН владельца. Откройте оригинал и проверьте владельца и тип документа.'};
  if(item.type==='ГКБ — краткий отчёт'&&window.GkbComparison?.resolved?.(item.id))return null;
  const powerReason=['POWER_DATES_UNVERIFIED','POWER_DATE_NOT_ACCEPTABLE','POWER_SCOPE_REVIEW_REQUIRED','REPRESENTATIVE_NOT_APPROVED','REPRESENTATIVE_IDENTITY_UNVERIFIED'].find(code=>findings.includes(code));

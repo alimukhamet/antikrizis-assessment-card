@@ -55,6 +55,16 @@ function identityCardWithoutIssuer(text:string,pages:PageText[]){
  return !!header&&validIin(header.iin)&&/^[A-Z]+<<[A-Z<]+\s*$/m.test(text)&&!!dates.issuedAt&&!!dates.expiresAt;
 }
 const isLombard=(creditor:string)=>/(?:^|[^\p{L}\p{N}])(?:ломбард|lombard)(?=$|[^\p{L}\p{N}])/iu.test(creditor);
+/** The F6 title and issuing portal identify the document before bank names in its property records. */
+export function kazakhPropertyCertificateHeader(firstPage:string):boolean{
+ const front=firstPage.toLowerCase().replace(/\s+/g,' ');
+ return /жылжымайтын мүліктің болмауы \(болуы\) туралы ақпарат/u.test(front)
+  && /құжат электрондық үкімет порталымен құрылған|документ сформирован порталом электронного правительства/u.test(front);
+}
+/** Repayment-account transfers do not establish Kaspi Gold card turnover. */
+export function loanAccountStatementHeader(firstPage:string):boolean{
+ return /(?:^|\n)[ \t]*выписка\s+по\s+кредитам\s+за\s+период\s+с\s+\d{2}\.\d{2}\.(?:\d{4}|\d{2})\b/iu.test(firstPage);
+}
 /** Questionnaire categories agreed for GKB intake; preserve the bureau wording in the source. */
 function questionnaireCreditType(financing:string|null,purpose:string|null,object:string|null,security:string|null):string|null{
  if(financing==='Кредитная карта')return 'Кредитная карта';
@@ -88,9 +98,12 @@ export function extractNative(pages: PageText[]): NativeExtraction {
     && /на недвижимое имущество и его технических характеристиках/.test(compactFront);
   const eurasian=/^\s*ао\s*[«"“]?евразийский банк[»"”]?/u.test(statementFront)&&/выписка по сч[её]ту/u.test(statementFront)&&/eubank\.kz|eurikzka/u.test(statementFront);
   const halyk=/выписка по счету/.test(head)&&/тип счета\s*:[^\n]*зарплата/.test(head)&&/народный банк казахстана|halykbank\.kz/.test(head);
+  const loanAccountStatement=loanAccountStatementHeader(pages[0]?.text||'');
   const kind = firstBureau ? 'gkb_full' : credit ? /краткая форма|қысқаша/.test(head) ? 'gkb_short' : 'gkb_full'
+    : loanAccountStatement ? 'unknown'
     : eurasian||halyk ? 'salary'
     : pensionAccount ? 'enpf'
+    : kazakhPropertyCertificateHeader(pages[0]?.text||'') ? 'property'
     : /kaspi/.test(head) && /выписка|үзінді\s+көшірме/u.test(head) ? 'kaspi'
     : /об отсутствии \(наличии\) недвижимого имущества/.test(head) ? 'property'
     : propertyRights ? 'encumbrance'
@@ -127,7 +140,7 @@ export function extractNative(pages: PageText[]): NativeExtraction {
   } else if (['kaspi','property','encumbrance','benefits','identity','salary'].includes(kind)) {
     const front = raw.slice(0,8000), iin = value(/(?:ИИН|ЖСН)\s*\/?\s*(?:ИИН)?\s*:?\s*(\d{12})\b/,front);
     if (validIin(iin)) output.identity.iin = iin;
-    output.identity.name = kind === 'kaspi' ? (value(/подтверждает,\s*что\s+([\s\S]+?),\s*ИИН/i,front)||value(/«Kaspi\s+Bank»\s+АҚ\s+([^,]+),\s*ЖСН/u,front))?.replace(/\s+/g,' ') || null : kind === 'property' ? value(/Выдан[ао]:\s*([^,\n]+)/i,front) : null;
+    output.identity.name = kind === 'kaspi' ? (value(/подтверждает,\s*что\s+([\s\S]+?),\s*ИИН/i,front)||value(/«Kaspi\s+Bank»\s+АҚ\s+([^,]+),\s*ЖСН/u,front))?.replace(/\s+/g,' ') || null : kind === 'property' ? value(/(?:Выдан[ао]|Кімге\s+берілді):[ \t]*([^,\n]+)/iu,front) : null;
   }
   if(kind==='salary'){
     const front=(pages[0]?.text||'').replace(/:(?:[ \t]*:)+/g,':');
@@ -196,6 +209,7 @@ export function extractNative(pages: PageText[]): NativeExtraction {
   else output.findings.push('DOCUMENT_IDENTITY_UNVERIFIED');
   if (output.identity.name) output.facts.push({key:'identity.name',value:output.identity.name,page:1,source:'ФИО владельца документа'});
   if (kind === 'unknown') output.findings.push('DOCUMENT_TYPE_UNVERIFIED');
+  if(loanAccountStatement)output.findings.push('KASPI_LOAN_STATEMENT_NOT_GOLD');
   if (kind === 'gkb_full'&&!firstBureau) {
     let at=0; const starts = transformed.map(p => { const out={at,page:p.page};at+=p.text.length+1;return out; });
     const blocks=[...text.matchAll(/(?:^|\n)Обязательство\s+\d+\s*(?:\n|$)/g)];

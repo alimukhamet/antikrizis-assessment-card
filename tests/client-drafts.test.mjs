@@ -294,3 +294,9 @@ test('CRM recovery rejects a changed client before applying or saving the recove
  s.w.fetch=async(path,options={})=>{if(!path.includes('/crm-documents'))return originalFetch(path,options);if(options.method==='POST'){posts++;throw new s.w.TypeError('Lost response');}return{ok:true,json:async()=>{if(!path.includes('?fileId='))return{files:[{id:'123'}]};s.w.HostedAssessment.getContext=()=>({...context,identityRevision:2});return{documentId:'wrong',crmFileId:'123',identityRevision:1};}};};
  await s.w.ClientWorkspace.importDocuments();assert.equal(posts,1);assert.equal(s.run('selectedFiles.length'),0);assert.equal(s.writes.length,0);assert.match(s.d.getElementById('crmImportStatus').textContent,/Клиент изменился/);
 });
+
+test('loan account warning gives the Gold replacement action before generic missing identity',async t=>{
+ const s=await setup(t,{currentIin:'test-client'});await s.load();
+ s.run("selectedFiles=[{id:1,file:{name:'synthetic.pdf'},type:'Выписка Kaspi Gold',person:'Клиент'}];af.results.set(1,{kind:'other',blocked:true,identity:{iin:null},findings:['DOCUMENT_IDENTITY_UNVERIFIED','DOCUMENT_TYPE_UNVERIFIED','KASPI_LOAN_STATEMENT_NOT_GOLD']});");
+ assert.match(s.run('afDocumentAttention(selectedFiles[0]).message'),/Это выписка по кредитам.*по карте Kaspi Gold/);
+});

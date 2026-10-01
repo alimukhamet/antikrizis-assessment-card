@@ -1,6 +1,8 @@
 import { getDocumentProxy, getResolvedPDFJS } from 'unpdf';
+import {sparseKaspiClosingText} from './pdf-text-heuristics';
+export {sparseKaspiClosingText} from './pdf-text-heuristics';
 
-export const PDF_READER_VERSION = 'native-pdf-4';
+export const PDF_READER_VERSION = 'native-pdf-5';
 import {MAX_DOCUMENT_BYTES,DocumentReadError} from './read-document-limits';
 export {MAX_DOCUMENT_BYTES,DocumentReadError} from './read-document-limits';
 // Full GKB reports for clients with long histories exceed 500 pages.
@@ -67,6 +69,13 @@ export async function readPdf(data: Uint8Array) {
         const {OPS}=await getResolvedPDFJS(),operators=await page.getOperatorList();
         needsOcr=!headerImagesOnly(operators,OPS,page.view[2]-page.view[0],page.view[3]-page.view[1]);
       }
+      // Kaspi can wrap its closing disclaimer onto a separate final page. Accept
+      // only that complete continuation, after inspecting the actual PDF drawing
+      // operators; a native footer over a scanned transaction table still needs OCR.
+      if(needsOcr&&n===pdf.numPages&&sparseKaspiClosingText(text,pages.at(-1)?.text||'',pages.map(p=>p.text).join('\n'))&&typeof page.getOperatorList==='function'){
+        const {OPS}=await getResolvedPDFJS(),operators=await page.getOperatorList();
+        needsOcr=!textOperatorsOnly(operators,OPS);
+      }
       // Some bureau templates draw labels first and values last. Preserve the
       // original stream for tables, plus spatial lines for label/value identity.
       const lines: Array<{y:number;items:Array<{x:number;text:string}>}> = [];
@@ -85,6 +94,12 @@ export async function readPdf(data: Uint8Array) {
   } finally { await pdf.loadingTask.destroy(); }
 }
 
+export function textOperatorsOnly(operators:{fnArray:number[];argsArray:unknown[]},ops:Record<string,number>){
+ // Deliberately limited to the native text operators observed in this closing
+ // page. Unknown drawing, image, form or shading operators fail closed.
+ const allowed=new Set(['beginText','dependency','setFont','moveText','showText','endText'].map(name=>ops[name]).filter(value=>typeof value==='number'));
+ return operators.fnArray.length>0&&operators.fnArray.every(fn=>allowed.has(fn))&&operators.fnArray.includes(ops.showText);
+}
 export function sparseGkbText(text:string){
  if(!/(?:Страница\s+\d+\s+из\s+\d+|\d+\s+беттің\s+\d+\s+беті)/.test(text))return false;
  const rest=text.replace(/(?:Страница\s+\d+\s+из\s+\d+|\d+\s+беттің\s+\d+\s+беті)/g,'').replace(/^\d{2}\.\d{2}\.\d{4} - \d{2}:\d{2}\s+(?:Жеке кредиттік есеп|Персональный кредитный отчет)\s+(?:"МКБ" АҚ|АО "ГКБ")\s+(?:Деректер жоқ|Нет данных)\s*$/gm,'')

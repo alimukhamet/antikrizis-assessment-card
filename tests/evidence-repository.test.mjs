@@ -31,7 +31,7 @@ test('reader v4 retains unaffected evidence and reviews but rereads low-text GKB
   const cached=await repo.cached(c.id,old.document.original_sha256,'native-pdf-4:rules-native-30');assert.equal(Boolean(cached),compatible);
   if(compatible){assert.equal(cached.extraction.id,old.extraction.id);assert.equal((await repo.currentReviews(c.id,old.document.id,cached.extraction.id,1))[0].id,review.id);}
   assert.ok(await repo.extraction(c.id,old.document.id,old.extraction.id));
-  assert.equal(await repo.cached(c.id,old.document.original_sha256,'native-pdf-5:rules-native-30'),null);
+  assert.equal(await repo.cached(c.id,old.document.original_sha256,'native-pdf-6:rules-native-30'),null);
  }
  assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_reviews').get().n,5);
  assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_extractions').get().n,5);
@@ -69,6 +69,40 @@ test('v31 refreshes changed Kaspi interpretations while retaining unrelated and 
   assert.deepEqual(await repo.original(old.document),new Uint8Array([201]));
   assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_documents').get().n,1);
   assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_reviews').get().n,1);
+ }
+});
+
+test('v31 refreshes Kazakh F6 previously labelled Kaspi or unknown without transferring old approvals',async()=>{
+ const compiledRules=buildSync({entryPoints:['lib/documents/extract-native.ts'],bundle:true,platform:'node',format:'cjs',write:false}).outputFiles[0].text,rulesModule={exports:{}};
+ vm.runInNewContext(compiledRules,{module:rulesModule,exports:rulesModule.exports});
+ const text='Құжат электрондық үкімет порталымен құрылған\nЖылжымайтын мүліктің болмауы (болуы) туралы\nақпарат\n27.08.2026 Дата получения:\nКімге берілді: СЫНАҚ КЛИЕНТ, 31.12.1999, ИИН 991231300003\nKaspi Bank; выписка регистрации залога';
+ const pages=[{page:1,text,nativeCharacters:text.length,needsOcr:false}],current=rulesModule.exports.extractNative(pages);
+ for(const priorKind of ['kaspi','unknown','property']){
+  const {repo,sqlite}=setup(),c=await repo.syncCase(client()),previous=JSON.parse(JSON.stringify(current));previous.version='rules-native-30';
+  if(priorKind!=='property'){previous.kind=priorKind;previous.identity.name=null;previous.issuedAt=null;previous.facts=[];previous.findings=['STATEMENT_RECONCILIATION_REQUIRED'];}
+  const old=await repo.store(c.id,new Uint8Array([211]),'synthetic.pdf',actor,'native-pdf-4:rules-native-30',{read:{pages},extraction:previous});
+  const review=await repo.appendReview({caseId:c.id,documentId:old.document.id,extractionId:old.extraction.id,identityRevision:1,requestId:'review',factKey:'document.manual-check.v1',value:{type:'synthetic'},disposition:'confirmed',reason:'synthetic'},actor);
+  const cached=await repo.cached(c.id,old.document.original_sha256,'native-pdf-4:rules-native-31');
+  if(priorKind==='property')assert.equal(cached.extraction.id,old.extraction.id);
+  else{
+   assert.equal(cached,null);
+   const updated=await repo.storeExtraction(old.document,'native-pdf-4:rules-native-31',{read:{pages},extraction:current});
+   assert.notEqual(updated.extraction.id,old.extraction.id);assert.equal((await repo.currentReviews(c.id,old.document.id,updated.extraction.id,1)).length,0);
+  }
+  assert.equal((await repo.currentReviews(c.id,old.document.id,old.extraction.id,1))[0].id,review.id);
+  assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_documents').get().n,1);assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_reviews').get().n,1);
+ }
+});
+
+test('v31 reclassifies loan-account evidence and does not transfer approval from a misleading Kaspi result',async()=>{
+ const {repo}=setup(),c=await repo.syncCase(client());
+ const text='ВЫПИСКА\nпо кредитам за период с 01.09.25 по 31.08.26\n01.01.26 +10,00 т Поступление С Kaspi Gold';
+ const pages=[{page:1,text,nativeCharacters:text.length,needsOcr:false}];
+ for(const priorKind of ['kaspi','unknown']){
+  const old=await repo.store(c.id,new Uint8Array([priorKind==='kaspi'?221:222]),'synthetic.pdf',actor,'native-pdf-4:rules-native-30',{read:{pages},extraction:{version:'rules-native-30',kind:priorKind,identity:{iin:null,name:null},issuedAt:null,facts:[],credits:[],findings:['DOCUMENT_IDENTITY_UNVERIFIED','DOCUMENT_TYPE_UNVERIFIED']}});
+  const review=await repo.appendReview({caseId:c.id,documentId:old.document.id,extractionId:old.extraction.id,identityRevision:1,requestId:'review-'+priorKind,factKey:'document.manual-check.v1',value:{type:'synthetic'},disposition:'confirmed',reason:'synthetic'},actor);
+  assert.equal(await repo.cached(c.id,old.document.original_sha256,'native-pdf-4:rules-native-31'),null);
+  assert.equal((await repo.currentReviews(c.id,old.document.id,old.extraction.id,1))[0].id,review.id);
  }
 });
 test('v23 refreshes newly supported native layouts but preserves unrelated evidence and approvals',async()=>{
@@ -248,5 +282,22 @@ test('v28 preserves unchanged evidence and old approvals while refreshing legacy
   const cached=await repo.cached(c.id,old.document.original_sha256,'native-pdf-3:rules-native-28');
   if(changed)assert.equal(cached,null);else assert.equal(cached.extraction.id,old.extraction.id);
   assert.equal((await repo.currentReviews(c.id,old.document.id,old.extraction.id,1))[0].id,review.id);assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_documents').get().n,1);
+ }
+});
+
+
+test('reader v5 rereads only sparse closing-disclaimer candidates and preserves all historical reviews',async()=>{
+ const header='ВЫПИСКА по Kaspi Gold за период с 01.09.25 по 31.08.26 Краткое содержание операций по карте:';
+ const prefix='Раздел «Краткое содержание операций по карте», в строках «Поступления со своих счетов», «Зачисления кредитов», «Переводы на свои';
+ const tail='АО «Kaspi Bank», БИК CASPKZKA, www.kaspi.kz счета» содержит информацию об операциях клиента между счетами в Kaspi.';
+ for(const [index,kind,lastText,needsOcr,compatible] of [[221,'kaspi',tail,true,false],[222,'kaspi',tail,false,true],[223,'kaspi','Скан страницы с нечитаемыми операциями',true,true],[224,'identity','Удостоверение личности',true,true],[225,'gkb_full','Персональный кредитный отчет',false,true]]){
+  const {repo,sqlite}=setup(),c=await repo.syncCase(client()),pages=[{page:1,text:kind==='kaspi'?header:'Other original',needsOcr:false},{page:2,text:prefix,needsOcr:false},{page:3,text:lastText,needsOcr}];
+  const old=await repo.store(c.id,new Uint8Array([index]),'synthetic.pdf',actor,'native-pdf-4:rules-native-31',{read:{pages},extraction:{kind}});
+  const review=await repo.appendReview({caseId:c.id,documentId:old.document.id,extractionId:old.extraction.id,identityRevision:1,requestId:'reader5-'+index,factKey:'synthetic',value:'saved fact',disposition:'confirmed',reason:''},actor);
+  const cached=await repo.cached(c.id,old.document.original_sha256,'native-pdf-5:rules-native-31');assert.equal(Boolean(cached),compatible);
+  if(compatible)assert.equal(cached.extraction.id,old.extraction.id);
+  assert.equal((await repo.currentReviews(c.id,old.document.id,old.extraction.id,1))[0].id,review.id);
+  assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_extractions').get().n,1);
+  assert.deepEqual(await repo.original(old.document),new Uint8Array([index]));
  }
 });
