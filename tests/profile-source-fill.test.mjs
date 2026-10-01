@@ -68,3 +68,7 @@ test('benefit counts do not manufacture or erase benefit rows',()=>{
 test('canonical legacy split controls retain their existing business meaning and original answers',()=>{
  const f=fixture();f.draft.payload.answers=[{key:'holding:client:none',value:'none',checked:true},{key:'enforcementDetails',value:'Нет',checked:false}];const before=structuredClone(f.draft.payload.answers),p=f.run();assert.equal(p.payload.answers.find(a=>a.key==='holding:client:businessNone').checked,true);assert.equal(p.payload.answers.find(a=>a.key==='enforcementStatus').value,'no');for(const a of before)assert.deepEqual(p.payload.answers.find(b=>b.key===a.key),a);
 });
+
+test('a manually truncated contract identifier cannot cause a duplicate source loan',()=>{
+ const f=fixture();f.draft.payload.groups=[{id:'creditors',rows:[[{key:'n8038',value:'TEST BANK',checked:false},{key:'loanContractId',value:'LOA…',checked:false}]],rowKeys:[null]}];const p=f.run();assert.equal(p.newLoans,0);assert.equal(p.changes.length,0);assert.equal(p.skipped[0].code,'MANUAL_LOAN_ID_REQUIRED');
+});
