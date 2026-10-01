@@ -1,5 +1,8 @@
 name: Profile and contract cohort audit
 on:
+  push:
+    branches: [fix/profile-contract-workflow-audit]
+    paths: [.github/workflows/audit-workflow-cohort.yml]
   workflow_dispatch:
     inputs:
       case_ids:
