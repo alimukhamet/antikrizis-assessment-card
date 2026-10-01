@@ -28,8 +28,16 @@ test('full contract number and code are exact aliases, different codes stay dist
  const r=reports();r[1].creditEvidence.credits[0].contractNumber='LONG A';r[1].creditEvidence.credits[0].contractCode='A';assert.equal(compare(r).status,'matched');r[1].creditEvidence.credits[0].contractCode='A2';assert.equal(compare(r).status,'mismatch');
 });
 test('wrong owner, dates, stale reports, partial pages, and multiple reports cannot claim a match',()=>{
- for(const mutate of [r=>r[1].identity.iin='other',r=>r[1].date='2026-09-13',r=>r.forEach(x=>x.date='2026-08-01'),r=>r.forEach(x=>x.date='2026-09-15'),r=>r[1].creditEvidence.readable=false,r=>r[1].creditEvidence.findings.push('PAGE_COMPLETENESS_UNVERIFIED'),r=>r[1].creditEvidence.creditList.complete=false,r=>r.push({...r[1],fileId:3,hash:'another'}),r=>r.pop()]){const r=reports();mutate(r);assert.equal(compare(r).status,'unavailable');}
+ for(const mutate of [r=>r[1].identity.iin='other',r=>r[1].date='2026-09-13',r=>r.forEach(x=>x.date='2026-05-31'),r=>r.forEach(x=>x.date='2026-09-15'),r=>r[1].creditEvidence.readable=false,r=>r[1].creditEvidence.findings.push('PAGE_COMPLETENESS_UNVERIFIED'),r=>r[1].creditEvidence.creditList.complete=false,r=>r.push({...r[1],fileId:3,hash:'another'}),r=>r.pop()]){const r=reports();mutate(r);assert.equal(compare(r).status,'unavailable');}
  const r=reports();r.push({...r[1],fileId:3});assert.equal(compare(r).status,'matched','identical bytes should not count twice');
+});
+test('browser comparison follows server freshness at calendar boundaries and for August reports on 1 October',async()=>{
+ const fs=await import('node:fs'),ts=await import('typescript'),vm=await import('node:vm'),policy={};
+ vm.runInNewContext(ts.default.transpileModule(fs.readFileSync(new URL('../lib/documents/policy.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.default.ModuleKind.CommonJS}}).outputText,{exports:policy});
+ for(const day of ['2026-10-01','2026-09-29','2026-01-31','2024-05-31','2026-02-30',''])for(const issuedAt of ['2026-08-11','2026-07-01','2026-06-30','2026-06-01','2026-05-31','2026-10-01','2026-10-02','2025-10-01','2025-09-30','2024-02-01','2024-02-29','2024-01-31','2026-02-30','']){
+  const r=reports();r.forEach(report=>report.date=issuedAt);
+  assert.equal(compareGkb(r,{...context,day}).status==='matched',policy.gkbFreshness(issuedAt,day).length===0,issuedAt+' assessed '+day);
+ }
 });
 test('one truncated number does not hide the readable totals and independently matched rows',()=>{
  const r=reports();r[0].blocked=true;r[0].creditEvidence.creditList.complete=false;r[0].creditEvidence.findings=['SHORT_CONTRACT_ID_TRUNCATED','SHORT_CREDIT_LIST_UNVERIFIED'];r[0].creditEvidence.credits[0].contractNumber='PREFIX-123 ..';r[1].creditEvidence.credits[0].contractNumber='PREFIX-123-456';
