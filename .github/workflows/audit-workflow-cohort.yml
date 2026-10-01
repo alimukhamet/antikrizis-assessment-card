@@ -1,24 +1,12 @@
-name: Profile and contract cohort audit
+name: Exact existing intake diagnostic
 on:
   workflow_dispatch:
-    inputs:
-      case_ids:
-        description: 'Additional saved deal IDs, comma separated; all current profile queue entries are always checked'
-        type: string
-        default: ''
-      include_queue:
-        description: 'Check the full current profile queue as well as supplied IDs'
-        type: boolean
-        default: true
 permissions:
   contents: read
-concurrency:
-  group: workflow-cohort-audit-${{ inputs.include_queue }}
-  cancel-in-progress: false
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@v7
         with:
@@ -27,14 +15,12 @@ jobs:
         with:
           node-version: '22'
           package-manager-cache: false
-      - run: node scripts/audit-workflow-cohort.mjs
+      - run: node scripts/diagnose-intake-12663.mjs
         env:
           ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
-          AUDIT_CASE_IDS: ${{ inputs.case_ids }}
-          AUDIT_INCLUDE_QUEUE: ${{ inputs.include_queue }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: workflow-cohort-audit
-          path: workflow-cohort-audit.json
-          retention-days: 3
+          name: intake-diagnostic
+          path: intake-diagnostic.json
+          retention-days: 1
