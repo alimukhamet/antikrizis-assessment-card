@@ -60,3 +60,7 @@ test('history protects removed scalar and loan values and unmatchable old obliga
 test('unchecked legacy unknown controls are empty controls, not deleted client facts',()=>{
  const f=fixture();f.draft.payload.groups=[{id:'creditors',rows:[[{key:'loanClaimIncluded',value:'on',checked:true},{key:'unknown:loanParticipants',value:'on',checked:false}]],rowKeys:[null]}];const h=deriveProfileFillHistory(f.draft.payload,[f.draft.payload]);assert.equal(h.allowNewLoans,true);const p=f.run(h);assert.equal(p.newLoans,1);assert.equal(p.payload.groups[0].rows.length,1);assert.equal(p.payload.groups[0].rows[0].find(a=>a.key==='unknown:loanParticipants').checked,false);
 });
+
+test('benefit counts do not manufacture or erase benefit rows',()=>{
+ for(const rows of [null,[]]){const f=fixture();f.analysis.document.extraction.kind='benefits';f.analysis.document.extraction.facts=[fact('benefits.count','0')];if(rows)f.draft.payload.groups.push({id:'clientbenefits',rows,rowKeys:[]});const p=f.run();assert.equal(p.changes.some(x=>x.key==='clientBenefitsCount'),rows!==null);}
+});
