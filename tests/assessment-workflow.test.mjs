@@ -533,3 +533,7 @@ test('saved blank GKB amount, date and status fields offer source copy without o
  s.run(`afLoanParticipantsNotice(row,loan,1)`);assert.equal(row.querySelector('[data-for="'+amount.id+'"] .af-profile-proposal'),null);
  const date=row.querySelector('input[id^="n8038Start"]'),stale=row.querySelector('[data-for="'+date.id+'"] button');date.value='2024-06';await stale.onclick();assert.equal(date.value,'2024-06');assert.equal(saves,1);
 });
+
+test('a saved Otbasy loan matches its abbreviated GKB lender without adding another row',async t=>{
+ const s=setup(t);await s.load();s.mount();s.run(`af.client='991231300003';var a={key:'АО "Жилищный строительный сберегательный банк "Отбасы банк"|SYNTH-1',aliases:['АО "Жилищный строительный сберегательный банк "Отбасы банк"|SYNTH-1'],fields:{n8038:'АО "Жилищный строительный сберегательный банк "Отбасы банк"',loanContractId:'SYNTH-1'}};var row=afRow('creditors',af.client+'|'+a.key,a);afRowFields(row,a.fields,{fileId:1});var b={key:'АО "Жилстройсбербанк "Отбасы банк"|SYNTH-1',aliases:['АО "Жилстройсбербанк "Отбасы банк"|SYNTH-1'],fields:{n8038:'АО "Жилстройсбербанк "Отбасы банк"',loanContractId:'SYNTH-1'}};var match=afRow('creditors',af.client+'|'+b.key,b);`);assert.equal(s.run('match===row'),true);assert.equal(s.d.querySelectorAll('#creditors .repeat-item').length,1);
+});

@@ -9,7 +9,7 @@ export const creditorKey=(value:string)=>value.normalize('NFKC').toLocaleLowerCa
  .replace(/^(?:до|дочерняяорганизация)(?=ао|акционерногообщества)/u,'').replace(/^акционерногообщества(?=.)/u,'ао').replace(/^акционерноеобщество(?=.)/u,'ао').replace(/^товариществосограниченнойответственностью(?=.)/u,'тоо').replace(/^тоомикрофинансоваяорганизация(?=.)/u,'тоомфо').replace(/^народныйбанкказахстана$/u,'аонародныйбанкказахстана').replace(/^тоомфоакф$/u,'тоомфоазиатскийкредитныйфонд')
  // SB Sberbank Russia JSC (Kazakhstan) was renamed Bereke Bank JSC in 2022; the
  // full GKB can still print the old name while the short report prints the new one.
- .replace(/^(?:дочернийбанк)?(?:акционерноеобщество|ао)?(?:дб)?(?:ао)?сбербанкроссии$/u,'аоberekebank').replace(/^аоberekebank(?:\(дбleshabankllc\(public\)\))?$/u,'аоberekebank');
+ .replace(/^(?:дочернийбанк)?(?:акционерноеобщество|ао)?(?:дб)?(?:ао)?сбербанкроссии$/u,'аоberekebank').replace(/^аоberekebank(?:\(дбleshabankllc\(public\)\))?$/u,'аоberekebank').replace(/^ао(?:жилстройсбербанк|жилищныйстроительныйсберегательныйбанк)отбасыбанк$/u,'аоотбасыбанк');
 export function loanRowKey(value:string|null|undefined){
  const parts=(value||'').split('|');
  if(parts[0]==='creditors'&&parts.length===4){parts[2]=creditorKey(parts[2]);parts[3]=parts[3].trim();}
