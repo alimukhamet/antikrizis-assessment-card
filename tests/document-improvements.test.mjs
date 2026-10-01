@@ -29,6 +29,11 @@ test('unlabelled native ID cards require the card structure, checksum, ministry 
 });
 test('sparse GKB exemption accepts only header images and recognized footer/history text',()=>{
  assert.equal(reader.sparseGkbText('4 беттің 2 беті'),true);assert.equal(reader.sparseGkbText('unreadable financial table\n4 беттің 2 беті'),false);
+ const inquiry='23.08.2025 - 13:37   Расширенный – Физическое лицо   АО "TEST BANK"   111111111111\nСтраница 77 из 78 ';
+ assert.equal(reader.sparseGkbText(inquiry),true);
+ assert.equal(reader.sparseGkbText(inquiry.replace('Расширенный –','Получение аггрегатов -')),true);
+ assert.equal(reader.sparseGkbText(inquiry.replace('Расширенный –','Получение агрегатов -')),true);
+ for(const unknown of [inquiry+'\nСумма: 12000 KZT',inquiry.replace('111111111111','не прочитано'),inquiry.replace('Расширенный – Физическое лицо','Обязательство 1'),inquiry.replace('Страница 77 из 78','')])assert.equal(reader.sparseGkbText(unknown),false);
  const OPS={save:10,restore:11,transform:12,paintImageXObject:85};const op=(y)=>({fnArray:[10,12,85,11],argsArray:[null,[365,0,0,50,56,y],['logo'],null]});
  assert.equal(reader.headerImagesOnly(op(757),OPS,595,842),true);assert.equal(reader.headerImagesOnly(op(400),OPS,595,842),false);assert.equal(reader.headerImagesOnly({...op(757),fnArray:[10,12,85,85,11],argsArray:[null,[365,0,0,50,56,757],['a'],['b'],null]},OPS,595,842),false);
 });

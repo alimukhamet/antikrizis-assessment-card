@@ -78,9 +78,20 @@ export class EvidenceRepository {
   if(/\.(png|jpg)$/.test(document.original_key)&&/^native-pdf-\d+:/.test(version))version=version.replace(/^native-pdf-\d+:/,IMAGE_READER_VERSION+':');
   let extraction=await this.db.prepare('SELECT * FROM assessment_extractions WHERE document_id=? AND version=?').bind(document.id,version).first<ExtractionRow>();
   if(extraction)return {document,extraction,result:await this.readResult(extraction)};
+  // Reader v4 only changes sparse GKB page classification. Preserve existing
+  // evidence/reviews for unaffected PDFs. Blocked GKBs must re-read the original
+  // image operators; cached text alone cannot establish that a page is readable.
+  if(version.startsWith('native-pdf-4:')){
+   const previous=await this.cached(caseId,originalHash,version.replace(/^native-pdf-4:/,'native-pdf-3:'));
+   if(!previous)return null;
+   const result=previous.result as {extraction?:NativeExtraction;read?:{pages?:PageText[]}};
+   if(!result.extraction?.kind||!result.read?.pages?.length)return null;
+   if(result.extraction.kind.startsWith('gkb_')&&result.read.pages.some(page=>page.needsOcr))return null;
+   return previous;
+  }
   // Compare actual facts, not a broad document kind. An unchanged report keeps
   // its immutable evidence and employee reviews; improved facts require review.
-  if(/:rules-native-(?:24|25|26|27|28)$/.test(version)){
+  if(/:rules-native-(?:24|25|26|27|28|29|30)$/.test(version)){
    const previous=await this.cached(caseId,originalHash,version.replace(/(rules-native-)(\d+)$/,(_,prefix,n)=>prefix+(Number(n)-1)));
    if(!previous)return null;
    const result=previous.result as {extraction?:NativeExtraction;read?:{pages?:PageText[]}};

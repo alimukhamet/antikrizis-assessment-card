@@ -1,6 +1,6 @@
 import { getDocumentProxy, getResolvedPDFJS } from 'unpdf';
 
-export const PDF_READER_VERSION = 'native-pdf-3';
+export const PDF_READER_VERSION = 'native-pdf-4';
 import {MAX_DOCUMENT_BYTES,DocumentReadError} from './read-document-limits';
 export {MAX_DOCUMENT_BYTES,DocumentReadError} from './read-document-limits';
 // Full GKB reports for clients with long histories exceed 500 pages.
@@ -87,7 +87,10 @@ export async function readPdf(data: Uint8Array) {
 
 export function sparseGkbText(text:string){
  if(!/(?:Страница\s+\d+\s+из\s+\d+|\d+\s+беттің\s+\d+\s+беті)/.test(text))return false;
- const rest=text.replace(/(?:Страница\s+\d+\s+из\s+\d+|\d+\s+беттің\s+\d+\s+беті)/g,'').replace(/^\d{2}\.\d{2}\.\d{4} - \d{2}:\d{2}\s+(?:Жеке кредиттік есеп|Персональный кредитный отчет)\s+(?:"МКБ" АҚ|АО "ГКБ")\s+(?:Деректер жоқ|Нет данных)\s*$/gm,'');
+ const rest=text.replace(/(?:Страница\s+\d+\s+из\s+\d+|\d+\s+беттің\s+\d+\s+беті)/g,'').replace(/^\d{2}\.\d{2}\.\d{4} - \d{2}:\d{2}\s+(?:Жеке кредиттік есеп|Персональный кредитный отчет)\s+(?:"МКБ" АҚ|АО "ГКБ")\s+(?:Деректер жоқ|Нет данных)\s*$/gm,'')
+  // A bank's last inquiry can occupy a page by itself. This is readable text,
+  // not a loan table. The caller still verifies that only the logo is an image.
+  .replace(/^\d{2}\.\d{2}\.\d{4} - \d{2}:\d{2}[ \t]+(?:Расширенный[ \t]+[–-][ \t]+Физическое лицо|Получение аг{1,2}регатов[ \t]+-[ \t]+Физическое лицо)[ \t]+(?:АО|ТОО)[ \t]+["«][^\n"»]+["»][ \t]+\d{12}[ \t]*$/gm,'');
  return !rest.trim();
 }
 export function headerImagesOnly(operators:{fnArray:number[];argsArray:unknown[]},ops:Record<string,number>,width:number,height:number){

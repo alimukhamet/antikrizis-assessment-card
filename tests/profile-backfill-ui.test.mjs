@@ -48,6 +48,25 @@ test('sales mode keeps the profile section hidden and has no profile panel',asyn
  assert.equal(s.d.body.hasAttribute('data-profile-backfill'),false);
 });
 
+for(const mode of ['', 'profile'])test(`${mode || 'contract'} actual address follows the choice and survives draft restore`,async t=>{
+ const s=await setup(t,{mode});await s.load();const {d,w}=s;
+ const choice=d.getElementById('factAddressSame'),field=d.getElementById('factAddressField'),address=d.getElementById('factAddress');
+ choice.value='other';choice.dispatchEvent(new w.Event('change',{bubbles:true}));
+ assert.equal(field.classList.contains('hidden'),false,'a different residence must expose its input');
+ address.value='SYNTHETIC ACTUAL ADDRESS';
+ const payload=w.ServerDrafts.capture();
+ for(const value of ['same','unknown','']){
+  choice.value=value;choice.dispatchEvent(new w.Event('change',{bubbles:true}));
+  assert.equal(field.classList.contains('hidden'),true);
+  assert.equal(address.value,'SYNTHETIC ACTUAL ADDRESS','toggling the choice must preserve entered text');
+ }
+ // Discard only this isolated synthetic screen state before restoring the saved payload.
+ await w.ServerDrafts.restore({automatic:true,draft:{revision:3,identityRevision:1,payload}});
+ assert.equal(choice.value,'other');
+ assert.equal(field.classList.contains('hidden'),false,'restored other-address answers must be editable');
+ assert.equal(address.value,'SYNTHETIC ACTUAL ADDRESS');
+});
+
 test('profile mode hides the contract, prefills from Bitrix, shows the old card and imports deal documents',async t=>{
  const s=await setup(t);await s.load();
  const {d,w,calls}=s;
