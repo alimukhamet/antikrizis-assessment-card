@@ -43,10 +43,6 @@ window.ProfileBackfill=(()=>{
   fields.append(...recommendationFields);addressFields.append(recommendations);
  }
 
- // Fact address only when it differs from the registration address.
- function syncFactAddress(){$('factAddressField')?.classList.toggle('hidden',$('factAddressSame')?.value!=='other');}
- $('factAddressSame')?.addEventListener('change',syncFactAddress);
-
  // «Не знаю» saves an open question instead of blocking the profile.
  function addUnknownButtons(){
   for(const input of document.querySelectorAll('#questionnaireStep input[data-profile-text]')){
