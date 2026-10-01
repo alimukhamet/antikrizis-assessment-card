@@ -36,7 +36,7 @@ export function planProfileSourceFill(draft,context,analyses,validateDraft,histo
    const key=scalarFields[f.key];if(!key||key==='iin'&&f.value!==context.client.iin)continue;
    // Benefit count is a structural form control; only an already matching row
    // count can be filled without inventing payment descriptions.
-   if(key==='clientBenefitsCount'&&Number(f.value)!==(payload.groups.find(g=>g.id==='clientbenefits')?.rows.length||0))continue;
+   if(key==='clientBenefitsCount'&&Number(f.value)!==payload.groups.find(g=>g.id==='clientbenefits')?.rows.length)continue;
    add({key},f.value,evidence(a,f,f.key));
   }
  }
