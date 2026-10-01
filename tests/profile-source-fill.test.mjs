@@ -76,7 +76,3 @@ test('a manually truncated contract identifier cannot cause a duplicate source l
 test('a saved answer for another IIN blocks filling even when case revision and source match',()=>{
  const f=fixture();f.draft.payload.answers.push({key:'iin',value:'991231300004',checked:false});assert.throws(()=>f.run(),/DRAFT_CLIENT_IDENTITY_CONFLICT/);
 });
-
-test('a saved answer for another IIN blocks filling even when case revision and source match',()=>{
- const f=fixture();f.draft.payload.answers.push({key:'iin',value:'991231300004',checked:false});assert.throws(()=>f.run(),/DRAFT_CLIENT_IDENTITY_CONFLICT/);
-});
