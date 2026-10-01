@@ -9,7 +9,7 @@ const source = JSON.parse(read('lib/questionnaire/schema.json'));
 const publicSchema = JSON.parse(read('public/questionnaire-schema.json'));
 const byKey = key => source.scalar.find(field => field.key === key);
 
-test('address roles stay separate between sales facts and profile delivery', () => {
+test('address facts remain shared while support owns court destination entry', () => {
   assert.deepEqual(publicSchema, source, 'public schema must be generated from the source questionnaire');
 
   for (const key of ['regAddress', 'factAddressSame']) {
@@ -27,13 +27,14 @@ test('address roles stay separate between sales facts and profile delivery', () 
 
   const filing = byKey('filingDestination');
   assert.equal(filing.label, 'Куда направляем иск: суд и адрес');
-  assert.equal(filing.required, false, 'owner decision 30 Sep: the CRM collection task owns the ISK destination');
+  assert.equal(filing.required, false, 'owner decision 1 Oct: support owns the ISK destination');
   assert.deepEqual(filing.conditions, ['profileOnly']);
 
   for (const key of ['recommendedDistrict', 'recommendedCourt', 'clientRequestedDistrict', 'clientRequestedCourt', 'registrationChangePosition']) {
     const field = byKey(key);
     assert.equal(field.required, false, key);
-    assert.deepEqual(field.conditions, [], key + ' stays available to preserve sales context in the profile');
+    assert.deepEqual(field.conditions, [], key + ' stays in saved profile feeds');
+    assert.equal(field.supportOnly, true, key + ' is retired from assessment entry');
   }
   assert.deepEqual(byKey('registrationChangePosition').options, ['', 'agrees', 'refuses', 'undecided']);
 
@@ -43,7 +44,11 @@ test('address roles stay separate between sales facts and profile delivery', () 
   assert.equal(profile.querySelector('#regAddress'), null, 'registration fact must not be hidden in the documentologist-only card');
   assert.equal(profile.querySelector('#factAddressSame'), null, 'residence fact must not be hidden in the documentologist-only card');
   assert.ok(profile.querySelector('#postAddress'), 'postal address remains with the documentologist');
-  assert.ok(profile.querySelector('#filingDestination'), 'filing destination remains with the documentologist');
+  assert.ok(profile.querySelector('#filingDestination')?.closest('[hidden][data-support-only]'), 'historical destination is retained but hidden');
+  assert.equal(filing.supportOnly, true);
+  for (const key of ['recommendedDistrict', 'recommendedCourt', 'clientRequestedDistrict', 'clientRequestedCourt', 'registrationChangePosition']) {
+    assert.ok(document.getElementById(key)?.closest('[hidden][data-support-only]'), key + ' is hidden in both modes');
+  }
   assert.ok(document.querySelector('#regAddress')?.closest('section:not(#profileOnly)'));
   assert.ok(document.querySelector('#factAddressSame')?.closest('section:not(#profileOnly)'));
 });
@@ -67,8 +72,9 @@ test('married-only spouse status mirrors client choices and keeps explicit unkno
   assert.ok([...partnerGroup].some(input => input.value === 'unknown'));
 });
 
-test('owner decision 30 Sep: the ISK destination is optional in the profile and hidden from sales', () => {
+test('owner decision 1 Oct: the historical ISK destination is hidden from assessment entry', () => {
   const field = byKey('filingDestination');
-  assert.equal(field.required, false, 'the CRM collection task asks for it; an answer here only pre-fills that task');
-  assert.deepEqual(field.conditions, ['profileOnly'], 'hidden from sales');
+  assert.equal(field.required, false, 'the support task asks for it; old answers only prefill that task');
+  assert.deepEqual(field.conditions, ['profileOnly'], 'saved profile feed conditions stay intact');
+  assert.equal(field.supportOnly, true);
 });

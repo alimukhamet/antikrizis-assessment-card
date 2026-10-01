@@ -25,28 +25,20 @@ window.ProfileBackfill=(()=>{
   +'.pb-warning{border-color:#e3b6b1;background:#fbeae8;color:#7c231b}.pb-done{border-color:#abc5b3;background:#e5f1e8}'
   +'.pb-unknown{margin-top:6px;border:0;background:transparent;color:#7a5a17;font:inherit;font-size:13px;cursor:pointer;padding:2px 0;text-decoration:underline}'
   +'.pb-issues{margin:8px 0 0;padding-left:18px}.pb-issues button{border:0;background:transparent;color:#a43229;font:inherit;text-decoration:underline;cursor:pointer;padding:0;text-align:left}'
-  +'.pb-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}'
-  +'.pb-address-details{grid-column:1/-1;border-top:1px solid #e1e9e4;padding-top:12px}.pb-address-details>summary{cursor:pointer;color:#53645a;font-size:14px}.pb-address-details>.fields{margin-top:14px}';
+  +'.pb-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}';
  document.head.append(style);
  // Use the same client/financial form as contracts. Keep old controls in the
  // draft, without asking for a separate family or contact questionnaire.
  const section=$('profileOnly');if(section)section.dataset.profileHidden='';
  const phone=$('clientPhone')?.closest('.field');
  if(phone){phone.style.removeProperty('display');$('clientPhone').type='tel';$('iin').closest('.field').after(phone);}
- const addressFields=$('regAddress')?.closest('.fields'),destination=$('filingDestination')?.closest('.field');
- if(addressFields&&destination){
-  $('factAddressField').after(destination);
-  const recommendationFields=['recommendedDistrict','recommendedCourt','clientRequestedDistrict','clientRequestedCourt','registrationChangePosition'].map(id=>$(id)?.closest('.field')).filter(Boolean);
-  const label=recommendationFields[0]?.previousElementSibling;if(label?.classList.contains('section-label'))label.remove();
-  const recommendations=make('details',null,'pb-address-details'),fields=make('div',null,'fields');
-  recommendations.append(make('summary','Рекомендации и пожелания — при необходимости'),fields);
-  fields.append(...recommendationFields);addressFields.append(recommendations);
- }
+ // Court/destination controls remain hidden for saved-draft roundtrips.
+ // The platform support explanation task owns new entries.
 
  // «Не знаю» saves an open question instead of blocking the profile.
  function addUnknownButtons(){
   for(const input of document.querySelectorAll('#questionnaireStep input[data-profile-text]')){
-   if(input.nextElementSibling?.classList.contains('pb-unknown'))continue;
+   if(input.closest('[data-support-only]')||input.nextElementSibling?.classList.contains('pb-unknown'))continue;
    const button=make('button','Не знаю — уточнить позже','pb-unknown');button.type='button';
    button.onclick=()=>{input.value=UNKNOWN;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));};
    input.after(button);
