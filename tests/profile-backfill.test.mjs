@@ -52,14 +52,14 @@ test('sales flow asks for registration and factual residence while profile-only 
  for(const key of ['postAddress','clientPhone','count-profilefamily','n8001Employer'])assert.ok(!has(result,key),key);
 });
 
-test('profile mode skips contract answers, keeps sales address facts and asks only where the ISK is filed (owner decision 29 Sep)',()=>{
+test('profile mode skips contract answers and keeps sales address facts; the ISK destination is optional (owner decision 30 Sep)',()=>{
  const p=fixture();for(const key of SALES_ONLY_KEYS)set(p,key,'');
  const result=checkAnswers(validateDraft(p),iin,'2026-09-25',{profile:true});
  assert.equal(result.schedule,null);
  for(const key of SALES_ONLY_KEYS)assert.ok(!has(result,key),key);
  for(const key of ['regAddress','factAddressSame','recommendedDistrict','registrationChangePosition'])assert.ok(!has(result,key),key);
  for(const key of ['clientPhone','contactChannel','count-profilefamily'])assert.ok(!has(result,key,'ANSWER_REQUIRED'),key);
- assert.ok(has(result,'filingDestination','ANSWER_REQUIRED'));
+ assert.ok(!has(result,'filingDestination','ANSWER_REQUIRED'));
 });
 
 test('profile mode: complete answers pass, «Не знаю» becomes an open question, fact address is conditional',()=>{

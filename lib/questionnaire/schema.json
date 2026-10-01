@@ -384,8 +384,8 @@
     {
       "key": "filingDestination",
       "type": "text",
-      "label": "Куда направляем иск: суд и адрес*",
-      "required": true,
+      "label": "Куда направляем иск: суд и адрес",
+      "required": false,
       "conditions": [
         "profileOnly"
       ]
