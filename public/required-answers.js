@@ -11,5 +11,5 @@ window.RequiredAnswers={restore(){
   flag.checked=false;
  }
  for(const flag of root.querySelectorAll('[data-holding="unknown"]'))flag.checked=false;
- if(!profile)for(const control of root.querySelectorAll('select'))if(['unknown','Не знаю'].includes(control.value))control.value='';
+ if(!profile)for(const control of root.querySelectorAll('select'))if(!control.closest('[data-support-only]')&&['unknown','Не знаю'].includes(control.value))control.value='';
 }};
