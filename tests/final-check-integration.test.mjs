@@ -10,7 +10,7 @@ const schema=JSON.parse(fs.readFileSync(root+'lib/questionnaire/schema.json'));
 const participants=await import(root+'public/loan-participants.mjs'),schedule=await import(root+'public/payment-schedule.mjs'),words=await import(root+'public/contract-words.mjs');
 const native=load('lib/documents/extract-native.ts',{'./power-of-attorney':load('lib/documents/power-of-attorney.ts'),'./kz-labels.json':JSON.parse(fs.readFileSync(root+'lib/documents/kz-labels.json'))});
 const image=load('lib/documents/read-image.ts',{'./read-document-limits':load('lib/documents/read-document-limits.ts')});
-const repoTypes=load('lib/documents/repository.ts',{'./extract-native':native,'./read-image':image}),policy=load('lib/documents/policy.ts');
+const repoTypes=load('lib/documents/repository.ts',{'./extract-native':native,'./read-image':image,'./pdf-text-heuristics':load('lib/documents/pdf-text-heuristics.ts')}),policy=load('lib/documents/policy.ts');
 const {validateDraft}=load('lib/questionnaire/draft.ts',{'./schema.json':schema,'./draft-recovery':load('lib/questionnaire/draft-recovery.ts'),'../documents/repository':repoTypes});
 const {checkAnswers}=load('lib/questionnaire/check-answers.ts',{'../../public/profile-explanations.mjs':profileExplanations,'./schema.json':schema,'../documents/extract-native':native,'../../public/payment-schedule.mjs':schedule,'../../public/loan-participants.mjs':participants});
 const compiler=load('lib/questionnaire/compile-assessment.ts',{'./draft':{validateDraft},'./check-answers':{checkAnswers},'../documents/repository':repoTypes,'../../public/payment-schedule.mjs':schedule});
