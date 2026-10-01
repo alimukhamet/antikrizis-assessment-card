@@ -64,3 +64,7 @@ test('unchecked legacy unknown controls are empty controls, not deleted client f
 test('benefit counts do not manufacture or erase benefit rows',()=>{
  for(const rows of [null,[]]){const f=fixture();f.analysis.document.extraction.kind='benefits';f.analysis.document.extraction.facts=[fact('benefits.count','0')];if(rows)f.draft.payload.groups.push({id:'clientbenefits',rows,rowKeys:[]});const p=f.run();assert.equal(p.changes.some(x=>x.key==='clientBenefitsCount'),rows!==null);}
 });
+
+test('canonical legacy split controls retain their existing business meaning and original answers',()=>{
+ const f=fixture();f.draft.payload.answers=[{key:'holding:client:none',value:'none',checked:true},{key:'enforcementDetails',value:'Нет',checked:false}];const before=structuredClone(f.draft.payload.answers),p=f.run();assert.equal(p.payload.answers.find(a=>a.key==='holding:client:businessNone').checked,true);assert.equal(p.payload.answers.find(a=>a.key==='enforcementStatus').value,'no');for(const a of before)assert.deepEqual(p.payload.answers.find(b=>b.key===a.key),a);
+});

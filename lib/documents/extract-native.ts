@@ -331,7 +331,7 @@ const firstBureauKzLabels:Array<[string,string]>=[
  ['Есептен шығарылған негізгі қарыз','Списанный основной долг'],['Есептен шығарылған сыйақы','Списанное вознаграждение'],['Өтелмеген тұрақсыздық айыбы (айыппұл, өсімпұл)','Непогашенная неустойка (штраф, пеня)'],['Есептен шығарылған тұрақсыздық айыбы (айыппұл, өсімпұл)','Списанная неустойка (штраф, пеня)'],
  ['ҚОСЫМША М Ə ЛІМЕТ','ДОПОЛНИТЕЛЬНАЯ ИНФОРМАЦИЯ'],['КЕПІЛДЕР','ЗАЛОГИ'],['Келісімшарт басталғаннан мерзімінен кешіктірілген максималды күндер','Максимальное количество дней'],['Келісімшарт басталғаннан мерзімінен кешіктірілген максималды сома','Максимальная сумма'],
 ];
-const firstBureauLabelRegex=(label:string)=>new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/ /g,'\\s+'),'gu');
+const firstBureauLabelRegex=(label:string)=>new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/М Ə /g,'М\\s*[ӘƏ]\\s*').replace(/ /g,'\\s+'),'gu');
 function firstBureauKzPages(pages:PageText[]):PageText[]{
  return pages.map(p=>{let text=p.text;for(const [kz,ru]of [...firstBureauKzLabels].sort((a,b)=>b[0].length-a[0].length))text=text.replace(firstBureauLabelRegex(kz),ru);
   text=text.replace(/(Роль субъекта\s*:\s*)Қарызгер(?=\s|$)/gu,'$1Заёмщик').replace(/(Вид финансирования\s*:\s*)Несие картасы/gu,'$1Кредитная карта').replace(/(Фаза договора\s*:\s*)Қолданыстағы(?=\s|$)/gu,'$1Действующий').replace(/(\d{2}\.\d{2}\.\d{4}\s+)ж\.(\s*\))/gu,'$1г.$2');return {...p,text};});

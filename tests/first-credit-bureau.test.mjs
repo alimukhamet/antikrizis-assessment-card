@@ -137,3 +137,7 @@ test('Kazakh closed contracts, other roles, missing pages and unknown fees remai
  const missing=kzPages([kzHeader,'ҚОЛДАНЫСТАҒЫ ШАРТ\n'+kzCard]);missing[1].text=missing[1].text.replace('2 / 2','1 / 2');assert.ok(extractNative(missing).findings.includes('PAGE_COMPLETENESS_UNVERIFIED'));
  const fees=kzExtract(kzCard.replace('Тұрақсыздық айыбы (айыппұл, өсімпұл): 1 KZT','Тұрақсыздық айыбы (айыппұл, өсімпұл): -'));assert.equal(fields(fees).debtOutstanding,undefined);assert.ok(fees.findings.includes('TOTAL_DEBT_REQUIRES_RECONCILIATION'));
 });
+
+test('Kazakh labels support a normal Ә glyph as well as the PDF spaced schwa encoding',()=>{
+ const e=kzExtract(kzCard.replaceAll('М Ə ','МӘ'));assert.equal(e.creditList.complete,true);assert.equal(fields(e).debtOutstanding,'129.45');assert.ok(e.credits[0].facts.find(f=>f.key==='debtOutstanding').source.includes('БАЛАНС ТУРАЛЫ МӘЛІМЕТТЕР'));
+});
