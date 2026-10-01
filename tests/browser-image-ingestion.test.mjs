@@ -94,9 +94,10 @@ test('CRM image intake validates the original, stores image reader version and p
 
 test('existing manual-review service and upload plan accept photo evidence without changing original content',async()=>{
  const {reviewDocument,currentDocumentReview}=bundle('lib/documents/document-review.ts'),{documentUploadPlan}=bundle('lib/documents/upload-plan.ts');
+ const {EXTRACTION_VERSION}=bundle('lib/documents/extract-native.ts');
  const {repo}=setup(),record=await repo.syncCase({external:{system:'test',dealId:'1'},iin:'991231300003',title:'SYNTHETIC'}),bytes=png(),read=await image.readImage(bytes);
  const analysis={read,extraction:{kind:'unknown',identity:{iin:null},findings:['OCR_REQUIRED']}};
- const stored=await repo.store(record.id,bytes,'photo.png',actor,'native-image-1:rules-native-28',analysis);
+ const stored=await repo.store(record.id,bytes,'photo.png',actor,'native-image-1:'+EXTRACTION_VERSION,analysis);
  const raw={type:'Ф6 об отсутствии имущества',iin:record.client_iin,pages:1,complete:true,contentMatches:true,periodChecked:true,reason:'Synthetic complete visual inspection.',issuedAt:'2026-09-30',expiresAt:'',from:'',to:''};
  const review=await reviewDocument(repo,record,stored.document.id,'synthetic_photo_review_1',1,raw,actor,'2026-09-30');
  assert.equal(review.extraction_id,stored.extraction.id);

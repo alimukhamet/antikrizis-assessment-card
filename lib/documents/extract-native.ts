@@ -1,7 +1,7 @@
 import labels from './kz-labels.json';
 import type { PageText } from './read-pdf';
 import {extractPowerParties,type PowerParties} from './power-of-attorney';
-export const EXTRACTION_VERSION = 'rules-native-28';
+export const EXTRACTION_VERSION = 'rules-native-29';
 export type Fact = { key: string; value: string; page: number; source: string };
 export type Credit = { contractNumber: string; contractCode?: string; page: number; facts: Fact[]; components: Record<string, string | null>; comparisonDebt?:Fact; relatedPartiesNotice?: {page:number;source:string} };
 export type BankStatement={from:string|null;to:string|null;credits:string;topUps:string;topUpsVerified:boolean;debits:string;transactions:number;reconciled:boolean;rowsReadable:boolean;sourcePage:number;reconciliation?:string;gambling?:{total:string;matches:Array<{date:string;amount:string;description:string;page:number}>}};
@@ -75,6 +75,7 @@ export function extractNative(pages: PageText[]): NativeExtraction {
   // "Дербес кредиттік есеп" in their explanatory pages; that is not their format.
   const reportTitle=/(?:дербес\s+кредиттік есеп|персональный кредитный отчет|жеке кредиттік есеп)/u.exec(head)?.[0];
   const modernShort=Boolean(reportTitle?.startsWith('дербес')&&/қысқаша нысан/.test(head.slice(0,1500)));
+  const firstBureau=/^\s*(?:полный\s+)?персональный кредитный отчет\s+id\s+\d+/u.test(head)&&/\b1cb\.kz\b/u.test(head);
   const credit = modernShort || /персональный кредитный отчет|жеке кредиттік есеп/.test(head);
   // Identify the issuing bank before transaction counterparties. A transfer to
   // Kaspi must not turn a Eurasian account statement into a Kaspi statement.
@@ -86,7 +87,7 @@ export function extractNative(pages: PageText[]): NativeExtraction {
     && /на недвижимое имущество и его технических характеристиках/.test(compactFront);
   const eurasian=/^\s*ао\s*[«"“]?евразийский банк[»"”]?/u.test(statementFront)&&/выписка по сч[её]ту/u.test(statementFront)&&/eubank\.kz|eurikzka/u.test(statementFront);
   const halyk=/выписка по счету/.test(head)&&/тип счета\s*:[^\n]*зарплата/.test(head)&&/народный банк казахстана|halykbank\.kz/.test(head);
-  const kind = credit ? /краткая форма|қысқаша/.test(head) ? 'gkb_short' : 'gkb_full'
+  const kind = firstBureau ? 'gkb_full' : credit ? /краткая форма|қысқаша/.test(head) ? 'gkb_short' : 'gkb_full'
     : eurasian||halyk ? 'salary'
     : pensionAccount ? 'enpf'
     : /kaspi/.test(head) && /выписка|үзінді\s+көшірме/u.test(head) ? 'kaspi'
@@ -100,7 +101,7 @@ export function extractNative(pages: PageText[]): NativeExtraction {
   if (pages.some(p => p.needsOcr)) output.findings.push('OCR_OR_PAGE_REVIEW_REQUIRED');
   const transformed = credit ? pages.map(p => ({...p,text:canonical(p.text)})) : pages;
   const text = transformed.map(p => p.text).join('\n');
-  if (credit) {
+  if (credit&&!firstBureau) {
     const russian = [...raw.matchAll(/Страница\s+(\d+)\s+из\s+(\d+)/g)].map(m=>[Number(m[1]),Number(m[2])]);
     const kazakh = [...raw.matchAll(/(\d+)\s+беттің\s+(\d+)\s+бет(?:і)?(?=\s|$)/gu)].map(m=>[Number(m[1]),Number(m[2])]);
     // Both Kazakh footer layouts exist. Accept only an entire, ordered 1..N sequence.
@@ -189,11 +190,12 @@ export function extractNative(pages: PageText[]): NativeExtraction {
       }else output.findings.push('BENEFITS_ACTIVE_TABLE_REVIEW_REQUIRED');
     }
   }
+  if(firstBureau)parseFirstCreditBureau(pages,output);
   if (output.identity.iin) output.facts.push({key:'identity.iin',value:output.identity.iin,page:1,source:'ИИН владельца документа'});
   else output.findings.push('DOCUMENT_IDENTITY_UNVERIFIED');
   if (output.identity.name) output.facts.push({key:'identity.name',value:output.identity.name,page:1,source:'ФИО владельца документа'});
   if (kind === 'unknown') output.findings.push('DOCUMENT_TYPE_UNVERIFIED');
-  if (kind === 'gkb_full') {
+  if (kind === 'gkb_full'&&!firstBureau) {
     let at=0; const starts = transformed.map(p => { const out={at,page:p.page};at+=p.text.length+1;return out; });
     const blocks=[...text.matchAll(/(?:^|\n)Обязательство\s+\d+\s*(?:\n|$)/g)];
     for (let n=0;n<blocks.length;n++) {
@@ -309,6 +311,86 @@ export function extractNative(pages: PageText[]): NativeExtraction {
   }
   if (!['gkb_full','gkb_short','kaspi'].includes(kind)) output.findings.push('DETAILED_EXTRACTION_PENDING');
   output.findings=[...new Set(output.findings)]; return output;
+}
+/** Russian 1cb.kz reports use contract cards and a different owner/header/footer layout. */
+function parseFirstCreditBureau(pages:PageText[],output:NativeExtraction){
+ const header=pages[0]?.text||'';
+ const report=/^\s*(?:ПОЛНЫЙ\s+)?ПЕРСОНАЛЬНЫЙ КРЕДИТНЫЙ ОТЧЕТ\s+ID\s+(\d+)\s+(\d{2}\.\d{2}\.\d{4})\s+\d{2}:\d{2}:\d{2}/iu.exec(header);
+ const iin=value(/(?:^|\n)\s*ИИН(?:\s*\/\s*БИН)?\s*:\s*(\d{12})\b/u,header);
+ output.identity={iin:validIin(iin)?iin:null,name:value(/\n\s*([^\n]+?)\s*\(\d{2}\.\d{2}\.\d{4}\s+г\.(?:р\.)?\)\s*\n/u,header)};
+ output.issuedAt=day(report?.[2]||null);
+ const footer=/(?:Полный\s+)?персональный кредитный отчет[^\n]*?\bID\s+(\d+)\s*-\s*\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2}\s+(\d+)\s*\/\s*(\d+)\s*$/imu;
+ if(!report||!pages.every((p,i)=>{const m=footer.exec(p.text);return p.page===i+1&&m?.[1]===report[1]&&Number(m[2])===i+1&&Number(m[3])===pages.length;}))output.findings.push('PAGE_COMPLETENESS_UNVERIFIED');
+ let offset=0;
+ const cleanPages=pages.map(p=>{const text=p.text.replace(footer,'');const result={page:p.page,text,offset};offset+=text.length+1;return result;});
+ const text=cleanPages.map(p=>p.text).join('\n'),pageAt=(at:number)=>cleanPages.filter(p=>p.offset<=at).at(-1)?.page||1;
+ const noArrears=value(/(?:^|\n)\s*(\d+)\s+Действующие договоры без просрочки/iu,header),withArrears=value(/(?:^|\n)\s*(\d+)\s+Действующие договоры с просрочкой/iu,header);
+ const declared=noArrears!==null&&withArrears!==null?Number(noArrears)+Number(withArrears):null;
+ const blocks=[...text.matchAll(/(?:^|\n)[ \t]*КОНТРАКТ\s+(\d+)[ \t]*(?=\n|$)/gu)];
+ const sections=[...text.matchAll(/(?:^|\n)[ \t]*(ДЕЙСТВУЮЩИЕ (?:ДОГОВОРА|ДОГОВОРЫ|ТРАНШИ)|ЗАВЕРШЕННЫЕ ДОГОВОРЫ|ДОГОВОРЫ, ЗАВЕРШЕННЫЕ БОЛЕЕ 5 ЛЕТ НАЗАД|ОТОЗВАННЫЕ ДОГОВОРЫ)[ \t]*(?=\n|$)/gu)];
+ const cents=(v:string)=>{const n=v.replace(/\s/g,'').replace(',','.');return /^\d+(?:\.\d{1,2})?$/.test(n)?BigInt(n.split('.')[0])*BigInt(100)+BigInt((n.split('.')[1]||'').padEnd(2,'0')):null;};
+ const money=(n:bigint)=>`${n/BigInt(100)}.${String(n%BigInt(100)).padStart(2,'0')}`;
+ let activeCards=0;
+ for(let i=0;i<blocks.length;i++){
+  const at=blocks[i].index!+blocks[i][0].length;
+  // Historical maximums and repayment calendars are never current balances.
+  const nextSection=sections.find(s=>s.index!>at)?.index??text.length;
+  const block=text.slice(at,Math.min(blocks[i+1]?.index??text.length,nextSection)).split(/Максимальное количество дней|Максимальная сумма|Платежная дисциплина/u)[0];
+  const section=sections.filter(s=>s.index!<at).at(-1)?.[1],phase=value(/Фаза\s+договора\s*:[ \t]*([^\n]+)/u,block);
+  // Older cards omit the phase field; their explicit section still identifies
+  // active contracts. Never inherit that section past a completed-loan heading.
+  if(!section?.startsWith('ДЕЙСТВУЮЩИЕ')||phase!==null&&phase!=='Действующий')continue;
+  activeCards++;
+  const role=value(/Роль\s+субъекта\s*:[ \t]*([^\n]+)/u,block);
+  if(!/^за[её]мщик$/iu.test(role||'')){output.findings.push('OTHER_BORROWER_ROLE_REQUIRES_REVIEW');continue;}
+  // Read wrapped identifiers only up to the following labelled field, never a date/heading.
+  const identifier=(label:string)=>value(new RegExp(label.replace(/ /g,'\\s+')+'\\s*:\\s*([\\s\\S]*?)(?=\\s+(?:Дата|Номер договора|СОСТОЯНИЕ|ДОГОВОР|Классификация|Фаза договора|ДЕТАЛИЗАЦИЯ))','u'),block)?.replace(/\s+/g,'')||null;
+  const contractNumber=identifier('Номер договора'),contractCode=identifier('Код контракта');
+  const creditor=value(/Источник\s+информации\s*\(Кредитор\)\s*:?\s*([\s\S]*?)(?=\s+(?:Сумма кредитного лимита|Общая сумма кредита))/u,block)?.replace(/\s+/g,' ')||null;
+  if(!contractNumber||/^(?:-|Нетданных)$|[.…]{2}|:/u.test(contractNumber)||!creditor){output.findings.push('INCOMPLETE_CONTRACT');continue;}
+  const page=pageAt(at),facts:Fact[]=[];
+  const add=(key:string,v:string|null,needle:string,source=needle)=>{if(v!==null)facts.push({key,value:v,page:pageAt(at+Math.max(0,block.search(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/ /g,'\\s+'),'u')))),source});};
+  const balance=block.split(/Вид\s+финансирования/u)[0];
+  const balanceAmount=(label:string)=>{const m=new RegExp(label.replace(/ /g,'\\s+')+'\\s*:?\\s*([0-9][0-9\\s.,]*)KZT','u').exec(balance);const n=m?cents(m[1]):null;return n===null?null:money(n);};
+  const remaining=balanceAmount('Использованная сумма\\s*\\(подлежащая\\s+погашению\\)')??balanceAmount('Непогашенная сумма по кредиту');
+  const arrears=balanceAmount('Сумма просроченных взносов'),penalty=balanceAmount('Сумма неустойки\\s*\\(штраф, пеня\\)');
+  const overdue=value(/Количество\s+дней\s+просрочки\s*:\s*(\d+(?:[ \t]+\d{3})*)(?=\s|$)/u,balance)?.replace(/\s/g,'')||null;
+  const payment=balanceAmount('Минимальный платеж')??balanceAmount('Сумма периодического платежа');
+  const start=day(value(/Дата\s+начала\s+срока\s+действия\s+договора\s*:\s*(\d{2}\.\d{2}\.\d{4})/u,block));
+  const usableCode=contractCode&&!/^(?:-|Нетданных)$|[.…]{2}|:/u.test(contractCode)?contractCode:null;
+  add('creditor',creditor,'Источник информации',`ПКБ: источник информации (кредитор): ${creditor}`);
+  add('contractIdentifier',usableCode||contractNumber,usableCode?'Код контракта':'Номер договора');
+  add('startedAtMonth',start?.slice(0,7)||null,'Дата начала срока действия');
+  add('overdueDays',overdue,'Количество дней просрочки');
+  add('loanStatus',overdue===null?null:Number(overdue)>0?'В просрочке — требуют полную сумму':'Платится по графику','Количество дней просрочки');
+  if(overdue==='0')add('monthlyPayment',payment,balance.includes('Минимальный платеж')?'Минимальный платеж':'Сумма периодического платежа');
+  const financing=value(/Вид\s+финансирования\s*:[ \t]*([^\n]+)/u,block)?.split(/\s+(?:ДОГОВОР|СОСТОЯНИЕ|ДЕТАЛИЗАЦИЯ)/u)[0]||null,purpose=value(/Цель\s+кредита\s*:[ \t]*([^\n]+)/u,block);
+  const object=value(/Объект\s+кредитования\s*:\s*([\s\S]*?)(?=\s+(?:Тип\s+источника\s+информации|ДОГОВОР|Код контракта))/u,block)?.replace(/\s+/g,' ')||null;
+  const security=value(/ЗАЛОГИ\s*:[^\n]*\n([^\n]+)/u,block);
+  add('creditType',isLombard(creditor)?'Ломбард':questionnaireCreditType(financing,purpose,object,security),'Вид финансирования',`ПКБ: ${financing||'—'}; цель: ${purpose||'—'}; объект: ${object||'—'}; кредитор: ${creditor}`);
+  // In this layout the headline unpaid balance may overlap arrears. Sum only
+  // the explicitly non-overlapping current/overdue principal and interest.
+  const detail=block.split(/ДЕТАЛИЗАЦИЯ БАЛАНСА\s*\(ОСТАТОК\)/u)[1]?.split(/ДОПОЛНИТЕЛЬНАЯ/u)[0]||'';
+  const detailAmount=(label:string)=>{const m=new RegExp('(?:^|\\n)\\s*'+label.replace(/ /g,'\\s+')+'\\s*:\\s*([0-9][0-9\\s.,]*)KZT','u').exec(detail);return m?cents(m[1]):null;};
+  const parts=['Непросроченный основной долг','Непогашенное вознаграждение','Просроченный основной долг','Просроченное вознаграждение','Непогашенная неустойка\\s*\\(штраф, пеня\\)'].map(detailAmount);
+  const writtenOff=['Списанный основной долг','Списанное вознаграждение','Списанная неустойка\\s*\\(штраф, пеня\\)'].some(label=>(detailAmount(label)??BigInt(0))>BigInt(0));
+  const reconciled=parts.every((n):n is bigint=>n!==null)&&remaining!==null&&arrears!==null&&penalty!==null&&parts[0]+parts[1]===cents(remaining)&&parts[2]+parts[3]===cents(arrears)&&parts[4]===cents(penalty);
+  const currentKnown=(parts[0]??BigInt(0))+(parts[1]??BigInt(0));
+  const scheduledDetailCompatible=remaining!==null&&currentKnown<=cents(remaining)!&&(parts[0]===null||parts[1]===null||currentKnown===cents(remaining))&&parts.slice(2).every(n=>n===null||n===BigInt(0));
+  if(reconciled&&!writtenOff)add('debtOutstanding',money(parts.reduce((a,b)=>a+b!,BigInt(0))),'ДЕТАЛИЗАЦИЯ БАЛАНСА','ПКБ: текущий основной долг и вознаграждение + просроченный основной долг и вознаграждение + неустойка. Каждая часть сверена с блоком «Баланс».');
+  else if(!writtenOff&&remaining!==null&&overdue==='0'&&arrears==='0.00'&&(penalty===null||penalty==='0.00')&&scheduledDetailCompatible)add('debtOutstanding',remaining,balance.includes('Использованная сумма')?'Использованная сумма':'Непогашенная сумма по кредиту','ПКБ: непогашенная сумма при отсутствии показанной просрочки; требуется сверка по оригиналу.');
+  if(!facts.some(f=>f.key==='debtOutstanding'))output.findings.push('TOTAL_DEBT_REQUIRES_RECONCILIATION');
+  const related=/СВЯЗАННЫЕ\s+СУБЪЕКТЫ\s*:\s*([\s\S]*?)(?=СВЯЗАННЫЕ\s+КОНТРАКТЫ|$)/u.exec(block)?.[1];
+  if(related){
+   const people=[...related.matchAll(/(?:^|\n)\s*(Соза[её]мщик|Гарант|Поручитель|Залогодатель)\s+([\p{L}\s'-]{3,180}?)\s+(\d{12})\b/giu)];
+   if(people.length&&people.length===(related.match(/\b\d{12}\b/g)||[]).length&&people.every(p=>validIin(p[3])))add('relatedParties',people.map(p=>`${p[2].replace(/\s+/g,' ').trim()} — ${p[1]}`).join('; '),'СВЯЗАННЫЕ',related.trim());
+  }
+  output.credits.push({contractNumber,...(usableCode?{contractCode:usableCode}:{}),page,facts,components:{remaining,arrears,penalty,interest:null,fine:null}});
+ }
+ const unique=new Set(output.credits.map(c=>`${c.facts.find(f=>f.key==='creditor')?.value}|${c.contractCode||c.contractNumber}`)).size===output.credits.length;
+ const complete=declared!==null&&declared===activeCards&&declared===output.credits.length&&unique&&!output.findings.includes('INCOMPLETE_CONTRACT');
+ output.creditList={complete,declared};
+ if(!complete)output.findings.push('CONTRACT_LIST_INCOMPLETE_OR_OTHER_ROLES');
 }
 /** 2026 Kazakh short report: explicit current-contract table, three debt columns. */
 function parseModernShort(pages:PageText[],output:NativeExtraction){

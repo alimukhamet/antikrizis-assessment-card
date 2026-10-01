@@ -125,22 +125,29 @@ test('profile explanation prompts show the hard minimum and restore partial text
  assert.match(purpose.closest('.field').textContent,/кто пользовался деньгами/);
  assert.match(hardship.closest('.field').textContent,/месяц\/год/);
  for(const field of [purpose,hardship]){
-  assert.equal(field.minLength,60);
+  assert.equal(field.minLength,30);
   assert.equal(field.closest('.field').querySelector('.pb-unknown,[data-unknown],[data-legacy-unknown]'),null);
  }
  const original='Кредитные деньги потратили на покупку жилья для проживания семьи клиента.';
- purpose.value=(original.slice(0,58)+'.')+' \n ';purpose.dispatchEvent(new w.Event('input',{bubbles:true}));
- assert.match(d.getElementById('debtPurposeOtherCount').textContent,/59 \/ 60.*ещё 1/);
+ purpose.value=(original.slice(0,28)+'.')+' \n ';purpose.dispatchEvent(new w.Event('input',{bubbles:true}));
+ assert.match(d.getElementById('debtPurposeOtherCount').textContent,/29 \/ 30.*ещё 1/);
  assert.equal(purpose.validity.customError,true);
  const draft=w.ServerDrafts.capture();purpose.value='';
  await w.ServerDrafts.restore({draft:{revision:2,identityRevision:1,payload:draft},automatic:true});
- assert.equal(purpose.value,(original.slice(0,58)+'.')+' \n ');
+ assert.equal(purpose.value,(original.slice(0,28)+'.')+' \n ');
  assert.equal(purpose.validity.customError,true);
- assert.match(d.getElementById('debtPurposeOtherCount').textContent,/59 \/ 60/);
- purpose.value=original.slice(0,60);purpose.dispatchEvent(new w.Event('input',{bubbles:true}));
+ assert.match(d.getElementById('debtPurposeOtherCount').textContent,/29 \/ 30/);
+ purpose.value=original.slice(0,29)+'.';purpose.dispatchEvent(new w.Event('input',{bubbles:true}));
  assert.equal(purpose.validity.customError,false);
- assert.match(d.getElementById('debtPurposeOtherCount').textContent,/60 \/ 60/);
+ assert.match(d.getElementById('debtPurposeOtherCount').textContent,/30 \/ 30/);
  reason.value='Снижение дохода';reason.dispatchEvent(new w.Event('change',{bubbles:true}));
+ const unicode='Доход с января упал 🏠 на треть';
+ for(const field of [purpose,hardship])for(const length of [29,30]){
+  field.value='\u00a0'+Array.from(unicode).slice(0,length).join('').replaceAll(' ',' \u2003\n ')+'\u00a0';
+  field.dispatchEvent(new w.Event('input',{bubbles:true}));
+  assert.equal(field.validity.customError,length===29,field.id+': normalized Unicode boundary');
+  assert.match(d.getElementById(field.id+'Count').textContent,new RegExp(length+' / 30'));
+ }
  hardship.value='Не знаю';hardship.dispatchEvent(new w.Event('input',{bubbles:true}));
  assert.equal(hardship.validity.customError,true);
  hardship.value='С марта сократились рабочие часы и доход. После оплаты жилья денег на платежи не хватает.';
