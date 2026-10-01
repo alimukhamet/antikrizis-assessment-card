@@ -1,15 +1,39 @@
-name: Bitrix document reading audit
+# Prepared replacement for this EXISTING registered workflow on a temporary
+# branch. Do not install this replacement on main or merge its maintenance code.
+name: One-time 6579 source recovery
 on:
   workflow_dispatch:
-  push:
-    branches: [fix/tool-rollout-audit]
-    paths: [scripts/audit-crm-documents.mjs, .github/workflows/audit-crm-documents.yml]
+    inputs:
+      apply:
+        description: 'Apply the exact reviewed preview; otherwise reads only'
+        default: false
+        type: boolean
+      expected_commit:
+        description: 'Exact reviewed temporary branch commit (40 hex characters)'
+        required: true
+        type: string
+      request_id:
+        description: 'Single reviewed draft request UUID; keep unchanged across preview/apply'
+        required: true
+        type: string
+      plan_hash:
+        description: 'Exact dry-preview planHash; required only for apply'
+        default: ''
+        type: string
+      guard_json:
+        description: 'Fresh root-reviewed redacted D1 guard JSON, not older than 5 minutes'
+        required: true
+        type: string
 permissions:
   contents: read
+concurrency:
+  group: one-time-recovery6579
+  cancel-in-progress: false
 jobs:
-  audit:
+  recover:
+    if: github.ref_type == 'branch' && github.ref_name != github.event.repository.default_branch && github.ref_name != 'main'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
@@ -18,13 +42,37 @@ jobs:
         with:
           node-version: '22'
           package-manager-cache: false
-      - name: Read a bounded sample of existing CRM documents
+      - name: Pin reviewed branch before reading credentials
+        env:
+          RECOVERY_EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+        run: |
+          test "$GITHUB_SHA" = "$RECOVERY_EXPECTED_COMMIT"
+          test "$GITHUB_REF_NAME" != 'main'
+      - run: npm ci --no-audit --no-fund
+      - name: Compile exact canonical validator and PDF parser without building or deploying Worker
+        run: node maintenance/recovery6579/build-recovery-tools.mjs
+      - name: Download exact immutable platform original (read only)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node maintenance/recovery6579/get-original.mjs
+      - name: Preview or apply only the pinned selection
         env:
           ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
-        run: node scripts/audit-crm-documents.mjs
+          RECOVERY_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RECOVERY_EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          RECOVERY_REQUEST_ID: ${{ inputs.request_id }}
+          RECOVERY_PLAN_HASH: ${{ inputs.plan_hash }}
+          RECOVERY_GUARD_JSON: ${{ inputs.guard_json }}
+          RECOVERY_APPLY: ${{ inputs.apply }}
+        run: node maintenance/recovery6579/recover6579.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: crm-document-audit
-          path: crm-document-audit.json
-          retention-days: 1
+          name: recovery6579-report-${{ github.run_id }}
+          path: recovery6579-report.json
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Remove private original from ephemeral workspace
+        if: always()
+        run: rm -f recovery6579-original.bin
