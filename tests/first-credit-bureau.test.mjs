@@ -89,3 +89,51 @@ test('explicit related parties preserve their role but an absent table never mea
 test('scheduled headline balance cannot override a known conflicting penalty or partial principal detail',()=>{
  for(const c of [card().replace('Непогашенная неустойка (штраф, пеня): 0.00 KZT','Непогашенная неустойка (штраф, пеня): 100.00 KZT'),card().replace('Непросроченный основной долг: 120.00 KZT','Непросроченный основной долг: 999.00 KZT').replace('Непогашенное вознаграждение: 3.45 KZT','Непогашенное вознаграждение: -')]){const e=extract(c);assert.equal(fields(e).debtOutstanding,undefined);assert.ok(e.findings.includes('TOTAL_DEBT_REQUIRES_RECONCILIATION'));}
 });
+
+const kzHeader=`ТОЛЫҚ ДЕРБЕС НЕСИЕЛІК ЕСЕП ID 12345 21.08.2026 12:10:39
+СЫНАҚ ТЕСТОВ ТЕСТОВИЧ (31.12.1999 ж.)
+ЖСН/БСН : 991231300003
+0 Қолданыстағы кешігусіз келісім-шарттар*
+1 Қолданыстағы кешігуі бар келісім-шарттар*
+1cb.kz`;
+const kzCard=`КЕЛІСІМ-ШАРТ 1
+Баланс
+Ақпарат көзі (несиелендіруші) АО «Тест Банк» Несие лимиті 1000 KZT Мерзімі өткен жарналар сомасы: 5 KZT Тұрақсыздық айыбы (айыппұл, өсімпұл): 1 KZT
+Қалдық сома: 123.45 KZT Мерзімін өткізген күндер саны: 50 Ең төмен төлем: 10 KZT
+Қаржыландыру түрі: Несие картасы
+Субъектінің рөлі: Қарызгер
+Несиенің мақсаты: Өзге
+Несиелендіру объектісі: Өзге
+Ақпарат көзінің (несиелендірушінің) түрі: Екінші деңгейлі банк
+КЕЛІСІМ-ШАРТ
+Шарт коды: CODE-KZ-1
+Өтінім күні: -
+Келісім-шарт нөмірі: TEST-KZ-1
+Несиенің нақты берілген күні: 16.11.2020
+М Ə РТЕБЕСІ
+Шарт фазасы: Қолданыстағы
+Шарт м ə ртебесі: 31 ден 60 күнге дейін қарыз мерзімін өткізу
+БАЛАНС ТУРАЛЫ М Ə ЛІМЕТТЕР (ҚАЛДЫҚ)
+Мерзімі өтпеген негізгі қарыз: 120.00 KZT
+Өтелмеген сыйақы: 3.45 KZT
+Мерзімі өткен негізгі қарыз: 4 KZT
+Мерзімі өткен сыйақы: 1 KZT
+Есептен шығарылған негізгі қарыз: 0 KZT
+Есептен шығарылған сыйақы: 0 KZT
+Өтелмеген тұрақсыздық айыбы (айыппұл, өсімпұл): 1 KZT
+ҚОСЫМША М Ə ЛІМЕТ:
+КЕПІЛДЕР: Бланкілік
+Келісімшарт басталғаннан мерзімінен кешіктірілген максималды күндер: 999
+Мерзімі өткен жарналар сомасы: 999 KZT`;
+const kzPages=texts=>texts.map((text,i)=>({page:i+1,text:`${text}\nТОЛЫҚ ДЕРБЕС НЕСИЕЛІК ЕСЕП - СЫНАҚ ТЕСТОВ ТЕСТОВИЧ - ID 12345 - 21.08.2026 12:10:39 ${i+1} / ${texts.length}`,nativeCharacters:text.length,needsOcr:false}));
+const kzExtract=(card=kzCard)=>extractNative(kzPages([kzHeader,'ҚОЛДАНЫСТАҒЫ ШАРТ\n'+card]));
+test('Kazakh 1cb contract cards reconcile active loans and retain original language quotes',()=>{
+ const e=kzExtract();assert.equal(e.kind,'gkb_full');assert.equal(e.identity.iin,'991231300003');assert.equal(e.identity.name,'СЫНАҚ ТЕСТОВ ТЕСТОВИЧ');assert.equal(e.issuedAt,'2026-08-21');assert.equal(e.creditList.complete,true);
+ assert.deepEqual(fields(e),{creditor:'АО «Тест Банк»',contractIdentifier:'CODE-KZ-1',startedAtMonth:'2020-11',overdueDays:'50',loanStatus:'В просрочке — требуют полную сумму',creditType:'Кредитная карта',debtOutstanding:'129.45'});assert.ok(e.credits[0].facts.every(f=>f.page===2&&f.source.includes('оригинал:')));assert.ok(e.credits[0].facts.find(f=>f.key==='overdueDays').source.includes('Мерзімін өткізген күндер саны: 50'));assert.equal(e.credits[0].facts.some(f=>f.key==='relatedParties'),false);
+});
+test('Kazakh closed contracts, other roles, missing pages and unknown fees remain guarded',()=>{
+ const closed=kzCard.replaceAll('KZ-1','CLOSED').replace('Шарт фазасы: Қолданыстағы','Шарт фазасы: Мерзімінен бұрын өтелді');assert.equal(kzExtract(kzCard+'\nАЯҚТАЛҒАН ШАРТТАР\n'+closed).credits.length,1);
+ const other=kzExtract(kzCard.replace('Субъектінің рөлі: Қарызгер','Субъектінің рөлі: Кепіл беруші'));assert.equal(other.creditList.complete,false);assert.equal(other.credits.length,0);
+ const missing=kzPages([kzHeader,'ҚОЛДАНЫСТАҒЫ ШАРТ\n'+kzCard]);missing[1].text=missing[1].text.replace('2 / 2','1 / 2');assert.ok(extractNative(missing).findings.includes('PAGE_COMPLETENESS_UNVERIFIED'));
+ const fees=kzExtract(kzCard.replace('Тұрақсыздық айыбы (айыппұл, өсімпұл): 1 KZT','Тұрақсыздық айыбы (айыппұл, өсімпұл): -'));assert.equal(fields(fees).debtOutstanding,undefined);assert.ok(fees.findings.includes('TOTAL_DEBT_REQUIRES_RECONCILIATION'));
+});

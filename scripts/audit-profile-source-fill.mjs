@@ -1,6 +1,6 @@
 // Owner-triggered queue inspection and exact, additive draft fill. No profile,
 // review, contract, history, stage or CRM publication is performed.
-import {randomUUID} from 'node:crypto';import {writeFile} from 'node:fs/promises';import assert from 'node:assert/strict';
+import {writeFileSync} from 'node:fs';import {randomUUID} from 'node:crypto';import {writeFile} from 'node:fs/promises';import assert from 'node:assert/strict';
 import {validateDraft} from '../.profile-fill-validation.mjs';
 import {planProfileSourceFill,digest,storedPayload} from './profile-source-fill.mjs';
 const origin='https://assessment.anti-krizis.kz',apply=process.env.PROFILE_FILL_APPLY==='true';
@@ -24,7 +24,7 @@ try{
   try{
    const root='/api/assessment/'+item.dealId,context=await request(root),draft=(await request(root+'/draft')).draft;
    out.identityKnown=Boolean(context.client?.iin);out.revision=draft?.revision??null;
-   if(!draft){const crm=await request(root+'/crm-documents');out.notFilled='NO_SAVED_DRAFT';out.availableCrmDocuments=crm.documents?.length??null;continue;}
+   if(!draft){const crm=await request(root+'/crm-documents');out.notFilled='NO_SAVED_DRAFT';out.availableCrmDocuments=crm.files?.length??null;continue;}
    out.documents=draft.payload.documents.length;out.pendingFiles=draft.payload.pendingFiles.length;
    if(draft.recovery){out.notFilled='IDENTITY_RECOVERY_REQUIRED';continue;}
    if(apply&&item.profileSavedAt){out.notFilled='COMPLETED_PROFILE_PRESERVED';continue;}
@@ -51,7 +51,7 @@ try{
    const saved=await request(root+'/draft',{payload:plan.payload,expectedRevision:draft.revision,identityRevision:context.identityRevision,requestId:pin.requestId});
    const after=(await request(root+'/draft')).draft;if(after.revision!==saved.revision||after.revision!==draft.revision+1||digest(storedPayload(after.payload))!==plan.afterHash)throw Object.assign(new Error(),{code:'SAVED_DRAFT_MISMATCH'});
    Object.assign(out,{verified:true,afterRevision:after.revision,filledFields:plan.changes.length});
-  }catch(e){out.error=errorCode(e);if(out.writeAttempted&&!out.verified)out.reconciliationRequired=true;report.failures.push({dealId:item.dealId,code:out.error});}finally{console.log(JSON.stringify({dealId:item.dealId,checked:report.cases.length,total:targets.length,proposed:out.changes?.length||0,error:out.error||null}));}
+  }catch(e){out.error=errorCode(e);if(out.writeAttempted&&!out.verified)out.reconciliationRequired=true;report.failures.push({dealId:item.dealId,code:out.error});}finally{writeFileSync('profile-source-fill-audit.json',JSON.stringify(report,null,2));console.log(JSON.stringify({dealId:item.dealId,checked:report.cases.length,total:targets.length,proposed:out.changes?.length||0,error:out.error||null}));}
  }}));
 }catch(e){report.failures.push({code:errorCode(e)});}
 report.cases.sort((a,b)=>Number(a.dealId)-Number(b.dealId));

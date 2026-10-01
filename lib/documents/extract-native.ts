@@ -75,7 +75,8 @@ export function extractNative(pages: PageText[]): NativeExtraction {
   // "Дербес кредиттік есеп" in their explanatory pages; that is not their format.
   const reportTitle=/(?:дербес\s+кредиттік есеп|персональный кредитный отчет|жеке кредиттік есеп)/u.exec(head)?.[0];
   const modernShort=Boolean(reportTitle?.startsWith('дербес')&&/қысқаша нысан/.test(head.slice(0,1500)));
-  const firstBureau=/^\s*(?:полный\s+)?персональный кредитный отчет\s+id\s+\d+/u.test(head)&&/\b1cb\.kz\b/u.test(head);
+  const firstBureauKz=/^\s*(?:толық\s+)?дербес несиелік есеп\s+id\s+\d+/u.test(head)&&/\b1cb\.kz\b/u.test(head);
+  const firstBureau=firstBureauKz||/^\s*(?:полный\s+)?персональный кредитный отчет\s+id\s+\d+/u.test(head)&&/\b1cb\.kz\b/u.test(head);
   const credit = modernShort || /персональный кредитный отчет|жеке кредиттік есеп/.test(head);
   // Identify the issuing bank before transaction counterparties. A transfer to
   // Kaspi must not turn a Eurasian account statement into a Kaspi statement.
@@ -190,7 +191,7 @@ export function extractNative(pages: PageText[]): NativeExtraction {
       }else output.findings.push('BENEFITS_ACTIVE_TABLE_REVIEW_REQUIRED');
     }
   }
-  if(firstBureau)parseFirstCreditBureau(pages,output);
+  if(firstBureau)parseFirstCreditBureau(firstBureauKz?firstBureauKzPages(pages):pages,output,firstBureauKz?pages:undefined);
   if (output.identity.iin) output.facts.push({key:'identity.iin',value:output.identity.iin,page:1,source:'ИИН владельца документа'});
   else output.findings.push('DOCUMENT_IDENTITY_UNVERIFIED');
   if (output.identity.name) output.facts.push({key:'identity.name',value:output.identity.name,page:1,source:'ФИО владельца документа'});
@@ -314,8 +315,30 @@ export function extractNative(pages: PageText[]): NativeExtraction {
   if (!['gkb_full','gkb_short','kaspi'].includes(kind)) output.findings.push('DETAILED_EXTRACTION_PENDING');
   output.findings=[...new Set(output.findings)]; return output;
 }
-/** Russian 1cb.kz reports use contract cards and a different owner/header/footer layout. */
-function parseFirstCreditBureau(pages:PageText[],output:NativeExtraction){
+// Only this explicitly identified 1cb.kz layout uses these labels. Normalize
+// labels for the shared contract-card parser; monetary/identity values stay raw.
+const firstBureauKzLabels:Array<[string,string]>=[
+ ['ТОЛЫҚ ДЕРБЕС НЕСИЕЛІК ЕСЕП','ПОЛНЫЙ ПЕРСОНАЛЬНЫЙ КРЕДИТНЫЙ ОТЧЕТ'],['ДЕРБЕС НЕСИЕЛІК ЕСЕП','ПЕРСОНАЛЬНЫЙ КРЕДИТНЫЙ ОТЧЕТ'],['ЖСН/БСН','ИИН/БИН'],
+ ['Қолданыстағы кешігусіз келісім-шарттар','Действующие договоры без просрочки'],['Қолданыстағы кешігуі бар келісім-шарттар','Действующие договоры с просрочкой'],
+ ['ҚОЛДАНЫСТАҒЫ ШАРТ','ДЕЙСТВУЮЩИЕ ДОГОВОРА'],['АЯҚТАЛҒАН ШАРТТАР','ЗАВЕРШЕННЫЕ ДОГОВОРЫ'],['5 ЖЫЛ БҰРЫН АЯҚТАЛҒАН ШАРТТАР','ДОГОВОРЫ, ЗАВЕРШЕННЫЕ БОЛЕЕ 5 ЛЕТ НАЗАД'],['ҚАЙТАРЫЛҒАН ШАРТТАР','ОТОЗВАННЫЕ ДОГОВОРЫ'],
+ ['КЕЛІСІМ-ШАРТ','КОНТРАКТ'],['Ақпарат көзі (несиелендіруші)','Источник информации (Кредитор)'],['Несиенің жалпы сомасы / валюта','Общая сумма кредита'],['Несие лимиті','Сумма кредитного лимита'],
+ ['Несие бойынша өтелмеген сома','Непогашенная сумма по кредиту'],['Қалдық сома','Использованная сумма (подлежащая погашению)'],['Мерзімі өткен жарналар сомасы','Сумма просроченных взносов'],['Мерзімін өткізген күндер саны','Количество дней просрочки'],
+ ['Тұрақсыздық айыбы (айыппұл, өсімпұл)','Сумма неустойки (штраф, пеня)'],['Ең төмен төлем','Минимальный платеж'],['Мерзімді төлемнің сомасы','Сумма периодического платежа'],
+ ['Қаржыландыру түрі','Вид финансирования'],['Субъектінің рөлі','Роль субъекта'],['Несиенің мақсаты','Цель кредита'],['Несиелендіру объектісі','Объект кредитования'],['Ақпарат көзінің (несиелендірушінің) түрі','Тип источника информации'],
+ ['Шарт коды','Код контракта'],['Келісім-шарт нөмірі','Номер договора'],['Өтінім күні','Дата заявки'],['Несиенің нақты берілген күні','Дата начала срока действия договора'],['Нақты берілген күні','Дата фактической выдачи'],
+ ['Шарт фазасы','Фаза договора'],['Шарт жіктелімі','Классификация'],['М Ə РТЕБЕСІ','СОСТОЯНИЕ'],['БАЛАНС ТУРАЛЫ М Ə ЛІМЕТТЕР (ҚАЛДЫҚ)','ДЕТАЛИЗАЦИЯ БАЛАНСА (ОСТАТОК)'],
+ ['Мерзімі өтпеген негізгі қарыз','Непросроченный основной долг'],['Өтелмеген сыйақы','Непогашенное вознаграждение'],['Мерзімі өткен негізгі қарыз','Просроченный основной долг'],['Мерзімі өткен сыйақы','Просроченное вознаграждение'],
+ ['Есептен шығарылған негізгі қарыз','Списанный основной долг'],['Есептен шығарылған сыйақы','Списанное вознаграждение'],['Өтелмеген тұрақсыздық айыбы (айыппұл, өсімпұл)','Непогашенная неустойка (штраф, пеня)'],['Есептен шығарылған тұрақсыздық айыбы (айыппұл, өсімпұл)','Списанная неустойка (штраф, пеня)'],
+ ['ҚОСЫМША М Ə ЛІМЕТ','ДОПОЛНИТЕЛЬНАЯ ИНФОРМАЦИЯ'],['КЕПІЛДЕР','ЗАЛОГИ'],['Келісімшарт басталғаннан мерзімінен кешіктірілген максималды күндер','Максимальное количество дней'],['Келісімшарт басталғаннан мерзімінен кешіктірілген максималды сома','Максимальная сумма'],
+];
+const firstBureauLabelRegex=(label:string)=>new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/ /g,'\\s+'),'gu');
+function firstBureauKzPages(pages:PageText[]):PageText[]{
+ return pages.map(p=>{let text=p.text;for(const [kz,ru]of [...firstBureauKzLabels].sort((a,b)=>b[0].length-a[0].length))text=text.replace(firstBureauLabelRegex(kz),ru);
+  text=text.replace(/(Роль субъекта\s*:\s*)Қарызгер(?=\s|$)/gu,'$1Заёмщик').replace(/(Вид финансирования\s*:\s*)Несие картасы/gu,'$1Кредитная карта').replace(/(Фаза договора\s*:\s*)Қолданыстағы(?=\s|$)/gu,'$1Действующий').replace(/(\d{2}\.\d{2}\.\d{4}\s+)ж\.(\s*\))/gu,'$1г.$2');return {...p,text};});
+}
+
+/** 1cb.kz contract cards share completeness and financial reconciliation rules. */
+function parseFirstCreditBureau(pages:PageText[],output:NativeExtraction,originalPages?:PageText[]){
  const header=pages[0]?.text||'';
  const report=/^\s*(?:ПОЛНЫЙ\s+)?ПЕРСОНАЛЬНЫЙ КРЕДИТНЫЙ ОТЧЕТ\s+ID\s+(\d+)\s+(\d{2}\.\d{2}\.\d{4})\s+\d{2}:\d{2}:\d{2}/iu.exec(header);
  const iin=value(/(?:^|\n)\s*ИИН(?:\s*\/\s*БИН)?\s*:\s*(\d{12})\b/u,header);
@@ -351,7 +374,15 @@ function parseFirstCreditBureau(pages:PageText[],output:NativeExtraction){
   const creditor=value(/Источник\s+информации\s*\(Кредитор\)\s*:?\s*([\s\S]*?)(?=\s+(?:Сумма кредитного лимита|Общая сумма кредита))/u,block)?.replace(/\s+/g,' ')||null;
   if(!contractNumber||/^(?:-|Нетданных)$|[.…]{2}|:/u.test(contractNumber)||!creditor){output.findings.push('INCOMPLETE_CONTRACT');continue;}
   const page=pageAt(at),facts:Fact[]=[];
-  const add=(key:string,v:string|null,needle:string,source=needle)=>{if(v!==null)facts.push({key,value:v,page:pageAt(at+Math.max(0,block.search(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/ /g,'\\s+'),'u')))),source});};
+  const add=(key:string,v:string|null,needle:string,source=needle)=>{
+   if(v===null)return;
+   const pattern=new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/ /g,'\\s+'),'gu'),relative=Math.max(0,block.search(pattern)),absolute=at+relative,page=pageAt(absolute);
+   if(originalPages){
+    const original=originalPages.find(p=>p.page===page),normalized=cleanPages.find(p=>p.page===page),label=firstBureauKzLabels.find(([,ru])=>ru.startsWith(needle)||needle.startsWith(ru));
+    if(original&&normalized&&label){const ordinal=[...normalized.text.slice(0,absolute-normalized.offset+needle.length+80).matchAll(pattern)].filter(m=>m.index<=absolute-normalized.offset).length-1;const match=[...original.text.matchAll(firstBureauLabelRegex(label[0]))][Math.max(0,ordinal)];if(match)source+='; оригинал: '+original.text.slice(match.index,match.index+280).trim();}
+   }
+   facts.push({key,value:v,page,source});
+  };
   const balance=block.split(/Вид\s+финансирования/u)[0];
   const balanceAmount=(label:string)=>{const m=new RegExp(label.replace(/ /g,'\\s+')+'\\s*:?\\s*([0-9][0-9\\s.,]*)KZT','u').exec(balance);const n=m?cents(m[1]):null;return n===null?null:money(n);};
   const remaining=balanceAmount('Использованная сумма\\s*\\(подлежащая\\s+погашению\\)')??balanceAmount('Непогашенная сумма по кредиту');
