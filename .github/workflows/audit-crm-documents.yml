@@ -1,15 +1,32 @@
-name: Bitrix document reading audit
+name: Profile source fill audit and guarded maintenance
 on:
   workflow_dispatch:
-  push:
-    branches: [fix/tool-rollout-audit]
-    paths: [scripts/audit-crm-documents.mjs, .github/workflows/audit-crm-documents.yml]
+    inputs:
+      apply:
+        type: boolean
+        default: false
+      deal_ids:
+        type: string
+        default: ''
+      pins:
+        type: string
+        default: '{}'
+      guards:
+        type: string
+        default: '{}'
+      expected_commit:
+        type: string
+        required: true
 permissions:
   contents: read
+concurrency:
+  group: profile-source-fill-maintenance
+  cancel-in-progress: false
 jobs:
   audit:
+    if: github.ref_type == 'branch' && github.ref_name != 'main'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
         with:
@@ -18,13 +35,23 @@ jobs:
         with:
           node-version: '22'
           package-manager-cache: false
-      - name: Read a bounded sample of existing CRM documents
+      - name: Pin reviewed source
+        env:
+          EXPECTED: ${{ inputs.expected_commit }}
+        run: test "$GITHUB_SHA" = "$EXPECTED"
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npx --no-install esbuild lib/questionnaire/draft.ts --bundle --platform=node --format=esm --outfile=.profile-fill-validation.mjs
+      - name: Inspect or apply exact source-backed plans
         env:
           ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
-        run: node scripts/audit-crm-documents.mjs
+          PROFILE_FILL_APPLY: ${{ inputs.apply }}
+          PROFILE_FILL_IDS: ${{ inputs.deal_ids }}
+          PROFILE_FILL_PINS: ${{ inputs.pins }}
+          PROFILE_FILL_GUARDS: ${{ inputs.guards }}
+        run: node scripts/audit-profile-source-fill.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: crm-document-audit
-          path: crm-document-audit.json
-          retention-days: 1
+          name: profile-source-fill-audit
+          path: profile-source-fill-audit.json
+          retention-days: 3
