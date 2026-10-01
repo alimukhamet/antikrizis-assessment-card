@@ -24,7 +24,7 @@ try{
   try{
    const root='/api/assessment/'+item.dealId,context=await request(root),draft=(await request(root+'/draft')).draft;
    out.identityKnown=Boolean(context.client?.iin);out.revision=draft?.revision??null;
-   if(!draft){const crm=await request(root+'/crm-documents');out.notFilled='NO_SAVED_DRAFT';out.availableCrmDocuments=crm.documents?.length??null;continue;}
+   if(!draft){const crm=await request(root+'/crm-documents');out.notFilled='NO_SAVED_DRAFT';out.availableCrmDocuments=crm.files?.length??null;continue;}
    out.documents=draft.payload.documents.length;out.pendingFiles=draft.payload.pendingFiles.length;
    if(draft.recovery){out.notFilled='IDENTITY_RECOVERY_REQUIRED';continue;}
    if(apply&&item.profileSavedAt){out.notFilled='COMPLETED_PROFILE_PRESERVED';continue;}
