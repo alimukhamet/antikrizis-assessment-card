@@ -1,7 +1,7 @@
 import labels from './kz-labels.json';
 import type { PageText } from './read-pdf';
 import {extractPowerParties,type PowerParties} from './power-of-attorney';
-export const EXTRACTION_VERSION = 'rules-native-29';
+export const EXTRACTION_VERSION = 'rules-native-30';
 export type Fact = { key: string; value: string; page: number; source: string };
 export type Credit = { contractNumber: string; contractCode?: string; page: number; facts: Fact[]; components: Record<string, string | null>; comparisonDebt?:Fact; relatedPartiesNotice?: {page:number;source:string} };
 export type BankStatement={from:string|null;to:string|null;credits:string;topUps:string;topUpsVerified:boolean;debits:string;transactions:number;reconciled:boolean;rowsReadable:boolean;sourcePage:number;reconciliation?:string;gambling?:{total:string;matches:Array<{date:string;amount:string;description:string;page:number}>}};
@@ -297,6 +297,8 @@ export function extractNative(pages: PageText[]): NativeExtraction {
     output.creditList={complete:!output.findings.includes('SHORT_CREDIT_LIST_UNVERIFIED'),declared:declared===null?null:Number(declared)};
   }
   if(kind==='gkb_short')for(const credit of output.credits){
+    const overdue=credit.facts.find(f=>f.key==='overdueDays');
+    if(overdue&&/^\d+$/.test(overdue.value)&&!credit.facts.some(f=>f.key==='loanStatus'))credit.facts.push({key:'loanStatus',value:Number(overdue.value)>0?'В просрочке — требуют полную сумму':'Платится по графику',page:overdue.page,source:'Статус по указанному в кратком ГКБ количеству дней просрочки: '+overdue.value+'. '+overdue.source});
     // Older short layouts also print the full contract number. Expose it as
     // reviewable evidence so the form does not ask staff to type it again.
     if(credit.contractNumber&&!/\.\.|…/.test(credit.contractNumber)&&!credit.facts.some(f=>f.key==='contractIdentifier'))credit.facts.push({key:'contractIdentifier',value:credit.contractNumber,page:credit.page,source:'Номер договора: '+credit.contractNumber});

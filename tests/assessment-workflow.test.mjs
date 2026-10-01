@@ -524,3 +524,12 @@ test('document warnings distinguish unreadable identity, actual mismatch and sho
  s.run(`af.results.get(doc.id).identity.iin='other';afRenderResults();AssessmentWorkflow.refresh()`);assert.match(text(),/ИИН отличается/);assert.match(text(),/для семейного документа укажите родственника/);
  s.run(`af.results.get(doc.id).identity.iin='991231300003';af.results.get(doc.id).findings=[];af.results.get(doc.id).blocked=false;afRenderResults();AssessmentWorkflow.refresh()`);assert.doesNotMatch(text(),/ИИН отличается|Не удалось прочитать ИИН/);
 });
+
+test('saved blank GKB amount, date and status fields offer source copy without overwriting answers',async t=>{
+ const s=setup(t);await s.load();s.mount();
+ s.run(`af.client='991231300003';selectedFiles=[{id:1,person:'Клиент',type:'ГКБ — полный отчёт',file:{name:'synthetic.pdf'},storedDocumentId:'doc'}];var loan={key:'BANK|CONTRACT',aliases:['BANK|CONTRACT'],fields:{n8038:'BANK',loanContractId:'CONTRACT',n8038Start:'2025-01',loanStatus:'Платится по графику',n8040:'100.25',n8041:'10.00',n8042:'0'},fieldKeys:{n8040:'credits.0.debtOutstanding'},fieldReview:{n8040:{page:2,quote:'100.25 KZT'}},server:{documentId:'doc',extractionId:'extraction',dealId:'11665'}};af.results.set(1,{server:loan.server});var row=afRow('creditors',af.client+'|BANK|CONTRACT',loan);af.restoringEvidence=true;afLoanParticipantsNotice(row,loan,1);af.restoringEvidence=false;`);
+ const row=s.d.querySelector('#creditors .repeat-item'),amount=row.querySelector('input[id^="n8040"]');assert.equal(amount.value,'');const proposals=[...row.querySelectorAll('.af-profile-proposal')];assert.ok(proposals.some(p=>p.dataset.for.startsWith('n8038Start')));assert.ok(proposals.some(p=>p.dataset.for.startsWith('loanStatus')));
+ const button=proposals.find(p=>p.dataset.for===amount.id).querySelector('button');let saves=0;s.w.ServerDrafts.save=async()=>{saves++};await button.onclick();assert.equal(amount.value,'100.25');assert.equal(saves,1);assert.equal(s.run('af.sources.get('+JSON.stringify(amount.id)+').pending'),true);
+ s.run(`afLoanParticipantsNotice(row,loan,1)`);assert.equal(row.querySelector('[data-for="'+amount.id+'"] .af-profile-proposal'),null);
+ const date=row.querySelector('input[id^="n8038Start"]'),stale=row.querySelector('[data-for="'+date.id+'"] button');date.value='2024-06';await stale.onclick();assert.equal(date.value,'2024-06');assert.equal(saves,1);
+});

@@ -168,3 +168,11 @@ test('older Kazakh short GKB exposes every printed contract ID without inventing
  }
  const truncated=rules.extractNative(page(shortReport(shortRows.replace('ABC-2','ABC-2 ..'))));assert.equal(truncated.credits[1].facts.some(f=>f.key==='contractIdentifier'),false);
 });
+
+test('older short reports expose payment status from explicit overdue days with page evidence',()=>{
+ const r=rules.extractNative(page(shortReport(shortRows)));
+ assert.equal(r.credits[0].facts.find(f=>f.key==='loanStatus').value,'Платится по графику');
+ assert.equal(r.credits[1].facts.find(f=>f.key==='loanStatus').value,'В просрочке — требуют полную сумму');
+ for(const credit of r.credits){const status=credit.facts.find(f=>f.key==='loanStatus'),days=credit.facts.find(f=>f.key==='overdueDays');assert.equal(status.page,days.page);assert.ok(status.source.includes(days.value));assert.equal(credit.facts.filter(f=>f.key==='loanStatus').length,1);}
+ assert.equal(r.credits.some(c=>c.facts.some(f=>f.key==='monthlyPayment')),false);
+});
