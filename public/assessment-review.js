@@ -272,9 +272,13 @@ async function afApply(preferences={}){
   return;
  }
  af.client=client;
+ // A restored draft retains every original source binding. New fills use the
+ // newest readable GKB date, so an earlier short report cannot seed old balances
+ // or reintroduce loans absent from the newer report merely by upload order.
+ const loanDate=docs.filter(([,r])=>['gkbFull','gkbShort'].includes(r.kind)).map(([,r])=>r.date).filter(date=>/^\d{4}-\d{2}-\d{2}$/.test(date||'')).sort().at(-1);
  for(const [id,r]of docs){const item=selectedFiles.find(x=>x.id===id);if(item&&!item.person)item.person='Клиент';
   for(const f of r.fields){if(f.key==='fio'&&best&&id!==best[0])continue;afPut($af(f.key),f.value,{...f,fileId:id,date:r.date});}
-  for(const loan of r.loans){const row=afRow('creditors',client+'|'+loan.key,loan);afRowFields(row,loan.fields,{...loan,fileId:id});afLoanParticipantsNotice(row,loan,id);}
+  if(af.restoringEvidence||!loanDate||r.date===loanDate)for(const loan of r.loans){const row=afRow('creditors',client+'|'+loan.key,loan);afRowFields(row,loan.fields,{...loan,fileId:id});afLoanParticipantsNotice(row,loan,id);}
   if(r.properties.length&&afHolding('real',{fileId:id,page:r.properties[0].page,quote:'Зарегистрированная недвижимость'})){
    for(const prop of r.properties){const row=afRow('clientreal',client+'|'+prop.key);afRowFields(row,prop.fields,{...prop,fileId:id,date:r.date});}
   }

@@ -30,3 +30,26 @@ test('Kazakh loan disbursement is a recognized incoming category and never a top
  const t='Kaspi ҮЗІНДІ КӨШІРМЕ\n18.09.25ж. бастап 18.09.26ж. дейінгі кезеңге\n18.09.25ж. қолжетімді: + 0,00 ₸\n18.09.26ж. қолжетімді: + 300,00 ₸\nТолықтыру + 100,00 ₸\n17.09.26 + 100,00 ₸ Толықтыру СЫНАҚ\n17.09.26 + 200,00 ₸ Кредит';
  const r=extractNative(pages(t));assert.equal(r.bankStatement.topUpsVerified,true);assert.equal(r.bankStatement.credits,'300.00');assert.equal(r.facts.find(f=>f.key==='statement.topUps').value,'100.00');
 });
+
+test('singular Kazakh own-account rows reconcile the summary while preserving net top-ups and refunds',()=>{
+ const t='Kaspi ҮЗІНДІ КӨШІРМЕ\nИИН: 000000000010\n01.09.25ж. бастап 31.08.26ж. дейінгі кезеңге\n01.09.25ж. қолжетімді: + 0,00 ₸\n31.08.26ж. қолжетімді: - 90,00 ₸\nКарта бойынша операциялардың қысқаша мазмұны:\nТолықтыру + 9,50 ₸\nӨз шоттарыңыздан түскені + 1,23 ₸\nКредиттер сомасын шотқа түсіру + 0,00 ₸\nАударым - 0,25 ₸\nӨз шоттарыңызға аудару - 0,75 ₸\nЗат сатып алу - 1,80 ₸\nАқша алу - 0,00 ₸\nӘртүрлі - 0,00 ₸\n15.01.26 + 10,00 ₸ Толықтыру Сынақ\n15.01.26 + 1,23 ₸ Өз шотыңыздан Сынақ\n15.01.26 - 0,50 ₸ Өз шотыңызға Сынақ\n15.01.26 - 0,25 ₸ Өз шотыңызға Сынақ\n15.01.26 - 0,25 ₸ Аударым Сынақ\n15.01.26 - 2,00 ₸ Зат сатып алу Сынақ\n15.01.26 - 0,50 ₸ Толықтыру Қайтару\n15.01.26 + 0,20 ₸ Зат сатып алу Қайтару';
+ for(const statement of [t,t.replaceAll('₸ Өз шотыңыздан','₸ Өз шоттарыңыздан түскені').replaceAll('₸ Өз шотыңызға','₸ Өз шоттарыңызға аудару'),t.replaceAll('₸ Өз шотыңыздан','₸ Поступление со своего счета').replaceAll('₸ Өз шотыңызға','₸ Перевод на свой счет')]){
+  const original=pages(statement),before=JSON.stringify(original),r=extractNative(original);
+  assert.equal(r.bankStatement.rowsReadable,true);assert.equal(r.bankStatement.transactions,8);
+  assert.equal(r.bankStatement.reconciliation,'summary');assert.equal(r.bankStatement.reconciled,true);
+  assert.equal(r.bankStatement.credits,'11.43');assert.equal(r.bankStatement.debits,'-3.50');
+  assert.equal(r.bankStatement.topUps,'9.50');assert.equal(r.bankStatement.topUpsVerified,true);
+  assert.equal(r.facts.find(f=>f.key==='statement.topUps').value,'9.50');
+  assert.equal(JSON.stringify(original),before);
+ }
+ for(const broken of [
+  t.replace('₸ Өз шотыңыздан Сынақ','₸ Өз шотыңызданx Сынақ'),
+  t.replace('₸ Өз шотыңызға Сынақ','₸ Белгісіз операция'),
+  t.replace('Өз шоттарыңыздан түскені + 1,23','Өз шоттарыңыздан түскені + 1,24'),
+  t.replace('15.01.26 - 0,25 ₸ Өз шотыңызға Сынақ\n',''),
+ ]){
+  const r=extractNative(pages(broken));assert.equal(r.bankStatement.reconciled,false);
+  assert.ok(r.findings.includes('STATEMENT_RECONCILIATION_REQUIRED'));
+  assert.ok(!r.facts.some(f=>f.key==='statement.topUps'));
+ }
+});

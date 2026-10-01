@@ -48,6 +48,11 @@ test('profile tab announces presence, warns about another worker and releases af
  w.fetch=async(path,options)=>{const body=JSON.parse(options.body);calls.push({path,...body});return {ok:true,json:async()=>({currentWorker:'azhar',active:[{dealId:'900001',workerId:'ramazan',workerName:'Ramazan'}]})};};
  vm.runInContext(await readFile('public/profile-presence.js','utf8'),dom.getInternalVMContext());
  await new Promise(r=>setTimeout(r,10));
+ w.dispatchEvent(new w.Event('focus'));w.dispatchEvent(new w.Event('pageshow'));
+ assert.equal(calls.length,0,'a URL without a successfully loaded profile must not claim presence');
+ assert.equal(w.document.getElementById('profilePresence'),null);
+ w.ProfilePresence.start('900001');
+ await new Promise(r=>setTimeout(r,10));
  assert.equal(calls[0].action,'heartbeat');assert.match(w.document.getElementById('profilePresence').textContent,/Ramazan/);
  w.document.dispatchEvent(new w.Event('profile-backfill-saved'));await new Promise(r=>setTimeout(r,10));
  assert.equal(calls.at(-1).action,'release');assert.equal(w.document.getElementById('profilePresence').hidden,true);

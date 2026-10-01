@@ -78,6 +78,20 @@ export class EvidenceRepository {
   if(/\.(png|jpg)$/.test(document.original_key)&&/^native-pdf-\d+:/.test(version))version=version.replace(/^native-pdf-\d+:/,IMAGE_READER_VERSION+':');
   let extraction=await this.db.prepare('SELECT * FROM assessment_extractions WHERE document_id=? AND version=?').bind(document.id,version).first<ExtractionRow>();
   if(extraction)return {document,extraction,result:await this.readResult(extraction)};
+  // v31 adds only singular Kazakh own-account operation labels in Kaspi.
+  // Keep unrelated evidence/reviews and unchanged statements. A changed Kaspi
+  // interpretation requires a new extraction without rewriting old approvals.
+  // Check rules before reader fallback so existing reader-v4 results are found.
+  if(version.endsWith(':rules-native-31')){
+   const previous=await this.cached(caseId,originalHash,version.replace(/:rules-native-31$/,':rules-native-30'));
+   if(!previous)return null;
+   const result=previous.result as {extraction?:NativeExtraction;read?:{pages?:PageText[]}};
+   if(!result.extraction?.kind)return null;
+   if(result.extraction.kind!=='kaspi')return previous;
+   if(!result.read?.pages?.length)return null;
+   const current=extractNative(result.read.pages);
+   return JSON.stringify({...result.extraction,version:current.version})===JSON.stringify(current)?previous:null;
+  }
   // Reader v4 only changes sparse GKB page classification. Preserve existing
   // evidence/reviews for unaffected PDFs. Blocked GKBs must re-read the original
   // image operators; cached text alone cannot establish that a page is readable.

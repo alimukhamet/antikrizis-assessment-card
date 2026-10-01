@@ -107,6 +107,7 @@ window.AssessmentWorkflow=(()=>{
  answerActions.prepend($('afApply'));
  const conflictDetails=details('Расхождения','wf-conflicts');conflictDetails.append(conflicts);
  answerIntro.append(answerActions,conflictDetails,metrics);moreContent.append(questions);questions.open=false;metrics.hidden=true;
+ const fillHelp=make('p','Нажмите «Заполнить пропуски из документов», чтобы перенести прочитанные данные в пустые поля. Для кредитов используется самый свежий читаемый ГКБ. Затем сверьте ответы с оригиналами.','hint');answerIntro.append(fillHelp);
  root.prepend(answerIntro);
  const answerNotice=make('p',null,'wf-answer-notice');answerNotice.setAttribute('role','status');answerNotice.hidden=true;answerIntro.append(answerNotice);
  $('afNext').textContent='Заполнить';$('afNextReview').textContent='Проверить';questions.querySelector('summary').textContent='Список вопросов';
@@ -319,7 +320,8 @@ window.AssessmentWorkflow=(()=>{
   const pending=(snapshot?.pending||afPending()).length;
   $('afMissing').textContent=missing;
   for(const tab of tabs.values())tab.note.textContent='';
-  $('afNext').textContent='Заполнить пропуски'+(missing?' · '+missing:'');$('afNext').hidden=!missing;$('afNextReview').textContent='Сверить ответы'+(pending?' · '+pending:'');$('afNextReview').hidden=!pending;
+  fillHelp.hidden=$('afApply').style.display==='none';
+  $('afNext').textContent='К пустому ответу'+(missing?' · '+missing:'');$('afNext').hidden=!missing;$('afNextReview').textContent='Сверить ответы'+(pending?' · '+pending:'');$('afNextReview').hidden=!pending;
   reviewDetails.querySelector('summary').textContent='Проверка документов'+(lastCheck?.documents?.issues.length?' · '+lastCheck.documents.issues.length:'');
   reviewLink.hidden=!(lastCheck?.documents?.issues.length);
   const issues=lastCheck?.checkMode==='answers'?lastCheck.issues||[]:[];

@@ -36,6 +36,41 @@ test('reader v4 retains unaffected evidence and reviews but rereads low-text GKB
  assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_reviews').get().n,5);
  assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_extractions').get().n,5);
 });
+
+test('v31 refreshes changed Kaspi interpretations while retaining unrelated and unchanged statement review IDs',async()=>{
+ const compiledRules=buildSync({entryPoints:['lib/documents/extract-native.ts'],bundle:true,platform:'node',format:'cjs',write:false}).outputFiles[0].text,rulesModule={exports:{}};
+ vm.runInNewContext(compiledRules,{module:rulesModule,exports:rulesModule.exports,Date,JSON});
+ const statement='Kaspi ҮЗІНДІ КӨШІРМЕ\nИИН: 000000000010\n01.09.25ж. бастап 31.08.26ж. дейінгі кезеңге\n01.09.25ж. қолжетімді: + 0,00 ₸\n31.08.26ж. қолжетімді: - 10,00 ₸\nКарта бойынша операциялардың қысқаша мазмұны:\nТолықтыру + 10,00 ₸\nӨз шоттарыңыздан түскені + 1,00 ₸\nКредиттер сомасын шотқа түсіру + 0,00 ₸\nАударым - 0,00 ₸\nӨз шоттарыңызға аудару - 0,75 ₸\nЗат сатып алу - 0,00 ₸\nАқша алу - 0,00 ₸\nӘртүрлі - 0,00 ₸\n15.01.26 + 10,00 ₸ Толықтыру\n15.01.26 + 1,00 ₸ Өз шотыңыздан\n15.01.26 - 0,50 ₸ Өз шотыңызға\n15.01.26 - 0,25 ₸ Өз шотыңызға';
+ for(const reader of ['native-pdf-3','native-pdf-4'])for(const scenario of ['changed-kaspi','unchanged-kaspi','gkb','identity']){
+  const {repo,sqlite}=setup(),c=await repo.syncCase(client());
+  const text=scenario==='gkb'?'Персональный кредитный отчет':scenario==='identity'?'Удостоверение личности':scenario==='unchanged-kaspi'?statement.replaceAll('₸ Өз шотыңыздан','₸ Өз шоттарыңыздан түскені').replaceAll('₸ Өз шотыңызға','₸ Өз шоттарыңызға аудару'):statement;
+  const pages=[{page:1,text,nativeCharacters:text.length,needsOcr:false}],current=rulesModule.exports.extractNative(pages),previous=JSON.parse(JSON.stringify(current));previous.version='rules-native-30';
+  if(scenario==='changed-kaspi'){
+   // Frozen v30 interpretation: rows were readable, but singular own-account
+   // categories were unknown and prevented summary/top-up verification.
+   previous.bankStatement.topUpsVerified=false;previous.bankStatement.reconciled=false;previous.bankStatement.reconciliation='unverified';
+   previous.facts=previous.facts.filter(f=>f.key!=='statement.topUps');previous.findings.push('STATEMENT_RECONCILIATION_REQUIRED');
+  }
+  const oldVersion=reader+':rules-native-30',nextVersion=reader+':rules-native-31';
+  const old=await repo.store(c.id,new Uint8Array([201]),'synthetic.pdf',actor,oldVersion,{read:{pages},extraction:previous});
+  const review=await repo.appendReview({caseId:c.id,documentId:old.document.id,extractionId:old.extraction.id,identityRevision:1,requestId:'review',factKey:'document.manual-check.v1',value:{type:'synthetic'},disposition:'confirmed',reason:'synthetic'},actor);
+  const cached=await repo.cached(c.id,old.document.original_sha256,nextVersion);
+  if(scenario==='changed-kaspi'){
+   assert.equal(cached,null);
+   const updated=await repo.storeExtraction(old.document,nextVersion,{read:{pages},extraction:current});
+   assert.notEqual(updated.extraction.id,old.extraction.id);assert.equal((await repo.currentReviews(c.id,old.document.id,updated.extraction.id,1)).length,0);
+   assert.equal((await repo.cached(c.id,old.document.original_sha256,nextVersion)).extraction.id,updated.extraction.id);
+  }else{
+   assert.equal(cached.extraction.id,old.extraction.id);
+   assert.equal((await repo.currentReviews(c.id,old.document.id,cached.extraction.id,1))[0].id,review.id);
+  }
+  assert.equal((await repo.currentReviews(c.id,old.document.id,old.extraction.id,1))[0].id,review.id);
+  assert.equal((await repo.cached(c.id,old.document.original_sha256,oldVersion)).extraction.id,old.extraction.id);
+  assert.deepEqual(await repo.original(old.document),new Uint8Array([201]));
+  assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_documents').get().n,1);
+  assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_reviews').get().n,1);
+ }
+});
 test('v23 refreshes newly supported native layouts but preserves unrelated evidence and approvals',async()=>{
  const {repo,sqlite}=setup(),c=await repo.syncCase(client());
  const pension='Сведения об остатках и о движении денег на счете\nУсловный пенсионный счет\nВыписка с индивидуального пенсионного счета';

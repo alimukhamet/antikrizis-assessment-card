@@ -50,7 +50,7 @@ Storage: `0016_profile_saves` and `0017_profile_presence`; no Bitrix fields are 
 - For a married client, contract preparation asks for the spouse's social status separately from the client's. A new assessment cannot be completed with a missing or unknown spouse status; partial drafts remain savable. The answer is included in the saved assessment and CRM intake. Pension, disability or benefits make the spouse's own certificate required during CRM document collection, without adding a new spouse-document gate to contract generation.
 - GKB reports issued in the last three calendar months are accepted (in September: from 1 June; owner decision 29 Sep 2026, previously 30 days); future dates are rejected.
 - Bank and salary statements must cover twelve months and end in the last three calendar months (in September: from 1 June) (owner decision 29 Sep 2026).
-- ENPF inspection requires three years of coverage through its issue date.
+- ENPF inspection accepts twelve months through the issue date, or an explicitly labelled all-history period on the original first page. This documents the existing inspection rule; it does not infer coverage from the first payment or filename.
 - Match the client IIN against trusted deal data. A filename or matching name alone does not establish ownership or authenticity.
 - Powers of attorney must identify the approved Aizhan representative or Aplus corporate entity. Server checks do not prove execution or authenticity.
 - Sales may ask the client and explicitly confirm unclear debt amounts, preserving client-confirmed provenance rather than describing them as documentary facts.

@@ -1,7 +1,7 @@
 import labels from './kz-labels.json';
 import type { PageText } from './read-pdf';
 import {extractPowerParties,type PowerParties} from './power-of-attorney';
-export const EXTRACTION_VERSION = 'rules-native-30';
+export const EXTRACTION_VERSION = 'rules-native-31';
 export type Fact = { key: string; value: string; page: number; source: string };
 export type Credit = { contractNumber: string; contractCode?: string; page: number; facts: Fact[]; components: Record<string, string | null>; comparisonDebt?:Fact; relatedPartiesNotice?: {page:number;source:string} };
 export type BankStatement={from:string|null;to:string|null;credits:string;topUps:string;topUpsVerified:boolean;debits:string;transactions:number;reconciled:boolean;rowsReadable:boolean;sourcePage:number;reconciliation?:string;gambling?:{total:string;matches:Array<{date:string;amount:string;description:string;page:number}>}};
@@ -480,7 +480,7 @@ export function parseKaspiStatement(pages:PageText[]):BankStatement{
  const gamblingMatches:Array<{date:string;amount:string;description:string;page:number}>=[];let gamblingTotal=BigInt(0);
  let credits=BigInt(0),topUps=BigInt(0),debits=BigInt(0),transactions=0,rowsReadable=!!from&&!!to&&from<=to,sourcePage=1,knownCreditRows=true,knownOperationRows=true;
  const operationTotals=Array<bigint>(7).fill(BigInt(0));
- const operationKinds=[/^(?:Пополнение|Толықтыру)(?:\s|$)/iu,/^(?:Поступление со|Өз шоттарыңыздан түскені)(?:\s|$)/iu,/^(?:Зачисление|Кредиттер сомасын шотқа түсіру|Кредит)(?:\s|$)/iu,/^(?:Перевод|Аударым|Өз шоттарыңызға аудару)(?:\s|$)/iu,/^(?:Покупка|Зат сатып алу)(?:\s|$)/iu,/^(?:Снятие|Ақша алу)(?:\s|$)/iu,/^(?:Разное|[ӘƏ]ртүрлі)(?:\s|$)/iu];
+ const operationKinds=[/^(?:Пополнение|Толықтыру)(?:\s|$)/iu,/^(?:Поступление со|Өз шоттарыңыздан түскені|Өз шотыңыздан)(?:\s|$)/iu,/^(?:Зачисление|Кредиттер сомасын шотқа түсіру|Кредит)(?:\s|$)/iu,/^(?:Перевод|Аударым|Өз шоттарыңызға аудару|Өз шотыңызға)(?:\s|$)/iu,/^(?:Покупка|Зат сатып алу)(?:\s|$)/iu,/^(?:Снятие|Ақша алу)(?:\s|$)/iu,/^(?:Разное|[ӘƏ]ртүрлі)(?:\s|$)/iu];
  for(const page of pages){
   const candidates=[...page.text.matchAll(/^\d{2}\.\d{2}\.(?:\d{4}|\d{2})\s+[+−-]/gm)].length;
   const rows=[...page.text.matchAll(/^(\d{2}\.\d{2}\.(?:\d{4}|\d{2}))\s+([+−-])\s*([\d \u00a0]+[,.]\d{2})\s*₸[^\n]*/gm)];

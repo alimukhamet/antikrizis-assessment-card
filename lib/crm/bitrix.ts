@@ -11,16 +11,23 @@ export async function readClientContext(dealId: string, webhook: string, send: t
 async function fetchClientContext(dealId:string,webhook:string,send:typeof fetch):Promise<ClientContext>{
   // Order reads by when they began, not by when a slow response arrived.
   const retrievedAt=new Date().toISOString();
-  type Body={ result?: { ID?: string; TITLE?: string; UF_CRM_AI_IIN?: unknown }; error?: string };
+  type Body={ result?: { ID?: string; TITLE?: string; UF_CRM_AI_IIN?: unknown }; error?: string; error_description?: string };
   let body:Body|undefined;
   for(let attempt=0;attempt<2;attempt++){
     try{
       const response=await send(webhook.replace(/\/?$/, '/')+'crm.deal.get.json',{
         method:'POST',headers:bitrixHeaders(webhook),body:JSON.stringify({id:Number(dealId)}),signal:AbortSignal.timeout(8000),cache:'no-store',
       });
-      if(!response.ok){if(response.status!==429&&response.status<500)throw new Error('DEAL_NOT_FOUND');throw new Error('BITRIX_TEMPORARILY_UNAVAILABLE');}
-      body=await response.json() as Body;break;
-    }catch(error){if(error instanceof Error&&error.message==='DEAL_NOT_FOUND')throw error;if(attempt===1)throw new Error('BITRIX_TEMPORARILY_UNAVAILABLE');}
+      if(response.status===429||response.status>=500)throw new Error('BITRIX_TEMPORARILY_UNAVAILABLE');
+      if(response.status===401||response.status===403)throw new Error('BITRIX_ACCESS_DENIED');
+      body=await response.json() as Body;
+      // crm.deal.get can return an empty error code with an English description.
+      // Translate only known provider reasons; never expose arbitrary CRM text.
+      if(body?.error_description==='Not found')throw new Error('DEAL_NOT_FOUND');
+      if(body?.error_description==='Access denied')throw new Error('DEAL_ACCESS_DENIED');
+      if(!response.ok||body?.error)throw new Error('DEAL_READ_FAILED');
+      break;
+    }catch(error){if(error instanceof Error&&['DEAL_NOT_FOUND','DEAL_ACCESS_DENIED','BITRIX_ACCESS_DENIED','DEAL_READ_FAILED'].includes(error.message))throw error;if(attempt===1)throw new Error('BITRIX_TEMPORARILY_UNAVAILABLE');}
   }
   if(!body)throw new Error('BITRIX_TEMPORARILY_UNAVAILABLE');
   if (body.error || String(body.result?.ID) !== dealId) throw new Error('DEAL_NOT_FOUND');
