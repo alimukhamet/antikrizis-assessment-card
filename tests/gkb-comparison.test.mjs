@@ -54,3 +54,11 @@ test('explicit unused full-report limit remains visible alongside matching short
  const r=reports();r[1].creditEvidence.credits.push(credit('UNUSED','0.00'));r[1].creditEvidence.creditList.declared=3;const result=compare(r);assert.equal(result.status,'matched');assert.equal(result.rows.length,3);assert.match(result.rows[2].reason,/остаётся в анкете/);assert.equal(result.rows[2].short,null);
  r[1].creditEvidence.credits[2].facts[1].value='0.01';assert.notEqual(compare(r).status,'matched');
 });
+
+test('the two printed Otbasy names identify the same lender without merging other entities',async()=>{
+ const {creditorKey}=await import('../public/gkb-comparison.mjs'),fs=await import('node:fs'),ts=await import('typescript'),vm=await import('node:vm'),server={};vm.runInNewContext(ts.default.transpileModule(fs.readFileSync('lib/documents/loan-identity.ts','utf8'),{compilerOptions:{module:ts.default.ModuleKind.CommonJS}}).outputText,{exports:server});
+ const names=['АО "Жилстройсбербанк "Отбасы банк"','АО "Жилищный строительный сберегательный банк "Отбасы банк"','АО "Отбасы банк"'];
+ for(const name of names){assert.equal(creditorKey(name),'аоотбасыбанк');assert.equal(server.creditorKey(name),creditorKey(name));}
+ const r=reports();r[0].creditEvidence.credits[0].facts[0].value=names[0];r[1].creditEvidence.credits[0].facts[0].value=names[1];assert.equal(compare(r).status,'matched');
+ for(const name of ['ТОО "Отбасы банк"','АО "Другой банк"','АО "Жилстройсбербанк "Другой банк"'])assert.notEqual(creditorKey(name),'аоотбасыбанк');
+});

@@ -12,7 +12,9 @@ const scalarFields={'identity.iin':'iin','identity.name':'fio','statement.topUps
 const sameValue=(key,a,b)=>key==='n8038'?creditorKey(a)===creditorKey(b):String(a).trim()===String(b).trim();
 export function planProfileSourceFill(draft,context,analyses,validateDraft,history={protectedFields:[],allowNewLoans:true}){
  if(!draft||draft.recovery||draft.identityRevision!==context.identityRevision||!/^\d{12}$/.test(context.client?.iin||''))fail('CURRENT_IDENTITY_REQUIRED');
- const before=storedPayload(draft.payload),payload=validateDraft(before);
+ const before=storedPayload(draft.payload);
+ const savedIin=get(before.answers,'iin')?.value.trim();if(savedIin&&savedIin!==context.client.iin)fail('DRAFT_CLIENT_IDENTITY_CONFLICT');
+ const payload=validateDraft(before);
  // Permit canonical split controls from existing legacy answers; never
  // change or discard an original answer while migrating those controls.
  const previousKeys=new Set(before.answers.map(a=>a.key));
