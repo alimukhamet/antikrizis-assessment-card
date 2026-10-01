@@ -92,7 +92,7 @@ test('built Worker persists a complete contract and recovers a handoff without d
   await api(root+'/document-reviews',{requestId:crypto.randomUUID(),documentId:doc.documentId,identityRevision:1,review:{type:doc.type,iin:fixture.iin,pages:1,complete:true,contentMatches:true,periodChecked:true,reason:'SYNTHETIC ONLY fixture inspection',issuedAt:fixture.today,expiresAt:'2099-12-31',from:fixture.from,to:fixture.today,representative:doc.kind==='power_of_attorney'?{kind:'organization',legalName:'ТОО «Aplus Corporation»',identifier:'251040012303'}:null,authorityChecked:doc.kind==='power_of_attorney'}});
  }
  await api(root+'/draft',{requestId:crypto.randomUUID(),identityRevision:1,expectedRevision:0,payload:fixture.payload});
- const saved=await api(root+'/draft');assert.equal(saved.draft.revision,1);assert.equal(saved.draft.payload.documents.length,6);
+ const saved=await api(root+'/draft');assert.equal(saved.draft.revision,1);assert.equal(saved.draft.payload.documents.length,8);
  const checked=await api(root+'/check',{payload:fixture.payload,bindings:[]});
  assert.equal(checked.readyToSubmit,true,JSON.stringify(checked));
  assert.equal(checked.documents.matchedShortReports.length,1);assert.equal(checked.documents.loanCoverage.present,1);
@@ -116,6 +116,11 @@ test('built Worker persists a complete contract and recovers a handoff without d
  const missingOriginals=await api(root+'/handoff');assert.equal(missingOriginals.delivery.ready,false);assert.equal(missingOriginals.delivery.code,'HANDOFF_ORIGINALS_REQUIRED');
  const uploadRequest=crypto.randomUUID();let batchIndex=0;
  for(;;){const result=await api(root+'/uploads',{requestId:uploadRequest,identityRevision:1,batchIndex,payload:fixture.payload});assert.equal(result.state,'verified',JSON.stringify(result));if(result.documentsUploaded)break;assert.ok(result.nextBatch>batchIndex);batchIndex=result.nextBatch;assert.ok(batchIndex<20);}
+ const uploadWrites=crm.counts.fileWrites;
+ const repeatUpload=await api(root+'/uploads',{requestId:crypto.randomUUID(),identityRevision:1,batchIndex:0,payload:fixture.payload});
+ assert.equal(repeatUpload.documentsUploaded,true);assert.equal(crm.counts.fileWrites,uploadWrites,'A reopened page reuses the verified eight-file package');
+ const encumbrance=[...crm.files.values()].filter(file=>file.name.startsWith('29 Сведения об обременениях'));
+ assert.equal(encumbrance.length,1);assert.equal(encumbrance[0].bytes.toString(),'%PDF-1.4\nSYNTHETIC ONLY encumbrance\n%%EOF');
  const delivered=await api(root+'/handoff');assert.equal(delivered.delivery.ready,true);const stage=delivered.destination;assert.ok(stage);
  const handoffRequest=crypto.randomUUID();
  const handoff=await api(root+'/handoff',{action:'send',requestId:handoffRequest,destination,stage,powerId:fixture.documents.find(d=>d.kind==='power_of_attorney').documentId,signedId:fixture.documents.find(d=>d.kind==='unknown').documentId,signedConfirmed:true});
