@@ -5,6 +5,7 @@ export const operationsActions = [
   "page",
   "open_case",
   "draft",
+  "profile",
   "analysis",
   "review",
   "check",
@@ -97,6 +98,7 @@ export function operationRoute(
   const match = /^\/api\/assessment\/(\d{1,20})(?:\/([^/?]+))?/.exec(path);
   if (!match) return null;
   const actions: Record<string, OperationEvent["action"]> = {
+    profile: "profile",
     draft: "draft",
     documents: "analysis",
     "document-reviews": "review",

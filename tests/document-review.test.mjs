@@ -49,6 +49,15 @@ test('Kaspi owner inspection retains automatic transaction, page and exact perio
  assert.throws(()=>review.validateDocumentReview(value,statement,record,'2027-01-01'),/STATEMENT_PERIOD_NOT_ACCEPTABLE/);
 });
 
+test('manual inspection cannot approve an explicitly classified loan statement as Kaspi Gold',()=>{
+ const loan={read:{totalPages:2,pages:[{needsOcr:false},{needsOcr:false}]},extraction:{kind:'unknown',identity:{iin:null},findings:['DOCUMENT_TYPE_UNVERIFIED','KASPI_LOAN_STATEMENT_NOT_GOLD']}};
+ const value={...input(),type:'Выписка Kaspi Gold',from:'2025-09-01',to:'2026-08-31'};
+ assert.throws(()=>review.validateDocumentReview(value,loan,record,'2026-09-10'),/STATEMENT_RECONCILIATION_REQUIRED/);
+ // Even a caller's fabricated totals cannot substitute for a Gold classification.
+ loan.extraction.bankStatement={reconciled:true,rowsReadable:true,from:value.from,to:value.to};
+ assert.throws(()=>review.validateDocumentReview(value,loan,record,'2026-09-10'),/STATEMENT_RECONCILIATION_REQUIRED/);
+});
+
 test('ENPF accepts annual dated coverage and rechecks incomplete approvals',async()=>{
  const v={...input(),type:'Справка ЕНПФ',issuedAt:'2026-09-10',expiresAt:'',from:'2025-09-10',to:'2026-09-10'};
  assert.equal(check(v).from,'2025-09-10');

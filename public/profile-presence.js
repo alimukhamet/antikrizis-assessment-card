@@ -44,6 +44,7 @@ window.ProfilePresence=(()=>{
  document.addEventListener('profile-backfill-saved',()=>{stopped=true;banner.hidden=true;void release();});
  document.addEventListener('profile-backfill-editing',()=>{if(dealId)resume(dealId);});
  setInterval(()=>void heartbeat(),30000);
- const initialId=new URLSearchParams(location.search).get('dealId');if(initialId)start(initialId);
+ // ProfileBackfill starts presence only after the case and saved draft load.
+ // A URL alone may name a missing/inaccessible case and must not occupy it.
  return {start,resume,release};
 })();

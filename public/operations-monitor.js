@@ -25,6 +25,7 @@
       if (!match) return null;
       const actions = {
         draft: "draft",
+        profile: "profile",
         documents: "analysis",
         "document-reviews": "review",
         reviews: "review",
@@ -63,7 +64,7 @@
     link.target = "_blank";
     link.rel = "noopener";
     link.href =
-      (new URLSearchParams(location.search).get('mode') === 'handoff' ? '/lawyer-handoff' : '/assessment-review') +
+      ({handoff:'/lawyer-handoff',profile:'/profile-backfill'}[new URLSearchParams(location.search).get('mode')] || '/assessment-review') +
       (deal() ? "?dealId=" + encodeURIComponent(deal()) : "");
     notice.append(text, link);
     document.body.prepend(notice);

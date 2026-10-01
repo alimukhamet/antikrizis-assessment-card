@@ -230,6 +230,22 @@ test('fill missing fields uses cached evidence and preserves employee answers, z
  assert.equal(s.d.getElementById('fio').value,'EMPLOYEE NAME');assert.equal(s.d.getElementById('dependents').value,'0');assert.equal(s.d.getElementById('clientPhone').value,'87000000000');assert.equal(s.run("af.sources.get('fio').reviewId"),'employee-review');assert.equal(s.run('af.conflicts.length'),0);assert.equal(s.writes.length,before+1);assert.equal(s.run('af.fillingMissing'),false);
 });
 
+for(const reverse of [false,true])test(`new loan autofill uses the newest report independent of selection order (${reverse})`,async t=>{
+ const s=await setup(t);await s.load();s.edit('iin','991231300003');
+ s.run(`HostedAssessment.getContext().client.iin='991231300003';
+ const loan=(number,amount)=>({key:'SYNTHETIC BANK|'+number,aliases:['SYNTHETIC BANK|'+number],page:1,fields:{n8038:'SYNTHETIC BANK',loanContractId:number,n8040:amount,loanStatus:'В просрочке — требуют полную сумму'}});
+ const source=(id,kind,date,loans)=>({kind,date,identity:{iin:'991231300003',fio:'SYNTHETIC'},fields:[],loans,properties:[],notes:[],server:{dealId:'11665',documentId:'doc-'+id,extractionId:'extract-'+id}});
+ selectedFiles=[{id:1,file:{name:'older-short.pdf'},type:'ГКБ — краткий отчёт',person:'Клиент',storedDocumentId:'doc-1'},{id:2,file:{name:'newer-full.pdf'},type:'ГКБ — полный отчёт',person:'Клиент',storedDocumentId:'doc-2'}];
+ const sources=[[1,source(1,'gkbShort','2026-07-23',[loan('CURRENT','90.00'),loan('OLDER-ONLY','20.00')])],[2,source(2,'gkbFull','2026-08-03',[loan('CURRENT','100.00')])]];
+ af.results=new Map(${reverse}?[...sources].reverse():sources);afClientChoices();`);
+ await s.d.getElementById('afApply').onclick();
+ const rows=s.w.ServerDrafts.capture().groups.find(g=>g.id==='creditors').rows;
+ assert.equal(rows.length,1);assert.equal(rows[0].find(a=>a.key==='loanContractId').value,'CURRENT');assert.equal(rows[0].find(a=>a.key==='n8040').value,'100.00');
+ assert.equal(s.run("[...af.sources.values()].find(s=>s.fileId===2)!==undefined"),true);
+ assert.equal(s.w.ServerDrafts.capture().documents.length,2,'older original remains selected for comparison');
+ const before=s.writes.length;await s.d.getElementById('afApply').onclick();assert.equal(s.w.ServerDrafts.capture().groups.find(g=>g.id==='creditors').rows.length,1);assert.equal(s.writes.length,before,'repeat fill is idempotent');
+});
+
 test('parallel CRM import bounds downloads, checkpoints in completion order and never races draft revisions',async t=>{
  const s=await setup(t);await s.load();s.edit('needsSocialDoc','0');s.edit('needsSalaryDoc','none');s.mountWorkspace();
  const pending=new Map(),started=[];let active=0,peak=0;const original=s.w.fetch;
@@ -277,4 +293,10 @@ test('CRM recovery rejects a changed client before applying or saving the recove
  const s=await setup(t);await s.load();s.edit('needsSocialDoc','0');s.edit('needsSalaryDoc','none');s.mountWorkspace();const originalFetch=s.w.fetch,context=s.w.HostedAssessment.getContext();let posts=0;
  s.w.fetch=async(path,options={})=>{if(!path.includes('/crm-documents'))return originalFetch(path,options);if(options.method==='POST'){posts++;throw new s.w.TypeError('Lost response');}return{ok:true,json:async()=>{if(!path.includes('?fileId='))return{files:[{id:'123'}]};s.w.HostedAssessment.getContext=()=>({...context,identityRevision:2});return{documentId:'wrong',crmFileId:'123',identityRevision:1};}};};
  await s.w.ClientWorkspace.importDocuments();assert.equal(posts,1);assert.equal(s.run('selectedFiles.length'),0);assert.equal(s.writes.length,0);assert.match(s.d.getElementById('crmImportStatus').textContent,/Клиент изменился/);
+});
+
+test('loan account warning gives the Gold replacement action before generic missing identity',async t=>{
+ const s=await setup(t,{currentIin:'test-client'});await s.load();
+ s.run("selectedFiles=[{id:1,file:{name:'synthetic.pdf'},type:'Выписка Kaspi Gold',person:'Клиент'}];af.results.set(1,{kind:'other',blocked:true,identity:{iin:null},findings:['DOCUMENT_IDENTITY_UNVERIFIED','DOCUMENT_TYPE_UNVERIFIED','KASPI_LOAN_STATEMENT_NOT_GOLD']});");
+ assert.match(s.run('afDocumentAttention(selectedFiles[0]).message'),/Это выписка по кредитам.*по карте Kaspi Gold/);
 });

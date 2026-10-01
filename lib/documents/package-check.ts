@@ -63,6 +63,7 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
   if(MANUAL_DOCUMENT_TYPES[selected.type]){
    if(approved){available.add(selected.type);manuallyReviewed.push({documentId:document.id,reviewId:review.id,type:selected.type,actorId:review.actorId,reviewedAt:review.reviewedAt});continue;}
   }
+  if(parsed.findings.includes('KASPI_LOAN_STATEMENT_NOT_GOLD')){issue('KASPI_LOAN_STATEMENT_NOT_GOLD','Это выписка по кредитам. Для оборота нужна выписка по карте Kaspi Gold за последние 12 месяцев.');continue;}
   if(!record.client_iin){issue('DEAL_IDENTITY_UNVERIFIED','Сначала подтвердите ИИН клиента сделки.');continue;}
   if(!parsed.identity.iin){issue('DOCUMENT_IDENTITY_UNVERIFIED','Не удалось прочитать ИИН владельца. Откройте оригинал и проверьте владельца и тип документа.');continue;}
   if(parsed.identity.iin!==record.client_iin){issue('DOCUMENT_CLIENT_UNVERIFIED','ИИН в документе отличается от ИИН клиента. Проверьте владельца; для семейного документа укажите родственника.');continue;}

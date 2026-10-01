@@ -375,7 +375,7 @@ function ui(t, mode = "contract") {
   const dom = new JSDOM(
     `<body data-assessment-version="${release.version}"><input value="private-answer"><input type="password" value="private-key"></body>`,
     {
-      url: "https://synthetic.invalid/questionnaire.html?dealId=900001"+(mode === "handoff" ? "&mode=handoff" : ""),
+      url: "https://synthetic.invalid/questionnaire.html?dealId=900001"+(['handoff','profile'].includes(mode) ? "&mode="+mode : ""),
       runScripts: "outside-only",
     },
   );
@@ -723,6 +723,19 @@ test('opening a fresh release preserves the lawyer-handoff destination and unsav
  s.w.OperationsMonitor.record('JS_ERROR');await tick();
  assert.equal(s.w.document.querySelector('#assessmentUpdateNotice a').getAttribute('href'),'/lawyer-handoff?dealId=900001');
  assert.equal(s.w.document.querySelector('input').value,'private-answer');
+});
+
+test('a profile failure is classified as profile work and its fresh-tab link preserves the profile and answers',async t=>{
+ const s=ui(t,'profile');await tick();s.calls.length=0;s.setVersion('assessment-next');
+ s.setResponse(new Response('{}',{status:503}));
+ await s.w.fetch('/api/assessment/900001/profile',{method:'POST',body:'private-answer'});await tick();
+ assert.equal(s.calls.at(-1).action,'profile');
+ assert.equal(monitor.operationRoute('/api/assessment/900001/profile').action,'profile');
+ assert.equal(input({action:'profile'}).action,'profile');
+ assert.equal(s.w.document.querySelector('#assessmentUpdateNotice a').getAttribute('href'),'/profile-backfill?dealId=900001');
+ assert.equal(s.w.document.querySelector('#assessmentUpdateNotice a').target,'_blank');
+ assert.equal(s.w.document.querySelector('input').value,'private-answer');
+ assert.equal(JSON.stringify(s.calls).includes('private-'),false);
 });
 
 test('unfinished title repairs use their separate receipt clock and never expose names or suppress contract receipts',async(t)=>{

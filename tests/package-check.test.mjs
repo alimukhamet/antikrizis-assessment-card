@@ -141,3 +141,10 @@ test('unreadable ownership is distinguished from another IIN without accepting e
  }
  const s=fixture();s.add('doc','ГКБ — полный отчёт','gkb_full');const r=await checkDocumentPackage(s.repository,{id:'case',client_iin:null},s.payload,'2026-09-10');assert.ok(r.issues.some(i=>i.code==='DEAL_IDENTITY_UNVERIFIED'));
 });
+
+test('Kaspi loan account statement requests the actual Gold statement even without a printed owner IIN',async()=>{
+ const s=fixture();s.add('loan-account','Выписка Kaspi Gold','unknown');
+ Object.assign(s.sources.get('loan-account').extraction,{identity:{iin:null},credits:[],findings:['DOCUMENT_IDENTITY_UNVERIFIED','DOCUMENT_TYPE_UNVERIFIED','KASPI_LOAN_STATEMENT_NOT_GOLD']});
+ const r=await s.run();assert.ok(r.issues.some(i=>i.documentId==='loan-account'&&i.code==='KASPI_LOAN_STATEMENT_NOT_GOLD'&&i.message.includes('по карте Kaspi Gold')));
+ assert.equal(r.packageReady,false);assert.equal(r.structurallyChecked.includes('Выписка Kaspi Gold'),false);
+});

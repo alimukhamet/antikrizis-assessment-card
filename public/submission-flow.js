@@ -13,7 +13,9 @@ window.SubmissionFlow={contractFilename(data,dealId){
  let checked=null,attempt=null,latest=null,busy=false,busyLabel='Скачать договор',generation=0,destination=null,destinationSnapshot=null;
  const progress=()=>document.dispatchEvent(new CustomEvent('assessment-submission-progress',{detail:{busy,label:busy?busyLabel:'Скачать договор',message:status.textContent}}));
  const report=text=>{status.textContent=text;progress();};
- const intakeMessage=sync=>{if(sync?.status==='disabled'||sync?.status==='failed')window.OperationsMonitor?.record('CRM_INTAKE_FAILED',{action:'intake'});return sync?.status==='synced'?'Передача в юридическую CRM подтверждена.':sync?.status==='disabled'||sync?.status==='failed'?'Передача в юридическую CRM не подтверждена. Сообщите ответственному за интеграцию.':'Передача в юридическую CRM пока не подтверждена. Нажмите «Проверить передачу в юридическую CRM».';};
+ const intakeWaitingForHandoff=sync=>sync?.status==='pending'&&sync.reason==='assessment_intake_handover_missing';
+ const intakeRetryNeeded=row=>row?.state==='verified'&&row.historySaved&&row.assessmentIntakeSync?.status!=='synced'&&!intakeWaitingForHandoff(row.assessmentIntakeSync);
+ const intakeMessage=sync=>{if(sync?.status==='disabled'||sync?.status==='failed')window.OperationsMonitor?.record('CRM_INTAKE_FAILED',{action:'intake'});return sync?.status==='synced'?'Передача в юридическую CRM подтверждена.':intakeWaitingForHandoff(sync)?'Анкета сохранена. Передача в юридическую CRM ожидает передачи дела юристам через «Передать юристам».':sync?.status==='disabled'||sync?.status==='failed'?'Передача в юридическую CRM не подтверждена. Сообщите ответственному за интеграцию.':'Передача в юридическую CRM пока не подтверждена. Нажмите «Проверить передачу в юридическую CRM».';};
  const phase=(label,message)=>{busyLabel=label;save.textContent=label;if(message!==undefined)report(message);else progress();};
  new MutationObserver(()=>{if(busy)progress();}).observe(status,{childList:true,characterData:true,subtree:true});
  const currentDeal=()=>HostedAssessment.ready()?HostedAssessment.getContext().client.external.dealId:null;
@@ -33,7 +35,11 @@ window.SubmissionFlow={contractFilename(data,dealId){
   if(latest?.dealId!==dealId){latest=null;recovery.hidden=true;intakeRetry.hidden=true;}
   if(!dealId)return;
   try{const response=await fetch(`/api/assessment/${encodeURIComponent(dealId)}/submission`,{cache:'no-store'});if(!response.ok)return;const data=await response.json();if(token!==generation||currentDeal()!==dealId)return;
-   if(!data.submission){latest=null;recovery.hidden=true;intakeRetry.hidden=true;return;}latest={...data.submission,dealId};recovery.hidden=false;intakeRetry.hidden=latest.state!=='verified'||!latest.historySaved;savedText.textContent=latest.reviewText||`${latest.clientName} — договор ${latest.contractNumber}`;
+   if(!data.submission){latest=null;recovery.hidden=true;intakeRetry.hidden=true;return;}
+   // GET reads the saved Bitrix receipt without running a CRM transfer. Keep the
+   // last transfer result only for that same receipt when GET omits it.
+   const previousSync=latest?.dealId===dealId&&latest.requestId===data.submission.requestId?latest.assessmentIntakeSync:undefined;
+   latest={...data.submission,dealId,assessmentIntakeSync:data.submission.assessmentIntakeSync??previousSync};recovery.hidden=false;intakeRetry.hidden=!intakeRetryNeeded(latest);savedText.textContent=latest.reviewText||`${latest.clientName} — договор ${latest.contractNumber}`;
    resume.textContent=latest.state==='verified'&&latest.historySaved?'Скачать сохранённый договор':`Продолжить сохранение договора ${latest.contractNumber}`;cancel.hidden=latest.state!=='prepared';
   }catch{/* A failed status fetch never authorizes a new write. */}
  }
@@ -72,7 +78,7 @@ window.SubmissionFlow={contractFilename(data,dealId){
   if(guard&&!guard())throw Error('Клиент или ответы изменились во время сохранения. Сохранённая версия не удалена. Проверьте текущие ответы.');
   if(!result.contract)throw Error(result.message||'Сохранение ещё не подтверждено. Нажмите «Скачать договор» ещё раз без изменения ответов.');
   await download(dealId,result.contract);
-  latest={...result,dealId};intakeRetry.hidden=result.assessmentIntakeSync?.status==='synced';
+  latest={...result,dealId};intakeRetry.hidden=!intakeRetryNeeded(latest);
   report('Договор готов. Если скачивание не началось, нажмите «Скачать готовый файл договора» ниже. Карточка и история сохранены в Bitrix. '+intakeMessage(result.assessmentIntakeSync));
  }
  async function operate(action){if(busy)return;busy=true;busyLabel='Проверяю…';destination=null;destinationSnapshot=null;clearFile();save.disabled=resume.disabled=cancel.disabled=true;save.textContent=busyLabel;report('Проверяю данные для договора…');try{await action();}catch(error){recovery.open=true;report(error.message);}finally{busy=false;busyLabel='Скачать договор';resume.disabled=cancel.disabled=false;save.disabled=false;save.textContent=busyLabel;progress();void refresh();}}
@@ -113,12 +119,12 @@ window.SubmissionFlow={contractFilename(data,dealId){
  });
  intakeRetry.onclick=async()=>{
   const selected=latest,dealId=currentDeal();
-  if(busy||!selected||selected.dealId!==dealId||selected.state!=='verified'||!selected.historySaved)return;
+  if(busy||!selected||selected.dealId!==dealId||!intakeRetryNeeded(selected))return;
   intakeRetry.disabled=true;report('Проверяю передачу сохранённой анкеты в юридическую CRM…');
   try{
    const result=await post(dealId,{action:'sync-intake',requestId:selected.requestId});
    if(currentDeal()!==dealId||latest?.requestId!==selected.requestId)return;
-   latest={...latest,...result,dealId};intakeRetry.hidden=result.assessmentIntakeSync?.status==='synced';
+   latest={...latest,...result,dealId};intakeRetry.hidden=!intakeRetryNeeded(latest);
    report(intakeMessage(result.assessmentIntakeSync));
   }catch(error){if(currentDeal()===dealId)report('Не удалось проверить передачу в юридическую CRM. '+error.message);}
   finally{intakeRetry.disabled=false;}
