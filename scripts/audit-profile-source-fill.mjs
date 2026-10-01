@@ -1,6 +1,6 @@
 // Owner-triggered queue inspection and exact, additive draft fill. No profile,
 // review, contract, history, stage or CRM publication is performed.
-import {writeFile} from 'node:fs/promises';import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';import {writeFile} from 'node:fs/promises';import assert from 'node:assert/strict';
 import {validateDraft} from '../.profile-fill-validation.mjs';
 import {planProfileSourceFill,digest,storedPayload} from './profile-source-fill.mjs';
 const origin='https://assessment.anti-krizis.kz',apply=process.env.PROFILE_FILL_APPLY==='true';
@@ -11,7 +11,7 @@ async function request(path,body){const r=await fetch(origin+path,{method:body?'
 function checkGuard(guard,context,draft){
  if(!guard||guard.caseId!==context.caseId||guard.identityRevision!==context.identityRevision||guard.revision!==draft.revision||guard.beforeHash!==digest(storedPayload(draft.payload)))throw Object.assign(new Error(),{code:'GUARD_CHANGED'});
  if(Date.now()-Date.parse(guard.checkedAt)<0||Date.now()-Date.parse(guard.checkedAt)>600000)throw Object.assign(new Error(),{code:'GUARD_EXPIRED'});
- if(guard.pendingWrites?.length||guard.completed||guard.pendingHistory||guard.originalsChanged)throw Object.assign(new Error(),{code:'GUARD_BLOCKED'});
+ if(!Number.isFinite(Date.parse(guard.checkedAt))||!Array.isArray(guard.pendingWrites)||guard.pendingWrites.length||guard.completed!==false||guard.pendingHistory!==false||guard.originalsChanged!==false||!Array.isArray(guard.history?.protectedFields)||typeof guard.history.allowNewLoans!=='boolean')throw Object.assign(new Error(),{code:'GUARD_BLOCKED'});
 }
 try{
  assert.ok(process.env.ASSESSMENT_TEST_PASSWORD);assert.ok(!apply||ids.length>0&&ids.length<=8);
@@ -39,6 +39,8 @@ try{
    const history=guard?guard.history:{protectedFields:[],allowNewLoans:true};
    const plan=planProfileSourceFill(draft,context,analyses,validateDraft,history);
    Object.assign(out,{historyChecked:Boolean(guard),beforeHash:plan.beforeHash,afterHash:plan.afterHash,planHash:plan.planHash,newLoans:plan.newLoans,changes:plan.changes.map(({value,...change})=>({...change,valueHash:digest(value)})),skipped:plan.skipped,migrated:plan.migrated});
+   const readiness=await request(root+'/profile',{action:'check',requestId:randomUUID(),draft:plan.payload});
+   out.readyAfterFill=readiness.ready;out.remainingIssues=(readiness.issues||[]).map(({code,key,group,row})=>({code,key,group,row}));
    const latest=(await request(root+'/draft')).draft;if(latest.revision!==draft.revision||digest(storedPayload(latest.payload))!==plan.beforeHash)throw Object.assign(new Error(),{code:'DRAFT_CHANGED'});
    if(!plan.changes.length){out.unchanged=true;continue;}if(!apply){out.previewOnly=true;continue;}
    const pin=pins[item.dealId];if(!pin||pin.planHash!==plan.planHash||!/^\w{8}-(?:\w{4}-){3}\w{12}$/.test(pin.requestId))throw Object.assign(new Error(),{code:'EXACT_PLAN_PIN_REQUIRED'});
@@ -49,7 +51,7 @@ try{
    const saved=await request(root+'/draft',{payload:plan.payload,expectedRevision:draft.revision,identityRevision:context.identityRevision,requestId:pin.requestId});
    const after=(await request(root+'/draft')).draft;if(after.revision!==saved.revision||after.revision!==draft.revision+1||digest(storedPayload(after.payload))!==plan.afterHash)throw Object.assign(new Error(),{code:'SAVED_DRAFT_MISMATCH'});
    Object.assign(out,{verified:true,afterRevision:after.revision,filledFields:plan.changes.length});
-  }catch(e){out.error=errorCode(e);if(out.writeAttempted&&!out.verified)out.reconciliationRequired=true;report.failures.push({dealId:item.dealId,code:out.error});}
+  }catch(e){out.error=errorCode(e);if(out.writeAttempted&&!out.verified)out.reconciliationRequired=true;report.failures.push({dealId:item.dealId,code:out.error});}finally{console.log(JSON.stringify({dealId:item.dealId,checked:report.cases.length,total:targets.length,proposed:out.changes?.length||0,error:out.error||null}));}
  }}));
 }catch(e){report.failures.push({code:errorCode(e)});}
 report.cases.sort((a,b)=>Number(a.dealId)-Number(b.dealId));

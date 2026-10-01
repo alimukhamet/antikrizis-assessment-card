@@ -6,7 +6,7 @@ export const digest=x=>createHash('sha256').update(JSON.stringify(x)).digest('he
 export const storedPayload=payload=>{const p=structuredClone(payload);for(const d of p.documents)delete d.originalName;return p;};
 const get=(row,key)=>row?.find(a=>a.key===key);
 const fail=code=>{throw Object.assign(new Error(code),{code});};
-const identifier=n=>typeof n==='string'&&n.trim()&&!/[.…]{2}|[\r\n]/u.test(n);
+const identifier=n=>typeof n==='string'&&n.trim()&&!/\.{2,}|…|[\r\n]/u.test(n);
 const loanFields={creditor:'n8038',contractIdentifier:'loanContractId',startedAtMonth:'n8038Start',monthlyPayment:'n8041',overdueDays:'n8042',debtOutstanding:'n8040',creditType:'n8039',relatedParties:'loanParticipants',loanStatus:'loanStatus'};
 const scalarFields={'identity.iin':'iin','identity.name':'fio','statement.topUps':'kaspiAnnual','benefits.count':'clientBenefitsCount'};
 const sameValue=(key,a,b)=>key==='n8038'?creditorKey(a)===creditorKey(b):String(a).trim()===String(b).trim();
@@ -17,7 +17,7 @@ export function planProfileSourceFill(draft,context,analyses,validateDraft,histo
  const previousKeys=new Set(before.answers.map(a=>a.key));
  const migrated=payload.answers.filter(a=>!previousKeys.has(a.key));
  const migrationKeys=new Set(['holding:client:businessNone','holding:partner:businessNone','enforcementStatus']);
- if(migrated.some(a=>!migrationKeys.has(a.key)||a.checked||a.value&&!a.key.endsWith('businessNone')))fail('DRAFT_NORMALIZATION_REQUIRED');
+ if(migrated.some(a=>!migrationKeys.has(a.key)||a.checked||a.value!==(a.key.endsWith('businessNone')?'businessNone':'')))fail('DRAFT_NORMALIZATION_REQUIRED');
  const comparison=structuredClone(payload);comparison.answers=comparison.answers.filter(a=>previousKeys.has(a.key));
  if(!isDeepStrictEqual(comparison,before))fail('DRAFT_NORMALIZATION_REQUIRED');
  const selected=new Set(payload.documents.filter(d=>d.person==='Клиент'&&!/Подписанный договор|ЭЦП|парол/iu.test(d.type)).map(d=>d.documentId));
@@ -41,18 +41,20 @@ export function planProfileSourceFill(draft,context,analyses,validateDraft,histo
   }
  }
  const full=newest('gkb_full').filter(a=>a.document.extraction.creditList?.complete),short=newest('gkb_short').filter(a=>a.document.extraction.creditList?.complete);
- const reports=full.length?full:short,latest=reports[0]?.document.extraction.issuedAt;
+ const reports=[...full,...short],latest=reports.map(a=>a.document.extraction.issuedAt||'').sort().at(-1);
+ // Never silently mix financial facts from different reporting dates. Reports
+ // of the same date must agree; only the latest complete evidence is used.
  const loans=[];
  for(const a of reports.filter(a=>a.document.extraction.issuedAt===latest))for(const [index,c]of a.document.extraction.credits.entries()){
   const lender=c.facts.find(f=>f.key==='creditor')?.value,aliases=[c.contractNumber,c.contractCode].filter(identifier).map(n=>n.trim());
   if(!lender||!aliases.length)continue;
   const fields=c.facts.filter(f=>loanFields[f.key]).map(f=>({key:loanFields[f.key],value:f.value,source:evidence(a,f,`credits.${index}.${f.key}`)}));
-  loans.push({lender:creditorKey(lender),aliases,number:c.contractCode||c.contractNumber,fields});
+  loans.push({lender:creditorKey(lender),aliases,number:identifier(c.contractCode)?c.contractCode:c.contractNumber,fields});
  }
  let group=payload.groups.find(g=>g.id==='creditors');
- const originalRows=group?.rows.length||0;
+ const createdRows=new Set();
  const rowMatches=(loan,row,key)=>{const p=key?.split('|'),lender=get(row,'n8038')?.value,number=get(row,'loanContractId')?.value;return p?.length===4&&p[0]==='creditors'&&p[1]===context.client.iin&&creditorKey(p[2])===loan.lender&&loan.aliases.includes(p[3].trim())||lender&&number&&creditorKey(lender)===loan.lender&&loan.aliases.includes(number.trim());};
- const occupied=row=>row.some(a=>a.key!=='loanClaimIncluded'&&(a.checked||a.value.trim()!=='')||a.key==='loanClaimIncluded'&&!a.checked);
+ const occupied=row=>row.some(a=>a.sourceReplaced||a.key.startsWith('unknown:')?Boolean(a.sourceReplaced||a.checked):a.key==='loanClaimIncluded'?!a.checked:a.checked||a.value.trim()!=='');
  for(const loan of loans){
   const matches=(group?.rows||[]).map((r,i)=>rowMatches(loan,r,group.rowKeys[i])?i:-1).filter(i=>i>=0);
   if(matches.length>1){skipped.push({code:'AMBIGUOUS_EXISTING_LOAN'});continue;}
@@ -65,8 +67,9 @@ export function planProfileSourceFill(draft,context,analyses,validateDraft,histo
    rowIndex=group.rows.findIndex((r,i)=>!occupied(r)&&!group.rowKeys[i]);
    if(rowIndex<0){rowIndex=group.rows.length;group.rows.push([{key:'loanClaimIncluded',value:'on',checked:true}]);group.rowKeys.push(null);}
    const sourceKey='creditors|'+context.client.iin+'|'+loan.lender+'|'+loan.number;
-   group.rowKeys[rowIndex]=sourceKey;
+   group.rowKeys[rowIndex]=sourceKey;createdRows.add(rowIndex);
   }
+  if((get(group.rows[rowIndex],'n8038')?.value&&creditorKey(get(group.rows[rowIndex],'n8038').value)!==loan.lender)||(get(group.rows[rowIndex],'loanContractId')?.value&&!loan.aliases.includes(get(group.rows[rowIndex],'loanContractId').value.trim()))){skipped.push({row:rowIndex,code:'EXISTING_LOAN_IDENTITY_CHANGED'});continue;}
   if(group.rows[rowIndex].some(a=>a.sourceReplaced)){skipped.push({row:rowIndex,code:'REPLACED_SOURCE_PRESERVED'});continue;}
   for(const f of loan.fields)add(ref('creditors',rowIndex,f.key),f.value,f.source);
  }
@@ -79,15 +82,20 @@ export function planProfileSourceFill(draft,context,analyses,validateDraft,histo
   if(unique.length!==1){skipped.push({...target,code:'CONFLICTING_DOCUMENT_VALUES'});continue;}
   const value=unique[0].value;if(typeof value!=='string'||!value.trim())continue;
   // Scheduled amounts must not be inserted into a manually defaulted loan.
-  if(target.key==='n8041'&&get(row,'loanStatus')?.value&&get(row,'loanStatus').value!=='Платится по графику'){skipped.push({...target,code:'CURRENT_LOAN_STATUS_CONFLICT'});continue;}
+  if(target.key==='n8041'&&(get(row,'loanStatus')?.value&&get(row,'loanStatus').value!=='Платится по графику'||(candidates.get(JSON.stringify(ref('creditors',target.row,'loanStatus')))?.values||[]).some(v=>v.value!=='Платится по графику'))){skipped.push({...target,code:'CURRENT_LOAN_STATUS_CONFLICT'});continue;}
   const source=unique[0].source;
   if(existing)existing.value=value;else row.push({key:target.key,value,checked:false});
   changes.push({...target,value,source});
  }
  // If different source reports disagreed on a newly-created row, don't leave
  // an unidentifiable shell or a guessed loan count behind.
- if(group)for(let i=group.rows.length-1;i>=originalRows;i--)if(!get(group.rows[i],'n8038')?.value||!get(group.rows[i],'loanContractId')?.value)fail('NEW_LOAN_IDENTITY_CONFLICT');
+ if(group)for(const i of createdRows)if(!get(group.rows[i],'n8038')?.value||!get(group.rows[i],'loanContractId')?.value)fail('NEW_LOAN_IDENTITY_CONFLICT');
+ // Prove every original control and non-answer section survives. Only named
+ // blank fields, new rows and empty canonical migrations may change.
+ for(const previous of before.answers){const now=get(payload.answers,previous.key);if(!changes.some(c=>!c.group&&c.key===previous.key)&&!isDeepStrictEqual(previous,now))fail('EXISTING_ANSWER_CHANGED');}
+ for(const previous of before.groups){const now=payload.groups.find(g=>g.id===previous.id);if(!now||now.rows.length<previous.rows.length)fail('EXISTING_GROUP_CHANGED');for(const [i,row] of previous.rows.entries()){if(previous.rowKeys[i]!==now.rowKeys[i]&&!createdRows.has(i))fail('EXISTING_ROW_KEY_CHANGED');for(const answer of row)if(!changes.some(c=>c.group===previous.id&&c.row===i&&c.key===answer.key)&&!isDeepStrictEqual(answer,get(now.rows[i],answer.key)))fail('EXISTING_ANSWER_CHANGED');}}
+ for(const key of ['docContext','documents','pendingFiles','documentReviewDrafts'])if(!isDeepStrictEqual(before[key],payload[key]))fail('PROTECTED_SECTION_CHANGED');
  const final=validateDraft(payload);if(!isDeepStrictEqual(final,payload))fail('FILLED_DRAFT_NORMALIZATION_REQUIRED');
  const planHash=digest({caseId:context.caseId,identityRevision:context.identityRevision,revision:draft.revision,before,payload,sources,history});
- return {payload,changes,skipped,sources,planHash,beforeHash:digest(before),afterHash:digest(payload),migrated:migrated.map(a=>a.key),newLoans:Math.max(0,(group?.rows.length||0)-originalRows)};
+ return {payload,changes,skipped,sources,planHash,beforeHash:digest(before),afterHash:digest(payload),migrated:migrated.map(a=>a.key),newLoans:createdRows.size};
 }
