@@ -63,7 +63,7 @@ export function planProfileSourceFill(draft,context,analyses,validateDraft,histo
   if(rowIndex===undefined){
    if(!history.allowNewLoans){skipped.push({code:'PREVIOUSLY_REMOVED_LOAN_PRESERVED'});continue;}
    // A manual row without its identifier may describe this same loan. Do not duplicate it.
-   if(group?.rows.some(r=>get(r,'n8038')?.value&&creditorKey(get(r,'n8038').value)===loan.lender&&!get(r,'loanContractId')?.value)){skipped.push({code:'MANUAL_LOAN_ID_REQUIRED'});continue;}
+   if(group?.rows.some(r=>get(r,'n8038')?.value&&creditorKey(get(r,'n8038').value)===loan.lender&&!identifier(get(r,'loanContractId')?.value))){skipped.push({code:'MANUAL_LOAN_ID_REQUIRED'});continue;}
    if(!group){group={id:'creditors',rows:[],rowKeys:[]};payload.groups.push(group);}
    rowIndex=group.rows.findIndex((r,i)=>!occupied(r)&&!group.rowKeys[i]);
    if(rowIndex<0){rowIndex=group.rows.length;group.rows.push([{key:'loanClaimIncluded',value:'on',checked:true}]);group.rowKeys.push(null);}
