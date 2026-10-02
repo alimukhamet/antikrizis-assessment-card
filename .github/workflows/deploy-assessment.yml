@@ -168,6 +168,7 @@ jobs:
           node scripts/audit-live-tools.mjs
           node scripts/audit-live-knowledge.mjs
           node scripts/audit-live-profile.mjs
+          node scripts/audit-live-sales-plans.mjs
           node scripts/monitor-production.mjs
 
       - name: Preserve live audit result
@@ -179,6 +180,7 @@ jobs:
             live-tools-audit.json
             live-knowledge-audit.json
             live-profile-audit.json
+            live-sales-plans-audit.json
             production-monitor.json
           if-no-files-found: ignore
           retention-days: 1

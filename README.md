@@ -59,6 +59,8 @@ Storage: `0016_profile_saves` and `0017_profile_presence`; no Bitrix fields are 
 
 ## Runtime and verification
 
+In «Отдел продаж → Результаты → + План», Ali enters one future period, target and pair of rates, then selects employees (or «Все»). Each selected employee receives a separate plan with the full target; it is not divided across the team. An overlap for any selected employee rejects the entire save and identifies that employee. Retrying an uncertain save preserves the exact selection and terms and returns the original receipts. Existing single-person requests from old tabs remain supported, and payments remain individual.
+
 Use Node.js 22.13 or newer and the pinned package lock.
 
 ```sh

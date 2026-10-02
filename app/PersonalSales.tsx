@@ -8,6 +8,7 @@ type EarningsMonth = Omit<MonthlyEarnings, 'periods'> & { periods: Period[]; com
 type Payment = { id: string; month: string; amount: number; paidAt: string; note: string };
 type FuturePlan = Plan;
 type Report = { person: string; canChoosePerson: boolean; name: string; periods: Period[]; futurePlans: FuturePlan[]; earningsMonths: EarningsMonth[]; payments: Payment[]; earned: number | null; paid: number | null; owed: number | null; today: string; noPlan?: boolean; generatedAt: string };
+const salesPeople:Record<string,string>={darkhan:'Дархан',ramazan:'Рамазан',nurdaulet:'Нурдаулет'};
 const number = (n: number) => new Intl.NumberFormat('ru-KZ', { maximumFractionDigits: 2 }).format(n);
 const money = (n: number | null) => n === null ? 'Не рассчитано' : number(n) + ' ₸';
 const paidMoney = (n: number | null) => n === null ? 'Не подтверждено' : money(n);
@@ -31,6 +32,9 @@ export default function PersonalSales({ mode }: { mode: 'results' | 'earnings' }
   const [actionError, setActionError] = useState('');
   const [saving, setSaving] = useState(false);
   const [requestId, setRequestId] = useState('');
+  const [planPeople,setPlanPeople]=useState<string[]>([]);
+  const [pendingSave,setPendingSave]=useState<Record<string,unknown>|null>(null);
+  const locked=saving||pendingSave!==null;
   const earnings = activeMode === 'earnings';
   useEffect(() => {
     const controller = new AbortController();
@@ -55,14 +59,25 @@ export default function PersonalSales({ mode }: { mode: 'results' | 'earnings' }
   const history = earnings ? earningsMonths.filter(p => !p.ongoing) : periods.filter(p => !p.ongoing);
   const payments = [...(report?.payments || [])].filter(payment=>payment.amount>0).sort((a,b)=>b.paidAt.localeCompare(a.paidAt)||b.id.localeCompare(a.id));
   const selectedPerson=person||report?.person||'';
-  const openPanel=(kind:'payment'|'plan')=>{setPanel(kind);setActionError('');setRequestId(crypto.randomUUID());};
+  const openPanel=(kind:'payment'|'plan')=>{setPanel(kind);setActionError('');setRequestId(crypto.randomUUID());setPlanPeople([selectedPerson]);setPendingSave(null);};
   async function saveCompensation(event:FormEvent<HTMLFormElement>,kind:'payment'|'plan'){
     event.preventDefault();if(!report||!selectedPerson||saving)return;
     const data=new FormData(event.currentTarget),value=(key:string)=>String(data.get(key)||''),numeric=(key:string)=>Number(value(key));
-    const body=kind==='payment'?{kind,requestId,person:selectedPerson,month:value('month'),amount:numeric('amount'),paidAt:value('paidAt'),note:value('note')}:
-      {kind,requestId,person:selectedPerson,start:value('start'),end:value('end'),metric:value('metric'),target:numeric('target'),baseRate:numeric('baseRate'),targetRate:numeric('targetRate')};
-    setSaving(true);setActionError('');
-    try{const response=await fetch('/api/sales-compensation',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),result=await response.json() as {error?:string};if(!response.ok)throw Error(result.error==='PLAN_OVERLAPS_EXISTING'?'Период уже занят.':result.error||'Не удалось сохранить.');setPanel('');setRetry(value=>value+1);}catch(error){setActionError(error instanceof Error?error.message:'Не удалось сохранить.');}finally{setSaving(false);}
+    const body=pendingSave||(kind==='payment'?{kind,requestId,person:selectedPerson,month:value('month'),amount:numeric('amount'),paidAt:value('paidAt'),note:value('note')}:
+      {kind:'plans',requestId,people:planPeople,start:value('start'),end:value('end'),metric:value('metric'),target:numeric('target'),baseRate:numeric('baseRate'),targetRate:numeric('targetRate')});
+    if(kind==='plan'&&!pendingSave&&!planPeople.length){setActionError('Выберите сотрудников.');return;}
+    setSaving(true);setPendingSave(body);setActionError('');
+    const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),30000);
+    try{
+      const response=await fetch('/api/sales-compensation',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal:controller.signal}),result=await response.json() as {error?:string;people?:string[]};
+      if(!response.ok){
+        if(response.status>=500)throw Error('Не удалось подтвердить сохранение. Нажмите «Проверить сохранение».');
+        setPendingSave(null);
+        const names=result.people?.map(person=>salesPeople[person]).filter(Boolean).join(', ');
+        throw Error(result.error==='PLAN_OVERLAPS_EXISTING'?`Период уже занят${names?': '+names:''}. Выберите другой период или сотрудника.`:result.error==='PLAN_REQUEST_CHANGED'?'Этот запрос уже сохранён с другими условиями. Обновите страницу.':result.error||'Не удалось сохранить.');
+      }
+      setPendingSave(null);setPanel('');setRetry(value=>value+1);
+    }catch(error){setActionError(error instanceof Error?error.message:'Не удалось подтвердить сохранение. Повторите проверку.');}finally{clearTimeout(timeout);setSaving(false);}
   }
   function result(p: Period) { return p.metric === 'count' ? number(p.count) + ' / ' + number(p.target!) + ' договоров' : money(p.volume) + ' / ' + money(p.target); }
   function earningsDetails(p: EarningsMonth,settlement=true) {
@@ -80,13 +95,16 @@ export default function PersonalSales({ mode }: { mode: 'results' | 'earnings' }
   return <main className="personal-page"><div className="ps-wrap">
     <Link className="ps-back" href="/">← Назад</Link>
     <header className="ps-header"><div><h1>{report?.canChoosePerson ? 'Отдел продаж' : earnings ? 'Мой заработок' : 'Мои результаты'}</h1><p>{report?.canChoosePerson ? <>Ali <span className="rop-role">РОП</span></> : report?.name || 'Ваши показатели'}</p></div></header>
-    <nav className="rop-nav" aria-label="Показатели"><button aria-pressed={!earnings} onClick={() => {setActiveMode('results');setPanel('');}}>Результаты</button><button aria-pressed={earnings} onClick={() => {setActiveMode('earnings');setPanel('');}}>Заработок</button></nav>
-    {report?.canChoosePerson && <div className="rop-people" aria-label="Сотрудник">{Object.entries({darkhan:'Дархан',ramazan:'Рамазан',nurdaulet:'Нурдаулет'}).map(([id,name]) => <button key={id} aria-pressed={(person || report.person) === id} onClick={() => { if ((person || report.person) !== id) { setBusy(true); setError(''); setPerson(id); } }}>{name}</button>)}</div>}
+    <nav className="rop-nav" aria-label="Показатели"><button disabled={locked} aria-pressed={!earnings} onClick={() => {setActiveMode('results');setPanel('');}}>Результаты</button><button disabled={locked} aria-pressed={earnings} onClick={() => {setActiveMode('earnings');setPanel('');}}>Заработок</button></nav>
+    {report?.canChoosePerson && <div className="rop-people" aria-label="Сотрудник">{Object.entries(salesPeople).map(([id,name]) => <button key={id} disabled={locked} aria-pressed={(person || report.person) === id} onClick={() => { if ((person || report.person) !== id) { setPanel('');setActionError('');setBusy(true); setError(''); setPerson(id); } }}>{name}</button>)}</div>}
     <section aria-live="polite">
       {error ? <div className="ps-empty" role="alert"><p>{error}</p><button onClick={() => { setError(''); setRetry(retry + 1); }}>Повторить</button></div> : !report || busy ? <p className="ps-empty" role="status">Загружаем вашу историю…</p> : report.noPlan ? <div className="ps-empty"><h2>Для вашего профиля план продаж не задан</h2><p>Вы вошли как {report.name}. Здесь показываются только личные результаты.</p></div> : <>
-        {report.canChoosePerson && <div className="rop-selected-row"><h2 className="rop-selected">{report.name}</h2><button className="ps-action" onClick={()=>openPanel(earnings?'payment':'plan')}>{earnings?'+ Выплата':'+ План'}</button></div>}
-        {panel==='payment'&&<form className="ps-entry" onSubmit={event=>saveCompensation(event,'payment')}><h3>Выплата · {report.name}</h3><div className="ps-entry-grid"><label>Месяц<input name="month" type="month" min="2026-06" max={report.today.slice(0,7)} defaultValue={report.today.slice(0,7)} required/></label><label>Сумма<input name="amount" type="number" min="0" max="100000000" step="1" inputMode="numeric" required/></label><label>Дата<input name="paidAt" type="date" max={report.today} defaultValue={report.today} required/></label><label>Заметка<input name="note" maxLength={200}/></label></div><div className="ps-entry-actions"><button type="button" onClick={()=>setPanel('')}>Отмена</button><button disabled={saving}>{saving?'Сохраняем…':'Сохранить'}</button></div>{actionError&&<p role="alert">{actionError}</p>}</form>}
-        {panel==='plan'&&<form className="ps-entry" onSubmit={event=>saveCompensation(event,'plan')}><h3>Новый план · {report.name}</h3><div className="ps-entry-grid"><label>Начало<input name="start" type="date" min={nextDay(report.today)} required/></label><label>Конец<input name="end" type="date" min={nextDay(report.today)} required/></label><label>Цель<select name="metric"><option value="volume">Сумма</option><option value="count">Договоры</option></select></label><label>Значение<input name="target" type="number" min="1" max="1000000000" step="1" required/></label><label>Ставка, %<input name="baseRate" type="number" min="0" max="100" step="0.01" required/></label><label>При цели, %<input name="targetRate" type="number" min="0" max="100" step="0.01" required/></label></div><div className="ps-entry-actions"><button type="button" onClick={()=>setPanel('')}>Отмена</button><button disabled={saving}>{saving?'Сохраняем…':'Сохранить'}</button></div>{actionError&&<p role="alert">{actionError}</p>}</form>}
+        {report.canChoosePerson && <div className="rop-selected-row"><h2 className="rop-selected">{report.name}</h2><button className="ps-action" disabled={locked} onClick={()=>openPanel(earnings?'payment':'plan')}>{earnings?'+ Выплата':'+ План'}</button></div>}
+        {panel==='payment'&&<form className="ps-entry" onSubmit={event=>saveCompensation(event,'payment')}><h3>Выплата · {report.name}</h3><fieldset className="ps-entry-fields" disabled={locked}><div className="ps-entry-grid"><label>Месяц<input name="month" type="month" min="2026-06" max={report.today.slice(0,7)} defaultValue={report.today.slice(0,7)} required/></label><label>Сумма<input name="amount" type="number" min="0" max="100000000" step="1" inputMode="numeric" required/></label><label>Дата<input name="paidAt" type="date" max={report.today} defaultValue={report.today} required/></label><label>Заметка<input name="note" maxLength={200}/></label></div></fieldset><div className="ps-entry-actions"><button type="button" disabled={locked} onClick={()=>setPanel('')}>Отмена</button><button disabled={saving}>{saving?'Сохраняем…':pendingSave?'Проверить сохранение':'Сохранить'}</button></div>{actionError&&<p role="alert">{actionError}</p>}</form>}
+        {panel==='plan'&&<form className="ps-entry" onSubmit={event=>saveCompensation(event,'plan')}><h3>Новый план</h3><fieldset className="ps-entry-fields" disabled={locked}>
+          <fieldset className="ps-plan-people"><legend>Сотрудники</legend><div>{Object.entries(salesPeople).map(([id,name])=><label key={id}><input type="checkbox" name="people" value={id} checked={planPeople.includes(id)} onChange={event=>setPlanPeople(people=>event.target.checked?[...people,id]:people.filter(person=>person!==id))}/>{name}</label>)}<button type="button" onClick={()=>setPlanPeople(Object.keys(salesPeople))}>Все</button></div></fieldset>
+          <p className="ps-plan-hint">Цель и ставки — каждому выбранному сотруднику.</p>
+          <div className="ps-entry-grid"><label>Начало<input name="start" type="date" min={nextDay(report.today)} required/></label><label>Конец<input name="end" type="date" min={nextDay(report.today)} required/></label><label>Цель<select name="metric"><option value="volume">Сумма</option><option value="count">Договоры</option></select></label><label>Значение<input name="target" type="number" min="1" max="1000000000" step="1" required/></label><label>Ставка, %<input name="baseRate" type="number" min="0" max="100" step="0.01" required/></label><label>При цели, %<input name="targetRate" type="number" min="0" max="100" step="0.01" required/></label></div></fieldset><div className="ps-entry-actions"><button type="button" disabled={locked} onClick={()=>setPanel('')}>Отмена</button><button disabled={saving||!planPeople.length}>{saving?'Сохраняем…':pendingSave?'Проверить сохранение':`Сохранить · ${planPeople.length}`}</button></div>{actionError&&<p role="alert">{actionError}</p>}</form>}
         {earnings&&currentMonth&&<article className="ps-current-earnings"><div className="ps-current-summary"><div><h2>{monthName(currentMonth.id)}</h2><p>Комиссия за текущий месяц</p></div><strong>{money(currentMonth.performanceCommission)}</strong></div><p className="ps-accrual-note">Будет начислена в конце месяца</p>{earningsDetails(currentMonth,false)}</article>}
         {earnings&&<div className="ps-overall" role="group" aria-label="История заработка">{([
           ['earned','Начислено',money(report.earned)],['paid','Выплачено',paidMoney(report.paid)],['owed','Остаток',money(report.owed)],

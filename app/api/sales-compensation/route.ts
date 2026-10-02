@@ -7,7 +7,7 @@ import {CompensationError,compensationRepository,validateCompensation} from '../
 export const dynamic='force-dynamic';
 const headers={'cache-control':'private, no-store','x-content-type-options':'nosniff'};
 const actorFor=(request:Request)=>verifySession(readSessionCookie(request.headers.get('cookie')),process.env.SITE_SESSION_TOKEN??'');
-function failure(error:unknown){return Response.json({error:error instanceof CompensationError?error.code:'COMPENSATION_UNAVAILABLE'},{status:error instanceof CompensationError?error.status:503,headers});}
+function failure(error:unknown){return Response.json({error:error instanceof CompensationError?error.code:'COMPENSATION_UNAVAILABLE',...(error instanceof CompensationError&&error.people?{people:error.people}:{})},{status:error instanceof CompensationError?error.status:503,headers});}
 export async function GET(request:Request){
   const denied=await requireStaffRequest(request);if(denied)return denied;
   try{
