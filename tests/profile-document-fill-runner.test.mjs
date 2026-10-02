@@ -7,6 +7,7 @@ import {isDeepStrictEqual} from 'node:util';
 import {buildSync} from 'esbuild';
 import {planProfileSourceFill, digest, storedPayload} from '../scripts/profile-source-fill.mjs';
 import {deriveProfileFillHistory} from '../scripts/profile-fill-history.mjs';
+import {extendProfileDocumentFacts} from '../scripts/profile-document-facts.mjs';
 
 // The runner executes with in-memory filesystem/network adapters. Synthetic
 // clients and documents are the only inputs; no production endpoint is called.
@@ -93,7 +94,7 @@ async function run(options={}){
   assert.fail('Unexpected application request '+path);
  }
  await vm.runInNewContext('(async()=>{'+source+'})()',{
-  process,Buffer,JSON,URL,AbortSignal,structuredClone,createPublicKey,publicEncrypt,randomBytes,createCipheriv,randomUUID,isDeepStrictEqual,validateDraft,planProfileSourceFill,digest,storedPayload,deriveProfileFillHistory,blankProfileDraft,crmImportCandidates,appendProfileDocument,
+  process,Buffer,JSON,URL,AbortSignal,structuredClone,createPublicKey,publicEncrypt,randomBytes,createCipheriv,randomUUID,isDeepStrictEqual,validateDraft,planProfileSourceFill,digest,storedPayload,deriveProfileFillHistory,blankProfileDraft,crmImportCandidates,appendProfileDocument,extendProfileDocumentFacts,
   fetch,readFileSync:name=>{assert.equal(name,'wrangler.anti-krizis.jsonc');return JSON.stringify({d1_databases:[{database_id:'synthetic-db'}]});},writeFileSync:(name,text)=>{outputs[name]=text;},console:{log:text=>logs.push(text)},
  });
  assert.ok(outputs['profile-document-fill-summary.json']);assert.ok(outputs['profile-document-fill.enc.json']);
@@ -213,4 +214,18 @@ test('a wrong-client imported original is not selected or used to create a draft
  const other=analysis('doc-101');other.document.extraction.identity.iin='991231300004';
  const r=await run({noDraft:true,importAnalysis:other,setup:m=>m.refs=[{id:'101',name:'ГКБ полный.pdf',field:'UF_CRM_GKB'}]});
  assert.equal(r.model.imports,1);assert.equal(r.model.draftWrites,0);assert.equal(r.model.draft,null);assert.equal(r.report.cases[0].skipped,'NO_ACCESSIBLE_MATCHED_DOCUMENT');
+});
+
+test('identity conflict in an additional source kind cannot be bypassed by the core source planner',async()=>{
+ const r=await run({setup:m=>{
+  const other=analysis('doc-enpf');other.document.extraction.kind='enpf';
+  other.document.extraction.identity.name='PRIVATE_SYNTHETIC_DIFFERENT_NAME';
+  other.document.extraction.facts.find(f=>f.key==='identity.name').value='PRIVATE_SYNTHETIC_DIFFERENT_NAME';
+  m.analyses['doc-enpf']=other;
+  m.draft.payload.documents.push({documentId:'doc-enpf',type:'Справка ЕНПФ',person:'Клиент'});
+  m.drafts[0].payload_json=JSON.stringify(m.draft.payload);
+ }});
+ assert.equal(r.report.cases[0].verified,true);
+ assert.equal(r.model.draft.payload.answers.find(a=>a.key==='fio'),undefined);
+ assert.ok(r.report.cases[0].planSkipped.some(x=>x.key==='fio'&&x.code==='CONFLICTING_DOCUMENT_VALUES'));
 });

@@ -40,7 +40,7 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npx --no-install esbuild lib/questionnaire/draft.ts --bundle --platform=node --format=esm --outfile=.profile-fill-validation.mjs
       - name: Verify bounded import and additive filling
-        run: node --test tests/profile-source-fill.test.mjs tests/profile-document-import.test.mjs tests/profile-document-fill-runner.test.mjs
+        run: node --test tests/profile-source-fill.test.mjs tests/profile-document-import.test.mjs tests/profile-document-facts.test.mjs tests/profile-document-fill-runner.test.mjs
       - name: Import documents and fill supported empty draft fields
         env:
           ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}

@@ -7,6 +7,7 @@ import {validateDraft} from '../.profile-fill-validation.mjs';
 import {planProfileSourceFill, digest, storedPayload} from './profile-source-fill.mjs';
 import {deriveProfileFillHistory} from './profile-fill-history.mjs';
 import {blankProfileDraft, crmImportCandidates, appendProfileDocument} from './profile-document-import.mjs';
+import {extendProfileDocumentFacts} from './profile-document-facts.mjs';
 
 const origin='https://assessment.anti-krizis.kz';
 const apply=process.env.PROFILE_DOCUMENT_APPLY==='true';
@@ -40,7 +41,10 @@ async function request(path,body){
 async function dbRead(sql,params=[]){
  if(!/^SELECT\s/i.test(sql)||/;/.test(sql))fail('READ_ONLY_DATABASE_REQUIRED');
  const response=await fetch(`https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/d1/database/${database}/query`,{method:'POST',headers:{authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,'content-type':'application/json'},body:JSON.stringify({sql,params}),signal:AbortSignal.timeout(60000)});
- const data=await response.json();if(!response.ok||!data.success||!data.result?.[0]?.success)fail('DATABASE_READ_FAILED');
+ const data=await response.json();if(!response.ok||!data.success||!data.result?.[0]?.success){
+  (privateReport.databaseErrors??=[]).push({at:new Date().toISOString(),status:response.status,sql,response:data});
+  fail('DATABASE_READ_FAILED');
+ }
  return data.result[0].results;
 }
 async function state(caseId){
@@ -160,7 +164,11 @@ async function runCase(item){
   // A separate checked “unknown” control is an explicit staff answer too.
   for(const a of draft.payload.answers)if(a.key.startsWith('unknown:')&&a.checked)history.protectedFields.push({key:a.key.slice(8)});
   for(const g of draft.payload.groups)for(const [row,answers]of g.rows.entries())for(const a of answers)if(a.key.startsWith('unknown:')&&a.checked)history.protectedFields.push({group:g.id,row,key:a.key.slice(8)});
-  const plan=planProfileSourceFill(draft,context,analyses,validateDraft,history);
+  const canonicalPlan=planProfileSourceFill(draft,context,[],validateDraft,history);
+  const identityPlan=extendProfileDocumentFacts({...draft,payload:canonicalPlan.payload},context,analyses,validateDraft,history);
+  for(const item of identityPlan.skipped)if(item.code==='CONFLICTING_DOCUMENT_VALUES')history.protectedFields.push({key:item.key});
+  const basePlan=planProfileSourceFill({...draft,payload:identityPlan.payload},context,analyses,validateDraft,history);
+  const plan={...basePlan,changes:[...identityPlan.changes,...basePlan.changes],skipped:[...identityPlan.skipped,...basePlan.skipped],sources:[...identityPlan.sources,...basePlan.sources],migrated:canonicalPlan.migrated,beforeHash:digest(storedPayload(draft.payload)),planHash:digest({canonical:canonicalPlan.planHash,identity:identityPlan.planHash,base:basePlan.planHash})};
   detail.plans.push(plan);out.proposedFields=plan.changes.length;out.newLoans=plan.newLoans;out.planSkipped=plan.skipped;
   if(plan.changes.length&&apply)await save(plan.payload,'source-fill',plan.changes);
   out.changes=plan.changes.map(({value,...x})=>({...x,valueHash:digest(value)}));
