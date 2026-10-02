@@ -11,6 +11,7 @@ import {extendProfileDocumentFacts} from './profile-document-facts.mjs';
 
 const origin='https://assessment.anti-krizis.kz';
 const apply=process.env.PROFILE_DOCUMENT_APPLY==='true';
+const sessionOnly=process.env.PROFILE_DOCUMENT_SESSION_ONLY==='true';
 const requested=(process.env.PROFILE_DOCUMENT_IDS||'').split(',').filter(Boolean);
 if(requested.some(id=>!/^\d{1,12}$/.test(id))||requested.length>200)throw Error('INVALID_COHORT');
 const publicKey=createPublicKey({key:Buffer.from(process.env.PROFILE_DOCUMENT_PUBLIC_KEY||'','base64'),format:'der',type:'spki'});
@@ -181,12 +182,25 @@ async function runCase(item){
  finally{checkpoint();console.log(JSON.stringify({dealId:out.dealId,finished:publicReport.cases.filter(c=>c.verified||c.error||c.skipped).length,filled:out.filledFields||0,imports:out.imports.filter(x=>x.selected).length,skipped:out.skipped,error:out.error}));}
 }
 try{
- if(!process.env.ASSESSMENT_TEST_PASSWORD||!process.env.CLOUDFLARE_API_TOKEN||!process.env.CLOUDFLARE_ACCOUNT_ID)fail('AUTHENTICATION_NOT_CONFIGURED');
- await request('/api/session',{worker:'ali',password:process.env.ASSESSMENT_TEST_PASSWORD});
+ if(process.env.PROFILE_DOCUMENT_SESSION_FILE){
+  const session=JSON.parse(readFileSync(process.env.PROFILE_DOCUMENT_SESSION_FILE,'utf8'));
+  if(typeof session.cookie!=='string'||!session.cookie||Date.now()-Date.parse(session.issuedAt)>3600000)fail('SESSION_EXPIRED');
+  cookie=session.cookie;
+ }else{
+  if(!process.env.ASSESSMENT_TEST_PASSWORD)fail('AUTHENTICATION_NOT_CONFIGURED');
+  await request('/api/session',{worker:'ali',password:process.env.ASSESSMENT_TEST_PASSWORD});
+ }
+ if(sessionOnly){
+  if(apply)fail('SESSION_BOOTSTRAP_MUST_BE_READ_ONLY');
+  const activity=await request('/api/profile-activity');if(activity.currentWorker!=='ali')fail('OWNER_SESSION_REQUIRED');
+  privateReport.session={cookie,issuedAt:new Date().toISOString()};publicReport.sessionReady=true;
+ }else{
+ if(!process.env.CLOUDFLARE_API_TOKEN||!process.env.CLOUDFLARE_ACCOUNT_ID)fail('AUTHENTICATION_NOT_CONFIGURED');
  const queue=(await request('/api/profile-queue')).items;privateReport.queue=queue;publicReport.queueCount=queue.length;
  if(requested.some(id=>!queue.some(x=>x.dealId===id)))fail('CASE_NOT_IN_CURRENT_QUEUE');
  const targets=requested.length?queue.filter(x=>requested.includes(x.dealId)):queue;let next=0;
  await Promise.all(Array.from({length:3},async()=>{while(next<targets.length)await runCase(targets[next++]);}));
+ }
 }catch(e){publicReport.error=safeCode(e);process.exitCode=1;}
 publicReport.finishedAt=new Date().toISOString();
 publicReport.summary={queue:publicReport.queueCount,checked:publicReport.cases.length,changed:publicReport.cases.filter(x=>x.writes.length).length,createdDrafts:publicReport.cases.filter(x=>x.beforeRevision===0&&x.writes.length).length,filledFields:publicReport.cases.reduce((n,x)=>n+(x.filledFields||0),0),selectedDocuments:publicReport.cases.reduce((n,x)=>n+x.imports.filter(i=>i.selected).length,0),errors:publicReport.cases.filter(x=>x.error).length};

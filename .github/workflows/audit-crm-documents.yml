@@ -8,6 +8,10 @@ on:
       deal_ids:
         type: string
         default: ''
+      session_only:
+        description: 'Use normal owner sign-in for the local guarded run; encrypted short-lived session only'
+        type: boolean
+        default: false
       public_key:
         description: 'Requester RSA SPKI public key, base64; detailed report encrypted only'
         type: string
@@ -48,6 +52,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           PROFILE_DOCUMENT_APPLY: ${{ inputs.apply }}
           PROFILE_DOCUMENT_IDS: ${{ inputs.deal_ids }}
+          PROFILE_DOCUMENT_SESSION_ONLY: ${{ inputs.session_only }}
           PROFILE_DOCUMENT_PUBLIC_KEY: ${{ inputs.public_key }}
         run: node scripts/run-profile-document-fill.mjs
       - uses: actions/upload-artifact@v4
