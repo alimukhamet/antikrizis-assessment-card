@@ -26,7 +26,7 @@ export function plansFor(person: Person): Plan[] {
     p('july-27', '07-27', '07-31', null, 'volume', [[0,base(1.6)]], { note: person==='darkhan'?'Ставка новичка — 2%.':'Исходная цель не восстановлена. Итоговая ставка — 1,6%.' }),
     p('august-1', '08-01', '08-15', 15, 'count', target(15,1.7)),
     p('august-16', '08-16', '08-30', null, 'volume', [[0,base(2)]]),
-    p('september', '09-01', '09-30', 11000000, 'volume', target(11000000,1.6), { leaderBonus: 100000 }),
+    p('september', '09-01', '09-30', 10000000, 'volume', target(10000000,1.6), { leaderBonus: 100000 }),
   ];
 }
 export type Totals = { count: number; volume: number; missing: number };

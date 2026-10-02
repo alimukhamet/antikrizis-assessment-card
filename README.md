@@ -63,6 +63,8 @@ In «Отдел продаж → Результаты → + План», Ali ente
 
 First-place competitions for 1–30 September and 1–21 October 2026 award 100,000 ₸ to the single highest full contract volume among Darkhan, Ramazan and Nurdaulet, using the existing lawyer-handoff dates. The final day must finish before a winner is assigned. Ties, incomplete amounts or unavailable ranking remain unresolved. The bonus has a separate earnings line, is included once with monthly accrual, and never creates a payment. Historical commission rates and payment-type formulas remain unchanged; current-period prizes are shown separately from accrued earnings.
 
+On 2 October the owner corrected the September target to 10,000,000 ₸ for each of the three employees. September retains 2% below target for Darkhan, 1.6% below target for Ramazan and Nurdaulet, and 2.3% when reached. The separately saved 1–21 October plans remain at 11,000,000 ₸, with 1.6% below target and 2% when reached.
+
 Use Node.js 22.13 or newer and the pinned package lock.
 
 ```sh

@@ -37,12 +37,18 @@ try{
  for(const [person,manager] of Object.entries(managers)){
   const response=await request('/api/personal-sales?person='+person+'&month=2026-09');assert.equal(response.status,200);
   const data=await response.json(),month=data.earningsMonths.find(row=>row.id==='2026-09'),award=data.leaderAwards.find(row=>row.id==='september-2026');
+  const period=data.periods.find(row=>row.id==='september');
+  assert.ok(period&&period.target===10000000&&period.start==='2026-09-01'&&period.end==='2026-09-30','September must use the owner-corrected target');
+  assert.ok(JSON.stringify(period.tiers)===JSON.stringify([[0,person==='darkhan'?2:1.6],[10000000,2.3]]),'September rates must retain their existing values at the corrected threshold');
+  const expectedRate=period.missing>0?null:period.volume>=10000000?2.3:person==='darkhan'?2:1.6;
+  assert.ok(period.rate===expectedRate,'September rate must use the corrected threshold');
   const expected=settled?(leaders[0].managerId===manager?100000:0):null;
   assert.ok(month&&award&&month.leaderBonus===expected&&award.amount===expected,'Closed first-place bonus must match verified ranking');
   const earned=month.commission===null||expected===null?null:month.baseSalary+month.contractBonus+month.commission+expected;
   assert.ok(month.earned===earned,'Monthly earnings must include the bonus exactly once');
  }
  report.closedCompetitionVerified=true;
+ report.septemberTargetVerified=true;
  await login('ramazan');
  const own=await request('/api/sales-compensation');assert.equal(own.status,200);const ownData=await own.json();assert.equal(ownData.person,'ramazan');assert.equal(ownData.canEdit,false);
  const other=await request('/api/sales-compensation?person=darkhan');assert.equal(other.status,403);await other.arrayBuffer();
