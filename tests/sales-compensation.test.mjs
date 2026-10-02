@@ -39,3 +39,56 @@ test('validation rejects future payments, past plans and cross-month plans',()=>
   {kind:'plan',requestId:requestId(),person:'ramazan',start:'2026-10-20',end:'2026-11-05',metric:'count',target:10,baseRate:1,targetRate:2},
  ];for(const value of bad)assert.throws(()=>compensation.validateCompensation(value,'2026-09-21'));
 });
+
+const batch=overrides=>compensation.validateCompensation({kind:'plans',requestId:requestId(),people:['ramazan','darkhan'],start:'2026-10-03',end:'2026-10-31',metric:'volume',target:12000000,baseRate:1.5,targetRate:2,...overrides},'2026-10-02');
+test('one save gives each selected person the full target and retries return the same receipts',async()=>{
+ const {sql,repo}=setup(),input=batch();
+ try{
+  const first=await repo.create(input,actor('ali'));
+  assert.equal(first.plans.length,2);
+  for(const person of input.people){const rows=await repo.plans(person);assert.equal(rows.length,1);assert.equal(rows[0].target,12000000);assert.equal(rows[0].baseRate,1.5);assert.equal(rows[0].targetRate,2);}
+  assert.equal((await repo.plans('nurdaulet')).length,0);
+  assert.equal(JSON.stringify(await repo.create({...input,people:[...input.people].reverse()},actor('ali'))),JSON.stringify(first));
+  assert.equal(sql.prepare('SELECT count(*) n FROM sales_plans').get().n,2);
+  await assert.rejects(()=>repo.create(batch(),actor('ramazan')),/ROP_REQUIRED/);
+ }finally{sql.close();}
+});
+test('overlap for one selected employee prevents all new plans and names the conflict',async()=>{
+ const {sql,repo}=setup();
+ try{
+  await repo.create(batch({people:['ramazan']}),actor('ali'));
+  await assert.rejects(()=>repo.create(batch(),actor('ali')),error=>error.code==='PLAN_OVERLAPS_EXISTING'&&JSON.stringify(error.people)==='["ramazan"]');
+  assert.equal((await repo.plans('darkhan')).length,0);
+  assert.equal((await repo.plans('ramazan')).length,1);
+  await repo.create(batch({people:['darkhan','nurdaulet']}),actor('ali'));
+  assert.equal(sql.prepare('SELECT count(*) n FROM sales_plans').get().n,3);
+ }finally{sql.close();}
+});
+test('a saved request cannot change its selected people, dates, target or rates',async()=>{
+ const {sql,repo}=setup(),input=batch();
+ try{
+  await repo.create(input,actor('ali'));
+  for(const change of [{people:['darkhan']},{people:['darkhan','ramazan','nurdaulet']},{target:15},{end:'2026-10-30'},{baseRate:2},{targetRate:3},{metric:'count'}])await assert.rejects(()=>repo.create({...input,...change},actor('ali')),/PLAN_REQUEST_CHANGED/);
+  assert.equal(sql.prepare('SELECT count(*) n FROM sales_plans').get().n,2);
+ }finally{sql.close();}
+});
+test('racing saves and failures within an insert cannot leave a partial selection',async()=>{
+ const {sql,repo}=setup();
+ try{
+  const input=batch(),results=await Promise.all([repo.create(input,actor('ali')),repo.create(input,actor('ali'))]);
+  assert.equal(JSON.stringify(results[0]),JSON.stringify(results[1]));
+  assert.equal(sql.prepare('SELECT count(*) n FROM sales_plans').get().n,2);
+  const overlapping=await Promise.allSettled([repo.create(batch({start:'2026-11-01',end:'2026-11-30'}),actor('ali')),repo.create(batch({people:['ramazan','nurdaulet'],start:'2026-11-01',end:'2026-11-30'}),actor('ali'))]);
+  assert.equal(overlapping.filter(result=>result.status==='fulfilled').length,1);
+  assert.equal(sql.prepare("SELECT count(*) n FROM sales_plans WHERE start_date='2026-11-01'").get().n,2);
+  sql.exec("CREATE TRIGGER reject_second_person BEFORE INSERT ON sales_plans WHEN NEW.person='ramazan' BEGIN SELECT RAISE(ABORT, 'synthetic storage failure'); END");
+  await assert.rejects(()=>repo.create(batch({start:'2026-12-01',end:'2026-12-31'}),actor('ali')),/synthetic storage failure/);
+  assert.equal(sql.prepare("SELECT count(*) n FROM sales_plans WHERE start_date='2026-12-01'").get().n,0);
+ }finally{sql.close();}
+});
+test('batch input rejects empty, duplicate, unknown and ambiguous employee selections',()=>{
+ for(const people of [[],['darkhan','darkhan'],['ali'],['darkhan',null],'darkhan'])assert.throws(()=>batch({people}),/INVALID_PLAN_PEOPLE/);
+ assert.throws(()=>batch({person:'darkhan'}),/INVALID_PLAN_PEOPLE/);
+ assert.throws(()=>batch({start:'2026-10-02'}),/INVALID_PLAN/);
+ assert.throws(()=>batch({end:'2026-11-01'}),/INVALID_PLAN/);
+});

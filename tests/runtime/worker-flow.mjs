@@ -48,6 +48,19 @@ test('built Worker persists a complete contract and recovers a handoff without d
  await api('/api/assessment/900001',undefined,401);
  await api('/api/session',{worker:'ali',password:'synthetic-password'});
  assert.equal((await api('/api/session')).ok,true);
+ const salesPlan={kind:'plans',requestId:crypto.randomUUID(),people:['darkhan','ramazan'],start:'2099-10-03',end:'2099-10-31',metric:'volume',target:12000000,baseRate:1.5,targetRate:2};
+ const salesReceipt=await api('/api/sales-compensation',salesPlan,201);
+ assert.equal(salesReceipt.plans.length,2);
+ assert.deepEqual(await api('/api/sales-compensation',salesPlan,201),salesReceipt);
+ for(const person of salesPlan.people){const rows=(await api('/api/sales-compensation?person='+person)).plans;assert.equal(rows.length,1);assert.equal(rows[0].target,12000000);}
+ assert.equal((await api('/api/sales-compensation?person=nurdaulet')).plans.length,0);
+ const conflict=await api('/api/sales-compensation',{...salesPlan,requestId:crypto.randomUUID(),people:['ramazan','nurdaulet']},409);
+ assert.deepEqual(conflict.people,['ramazan']);assert.equal((await api('/api/sales-compensation?person=nurdaulet')).plans.length,0);
+ await api('/api/session',{worker:'ramazan',password:'synthetic-password'});
+ assert.equal((await api('/api/sales-compensation')).plans[0].target,12000000);
+ assert.equal((await api('/api/sales-compensation',salesPlan,403)).error,'ROP_REQUIRED');
+ await api('/api/sales-compensation?person=darkhan',undefined,403);
+ await api('/api/session',{worker:'ali',password:'synthetic-password'});
  const monitorEvent={id:crypto.randomUUID(),dealId:'900001',action:'draft',code:'NETWORK_FAILURE',clientVersion:'assessment-synthetic'};
  assert.equal((await api('/api/operations-monitor',monitorEvent)).accepted,true);
  assert.equal((await api('/api/operations-monitor',monitorEvent)).accepted,false);
@@ -136,6 +149,7 @@ test('built Worker persists a complete contract and recovers a handoff without d
  const titlePlan=JSON.parse(preparedHandoff.payload_json).titlePlan;assert.equal(titlePlan.policy,'VP_FIO_1');assert.equal(titlePlan.source.requestId,requestId);assert.equal(titlePlan.beforeTitle,'SYNTHETIC ONLY - [whatcrm] line #21');assert.equal(titlePlan.desiredTitle,'ВП SYNTHETIC ONLY');
  // Destroy the process, preserving only D1/R2 and the remote CRM state.
  await mf.dispose();crm.restore();mf=new Miniflare(options);
+ assert.deepEqual(await api('/api/sales-compensation',salesPlan,201),salesReceipt,'bulk plan receipts survive a Worker restart');
  assert.equal((await api('/api/operations-monitor')).events[0].occurrences,1,'automatic diagnostics survive a Worker restart');
  const resumed=await api(root+'/handoff',{action:'resume',requestId:handoffRequest,destination});
  assert.equal(resumed.handoff.state,'verified',JSON.stringify(resumed));assert.equal(resumed.handoff.outcomeCode,'STAGE_AND_TITLE_READBACK_VERIFIED');assert.equal(crm.deal.TITLE,'ВП SYNTHETIC ONLY');

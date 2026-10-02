@@ -131,3 +131,4 @@ body {
 .profile-queue-error{color:#a43229}
 .profile-queue-empty{color:#607267}
 @media(max-width:620px){.profile-queue-list a{flex-direction:column;align-items:flex-start}}
+.ps-entry-fields{border:0;padding:0;margin:0;min-width:0}.ps-plan-people{border:0;padding:0;margin:0;min-width:0}.ps-plan-people legend{font-size:13px;color:#607167;margin-bottom:8px}.ps-plan-people>div{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.ps-plan-people label{display:flex;align-items:center;gap:7px;border:1px solid #cbd9d0;border-radius:8px;padding:9px 11px;color:#18241c;cursor:pointer}.ps-plan-people label:has(input:checked){background:#eaf2ed;border-color:#245c36}.ps-plan-people input{width:16px;height:16px;margin:0;accent-color:#245c36}.ps-plan-people button{font:inherit;font-size:13px;color:#245c36;background:none;border:0;padding:9px;cursor:pointer}.ps-plan-hint{font-size:13px;color:#607167;margin:10px 0 16px}.ps-entry-fields:disabled{opacity:.65}
