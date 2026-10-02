@@ -66,3 +66,19 @@ test('payments stay single-person and employees have no plan-writing controls',a
  document.querySelector('[name="amount"]').value='100000';await submit();assert.equal(requests[0].kind,'payment');assert.equal(requests[0].person,'ramazan');assert.equal(requests[0].people,undefined);
 });
 test('employee view never exposes plan creation',async t=>{await mount(t,success,false);assert.equal(document.querySelector('.ps-action'),null);});
+test('earned first-place bonus has its own line and does not become a recorded payment',async t=>{
+ const {report}=await mount(t,success);
+ report.earningsMonths=[{id:'2026-09',ongoing:false,baseSalary:100000,contractBonus:0,leaderBonus:100000,commission:40000,performanceCommission:40000,earned:240000,count:4,volume:2000000,missing:0,paid:null,owed:null,periods:[],commissionDeals:[]}];report.earned=240000;
+ await act(async()=>document.querySelectorAll('.rop-nav button')[1].click());
+ const row=[...document.querySelectorAll('.ps-sum-row')].find(row=>row.textContent.includes('Бонус за 1-е место'));
+ assert.match(row.textContent,/100.000 ₸/);assert.match(document.querySelector('.ps-overall').textContent,/Начислено240.000 ₸/);
+ await act(async()=>document.querySelectorAll('.ps-overall button')[1].click());
+ assert.equal(document.querySelectorAll('.ps-payment-row').length,0);assert.match(document.querySelector('#ps-earnings-history').textContent,/Выплаты не подтверждены/);
+});
+test('current plan shows both commission tiers and the unawarded first-place prize',async t=>{
+ const {report}=await mount(t,success);
+ report.periods=[{id:'synthetic-plan',start:'2026-10-01',end:'2026-10-21',target:12000000,metric:'volume',tiers:[[0,1.5],[12000000,2]],leaderBonus:100000,count:0,volume:0,missing:0,progress:0,remaining:12000000,ongoing:true}];
+ await act(async()=>document.querySelectorAll('.rop-nav button')[1].click());await act(async()=>document.querySelectorAll('.rop-nav button')[0].click());
+ assert.match(document.querySelector('.ps-current').textContent,/До цели — 1,5% · При выполнении — 2%/);
+ assert.match(document.querySelector('.ps-current').textContent,/За 1-е место — 100.000 ₸ · итоги после 21 октября/);
+});

@@ -61,6 +61,8 @@ Storage: `0016_profile_saves` and `0017_profile_presence`; no Bitrix fields are 
 
 In «Отдел продаж → Результаты → + План», Ali enters one future period, target and pair of rates, then selects employees (or «Все»). Each selected employee receives a separate plan with the full target; it is not divided across the team. An overlap for any selected employee rejects the entire save and identifies that employee. Retrying an uncertain save preserves the exact selection and terms and returns the original receipts. Existing single-person requests from old tabs remain supported, and payments remain individual.
 
+First-place competitions for 1–30 September and 1–21 October 2026 award 100,000 ₸ to the single highest full contract volume among Darkhan, Ramazan and Nurdaulet, using the existing lawyer-handoff dates. The final day must finish before a winner is assigned. Ties, incomplete amounts or unavailable ranking remain unresolved. The bonus has a separate earnings line, is included once with monthly accrual, and never creates a payment. Historical commission rates and payment-type formulas remain unchanged; current-period prizes are shown separately from accrued earnings.
+
 Use Node.js 22.13 or newer and the pinned package lock.
 
 ```sh

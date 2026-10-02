@@ -1,7 +1,8 @@
 import { readSessionCookie, verifySession } from '../../../lib/worker-session';
 import { PEOPLE, Person, plansFor, calculate, commissionForDeals, monthlyEarnings, todayAlmaty, monthRange, Totals, COMPENSATION_START_MONTH, isCommissionExcluded } from '../../../lib/personal-sales';
 import {compensationRepository,storedPlan} from '../../../lib/sales-compensation';
-import {loadCompensationDeals,type CompensationDeal} from '../../../lib/crm/personal-compensation';
+import {loadCompensationDeals,loadSalesCompetitionTotals,type CompensationDeal} from '../../../lib/crm/personal-compensation';
+import {leaderAwardsFor,leaderCompetitionFor} from '../../../lib/sales-leader-bonus';
 export const dynamic = 'force-dynamic';
 const headers = { 'cache-control': 'private, no-store' };
 // Owner-confirmed payment-type rules are applied from live deal and invoice data.
@@ -33,16 +34,16 @@ export async function GET(request: Request) {
   try {
     const repository=await compensationRepository();
     const dealStart=params.has('month')?range.start:COMPENSATION_START_MONTH+'-01';
-    const [paymentRows,storedRows,deals]=await Promise.all([repository.payments(person),repository.plans(person),loadCompensationDeals(process.env.BITRIX_WEBHOOK??'',PEOPLE[person].id,dealStart,range.end)]);
+    const [paymentRows,storedRows,deals,leaderAwards]=await Promise.all([repository.payments(person),repository.plans(person),loadCompensationDeals(process.env.BITRIX_WEBHOOK??'',PEOPLE[person].id,dealStart,range.end),leaderAwardsFor(person,today,competition=>loadSalesCompetitionTotals(process.env.BITRIX_WEBHOOK??'',competition.start,competition.end),params.has('month')?month:undefined)]);
     const inRange=(from:string,to:string)=>deals.filter(deal=>deal.handoffDate>=from&&deal.handoffDate<=to);
     const commissionInRange=(from:string,to:string)=>deals.filter(deal=>{const date=deal.paymentType==='263'?deal.commissionDate:deal.handoffDate;return date>=from&&date<=to&&!isCommissionExcluded(person,date,deal.title)});
     const totals=(items:CompensationDeal[]):Totals=>({count:items.length,volume:items.reduce((sum,item)=>sum+(item.contractValue??0),0),missing:items.filter(item=>item.contractValue===null).length});
-    const allPlans=[...plansFor(person),...storedRows.map(storedPlan)];
+    const allPlans=[...plansFor(person),...storedRows.map(storedPlan)].map(plan=>({...plan,leaderBonus:leaderCompetitionFor(plan.start,plan.end)?.prize}));
     const plans = allPlans.filter(p => (!params.has('month') || p.end.slice(0, 7) === month) && p.start <= today);
     const monthly=totals(inRange(range.start,range.end));
     const periods=plans.map(plan=>{
       const end=plan.end<today?plan.end:today,items=inRange(plan.start,end),commissionItems=commissionInRange(plan.start,end),values=totals(items),base=calculate(plan,values),commission=commissionForDeals(commissionItems,base.rate);
-      return {...plan,...values,...calculate(plan,values,commission),commissionDeals:commissionBreakdown(commissionItems,base.rate),ongoing:plan.end>=today};
+      return {...plan,...values,...calculate(plan,values,commission),leaderAward:leaderAwards.find(award=>award.start===plan.start&&award.end===plan.end),commissionDeals:commissionBreakdown(commissionItems,base.rate),ongoing:plan.end>=today};
     });
     const coveredDays = new Set(periods.flatMap(p => {
       const days = []; for (let d = p.start; d <= (p.end < today ? p.end : today);) { days.push(d); const date = new Date(d + 'T00:00:00Z'); date.setUTCDate(date.getUTCDate() + 1); d = date.toISOString().slice(0, 10); } return days;
@@ -62,7 +63,9 @@ export async function GET(request: Request) {
       const monthEnd=monthRange(key,today).end,periodsForMonth=byMonth.get(key)||[];
       const outsidePeriods=deals.filter(deal=>deal.paymentType==='263'&&deal.commissionDate>=key+'-01'&&deal.commissionDate<=monthEnd&&!periodsForMonth.some(period=>deal.commissionDate>=period.start&&deal.commissionDate<=(period.end<today?period.end:today)));
       const extraCommission=outsidePeriods.length?commissionForDeals(outsidePeriods,null):0;
-      const item=monthlyEarnings(key,periodsForMonth,today,extraCommission,person),rows=paymentRows.filter(row=>row.month===key);
+      const monthAwards=leaderAwards.filter(award=>award.start.startsWith(key));
+      const leaderBonus=monthAwards.some(award=>award.amount===null)?null:monthAwards.reduce((sum,award)=>sum+award.amount!,0);
+      const item=monthlyEarnings(key,periodsForMonth,today,extraCommission,person,leaderBonus),rows=paymentRows.filter(row=>row.month===key);
       const paid=params.has('month')?(rows.length?rows.reduce((sum,row)=>sum+row.amount,0):null):!paymentEvidence||item.earned===null?null:Math.min(Math.max(item.earned,0),unappliedPayments);
       if(!params.has('month')&&paid!==null)unappliedPayments-=paid;
       const commissionDeals=[...periodsForMonth.flatMap(period=>period.commissionDeals),...commissionBreakdown(outsidePeriods,null)].sort((a,b)=>a.date.localeCompare(b.date)||Number(a.id)-Number(b.id));
@@ -70,7 +73,7 @@ export async function GET(request: Request) {
     });
     const earned = !EARNINGS_BASIS_CONFIRMED || !earningsMonths.length || earningsMonths.some(item => item.earned === null) ? null : earningsMonths.reduce((sum, item) => sum + item.earned!, 0);
     const paid=params.has('month')?(earningsMonths.some(item=>item.paid===null)?null:earningsMonths.reduce((sum,item)=>sum+item.paid!,0)):(paymentEvidence?paymentRows.reduce((sum,row)=>sum+row.amount,0):null),owed=earned===null||paid===null?null:earned-paid;
-    return Response.json({ person, name: PEOPLE[person].name, canChoosePerson: actor.worker === 'ali', month, today, generatedAt: new Date().toISOString(), monthly, periods: visiblePeriods, futurePlans: allPlans.filter(p=>p.start>today), earningsMonths, payments: paymentRows, earned, paid, owed, uncoveredDays: uncovered, earningsBasisConfirmed: EARNINGS_BASIS_CONFIRMED }, { headers });
+    return Response.json({ person, name: PEOPLE[person].name, canChoosePerson: actor.worker === 'ali', month, today, generatedAt: new Date().toISOString(), monthly, periods: visiblePeriods, futurePlans: allPlans.filter(p=>p.start>today), earningsMonths, leaderAwards, payments: paymentRows, earned, paid, owed, uncoveredDays: uncovered, earningsBasisConfirmed: EARNINGS_BASIS_CONFIRMED }, { headers });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : 'Не удалось загрузить показатели.' }, { status: 502, headers });
   }

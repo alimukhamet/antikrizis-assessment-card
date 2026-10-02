@@ -49,6 +49,12 @@ test('built Worker persists a complete contract and recovers a handoff without d
  await api('/api/session',{worker:'ali',password:'synthetic-password'});
  assert.equal((await api('/api/session')).ok,true);
  const salesPlan={kind:'plans',requestId:crypto.randomUUID(),people:['darkhan','ramazan'],start:'2099-10-03',end:'2099-10-31',metric:'volume',target:12000000,baseRate:1.5,targetRate:2};
+ const winnerEarnings=await api('/api/personal-sales?person=darkhan&month=2026-09');
+ assert.equal(winnerEarnings.earningsMonths[0].leaderBonus,100000);
+ assert.equal(winnerEarnings.earned,211000);
+ assert.equal(winnerEarnings.paid,null);
+ assert.equal((await api('/api/personal-sales?person=ramazan&month=2026-09')).earningsMonths[0].leaderBonus,0);
+ assert.equal((await db.prepare('SELECT COUNT(*) n FROM sales_payments').first()).n,0,'Awarded earnings must never fabricate a payment');
  const salesReceipt=await api('/api/sales-compensation',salesPlan,201);
  assert.equal(salesReceipt.plans.length,2);
  assert.deepEqual(await api('/api/sales-compensation',salesPlan,201),salesReceipt);
@@ -150,6 +156,7 @@ test('built Worker persists a complete contract and recovers a handoff without d
  // Destroy the process, preserving only D1/R2 and the remote CRM state.
  await mf.dispose();crm.restore();mf=new Miniflare(options);
  assert.deepEqual(await api('/api/sales-compensation',salesPlan,201),salesReceipt,'bulk plan receipts survive a Worker restart');
+ assert.equal((await api('/api/personal-sales?person=darkhan&month=2026-09')).earned,winnerEarnings.earned,'Reopening does not add the first-place bonus twice');
  assert.equal((await api('/api/operations-monitor')).events[0].occurrences,1,'automatic diagnostics survive a Worker restart');
  const resumed=await api(root+'/handoff',{action:'resume',requestId:handoffRequest,destination});
  assert.equal(resumed.handoff.state,'verified',JSON.stringify(resumed));assert.equal(resumed.handoff.outcomeCode,'STAGE_AND_TITLE_READBACK_VERIFIED');assert.equal(crm.deal.TITLE,'ВП SYNTHETIC ONLY');

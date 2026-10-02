@@ -64,13 +64,14 @@ export type MonthlyEarnings = Totals & {
   id: string;
   baseSalary: number;
   contractBonus: number;
+  leaderBonus: number | null;
   performanceCommission: number | null;
   commission: number | null;
   earned: number | null;
   ongoing: boolean;
   periods: CalculatedPeriod[];
 };
-export function monthlyEarnings(month: string, periods: CalculatedPeriod[], today: string, additionalCommission:number|null=0, person?:Person): MonthlyEarnings {
+export function monthlyEarnings(month: string, periods: CalculatedPeriod[], today: string, additionalCommission:number|null=0, person?:Person, awardedLeaderBonus:number|null=0): MonthlyEarnings {
   const count = periods.reduce((sum, period) => sum + period.count, 0);
   const volume = periods.reduce((sum, period) => sum + period.volume, 0);
   const missing = periods.reduce((sum, period) => sum + period.missing, 0);
@@ -83,6 +84,7 @@ export function monthlyEarnings(month: string, periods: CalculatedPeriod[], toda
   const commission=monthEnded?calculatedCommission:0;
   const baseSalary = month >= COMPENSATION_START_MONTH && monthEnded && !(person==='darkhan'&&month==='2026-06') ? MONTHLY_BASE_SALARY : 0;
   const contractBonus = month === CONTRACT_BONUS_MONTH && count >= MONTHLY_CONTRACT_BONUS_AT ? MONTHLY_CONTRACT_BONUS : 0;
+  const leaderBonus=monthEnded?awardedLeaderBonus:0;
   return {
     id: month,
     count,
@@ -90,9 +92,10 @@ export function monthlyEarnings(month: string, periods: CalculatedPeriod[], toda
     missing,
     baseSalary,
     contractBonus,
+    leaderBonus,
     performanceCommission: calculatedCommission,
     commission,
-    earned: commission === null ? null : baseSalary + commission + contractBonus,
+    earned: commission === null || leaderBonus === null ? null : baseSalary + commission + contractBonus + leaderBonus,
     ongoing: periods.some(period => period.ongoing),
     periods,
   };

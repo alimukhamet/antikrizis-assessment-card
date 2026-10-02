@@ -9,11 +9,13 @@ async function moduleAt(path,extra={}) {
  vm.runInContext(ts.transpileModule(await readFile(new URL(path,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);return context.exports;
 }
 const rules=await moduleAt('../lib/personal-sales.ts');
-async function api(worker='ramazan',query='',fail=false,missing=0,payments=[]) {
+const leaderRules=await moduleAt('../lib/sales-leader-bonus.ts',{require:()=>rules});
+async function api(worker='ramazan',query='',fail=false,missing=0,payments=[],options={}) {
  const calls=[];
  const compensationDeals={loadCompensationDeals:async(_webhook,managerId,from,to)=>{calls.push({managerId,from,to});if(fail)throw Error('down');return Array.from({length:30},(_,index)=>{const handoffDate=from==='2026-08-01'?(index<15?'2026-08-08':'2026-08-22'):from;return {id:String(index+1),title:'Клиент '+(index+1),handoffDate,commissionDate:handoffDate,contractValue:index<missing?null:400000,paymentType:'261',stageId:'C1:PREPARATION',outcomeId:'',firstPayment:null}})}};
  const compensation={compensationRepository:async()=>({payments:async()=>payments,plans:async()=>[]}),storedPlan:row=>row};
- const route=await moduleAt('../app/api/personal-sales/route.ts',{require:name=>name.includes('personal-compensation')?compensationDeals:name.includes('worker-session')?session:name.includes('sales-compensation')?compensation:{...rules,todayAlmaty:()=> '2026-09-10'}});
+ compensationDeals.loadSalesCompetitionTotals=async()=>{if(options.rankingFails)throw Error('ranking unavailable');return options.totals||{darkhan:{count:30,volume:12000000,missing:0},ramazan:{count:20,volume:10000000,missing:0},nurdaulet:{count:25,volume:11000000,missing:0}};};
+ const route=await moduleAt('../app/api/personal-sales/route.ts',{require:name=>name.includes('personal-compensation')?compensationDeals:name.includes('worker-session')?session:name.includes('sales-compensation')?compensation:name.includes('sales-leader-bonus')?leaderRules:{...rules,todayAlmaty:()=>options.today||'2026-09-10'}});
  const cookie=worker?session.SESSION_COOKIE+'='+await session.issueSession(worker,TEST_SECRET):'';
  const response=await route.GET(new Request('https://site.test/api/personal-sales?'+query,{headers:{cookie}}));return {response,data:await response.json(),calls};
 }
@@ -85,6 +87,21 @@ test('monthly salary and commission are accrued only when the month ends',()=>{
  assert.equal(closed.baseSalary,100000);assert.equal(closed.performanceCommission,104000);assert.equal(closed.commission,104000);assert.equal(closed.earned,204000);
 });
 test('dates reject invalid and future months, honor leap years',()=>{assert.equal(rules.monthRange('2024-02','2026-09-10').end,'2024-02-29');for(const month of ['2026-13','2026-00','2026-10','2019-12','bad'])assert.throws(()=>rules.monthRange(month,'2026-09-10'));});
+test('closed first-place bonus increases only the winner earnings and never creates a payment',async()=>{
+ for(const person of ['darkhan','ramazan','nurdaulet']){
+  const {data,response}=await api('ali','person='+person+'&month=2026-09',false,0,[],{today:'2026-10-02'});
+  assert.equal(response.status,200);const month=data.earningsMonths[0];
+  assert.equal(month.leaderBonus,person==='darkhan'?100000:0);
+  assert.equal(month.earned,month.baseSalary+month.commission+month.contractBonus+month.leaderBonus);
+  assert.equal(data.paid,null);assert.equal(data.payments.length,0);
+  assert.equal(data.leaderAwards.length,1);assert.equal(data.leaderAwards[0].status,person==='darkhan'?'won':'not_won');
+  assert.ok(!JSON.stringify(data).includes('10000000'),'Another employee sales total must not leak');
+ }
+});
+test('unavailable first-place evidence preserves known commission but cannot claim a settled earned total',async()=>{
+ const {data,response}=await api('ali','person=darkhan&month=2026-09',false,0,[],{today:'2026-10-02',rankingFails:true});
+ assert.equal(response.status,200);assert.equal(data.earningsMonths[0].commission,276000);assert.equal(data.earningsMonths[0].leaderBonus,null);assert.equal(data.earned,null);assert.equal(data.leaderAwards[0].status,'needs_review');
+});
 test('personal route denies anonymous and cross-person requests without loading CRM',async()=>{for(const [worker,query,status]of [[null,'',401],['ramazan','person=darkhan',403],['ali','person=unknown',400]]){const {response,calls}=await api(worker,query);assert.equal(response.status,status);assert.equal(calls.length,0)}});
 test('personal month contains only signed-in manager, monthly salary, auditable deal commissions, no post-June bonus, and keeps unrecorded payouts unknown',async()=>{const {response,data,calls}=await api('ramazan','month=2026-08');assert.equal(response.status,200);assert.equal(data.name,'Рамазан');assert.equal(data.canChoosePerson,false);assert.equal(data.earned,358000);assert.equal(data.earningsMonths[0].baseSalary,100000);assert.equal(data.earningsMonths[0].contractBonus,0);assert.equal(data.earningsMonths[0].commissionDeals.length,30);assert.equal(data.earningsMonths[0].commissionDeals.reduce((sum,row)=>sum+row.amount,0),258000);assert.deepEqual({...data.earningsMonths[0].commissionDeals[0]},{id:'1',title:'Клиент 1',date:'2026-08-08',paymentType:'После определения',formula:'400000 × 2.3%',amount:9200});assert.equal(data.paid,null);assert.equal(data.owed,null);assert.equal(data.uncoveredDays,1);assert.equal(data.periods.length,2);assert.ok(calls.every(call=>call.managerId==='2093'&&call.from==='2026-08-01'&&call.to==='2026-08-31'));assert.ok(!JSON.stringify(data).includes('must not leak'));assert.match(response.headers.get('cache-control'),/no-store/)});
 test('bank transfers remain whole while balances apply them oldest-first',async()=>{const payments=[{id:'p-100',person:'ramazan',month:'2026-09',amount:100000,paidAt:'2026-09-09',note:'Kaspi выписка · документ 277',createdAt:''},{id:'p-150',person:'ramazan',month:'2026-08',amount:150000,paidAt:'2026-08-22',note:'Kaspi выписка · документ 269',createdAt:''}];const {data}=await api('ramazan','',false,0,payments);assert.deepEqual(Array.from(data.payments,row=>row.amount),[100000,150000]);assert.equal(data.paid,250000);assert.equal(data.earningsMonths.reduce((sum,row)=>sum+(row.paid??0),0),250000);assert.deepEqual(Array.from(data.earningsMonths,row=>row.paid),[100000,100000,50000,0]);});
