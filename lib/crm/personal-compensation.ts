@@ -1,4 +1,5 @@
 import {bitrixHeaders} from './http-headers';
+import {PEOPLE,type Person,type Totals} from '../personal-sales';
 
 const HANDOFF_DATE_FIELD='UF_CRM_1777554129345';
 const PAYMENT_TYPE_FIELD='UF_CRM_1781335943568';
@@ -89,9 +90,9 @@ async function dealRows(webhook:string,filterBase:Record<string,string>,send:typ
       if(!Number.isSafeInteger(id)||id<=lastId)throw new Error('Bitrix returned an invalid pagination cursor');
       lastId=id;rows.push(row);
     }
-    if(payload.result.length<50)break;
+    if(payload.result.length<50)return rows;
   }
-  return rows;
+  throw new Error('Sales deal pagination is incomplete');
 }
 
 export async function loadCompensationDeals(webhook:string,managerId:string,from:string,to:string,send:typeof fetch=fetch):Promise<CompensationDeal[]>{
@@ -111,4 +112,20 @@ export async function loadCompensationDeals(webhook:string,managerId:string,from
     } satisfies CompensationDeal;
   }));
   return deals.filter(deal=>(deal.handoffDate>=from&&deal.handoffDate<=to)||(deal.commissionDate>=from&&deal.commissionDate<=to));
+}
+
+export async function loadSalesCompetitionTotals(webhook:string,from:string,to:string,send:typeof fetch=fetch):Promise<Record<Person,Totals>>{
+  const entries=await Promise.all((Object.keys(PEOPLE) as Person[]).map(async person=>{
+    const managerId=PEOPLE[person].id;
+    const rows=await dealRows(webhook,{[`>=${HANDOFF_DATE_FIELD}`]:from,[`<=${HANDOFF_DATE_FIELD}`]:to,ASSIGNED_BY_ID:managerId},send);
+    const totals:Totals={count:rows.length,volume:0,missing:0};
+    for(const row of rows){
+      const date=String(row[HANDOFF_DATE_FIELD]??'').slice(0,10);
+      if(String(row.ASSIGNED_BY_ID??'')!==managerId||date<from||date>to)throw new Error('Sales ranking scope mismatch');
+      const amount=money(row.OPPORTUNITY);
+      if(amount===null)totals.missing++;else totals.volume+=amount;
+    }
+    return [person,totals] as const;
+  }));
+  return Object.fromEntries(entries) as Record<Person,Totals>;
 }

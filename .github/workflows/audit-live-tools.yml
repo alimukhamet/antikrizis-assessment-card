@@ -2,6 +2,10 @@ name: Tools 03 and 04 audit
 on:
   workflow_dispatch:
     inputs:
+      sales_audit_public_key:
+        description: 'Optional base64 SPKI public key: read September/October sales plans and earnings into an encrypted artifact only'
+        type: string
+        default: ''
       deal_id:
         description: 'Optional additional deal: read saved document diagnostics, with no draft or CRM writes'
         type: string
@@ -57,7 +61,7 @@ permissions:
   contents: read
 jobs:
   audit:
-    if: inputs.recover_draft_delivery != true
+    if: inputs.recover_draft_delivery != true && inputs.sales_audit_public_key == ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -136,6 +140,29 @@ jobs:
         with:
           name: lawyer-title-repair
           path: lawyer-title-repair.json
+          retention-days: 1
+
+  sales-audit:
+    if: inputs.sales_audit_public_key != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Read sales plans and earnings into an encrypted private report
+        env:
+          ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
+          SALES_AUDIT_PUBLIC_KEY: ${{ inputs.sales_audit_public_key }}
+        run: node scripts/audit-sales-compensation.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: encrypted-sales-audit
+          path: sales-compensation-audit.enc.json
           retention-days: 1
 
   recover-draft:

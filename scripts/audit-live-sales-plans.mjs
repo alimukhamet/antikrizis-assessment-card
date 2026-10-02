@@ -26,6 +26,23 @@ try{
   const data=await response.json();assert.equal(data.person,person);assert.equal(data.canEdit,true);assert.ok(data.plans.every(plan=>plan.person===person));assert.ok(data.payments.every(payment=>payment.person===person));
   report.people.push({person,plans:data.plans.length,personScoped:true});
  }
+ // Compare the closed competition with the existing independent sales totals.
+ // Financial values and the winning employee must never enter public CI logs.
+ const metricResponse=await request('/api/sales-metrics?managerId=7609&paymentType=all&period=custom&from=2026-09-01&to=2026-09-30&fresh=1');assert.equal(metricResponse.status,200);
+ const metrics=(await metricResponse.json()).relatedMetrics.filter(row=>row.paymentType==='all');
+ const managers={darkhan:'7609',ramazan:'2093',nurdaulet:'4351'};
+ assert.ok(metrics.length===3&&Object.values(managers).every(id=>metrics.some(row=>row.managerId===id)),'Complete sales ranking required');
+ const maximum=Math.max(...metrics.map(row=>Math.round(row.contractTotal*100))),leaders=metrics.filter(row=>Math.round(row.contractTotal*100)===maximum);
+ const settled=metrics.every(row=>row.missingContractValues===0)&&maximum>0&&leaders.length===1;
+ for(const [person,manager] of Object.entries(managers)){
+  const response=await request('/api/personal-sales?person='+person+'&month=2026-09');assert.equal(response.status,200);
+  const data=await response.json(),month=data.earningsMonths.find(row=>row.id==='2026-09'),award=data.leaderAwards.find(row=>row.id==='september-2026');
+  const expected=settled?(leaders[0].managerId===manager?100000:0):null;
+  assert.ok(month&&award&&month.leaderBonus===expected&&award.amount===expected,'Closed first-place bonus must match verified ranking');
+  const earned=month.commission===null||expected===null?null:month.baseSalary+month.contractBonus+month.commission+expected;
+  assert.ok(month.earned===earned,'Monthly earnings must include the bonus exactly once');
+ }
+ report.closedCompetitionVerified=true;
  await login('ramazan');
  const own=await request('/api/sales-compensation');assert.equal(own.status,200);const ownData=await own.json();assert.equal(ownData.person,'ramazan');assert.equal(ownData.canEdit,false);
  const other=await request('/api/sales-compensation?person=darkhan');assert.equal(other.status,403);await other.arrayBuffer();

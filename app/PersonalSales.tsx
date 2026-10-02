@@ -2,7 +2,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import type { Plan, Totals, calculate, MonthlyEarnings } from '../lib/personal-sales';
-type Period = Plan & Totals & ReturnType<typeof calculate> & { ongoing: boolean };
+import type {LeaderAward} from '../lib/sales-leader-bonus';
+type Period = Plan & Totals & ReturnType<typeof calculate> & { ongoing: boolean;leaderAward?:LeaderAward };
 type CommissionLine = { id:string; title:string; date:string; paymentType:string; formula:string; amount:number|null };
 type EarningsMonth = Omit<MonthlyEarnings, 'periods'> & { periods: Period[]; commissionDeals:CommissionLine[]; paid: number | null; owed: number | null };
 type Payment = { id: string; month: string; amount: number; paidAt: string; note: string };
@@ -85,6 +86,7 @@ export default function PersonalSales({ mode }: { mode: 'results' | 'earnings' }
     return <details className="ps-details"><summary>Подробнее</summary><div className="ps-breakdown">
       <div className="ps-sum-row"><span>Оклад</span><strong>{money(p.baseSalary)}</strong></div>
       <div className="ps-sum-row"><span>Бонус</span><strong>{money(p.contractBonus)}</strong></div>
+      {p.leaderBonus!==undefined&&p.leaderBonus!==0&&<div className="ps-sum-row"><span>Бонус за 1-е место</span><strong>{money(p.leaderBonus)}</strong></div>}
       <div className="ps-sum-row"><span>{settlement?'Комиссия':'Комиссия сейчас'}</span><strong>{money(displayedCommission)}</strong></div>
       <div className="ps-sum-row ps-sum-total"><span>{settlement?'Итого':'К начислению'}</span><strong>{money(settlement?p.earned:displayedCommission)}</strong></div>
       <p className="ps-deal-heading">Комиссия по договорам</p>
@@ -113,6 +115,8 @@ export default function PersonalSales({ mode }: { mode: 'results' | 'earnings' }
         {earnings&&earningsView==='owed'&&<div id="ps-earnings-history"><div className="ps-history-heading"><h2>Остаток по месяцам</h2></div><p className="ps-allocation-note">Платежи зачтены от старых месяцев.</p><div className="ps-history">{earningsMonths.map(month=><article className="ps-row" key={month.id}><div className="ps-row-top"><h3>{monthName(month.id)}</h3><span className="ps-status">{money(month.owed)}</span></div><p className="ps-row-sub">Начислено {money(month.earned)} · Зачтено {paidMoney(month.paid)}</p></article>)}</div></div>}
         {!earnings&&report.futurePlans.length>0&&<div className="ps-future"><h3>Будущие планы</h3>{report.futurePlans.map(plan=><p key={plan.id}><strong>{range(plan)}</strong><span>{plan.metric==='count'?number(plan.target!)+' договоров':money(plan.target)}</span></p>)}</div>}
         {!earnings && current && <article className="ps-current"><div className="ps-period"><h2>{range(current)}</h2><span>Текущий период</span></div>
+          {current.tiers.length>1&&<p className="ps-sub">До цели — {number(current.tiers[0][1])}% · При выполнении — {number(current.tiers.at(-1)![1])}%</p>}
+          {!!current.leaderBonus&&<p className="ps-sub">За 1-е место — {money(current.leaderBonus)} · итоги после {date(current.end)}</p>}
           <div className="ps-result"><strong>{current.metric === 'count' ? number(current.count) : money(current.volume)}</strong><span>из {current.metric === 'count' ? number(current.target!) + ' договоров' : money(current.target)}</span><b>{current.progress === null ? '—' : Math.round(current.progress) + '%'}</b></div>{current.progress !== null && <progress max={100} value={Math.min(100,current.progress)} aria-label="Выполнение текущего плана" />}<p className="ps-sub">{current.remaining === 0 ? 'План выполнен' : current.remaining === null ? 'Не хватает данных для расчёта' : 'Осталось ' + (current.metric === 'count' ? number(current.remaining) + ' договоров' : money(current.remaining))}{current.metric === 'volume' ? ' · ' + current.count + ' договоров' : ''}</p>
         </article>}
         {(!earnings||earningsView==='earned')&&<div id={earnings?'ps-earnings-history':undefined}><div className="ps-history-heading"><h2>{earnings ? 'История начислений' : 'История планов'}</h2></div>
