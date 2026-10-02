@@ -12,9 +12,9 @@ const rules=await moduleAt('../lib/personal-sales.ts');
 const leaderRules=await moduleAt('../lib/sales-leader-bonus.ts',{require:()=>rules});
 async function api(worker='ramazan',query='',fail=false,missing=0,payments=[],options={}) {
  const calls=[];
- const compensationDeals={loadCompensationDeals:async(_webhook,managerId,from,to)=>{calls.push({managerId,from,to});if(fail)throw Error('down');return Array.from({length:30},(_,index)=>{const handoffDate=from==='2026-08-01'?(index<15?'2026-08-08':'2026-08-22'):from;return {id:String(index+1),title:'Клиент '+(index+1),handoffDate,commissionDate:handoffDate,contractValue:index<missing?null:400000,paymentType:'261',stageId:'C1:PREPARATION',outcomeId:'',firstPayment:null}})}};
+ const compensationDeals={loadCompensationDeals:async(_webhook,managerId,from,to)=>{calls.push({managerId,from,to});if(fail)throw Error('down');return Array.from({length:30},(_,index)=>{const handoffDate=from==='2026-08-01'?(index<15?'2026-08-08':'2026-08-22'):from;return {id:String(index+1),title:'Клиент '+(index+1),handoffDate,commissionDate:handoffDate,contractValue:index<missing?null:options.contractValue??400000,paymentType:'261',stageId:'C1:PREPARATION',outcomeId:'',firstPayment:null}})}};
  const compensation={compensationRepository:async()=>({payments:async()=>payments,plans:async()=>[]}),storedPlan:row=>row};
- compensationDeals.loadSalesCompetitionTotals=async()=>{if(options.rankingFails)throw Error('ranking unavailable');return options.totals||{darkhan:{count:30,volume:12000000,missing:0},ramazan:{count:20,volume:10000000,missing:0},nurdaulet:{count:25,volume:11000000,missing:0}};};
+ compensationDeals.loadSalesCompetitionTotals=async()=>{if(options.rankingFails)throw Error('ranking unavailable');return options.totals||{darkhan:{count:30,volume:12000000,missing:0},ramazan:{count:20,volume:10000123,missing:0},nurdaulet:{count:25,volume:11000000,missing:0}};};
  const route=await moduleAt('../app/api/personal-sales/route.ts',{require:name=>name.includes('personal-compensation')?compensationDeals:name.includes('worker-session')?session:name.includes('sales-compensation')?compensation:name.includes('sales-leader-bonus')?leaderRules:{...rules,todayAlmaty:()=>options.today||'2026-09-10'}});
  const cookie=worker?session.SESSION_COOKIE+'='+await session.issueSession(worker,TEST_SECRET):'';
  const response=await route.GET(new Request('https://site.test/api/personal-sales?'+query,{headers:{cookie}}));return {response,data:await response.json(),calls};
@@ -23,9 +23,20 @@ test('historical rates, boundaries and person-specific terms',()=>{
  const june=rules.plansFor('darkhan')[0];assert.equal(june.target,19);assert.equal(rules.calculate(june,{count:19,volume:7600000,missing:0}).earned,174800);
  const july=rules.plansFor('ramazan')[2];assert.equal(rules.calculate(july,{count:14,volume:5600000,missing:0}).rate,1.3);assert.equal(rules.calculate(july,{count:15,volume:6000000,missing:0}).earned,138000);
  assert.equal(rules.calculate(rules.plansFor('darkhan')[2],{count:14,volume:5600000,missing:0}).rate,2);
- const sep=rules.plansFor('darkhan').at(-1);assert.equal(rules.calculate(sep,{count:25,volume:11000000,missing:0}).earned,253000);assert.equal(rules.calculate(sep,{count:25,volume:10999999,missing:0}).rate,2);
- for(const person of ['darkhan','ramazan','nurdaulet'])assert.equal(rules.calculate(rules.plansFor(person).at(-1),{count:20,volume:11000000,missing:0}).rate,2.3);
- assert.equal(rules.calculate(sep,{count:25,volume:11000000,missing:1}).earned,null);
+ for(const person of ['darkhan','ramazan','nurdaulet']){
+  const sep=rules.plansFor(person).at(-1);assert.equal(sep.target,10000000);
+  assert.equal(rules.calculate(sep,{count:20,volume:9999999,missing:0}).rate,person==='darkhan'?2:1.6);
+  const reached=rules.calculate(sep,{count:20,volume:10000000,missing:0});
+  assert.equal(reached.rate,2.3);assert.equal(reached.earned,230000);assert.equal(reached.progress,100);assert.equal(reached.remaining,0);
+  assert.equal(rules.calculate(sep,{count:20,volume:10500000,missing:0}).rate,2.3);
+  assert.equal(rules.calculate(sep,{count:20,volume:10000000,missing:1}).earned,null);
+ }
+});
+test('September sales between 10 and 11 million earn the reached-target commission through the API',async()=>{
+ const {data,response}=await api('ramazan','month=2026-09',false,0,[],{today:'2026-10-02',contractValue:350000});
+ assert.equal(response.status,200);assert.equal(data.periods.length,1);
+ const period=data.periods[0];assert.equal(period.target,10000000);assert.equal(period.volume,10500000);assert.equal(period.rate,2.3);assert.equal(period.progress,105);assert.equal(period.remaining,0);
+ assert.equal(data.earningsMonths[0].commission,241500);assert.equal(data.earningsMonths[0].leaderBonus,0);assert.equal(data.earned,341500);assert.equal(data.paid,null);
 });
 test('payment-type commission rules use first payment, remaining contract and won decision stage',()=>{
  const standard=[
@@ -95,7 +106,7 @@ test('closed first-place bonus increases only the winner earnings and never crea
   assert.equal(month.earned,month.baseSalary+month.commission+month.contractBonus+month.leaderBonus);
   assert.equal(data.paid,null);assert.equal(data.payments.length,0);
   assert.equal(data.leaderAwards.length,1);assert.equal(data.leaderAwards[0].status,person==='darkhan'?'won':'not_won');
-  assert.ok(!JSON.stringify(data).includes('10000000'),'Another employee sales total must not leak');
+  assert.ok(!JSON.stringify(data).includes('10000123'),'Another employee sales total must not leak');
  }
 });
 test('unavailable first-place evidence preserves known commission but cannot claim a settled earned total',async()=>{
