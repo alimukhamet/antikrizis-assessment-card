@@ -1,15 +1,30 @@
-name: Bitrix document reading audit
+name: Owner requested profile document filling
 on:
   workflow_dispatch:
-  push:
-    branches: [fix/tool-rollout-audit]
-    paths: [scripts/audit-crm-documents.mjs, .github/workflows/audit-crm-documents.yml]
+    inputs:
+      apply:
+        type: boolean
+        default: false
+      deal_ids:
+        type: string
+        default: ''
+      public_key:
+        description: 'Requester RSA SPKI public key, base64; detailed report encrypted only'
+        type: string
+        required: true
+      expected_commit:
+        type: string
+        required: true
 permissions:
   contents: read
+concurrency:
+  group: profile-document-fill-maintenance
+  cancel-in-progress: false
 jobs:
-  audit:
+  fill:
+    if: github.ref_type == 'branch' && github.ref_name == 'codex/profile-document-fill'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v7
         with:
@@ -18,13 +33,28 @@ jobs:
         with:
           node-version: '22'
           package-manager-cache: false
-      - name: Read a bounded sample of existing CRM documents
+      - name: Verify the exact reviewed source
+        env:
+          EXPECTED: ${{ inputs.expected_commit }}
+        run: test "$GITHUB_SHA" = "$EXPECTED"
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npx --no-install esbuild lib/questionnaire/draft.ts --bundle --platform=node --format=esm --outfile=.profile-fill-validation.mjs
+      - name: Verify bounded import and additive filling
+        run: node --test tests/profile-source-fill.test.mjs tests/profile-document-import.test.mjs tests/profile-document-fill-runner.test.mjs
+      - name: Import documents and fill supported empty draft fields
         env:
           ASSESSMENT_TEST_PASSWORD: ${{ secrets.ASSESSMENT_TEST_PASSWORD }}
-        run: node scripts/audit-crm-documents.mjs
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PROFILE_DOCUMENT_APPLY: ${{ inputs.apply }}
+          PROFILE_DOCUMENT_IDS: ${{ inputs.deal_ids }}
+          PROFILE_DOCUMENT_PUBLIC_KEY: ${{ inputs.public_key }}
+        run: node scripts/run-profile-document-fill.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: crm-document-audit
-          path: crm-document-audit.json
-          retention-days: 1
+          name: profile-document-fill
+          path: |
+            profile-document-fill-summary.json
+            profile-document-fill.enc.json
+          retention-days: 3
