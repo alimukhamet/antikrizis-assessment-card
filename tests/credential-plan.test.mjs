@@ -10,3 +10,6 @@ test('separate credential plan preserves canonical password filename and stable 
 test('empty passwords, ordinary PDFs, duplicate keys and oversized credentials are rejected without echoing secrets',async()=>{
  for(const change of [{password:''},{files:[{name:'ordinary.pdf',bytes:new Uint8Array([1])}]},{files:[...fixture().files,...fixture().files]},{files:[{name:'huge.p12',bytes:new Uint8Array(MAX_CREDENTIAL_BYTES+1)}]}])await assert.rejects(credentialUploadPlan({...fixture(),...change}),error=>error instanceof Error? !error.message.includes('TEST!'):!String(error).includes('TEST!'));
 });
+test('server refuses extensionless keys from old tabs before any upload with a safe specific code',async()=>{
+ for(const name of ['synthetic-key','renamed-keyуцк','ordinary.pdf'])await assert.rejects(credentialUploadPlan({...fixture(),files:[{name,bytes:new Uint8Array([1,2,3])}]}),error=>error.code==='CREDENTIAL_FILE_EXTENSION_REQUIRED');
+});

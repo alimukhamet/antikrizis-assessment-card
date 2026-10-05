@@ -56,3 +56,23 @@ test('a failed existing-key lookup has a bounded read-only retry on the same scr
 test('a truthy non-boolean credential receipt never means verified',async t=>{
  const s=setup(t);await tick();s.setHandler(()=>reply({identityRevision:1,credentials:{verified:'false'},unsent:null}));await s.w.CredentialUpload.refreshStatus();assert.equal(s.w.CredentialUpload.verified(),false);
 });
+test('extensionless and unsupported keys cannot make the handoff ready or send a request',async t=>{
+ const s=setup(t);await tick();
+ for(const name of ['synthetic-key','renamed-keyуцк','ordinary.pdf']){
+  s.choose(name);s.w.renderDocuments();const before=s.calls.length;
+  assert.equal(s.w.CredentialUpload.collected(),false);
+  assert.match(s.w.CredentialUpload.nextAction().message,/\.p12/);
+  assert.match(s.d.querySelector('.credential-selection-status').textContent,/\.p12/);
+  await assert.rejects(s.w.CredentialUpload.submit(),/\.p12/);
+  assert.equal(s.calls.length,before);
+  assert.equal(s.password.value,'SYNTHETIC');assert.equal(s.owner.checked,true);
+ }
+ s.choose('original.P12');assert.equal(s.w.CredentialUpload.collected(),true);
+});
+test('old-tab server format refusal has an actionable message and never retries the upload',async t=>{
+ const s=setup(t);await tick();s.choose();
+ s.setHandler((path,options)=>options.method==='POST'?{ok:false,status:400,json:async()=>({error:'CREDENTIAL_FILE_EXTENSION_REQUIRED'})}:reply({identityRevision:1,credentials:{verified:false},unsent:null}));
+ await assert.rejects(s.w.CredentialUpload.submit(),/\.p12/);
+ assert.equal(s.calls.filter(c=>c.options.method==='POST').length,1);
+ assert.equal(s.w.CredentialUpload.verified(),false);assert.equal(s.password.value,'SYNTHETIC');
+});

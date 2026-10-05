@@ -22,7 +22,8 @@ async function assessment(t){
  return{w,d,run,calls};
 }
 function choose(s,kind='Доверенность',stored=true){
- s.run(`selectedFiles.push({id:++fileSequence,type:${JSON.stringify(kind)},person:'Клиент',file:new File(['SYNTHETIC'],'wrong.pdf',{type:'application/pdf'}),${stored?"storedDocumentId:'stored-original'":''}});renderDocuments();afRenderResults();FileSelectionControls.refresh();`);
+ const key=kind==='ЭЦП файл';
+ s.run(`selectedFiles.push({id:++fileSequence,type:${JSON.stringify(kind)},person:'Клиент',file:new File(['SYNTHETIC'],${JSON.stringify(key?'synthetic.p12':'wrong.pdf')},{type:${JSON.stringify(key?'application/octet-stream':'application/pdf')}}),${stored?"storedDocumentId:'stored-original'":''}});renderDocuments();afRenderResults();FileSelectionControls.refresh();`);
  return s.run('selectedFiles.at(-1)');
 }
 test('file actions are inside expandable pending, failed and saved file rows',async t=>{

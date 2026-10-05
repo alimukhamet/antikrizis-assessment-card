@@ -12,6 +12,10 @@ For each report record the deal, employee action, observed error, client/server 
 
 ### Open issue register
 
+Credential-format refusal, 5 October — deal 11811: owner screenshot shows «Пакет: 3 из 3» followed by the generic unconfirmed-EDS error. Fresh read-only audit `37309831903` verifies release `assessment-2026-10-01.9`, identity revision1, draft57 with two pending files, verified assessment/history and seven delivered originals; deal is now sales category13, «Договор», with delivery ready and no handoff. Scoped D1 read confirms no credential manifest and no matching credential error event/feedback. Both pending filenames lack an accepted key extension; the existing server rejects those names before preparing or sending an upload. This reproduces the false browser readiness and server refusal, but does not identify the exact historical POST response. A matching original .p12 exists locally; filename alone does not prove ownership and it was not opened, uploaded or approved.
+
+Focused fix: browser readiness, next action and preflight enforce the existing .p12/.pfx/.key/.jks requirement; unsupported selections keep local key/password/owner inputs and explain the required original file. Server exposes a safe specific format code for old tabs without weakening the upload gate. Synthetic tests cover false-ready prevention, zero-request refusal, input preservation, original .P12 readiness and server failure without retry. Employee must replace invalid selected EDS files with the original client key and confirm password/ownership. Actual credential delivery and final handoff remain open; no client write or stage change is authorized as a test. Claude's unfinished late-delivery implementation in the shared checkout is preserved; this repair uses an isolated main-based worktree.
+
 Direct lawyer waiting destination, 5 October — the owner replaced the former
 «Сделка завершена»/sales robot route with «Юристы → В ожидании». Codex owns
 this change in the isolated `lawyer-waiting-destination` worktree. New completed
