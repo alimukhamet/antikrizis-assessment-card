@@ -8,6 +8,7 @@ export async function credentialUploadPlan(input:{clientName:string;dealId:strin
  const files=[],seen=new Set<string>();let total=0;
  for(const [index,file] of input.files.entries()){
   const ext=/\.(p12|pfx|key|jks)$/i.exec(file.name)?.[0].toLowerCase();
+  if(!ext)throw new RepositoryError('CREDENTIAL_FILE_EXTENSION_REQUIRED',400);
   total+=file.bytes.byteLength;
   if(!ext||!file.bytes.byteLength||total>MAX_CREDENTIAL_BYTES)throw new RepositoryError('INVALID_CREDENTIAL_FILE',400);
   const hash=await sha256(file.bytes);if(seen.has(hash))throw new RepositoryError('DUPLICATE_CREDENTIAL_FILE',400);seen.add(hash);

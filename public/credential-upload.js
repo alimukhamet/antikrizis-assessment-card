@@ -16,22 +16,25 @@ window.CredentialUpload=(()=>{
   const chosen=keys(),saved=verified();if(chosen.length||saved)retryStatus.hidden=true;
   if(picker)picker.hidden=saved;
   if(saved){selectionStatus.textContent='ЭЦП сохранена';showEditor(false);}
-  else if(chosen.length){if(status.textContent==='ЭЦП и пароль уже есть в Bitrix.')status.textContent='';selectionStatus.textContent='ЭЦП выбрана'+(chosen.length>1?' · файлов: '+chosen.length:'');showEditor(true);}
+  else if(chosen.length){if(status.textContent==='ЭЦП и пароль уже есть в Bitrix.')status.textContent='';selectionStatus.textContent=chosen.some(item=>!supportedKey(item))?keyFormatMessage:'ЭЦП выбрана'+(chosen.length>1?' · файлов: '+chosen.length:'');showEditor(true);}
   else {selectionStatus.textContent=available.length?'ЭЦП есть в сделке':'Добавьте ЭЦП клиента';showEditor(available.length>0);}
   if(!saved&&available.length&&!chosen.length){password.hidden=true;const passwordLabel=host.querySelector('label.lbl');if(passwordLabel)passwordLabel.hidden=true;}
   for(const hint of host.querySelectorAll(':scope > .hint:not([role])')){hint.textContent='ЭЦП сохранится при передаче юристам. До сохранения не закрывайте страницу: ключ и пароль потребуется выбрать заново.';hint.hidden=saved||!chosen.length;}
  }
  const currentDeal=()=>HostedAssessment.ready()?HostedAssessment.getContext().client.external.dealId:null;
  const keys=()=>selectedFiles.filter(item=>item.type==='ЭЦП файл');
+ const supportedKey=item=>/\.(p12|pfx|key|jks)$/i.test(item.file.name);
+ const keyFormatMessage='Выберите исходный файл ЭЦП с расширением .p12, .pfx, .key или .jks. Не меняйте расширение другого файла.';
  const selection=()=>JSON.stringify(keys().map(item=>[item.id,item.person,item.file.name,item.file.size,item.file.lastModified]));
  const verified=()=>verifiedDeal===currentDeal()&&verifiedDeal!==null&&verifiedIdentity===HostedAssessment.getContext()?.identityRevision&&(keys().length===0||verifiedSelection===selection());
  const pendingOnly=pending=>{const names=keys().map(item=>item.file.name);return Array.isArray(pending)&&pending.every(name=>{const index=names.indexOf(name);if(index<0)return false;names.splice(index,1);return true;});};
  const invalidate=()=>{generation++;verifiedDeal=null;verifiedIdentity=null;verifiedSelection=null;statusChanged();};
- const collected=()=>verified()||Boolean(currentDeal()&&keys().length&&keys().length<=10&&keys().every(item=>item.person==='Клиент'&&item.file.size>0)&&keys().reduce((sum,item)=>sum+item.file.size,0)<=2*1024*1024&&owner.checked&&password.value.trim());
+ const collected=()=>verified()||Boolean(currentDeal()&&keys().length&&keys().length<=10&&keys().every(item=>item.person==='Клиент'&&item.file.size>0&&supportedKey(item))&&keys().reduce((sum,item)=>sum+item.file.size,0)<=2*1024*1024&&owner.checked&&password.value.trim());
  function nextAction(){
   const chosen=keys();if(collected())return null;
   if(!chosen.length&&available.length)return owner.checked?{label:'Использовать ЭЦП из сделки',message:'Владелец подтверждён. Получите сохранённую ЭЦП.',target:useExisting}:{label:'Подтвердить владельца ЭЦП',message:'Подтвердите, что ЭЦП в сделке принадлежит этому клиенту.',target:owner};
   if(!chosen.length||chosen.some(item=>!item.file.size)||chosen.length>10||chosen.reduce((sum,item)=>sum+item.file.size,0)>2*1024*1024)return {label:'Выбрать ЭЦП клиента',message:chosen.length?'Выберите ключ заново. До 10 файлов общим размером 2 МБ.':'Выберите файл ключа клиента.',target:keyRow?.querySelector('input[type=file]')};
+  if(chosen.some(item=>!supportedKey(item)))return {label:'Выбрать исходный файл ЭЦП',message:keyFormatMessage,target:keyRow?.querySelector('input[type=file]')};
   const other=chosen.find(item=>item.person!=='Клиент');if(other)return {label:'Указать владельца ЭЦП',message:'Укажите владельца выбранного ключа.',target:document.getElementById('doc-'+other.id+'-person')};
   if(!password.value.trim())return {label:'Указать пароль ЭЦП',message:'Ключ выбран. Осталось ввести пароль и подтвердить владельца.',target:password};
   return {label:'Подтвердить владельца ЭЦП',message:'Пароль указан. Подтвердите, что ключ принадлежит этому клиенту.',target:owner};
@@ -45,6 +48,10 @@ window.CredentialUpload=(()=>{
  // All credential requests share the bounded, session-aware transport. No POST is
  // retried automatically: a lost response may already have changed the CRM.
  const messages={
+  CREDENTIAL_FILE_EXTENSION_REQUIRED:keyFormatMessage,
+  INVALID_CREDENTIAL_FILE:'Выберите непустой файл ЭЦП. Общий размер ключей — до 2 МБ.',
+  DUPLICATE_CREDENTIAL_FILE:'Один ключ выбран несколько раз. Оставьте одну копию каждого ключа.',
+  CREDENTIAL_FILENAME_TOO_LONG:'Слишком длинное имя для сохранения ЭЦП. Обратитесь к руководителю.',
   REQUEST_TIMEOUT:'Проверка ЭЦП не завершилась. Повторите проверку состояния; ключ повторно не отправлен.',
   CREDENTIAL_PASSWORD_NOT_STORED:'В Bitrix нет пароля ЭЦП. Добавьте ключ и пароль клиента.',
  };
@@ -112,6 +119,7 @@ window.CredentialUpload=(()=>{
   if(verified())return true;if(busy)throw Error('Дождитесь сохранения ключа.');const deal=currentDeal(),identity=HostedAssessment.getContext()?.identityRevision,chosen=keys(),signature=selection();
   if(!deal||!chosen.length||chosen.some(item=>item.person!=='Клиент'||!item.file.size)||!owner.checked||!password.value.trim()){throw Error('Выберите ключ ЭЦП, укажите пароль и подтвердите владельца в разделе документов.');}
   if(chosen.length>10||chosen.reduce((sum,item)=>sum+item.file.size,0)>2*1024*1024){throw Error('Выберите не более 10 ключей общим размером до 2 МБ.');}
+  if(chosen.some(item=>!supportedKey(item)))throw Error(keyFormatMessage);
   cancel.hidden=true;cancellable=null;invalidate();const before=checkpoint(),secret=password.value,clientName=document.getElementById('fio').value;setBusy(true);
   try{
    const context=await request(deal);
