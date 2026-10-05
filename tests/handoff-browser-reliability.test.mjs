@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {JSDOM} from 'jsdom';
 const tick=()=>new Promise(resolve=>setTimeout(resolve,10));
-const stage={categoryId:'13',fromStageId:'C13:FINAL_INVOICE',fromStageName:'Договор',stageId:'C13:WON',stageName:'Сделка успешна'};
+const stage={categoryId:'13',targetCategoryId:'1',fromStageId:'C13:FINAL_INVOICE',fromStageName:'Договор',stageId:'C1:NEW',stageName:'В ожидании'};
 const saved={requestId:'12345678-1234-1234-1234-123456789012',state:'uncertain',destination:stage};
 const response=(data,status=200)=>({ok:status<400,status,json:async()=>data});
 async function setup(t,handler){
@@ -53,7 +53,7 @@ test('late failure from an old client does not overwrite the current handoff sta
  let rejectOld;const s=await setup(t,path=>path.includes('900001')?new Promise((_,reject)=>{rejectOld=reject;}):response({handoff:null,destination:stage,stageError:null,delivery:{ready:true}}));
  s.open('900002');await tick();rejectOld(Error('STALE OLD CLIENT'));await tick();
  assert.doesNotMatch(s.d.getElementById('handoffReason').textContent,/STALE/);
- assert.match(s.d.getElementById('handoffStage').textContent,/Сделка успешна/);
+ assert.match(s.d.getElementById('handoffStage').textContent,/Юристы.*В ожидании/);
  assert.equal(s.d.getElementById('handoffRefresh').disabled,false);
 });
 test('handoff power check reads only that document, not the intake questionnaire',async t=>{
@@ -155,4 +155,27 @@ test('an uncertain title readback explains the remaining gap after page reload w
  assert.match(s.d.getElementById('handoffReason').textContent,/название сделки не подтверждено/);
  assert.match(s.d.getElementById('handoffReason').textContent,/Проверить результат/);assert.equal(s.d.getElementById('handoffSend').textContent,'Проверить результат');assert.equal(s.d.getElementById('handoffCancel').hidden,true);
  assert.equal(s.calls.filter(c=>c.method==='POST').length,0);
+});
+
+
+test('new handoff status shows the lawyer funnel and waiting stage',async t=>{
+ const s=await setup(t);
+ assert.match(s.d.getElementById('handoffStage').textContent,/Юристы.*В ожидании/);
+ assert.doesNotMatch(s.d.getElementById('handoffStage').textContent,/Сделка успешна|Сделка завершена/);
+ assert.equal(s.calls.filter(call=>call.method==='POST').length,0);
+});
+
+test('old prepared target gives cancellation guidance then reloads the new destination',async t=>{
+ let state={...saved,state:'prepared',outcomeCode:'HANDOFF_DESTINATION_CHANGED',destination:{categoryId:'13',fromStageId:'C13:FINAL_INVOICE',fromStageName:'Договор',stageId:'C13:WON',stageName:'Сделка завершена'}};
+ const s=await setup(t,(path,options)=>{
+  if(options.method==='POST'){
+   assert.equal(JSON.parse(options.body).action,'cancel');const cancelled={...state,state:'cancelled'};state=null;return response({handoff:cancelled});
+  }
+  return response({handoff:state,destination:state?null:stage,stageError:null,delivery:{ready:true}});
+ });
+ assert.match(s.d.getElementById('handoffReason').textContent,/Юристы → В ожидании.*Отменить подготовку/);
+ await s.d.getElementById('handoffCancel').onclick();
+ assert.match(s.d.getElementById('handoffStage').textContent,/Юристы.*В ожидании/);
+ assert.equal(s.calls.filter(call=>call.method==='POST').length,1);
+ assert.equal(s.d.getElementById('handoffSignedFile').disabled,false);
 });
