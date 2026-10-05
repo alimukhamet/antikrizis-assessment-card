@@ -26,6 +26,9 @@ try{
  await request('/api/session',{worker:'ali',password:process.env.ASSESSMENT_TEST_PASSWORD});
  report.authenticated=(await request('/api/session')).ok===true;
  report.status=await request('/api/status');
+ const waiting=await request('/api/lawyer-delivery-audit');
+ report.lawyerWaitingDestination={categoryId:waiting.categoryId,stageId:waiting.stageId,stageName:waiting.stageName,complete:waiting.complete};
+ if(waiting.complete!==true||waiting.categoryId!=='1'||waiting.stageId!=='C1:NEW'||typeof waiting.stageName!=='string'||waiting.stageName.trim().replace(/\s+/gu,' ').toLocaleLowerCase('ru')!=='в ожидании')throw Error('Lawyer waiting destination metadata is not verified');
  const launcher=await fetch(origin+'/assessment-card.html',{headers:{cookie},redirect:'error',signal:AbortSignal.timeout(30_000)});
  const launcherHtml=await launcher.text();
  report.launcher={status:launcher.status,currentTools:['assessment','handoff'].every(tool=>launcherHtml.includes('data-main-action="'+tool+'"')),legacyFormsAbsent:!/(?:id="(?:contractBtn|docsBtn|dealLookup)"|data-open-view=)/.test(launcherHtml)};
@@ -152,7 +155,10 @@ try{
       };
      }
      if(s?.assessmentSaved&&s?.historySaved){const contract=await request(root+'/submission',{action:'contract',requestId:s.requestId});item.savedContract={available:!!contract.contract?.data,rendererVersion:contract.contract?.rendererVersion};}
-    }else if(route==='handoff'){item.handoff={state:data.handoff?.state||null,stageError:data.stageError,destination:data.destination,delivery:data.delivery};}
+    }else if(route==='handoff'){
+     item.handoff={state:data.handoff?.state||null,stageError:data.stageError,destination:data.destination,delivery:data.delivery};
+     if(data.destination&&(data.destination.categoryId!=='13'||data.destination.targetCategoryId!=='1'||data.destination.stageId!=='C1:NEW'))throw Error('Live handoff still offers the former destination');
+    }
     else if(route==='crm-documents'){item.crmDocuments={count:data.files?.length,types:data.files?.map(v=>({field:v.field,kind:v.kind}))};}
     else item[route]={unsent:!!data.unsent,verified:data.credentials?.verified,files:data.credentials?.files?.length,keys:Object.keys(data)};
    }catch(error){item[route+'Error']=error.message;}

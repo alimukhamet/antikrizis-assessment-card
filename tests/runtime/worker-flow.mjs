@@ -147,7 +147,7 @@ test('built Worker persists a complete contract and recovers a handoff without d
  assert.equal(repeatUpload.documentsUploaded,true);assert.equal(crm.counts.fileWrites,uploadWrites,'A reopened page reuses the verified eight-file package');
  const encumbrance=[...crm.files.values()].filter(file=>file.name.startsWith('29 Сведения об обременениях'));
  assert.equal(encumbrance.length,1);assert.equal(encumbrance[0].bytes.toString(),'%PDF-1.4\nSYNTHETIC ONLY encumbrance\n%%EOF');
- const delivered=await api(root+'/handoff');assert.equal(delivered.delivery.ready,true);const stage=delivered.destination;assert.ok(stage);
+ const delivered=await api(root+'/handoff');assert.equal(delivered.delivery.ready,true);const stage=delivered.destination;assert.ok(stage);assert.equal(stage.targetCategoryId,'1');assert.equal(stage.stageId,'C1:NEW');
  const handoffRequest=crypto.randomUUID();
  const handoff=await api(root+'/handoff',{action:'send',requestId:handoffRequest,destination,stage,powerId:fixture.documents.find(d=>d.kind==='power_of_attorney').documentId,signedId:fixture.documents.find(d=>d.kind==='unknown').documentId,signedConfirmed:true});
  assert.equal(handoff.handoff.state,'uncertain',JSON.stringify(handoff));assert.equal(crm.counts.stageWrites,1);assert.equal(crm.deal.TITLE,'ВП SYNTHETIC ONLY');

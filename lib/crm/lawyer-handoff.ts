@@ -1,5 +1,5 @@
 import {bitrixHeaders} from './http-headers'; import {RepositoryError} from '../documents/repository';
-export type HandoffDestination={categoryId:string;fromStageId:string;stageId:string;stageName:string;fromStageName:string};
+export type HandoffDestination={categoryId:string;targetCategoryId?:string;fromStageId:string;stageId:string;stageName:string;fromStageName:string};
 export type HandoffTitleSource={requestId:string;payloadHash:string;fio:string;procedure:string};
 export type HandoffTitlePlan={policy:'VP_FIO_1';source:HandoffTitleSource;beforeTitle:string;desiredTitle:string};
 const normalizedFio=(value:string)=>value.replace(/\s+/gu,' ').trim();
@@ -21,9 +21,9 @@ export class HandoffMoveError extends RepositoryError{constructor(code:string,pu
 const isRecord=(value:unknown):value is Record<string,unknown>=>Boolean(value)&&typeof value==='object'&&!Array.isArray(value);
 /** Names are editable labels, not the identity of a confirmed stage transition. */
 export function sameHandoffDestination(value:unknown,expected:HandoffDestination){
- return isRecord(value)&&value.categoryId===expected.categoryId&&value.fromStageId===expected.fromStageId&&value.stageId===expected.stageId;
+ return isRecord(value)&&value.categoryId===expected.categoryId&&(value.targetCategoryId??value.categoryId)===(expected.targetCategoryId??expected.categoryId)&&value.fromStageId===expected.fromStageId&&value.stageId===expected.stageId;
 }
-/** The sales robot owns the next pipeline. Only a frozen, source-backed VP intake title may accompany STAGE_ID. */
+/** New handoffs move directly from sales to lawyer waiting. Legacy claimed receipts remain read-only. */
 export function createHandoffAdapter(webhook:string,send:typeof fetch=fetch){
  async function call(method:string,body:unknown):Promise<unknown>{
   if(!webhook)throw new RepositoryError('BITRIX_NOT_CONFIGURED',503);
@@ -40,19 +40,20 @@ export function createHandoffAdapter(webhook:string,send:typeof fetch=fetch){
   const categoryId=String(deal.CATEGORY_ID);
   // Never close a lawyer's case or another pipeline with a similarly named final stage.
   if(categoryId!=='13'||String(deal.STAGE_SEMANTIC_ID)==='F')throw new RepositoryError('HANDOFF_NOT_IN_SALES');
-  const stages=await call('crm.status.list',{filter:{ENTITY_ID:'DEAL_STAGE_'+categoryId},order:{SORT:'ASC'}});
-  if(!Array.isArray(stages)||!stages.every(isRecord))throw new RepositoryError('HANDOFF_STAGE_UNVERIFIED');
-  // The deployed portal calls C13:WON «Сделка успешна». Renaming that label
-  // must not disable handoff. Keep the exact category and stage ID pinned.
-  const matches=stages.filter(s=>s.STATUS_ID==='C13:WON');
-  if(matches.length!==1)throw new RepositoryError('HANDOFF_STAGE_UNVERIFIED');
-  const target=matches[0];
-  if((target.ENTITY_ID!==undefined&&target.ENTITY_ID!=='DEAL_STAGE_13')||
-     (target.SEMANTICS!=null&&target.SEMANTICS!=='S')||
-     (isRecord(target.EXTRA)&&target.EXTRA.SEMANTICS!=null&&target.EXTRA.SEMANTICS!=='success'))throw new RepositoryError('HANDOFF_STAGE_UNVERIFIED');
-  const current=stages.find(s=>s.STATUS_ID===deal.STAGE_ID);if(!current||typeof current.STATUS_ID!=='string'||typeof matches[0].STATUS_ID!=='string'||typeof current.NAME!=='string'||typeof matches[0].NAME!=='string'||!matches[0].NAME.trim()||!current.NAME.trim())throw new RepositoryError('HANDOFF_STAGE_UNVERIFIED');
-  if(current.STATUS_ID===matches[0].STATUS_ID)throw new RepositoryError('HANDOFF_ALREADY_COMPLETED');
-  return{categoryId,fromStageId:current.STATUS_ID,fromStageName:String(current.NAME),stageId:matches[0].STATUS_ID,stageName:String(matches[0].NAME)};
+  if(String(deal.STAGE_SEMANTIC_ID)==='S'||deal.STAGE_ID==='C13:WON')throw new RepositoryError('HANDOFF_ALREADY_COMPLETED');
+  const [stages,lawyerStages]=await Promise.all([
+   call('crm.status.list',{filter:{ENTITY_ID:'DEAL_STAGE_13'},order:{SORT:'ASC'}}),
+   call('crm.status.list',{filter:{ENTITY_ID:'DEAL_STAGE_1'},order:{SORT:'ASC'}}),
+  ]);
+  if(!Array.isArray(stages)||!stages.every(isRecord)||!Array.isArray(lawyerStages)||!lawyerStages.every(isRecord))throw new RepositoryError('HANDOFF_STAGE_UNVERIFIED');
+  const matches=lawyerStages.filter(s=>s.STATUS_ID==='C1:NEW'),sources=stages.filter(s=>s.STATUS_ID===deal.STAGE_ID);
+  if(matches.length!==1||sources.length!==1)throw new RepositoryError('HANDOFF_STAGE_UNVERIFIED');
+  const target=matches[0],current=sources[0];
+  if(target.ENTITY_ID!=='DEAL_STAGE_1'||typeof target.NAME!=='string'||target.NAME.trim().replace(/\s+/gu,' ').toLocaleLowerCase('ru')!=='в ожидании'||
+     (target.SEMANTICS!=null&&target.SEMANTICS!=='P')||
+     (isRecord(target.EXTRA)&&target.EXTRA.SEMANTICS!=null&&target.EXTRA.SEMANTICS!=='process')||
+     (current.ENTITY_ID!==undefined&&current.ENTITY_ID!=='DEAL_STAGE_13')||typeof current.NAME!=='string'||!current.NAME.trim())throw new RepositoryError('HANDOFF_STAGE_UNVERIFIED');
+  return{categoryId,targetCategoryId:'1',fromStageId:String(current.STATUS_ID),fromStageName:current.NAME,stageId:'C1:NEW',stageName:target.NAME};
  }
  async function discover(dealId:string,iin:string){return discoverDeal(await read(dealId,iin));}
  async function planTitle(dealId:string,iin:string,source:HandoffTitleSource):Promise<HandoffTitlePlan|null>{
@@ -69,15 +70,18 @@ export function createHandoffAdapter(webhook:string,send:typeof fetch=fetch){
  async function validateTitle(dealId:string,iin:string,destination:HandoffDestination,plan?:HandoffTitlePlan){
   const deal=await read(dealId,iin);
   if(String(deal.CATEGORY_ID)!==destination.categoryId||deal.STAGE_ID!==destination.fromStageId)throw new RepositoryError('HANDOFF_STAGE_CHANGED');
+  if(!sameHandoffDestination(destination,await discoverDeal(deal)))throw new RepositoryError('HANDOFF_DESTINATION_CHANGED');
   validateTitleBeforeWrite(deal,plan);
  }
  async function reconcile(dealId:string,iin:string,destination:HandoffDestination,since:string,plan?:HandoffTitlePlan){
   const deal=await read(dealId,iin);
-  let stageVerified=String(deal.CATEGORY_ID)===destination.categoryId&&deal.STAGE_ID===destination.stageId;
+  // Missing targetCategoryId denotes an immutable receipt created by the former sales-final policy.
+  const targetCategoryId=destination.targetCategoryId??destination.categoryId;
+  let stageVerified=String(deal.CATEGORY_ID)===targetCategoryId&&deal.STAGE_ID===destination.stageId;
   if(!stageVerified){
-  // The robot may already have moved the deal onward. History proves our sales-stage transition.
-  const history=await call('crm.stagehistory.list',{entityTypeId:2,filter:{OWNER_ID:dealId,CATEGORY_ID:Number(destination.categoryId),STAGE_ID:destination.stageId,'>=CREATED_TIME':since},order:{ID:'DESC'},select:['ID','OWNER_ID','CATEGORY_ID','STAGE_ID','CREATED_TIME'],start:0});
-  stageVerified=isRecord(history)&&Array.isArray(history.items)&&history.items.some((row:unknown)=>isRecord(row)&&typeof row.CREATED_TIME==='string'&&String(row.OWNER_ID)===dealId&&String(row.CATEGORY_ID)===destination.categoryId&&row.STAGE_ID===destination.stageId&&Number.isFinite(Date.parse(row.CREATED_TIME))&&Date.parse(row.CREATED_TIME)>=Math.floor(Date.parse(since)/1000)*1000);
+  // Later CRM automation may have moved onward. Match the frozen target in fresh history.
+  const history=await call('crm.stagehistory.list',{entityTypeId:2,filter:{OWNER_ID:dealId,CATEGORY_ID:Number(targetCategoryId),STAGE_ID:destination.stageId,'>=CREATED_TIME':since},order:{ID:'DESC'},select:['ID','OWNER_ID','CATEGORY_ID','STAGE_ID','CREATED_TIME'],start:0});
+  stageVerified=isRecord(history)&&Array.isArray(history.items)&&history.items.some((row:unknown)=>isRecord(row)&&typeof row.CREATED_TIME==='string'&&String(row.OWNER_ID)===dealId&&String(row.CATEGORY_ID)===targetCategoryId&&row.STAGE_ID===destination.stageId&&Number.isFinite(Date.parse(row.CREATED_TIME))&&Date.parse(row.CREATED_TIME)>=Math.floor(Date.parse(since)/1000)*1000);
   }
   // Bitrix can return the correctly applied title with outer whitespace. Keep
   // the frozen source and all title characters exact; only trim the boundary.
@@ -88,7 +92,7 @@ export function createHandoffAdapter(webhook:string,send:typeof fetch=fetch){
   try{const deal=await read(dealId,iin),fresh=await discoverDeal(deal);if(!sameHandoffDestination(destination,fresh))throw new RepositoryError('HANDOFF_STAGE_CHANGED');validateTitleBeforeWrite(deal,plan);}
   catch(error){throw new HandoffMoveError(error instanceof RepositoryError?error.code:'HANDOFF_STAGE_UNVERIFIED',true);}
   // No automatic retry of this write, including on timeout. Recovery is read-only.
-  try{await call('crm.deal.update',{id:dealId,fields:{STAGE_ID:destination.stageId,...(plan?{TITLE:plan.desiredTitle}:{})}});}catch{/* Reconcile below. */}
+  try{await call('crm.item.update',{entityTypeId:2,id:dealId,fields:{categoryId:Number(destination.targetCategoryId),stageId:destination.stageId,...(plan?{title:plan.desiredTitle}:{})}});}catch{/* Reconcile below. */}
   try{return await reconcile(dealId,iin,destination,since,plan);}catch(error){if(error instanceof HandoffMoveError)throw error;return false;}
  }
  return{discover,planTitle,validateTitle,move,reconcile};
