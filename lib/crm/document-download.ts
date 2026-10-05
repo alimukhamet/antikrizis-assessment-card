@@ -6,7 +6,7 @@ const RANGE_BYTES=8192;
 export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin:string,send:typeof fetch=fetch,options:{pdfOnly?:boolean;documentsOnly?:boolean;credentialsOnly?:boolean;onFilename?:(name:string)=>void;onProgress?:(event:Record<string,number|string>)=>void}={}){
  let portal:URL;try{portal=new URL(webhook);}catch{throw new DocumentUploadError('INVALID_DOWNLOAD_CONFIGURATION');}
  if(portal.protocol!=='https:'||portal.username||portal.password||! /^[1-9]\d*$/.test(dealId)||! /^\d{12}$/.test(expectedIin))throw new DocumentUploadError('INVALID_DOWNLOAD_CONFIGURATION');
- async function bytes(response:Response){
+ async function bytes(response:Response,limit:number){
   if(![200,206].includes(response.status)||!response.body){void response.body?.cancel().catch(()=>{});throw new DocumentUploadError('CRM_FILE_DOWNLOAD_FAILED');}
   const disposition=response.headers.get('content-disposition')||'';
   const encoded=/filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1],plain=/filename="([^"]+)"|filename=([^;]+)/i.exec(disposition);
@@ -17,7 +17,6 @@ export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin
   if(options.documentsOnly&&filename&&!/\.(pdf|png|jpe?g)$/i.test(filename)){await response.body.cancel();throw new DocumentUploadError('NOT_A_SUPPORTED_DOCUMENT');}
   if(options.credentialsOnly&&!/\.(p12|pfx|key|jks)$/i.test(filename)){await response.body.cancel();throw new DocumentUploadError('INVALID_CREDENTIAL_FILE');}
   if(filename)options.onFilename?.(filename);
-  const limit=options.credentialsOnly?2*1024*1024:MAX_BYTES;
   const declared=response.headers.get('content-length');if(declared&&Number(declared)>limit){await response.body.cancel();throw new DocumentUploadError('CRM_FILE_TOO_LARGE');}
   const length=Number(declared),framedLength=!response.headers.get('content-encoding')&&Number.isSafeInteger(length)&&length>0?length:null;
   let total=0;const bounded=new TransformStream<Uint8Array,Uint8Array>({transform(value,controller){
@@ -34,8 +33,12 @@ export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin
   if(!total)throw new DocumentUploadError('CRM_FILE_EMPTY');
   return new Uint8Array(buffer);
  }
- return async (reference:CrmFileRef,snapshot?:Record<string,unknown>)=>{
+ return async (reference:CrmFileRef,snapshot?:Record<string,unknown>,bounds?:{maxBytes:number})=>{
   if(!/^[1-9]\d*$/.test(reference.id))throw new DocumentUploadError('INVALID_FILE_ID');
+  // Handoff verification reserves memory using immutable expected sizes. Enforce
+  // that ceiling on actual downloads too, before any ranged-result allocation.
+  if(bounds&&(!Number.isSafeInteger(bounds.maxBytes)||bounds.maxBytes<=0))throw new DocumentUploadError('INVALID_DOWNLOAD_LIMIT');
+  const limit=Math.min(options.credentialsOnly?2*1024*1024:MAX_BYTES,bounds?.maxBytes??MAX_BYTES);
   try{
    // Verification may reuse its own just-read item for this bounded operation.
    // There is no global cache or shared in-flight request between Workers.
@@ -60,8 +63,7 @@ export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin
      if(next.origin!==portal.origin||next.username||next.password||next.hash)throw new DocumentUploadError('CRM_FILE_REDIRECT_UNTRUSTED');
      url=next;continue;
     }
-    if(download.status!==206)return await bytes(download);
-    const limit=options.credentialsOnly?2*1024*1024:MAX_BYTES;
+    if(download.status!==206)return await bytes(download,limit);
     function range(response:Response,start:number,end:number,total?:number){
      const match=/^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers.get('content-range')||'');
      const actual=match?.slice(1).map(Number);
@@ -69,7 +71,7 @@ export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin
      if(actual[2]>limit){void response.body?.cancel().catch(()=>{});throw new DocumentUploadError('CRM_FILE_TOO_LARGE');}
      return actual[2];
     }
-    const total=range(download,0,RANGE_BYTES-1),first=await bytes(download);
+    const total=range(download,0,RANGE_BYTES-1),first=await bytes(download,Math.min(limit,RANGE_BYTES));
     if(first.length!==Math.min(RANGE_BYTES,total))throw new DocumentUploadError('CRM_FILE_LENGTH_MISMATCH');
     const result=new Uint8Array(total);result.set(first);let cursor=first.length;
     const stopped=new AbortController(),etag=download.headers.get('etag'),validator=etag?.startsWith('"')?etag:null;
@@ -78,7 +80,7 @@ export function createCrmDocumentReader(webhook:string,dealId:string,expectedIin
      if(validator)headers['if-range']=validator;
      const response=await send(url.toString(),{method:'GET',headers,redirect:'manual',credentials:'omit',cache:'no-store',signal:AbortSignal.any([stopped.signal,AbortSignal.timeout(8000)])});
      range(response,start,end,total);
-     const data=await bytes(response);if(data.length!==end-start+1)throw new DocumentUploadError('CRM_FILE_LENGTH_MISMATCH');result.set(data,start);
+     const data=await bytes(response,end-start+1);if(data.length!==end-start+1)throw new DocumentUploadError('CRM_FILE_LENGTH_MISMATCH');result.set(data,start);
     }
     // PDF intake uses six bounded read-only transfers; verification keeps three.
     // The complete assembled bytes

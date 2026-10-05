@@ -16,20 +16,24 @@ function view(row:HandoffRow|null){return row?{requestId:row.request_id,state:ro
 export async function GET(request:Request,context:{params:Promise<{dealId:string}>}){
  const denied=await requireStaffRequest(request);if(denied)return denied;
  try{
-  const {dealId}=await context.params,{record,repository}=await evidenceContext(request,dealId),stores=await store(),{handoffs}=stores;
+  const {dealId}=await context.params,{record,repository,actor}=await evidenceContext(request,dealId);
+  const verifyBytes=new URL(request.url).searchParams.get('verifyBytes')==='1';
+  if(verifyBytes&&actor.worker!=='ali')throw new RepositoryError('OWNER_REQUIRED',403);
+  const stores=await store(),{handoffs}=stores;
   const current=await handoffs.active(record.id);let destination=null,stageError=null;
   if(current&&current.identity_revision!==record.identity_revision)stageError='CASE_IDENTITY_CHANGED';
   else if(!current)try{destination=await createHandoffAdapter(process.env.BITRIX_WEBHOOK??'').discover(dealId,record.client_iin??'');}catch(error){stageError=error instanceof RepositoryError?error.code:'HANDOFF_STAGE_UNVERIFIED';}
   const webhook=process.env.BITRIX_WEBHOOK??'';
   let delivery:{ready:boolean;code?:string;recoveredDraft?:boolean;mismatchedFields?:string[]};
-  try{const verified=await verifyHandoffDelivery({...stores,repository,assessment:createAssessmentAdapter(webhook),upload:createVerifiedDocumentUploadAdapter(webhook,dealId,record.client_iin??''),readFile:createCrmDocumentReader(webhook,dealId,record.client_iin??'')},record,{verifyBytes:false});delivery={ready:true,...verified};}
+  const verificationStarted=Date.now();
+  try{const verified=await verifyHandoffDelivery({...stores,repository,assessment:createAssessmentAdapter(webhook),upload:createVerifiedDocumentUploadAdapter(webhook,dealId,record.client_iin??''),readFile:createCrmDocumentReader(webhook,dealId,record.client_iin??'')},record,{verifyBytes});delivery={ready:true,...verified};}
   catch(error){delivery={ready:false,code:error instanceof RepositoryError?error.code:'HANDOFF_ASSESSMENT_UNVERIFIED',...(error instanceof HandoffAssessmentChangedError?{mismatchedFields:error.mismatchedFields}:{})};}
   if(delivery.code==='HANDOFF_ASSESSMENT_REQUIRED'){
    const {env}=await import('cloudflare:workers');const db=(env as typeof env&{DB?:D1Database}).DB;
    const recovery=db?await db.prepare("SELECT source_hash FROM assessment_draft_recoveries WHERE case_id=? AND identity_revision=? AND state='verified'").bind(record.id,record.identity_revision).first():null;
    if(recovery)delivery.recoveredDraft=true;
   }
-  return Response.json({handoff:view(current),destination,stageError,delivery},{headers:{'cache-control':'no-store'}});
+  return Response.json({handoff:view(current),destination,stageError,delivery,...(verifyBytes?{byteVerification:{verified:delivery.ready,elapsedMs:Date.now()-verificationStarted}}:{})},{headers:{'cache-control':'no-store'}});
  }catch(error){return evidenceError(error);}
 }
 export async function POST(request:Request,context:{params:Promise<{dealId:string}>}){

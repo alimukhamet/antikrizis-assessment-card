@@ -46,7 +46,8 @@ try{
   item.identityRevision=assessment.identityRevision;item.hasIin=Boolean(assessment.client?.iin);
   for(const route of ['draft','submission','uploads','credentials','handoff','crm-documents']){
    try{
-    const data=await request(root+'/'+route+(route==='submission'?'?scope=case':''));
+    const verifyHandoffBytes=route==='handoff'&&id===diagnosticId&&process.env.VERIFY_HANDOFF_BYTES==='true';
+    const data=await request(root+'/'+route+(route==='submission'?'?scope=case':verifyHandoffBytes?'?verifyBytes=1':''));
     if(route==='draft'){
      const d=data.draft,p=d?.payload;
      item.draft={present:!!d,revision:d?.revision,identityRevision:d?.identityRevision,answers:p?.answers?.length,groups:p?.groups?.length,documents:p?.documents?.map(v=>({type:v.type,person:v.person})),pendingFiles:p?.pendingFiles?.length};
@@ -157,6 +158,10 @@ try{
      if(s?.assessmentSaved&&s?.historySaved){const contract=await request(root+'/submission',{action:'contract',requestId:s.requestId});item.savedContract={available:!!contract.contract?.data,rendererVersion:contract.contract?.rendererVersion};}
     }else if(route==='handoff'){
      item.handoff={state:data.handoff?.state||null,stageError:data.stageError,destination:data.destination,delivery:data.delivery};
+     if(verifyHandoffBytes){
+      if(data.byteVerification?.verified!==true||!Number.isFinite(data.byteVerification.elapsedMs)||data.byteVerification.elapsedMs<0)throw Error('HANDOFF_BYTES_NOT_VERIFIED');
+      item.handoff.byteVerification=data.byteVerification;
+     }
      if(data.destination&&(data.destination.categoryId!=='13'||data.destination.targetCategoryId!=='1'||data.destination.stageId!=='C1:NEW'))throw Error('Live handoff still offers the former destination');
     }
     else if(route==='crm-documents'){item.crmDocuments={count:data.files?.length,types:data.files?.map(v=>({field:v.field,kind:v.kind}))};}

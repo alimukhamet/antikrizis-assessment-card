@@ -10,6 +10,10 @@ on:
         description: 'Optional additional deal: read saved document diagnostics, with no draft or CRM writes'
         type: string
         default: ''
+      verify_handoff_bytes:
+        description: 'Read-only byte verification and timing of the selected deal originals; never sends a handoff'
+        type: boolean
+        default: false
       reconcile_handoff_request_id:
         description: 'Read-only Bitrix reconciliation of this exact existing handoff; never sends files or stages'
         type: string
@@ -105,6 +109,7 @@ jobs:
           REFRESH_SAVED_ANALYSIS: ${{ inputs.refresh_saved_analysis }}
           PREVIEW_NATIVE_ANALYSIS: '1'
           AUDIT_DEAL_ID: ${{ inputs.deal_id }}
+          VERIFY_HANDOFF_BYTES: ${{ inputs.verify_handoff_bytes }}
         run: node scripts/audit-live-tools.mjs
       - name: Reconcile the exact existing handoff without Bitrix writes
         if: inputs.reconcile_handoff_request_id != ''
