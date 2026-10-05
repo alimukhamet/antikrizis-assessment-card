@@ -5,11 +5,12 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import {webcrypto} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
-import {httpHeaders} from './bitrix-headers-helper.mjs'; function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:name=>name==='./http-headers'?httpHeaders:imports[name],crypto:webcrypto,TextEncoder,Uint8Array,Date,Set,Map,AbortSignal,JSON});return exports;}
+import {httpHeaders} from './bitrix-headers-helper.mjs'; function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:name=>name==='./http-headers'?httpHeaders:imports[name],crypto:webcrypto,TextEncoder,Uint8Array,Date,Set,Map,AbortSignal,AbortController,JSON,URL,Response,ReadableStream,TransformStream});return exports;}
 const evidence=load('lib/documents/repository.ts');
 const crm=load('lib/crm/lawyer-handoff.ts',{'../documents/repository':evidence});
 const {HandoffRepository}=load('lib/questionnaire/handoff-repository.ts',{'../documents/repository':evidence});
 const upload=load('lib/crm/document-upload.ts',{'../documents/repository':evidence});
+const {createCrmDocumentReader}=load('lib/crm/document-download.ts',{'./document-upload':upload});
 const {UploadManifestRepository}=load('lib/documents/upload-manifest.ts',{'./repository':evidence});
 const service=load('lib/questionnaire/handoff-service.ts',{'../documents/repository':evidence,'../documents/analysis-service':{analysisVersion:'test'},'../documents/package-check':{checkDocumentPackage:async()=>({packageReady:true,manuallyReviewed:[]})},'../documents/upload-service':load('lib/documents/upload-service.ts',{'./repository':evidence,'../crm/document-upload':upload}),'../documents/upload-plan':load('lib/documents/upload-plan.ts',{'./repository':evidence}),'../crm/lawyer-handoff':crm,'../crm/assessment-write':load('lib/crm/assessment-write.ts')});
 const record={id:'case',identity_revision:1,client_iin:'000000000010',external_id:'900001'},actor={id:'staff',authentication:'test'};
@@ -70,6 +71,113 @@ async function deliveredHandoff(options={}){
  const deps={...s,repository,submissions:{latestForCase:async()=>submission},assessment:{reconcile:async(deal,iin,values)=>{counts.assessments++;assert.equal(deal,record.external_id);assert.equal(iin,record.client_iin);assert.deepEqual(JSON.parse(JSON.stringify(values)),payload.values);return{verified:true};}},upload:adapter,readFile:async file=>{counts.reads++;return crmFiles.get(file.id);},stages:{validateTitle:async()=>{},move:async()=>{counts.moves++;return true;},reconcile:async()=>true}};
  return {...s,deps,row,submission,contents,docs,crmFiles,counts,originalId,handoffPayload};
 }
+async function withSevenOriginals(s,sizes=[]){
+ const payload=JSON.parse(s.submission.payload_json);
+ for(let index=2;index<=7;index++){
+  const id='original'+index,ref=String(20+index),bytes=sizes[index-2]?new Uint8Array(sizes[index-2]).fill(index):new Uint8Array([7,index,9]),sha256=await evidence.sha256(bytes);
+  s.docs[id]={id,case_id:record.id,original_name:id+'.pdf',original_sha256:sha256,byte_size:bytes.length};s.crmFiles.set(ref,bytes);
+  payload.draft.documents.push({documentId:id,type:'Удостоверение личности'});
+  const requestId=webcrypto.randomUUID();
+  await s.manifests.prepare(record,requestId,{version:1,baseline:[],files:[{documentId:id,name:id+'.pdf',sha256,byteSize:bytes.length}]},actor);
+  await s.manifests.claim(record,requestId);
+  await s.manifests.finish(record.id,requestId,{verified:true,preserved:[],files:[{id:ref,name:id+'.pdf',sha256}]},'VERIFIED');
+ }
+ s.submission.payload_json=JSON.stringify(payload);
+}
+function attachRealFileReader(s,alter=()=>{},ranged=false){
+ const reads=[],downloads=[],webhook='https://synthetic.invalid/rest/1/test/';let active=0,peak=0;
+ const send=async(url,options)=>{
+  if(options.method==='POST'){
+   assert.match(url,/crm.item.get.json$/);
+   const item={id:record.external_id,ufCrmAiIin:record.client_iin,ufCrmAnkPrimaryDocs:[...s.crmFiles.keys()].map(id=>({id,urlMachine:`https://synthetic.invalid/rest/crm.controller.item.getFile.json?id=${id}&phase=${reads.length+1}`}))};
+   alter(item,reads.length+1);reads.push(item);return Response.json({result:{item}});
+  }
+  const params=new URL(url).searchParams,id=params.get('id'),phase=Number(params.get('phase'));
+  downloads.push({id,phase});peak=Math.max(peak,++active);
+  await new Promise(resolve=>setImmediate(resolve));active--;
+  const bytes=s.crmFiles.get(id);
+  if(ranged){
+   const [start,requestedEnd]=options.headers.range.slice(6).split('-').map(Number),end=Math.min(requestedEnd,bytes.length-1);
+   return new Response(bytes.slice(start,end+1),{status:206,headers:{'content-range':`bytes ${start}-${end}/${bytes.length}`,'content-length':String(end-start+1)}});
+  }
+  return new Response(bytes);
+ };
+ s.deps.upload.read=upload.createDocumentUploadAdapter(webhook,async()=>{throw Error('Unexpected adapter download');},send).read;
+ s.deps.readFile=createCrmDocumentReader(webhook,record.external_id,record.client_iin,send);
+ return {reads,downloads,get peak(){return peak;}};
+}
+test('seven-original handoff reuses only each fresh phase item and still downloads every original twice',async()=>{
+ const s=await deliveredHandoff();try{
+  await withSevenOriginals(s);const proof=attachRealFileReader(s);
+  const done=await service.runHandoff(s.deps,record,actor,s.row,'2026-09-16');
+  assert.equal(done.state,'verified');assert.equal(s.counts.uploads,2);assert.equal(s.counts.moves,1);
+  // Two upload baselines plus independent initial, package and final snapshots;
+  // no additional crm.item.get per file (previously 22 metadata reads here).
+  assert.equal(proof.reads.length,5);assert.equal(proof.downloads.length,17);assert.equal(proof.peak,2);
+  for(const phase of [1,5])assert.equal(proof.downloads.filter(file=>file.phase===phase).length,7);
+  assert.equal(proof.downloads.filter(file=>file.phase===4).length,3);
+  assert.equal(proof.reads[0].ufCrmAnkPrimaryDocs.length,8);assert.equal(proof.reads[4].ufCrmAnkPrimaryDocs.length,10);
+  assert.notEqual(proof.reads[0],proof.reads[4]);
+  await service.verifyHandoffDelivery(s.deps,record);
+  assert.equal(proof.reads.length,6);assert.equal(proof.downloads.filter(file=>file.phase===6).length,7);
+ }finally{s.sql.close();}
+});
+test('parallel verification uses at most six actual range requests and preserves exact bytes',async()=>{
+ const s=await deliveredHandoff();try{
+  await withSevenOriginals(s,[40000,40000,40000]);const proof=attachRealFileReader(s,()=>{},true);
+  const result=await service.verifyHandoffDelivery(s.deps,record);
+  assert.equal(result.originals,7);assert.equal(proof.reads.length,1);assert.equal(proof.peak,6);
+  assert.equal(proof.downloads.length,19);assert.equal(s.counts.uploads,0);assert.equal(s.counts.moves,0);
+ }finally{s.sql.close();}
+});
+test('verification bounds concurrent files and bytes, leaving oversized originals alone',async()=>{
+ const s=await deliveredHandoff(),MiB=1024*1024;try{
+  await withSevenOriginals(s,[9*MiB,8*MiB,17*MiB]);
+  const active=new Map(),started=[];let peak=0,peakBytes=0;
+  s.deps.readFile=async(file,snapshot,bounds)=>{
+   const bytes=s.crmFiles.get(file.id);assert.equal(bounds.maxBytes,bytes.length);
+   active.set(file.id,bytes.length);started.push(file.id);peak=Math.max(peak,active.size);
+   const total=[...active.values()].reduce((sum,size)=>sum+size,0);peakBytes=Math.max(peakBytes,total);
+   assert.ok(active.size<=2);assert.ok(active.size===1||total<=16*MiB);
+   if(bytes.length>16*MiB)assert.equal(active.size,1);
+   await new Promise(resolve=>setImmediate(resolve));active.delete(file.id);return bytes;
+  };
+  await service.verifyHandoffDelivery(s.deps,record);
+  assert.equal(started.length,7);assert.equal(peak,2);assert.equal(peakBytes,17*MiB);
+  assert.equal(s.counts.uploads,0);assert.equal(s.counts.moves,0);
+ }finally{s.sql.close();}
+});
+test('failed parallel verification drains its partner and starts no later file or write',async()=>{
+ for(const failure of ['read','hash','length']){
+  const s=await deliveredHandoff();try{
+   await withSevenOriginals(s);const started=[],finished=[];
+   s.deps.readFile=async file=>{
+    started.push(file.id);
+    if(file.id==='12'){
+     if(failure==='read')throw Error('Synthetic read failure');
+     return failure==='hash'?new Uint8Array([8,7]):new Uint8Array([7]);
+    }
+    await new Promise(resolve=>setImmediate(resolve));finished.push(file.id);return s.crmFiles.get(file.id);
+   };
+   await assert.rejects(service.runHandoff(s.deps,record,actor,s.row,'2026-09-16'),new RegExp(failure==='read'?'HANDOFF_ORIGINALS_UNVERIFIED':'HANDOFF_ORIGINAL_CHANGED'));
+   assert.deepEqual(started,['12','22']);assert.deepEqual(finished,['22']);
+   assert.equal(s.counts.uploads,0);assert.equal(s.counts.moves,0);
+   assert.equal((await s.handoffs.get(record.id,s.row.request_id)).state,'prepared');
+  }finally{s.sql.close();}
+ }
+});
+test('fresh final snapshot catches removed originals and changed identity before claiming the stage move',async()=>{
+ for(const variant of ['removed','identity']){
+  const s=await deliveredHandoff();try{
+   const proof=attachRealFileReader(s,(item,phase)=>{
+    if(phase===5){if(variant==='identity')item.ufCrmAiIin='000000000029';else item.ufCrmAnkPrimaryDocs=item.ufCrmAnkPrimaryDocs.filter(file=>file.id!=='12');}
+   });
+   await assert.rejects(service.runHandoff(s.deps,record,actor,s.row,'2026-09-16'),new RegExp(variant==='identity'?'HANDOFF_ASSESSMENT_CHANGED':'HANDOFF_ORIGINAL_REMOVED'));
+   assert.equal(proof.reads.length,5);assert.equal(s.counts.uploads,2);assert.equal(s.counts.moves,0);
+   assert.equal((await s.handoffs.get(record.id,s.row.request_id)).state,'prepared');
+  }finally{s.sql.close();}
+ }
+});
 test('saved intake originals are verified first; unsent handoff docs in the snapshot are uploaded and verified before the stage move',async()=>{
  const s=await deliveredHandoff();
  try{

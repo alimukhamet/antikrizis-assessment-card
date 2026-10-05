@@ -38,7 +38,19 @@ function verifiedReceipt(json:string,code:string):VerifiedReceipt{
  for(const file of value.files){if(!file||typeof file!=='object'||typeof file.id!=='string'||!file.id||typeof file.sha256!=='string'||!/^[a-f0-9]{64}$/.test(file.sha256))throw new RepositoryError(code);}
  return value as VerifiedReceipt;
 }
-type DeliveryDependencies={repository:Pick<EvidenceRepository,'document'>;submissions:Pick<SubmissionRepository,'latestForCase'>;assessment:Pick<ReturnType<typeof createAssessmentAdapter>,'reconcile'>;manifests:Pick<UploadManifestRepository,'reusableFiles'>;upload:Pick<ReturnType<typeof createDocumentUploadAdapter>,'read'>;readFile:(ref:CrmFileRef)=>Promise<Uint8Array>};
+type DeliveryDependencies={repository:Pick<EvidenceRepository,'document'>;submissions:Pick<SubmissionRepository,'latestForCase'>;assessment:Pick<ReturnType<typeof createAssessmentAdapter>,'reconcile'>;manifests:Pick<UploadManifestRepository,'reusableFiles'>;upload:Pick<ReturnType<typeof createDocumentUploadAdapter>,'read'>;readFile:(ref:CrmFileRef,snapshot?:Record<string,unknown>,bounds?:{maxBytes:number})=>Promise<Uint8Array>};
+/** At most two files / six range requests. Keep at most 16 MiB of expected
+ * content in a parallel batch; a larger supported file retains solo execution.
+ * Each verifier hashes and releases its bytes before the next batch starts.
+ * Drain started reads on failure and never start another batch after it. */
+async function verifyFileBatches<T extends {byteSize:number}>(files:T[],verify:(file:T)=>Promise<void>){
+ for(let index=0;index<files.length;){
+  const batch=[files[index++]];
+  if(index<files.length&&batch[0].byteSize+files[index].byteSize<=16*1024*1024)batch.push(files[index++]);
+  const results=await Promise.allSettled(batch.map(verify));
+  for(const result of results)if(result.status==='rejected')throw result.reason;
+ }
+}
 /** Read-only delivery proof. A historical stage receipt is not evidence that the
  * assessment or its originals reached Bitrix. Use the immutable saved submission,
  * never the current editable draft, to determine which originals are required. */
@@ -73,6 +85,7 @@ async function verifiedDelivery(deps:DeliveryDependencies,record:CaseRow,options
   receipts=await deps.manifests.reusableFiles(record,files,baseline.refs);
  }catch{throw new RepositoryError('HANDOFF_ORIGINALS_UNVERIFIED');}
  if(baseline.iin!==record.client_iin)throw new RepositoryError('HANDOFF_ASSESSMENT_CHANGED');
+ const checks:Array<{id:string;sha256:string;byteSize:number}>=[];
  for(const file of files){
   const receipt=receipts.find(ref=>ref.sha256===file.sha256&&ref.byteSize===file.byteSize&&baseline.refs.some(current=>current.id===ref.id));
   if(!receipt){
@@ -81,11 +94,16 @@ async function verifiedDelivery(deps:DeliveryDependencies,record:CaseRow,options
    if(previous.length)throw new RepositoryError('HANDOFF_ORIGINAL_REMOVED');
    throw new RepositoryError('HANDOFF_ORIGINALS_REQUIRED');
   }
-  if(options.verifyBytes!==false){
+  checks.push({id:receipt.id,sha256:file.sha256,byteSize:file.byteSize});
+ }
+ if(options.verifyBytes!==false){
+  await verifyFileBatches(checks,async file=>{
    let bytes;
-   try{bytes=await deps.readFile(receipt);}catch{throw new RepositoryError('HANDOFF_ORIGINALS_UNVERIFIED');}
+   // Reuse only this phase's fresh CRM item, as upload reconciliation does.
+   // The next delivery verification reads a new item after the uploads.
+   try{bytes=await deps.readFile(file,baseline.item,{maxBytes:file.byteSize});}catch{throw new RepositoryError('HANDOFF_ORIGINALS_UNVERIFIED');}
    if(bytes.byteLength!==file.byteSize||await sha256(bytes)!==file.sha256)throw new RepositoryError('HANDOFF_ORIGINAL_CHANGED');
-  }
+  });
  }
  return {requestId:submission.request_id,payloadHash:submission.payload_hash,originals:seen.size,titleSource:{requestId:submission.request_id,payloadHash:submission.payload_hash,fio:payload.values.fio,procedure:payload.values.procedure} satisfies HandoffTitleSource};
 }
@@ -159,10 +177,10 @@ export async function runHandoff(deps:Dependencies,record:CaseRow,actor:Actor,ro
  if(keyManifest.scope!=='credentials'||!keyManifest.credentialOwnerConfirmed||keyRow.identity_revision!==record.identity_revision)throw new RepositoryError('HANDOFF_CREDENTIALS_REQUIRED');
  for(const ref of keyReceipt.files){const file=keyManifest.files.find(f=>f.sha256===ref.sha256);if(!file)throw new RepositoryError('HANDOFF_CREDENTIALS_REQUIRED');receipts.push({id:ref.id,sha256:file.sha256,byteSize:file.byteSize});}
  const baseline=await upload.read(record.external_id);if(baseline.iin!==record.client_iin)throw new RepositoryError('CASE_IDENTITY_CHANGED');
- for(const file of receipts){
-  if(!baseline.refs.some(ref=>ref.id===file.id))throw new RepositoryError('HANDOFF_FILE_REMOVED');
-  const bytes=await deps.readFile(file);if(bytes.byteLength!==file.byteSize||await sha256(bytes)!==file.sha256)throw new RepositoryError('HANDOFF_FILE_CHANGED');
- }
+ if(receipts.some(file=>!baseline.refs.some(ref=>ref.id===file.id)))throw new RepositoryError('HANDOFF_FILE_REMOVED');
+ await verifyFileBatches(receipts,async file=>{
+  const bytes=await deps.readFile(file,baseline.item,{maxBytes:file.byteSize});if(bytes.byteLength!==file.byteSize||await sha256(bytes)!==file.sha256)throw new RepositoryError('HANDOFF_FILE_CHANGED');
+ });
  await verify();
  const currentDelivery=await verifiedDelivery(deps,record);
  assertTitleSource(payload,currentDelivery.titleSource);

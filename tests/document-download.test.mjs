@@ -27,6 +27,32 @@ test('oversize or expired downloads fail without leaking token-bearing errors',a
 test('verified upload factory uses CRM byte download for content readback',async()=>{let uploaded=false;const adapter=createVerifiedDocumentUploadAdapter(webhook,'11665',iin,async(url,o)=>{if(url.includes('crm.item.update')){const body=await new Response(o.body).json();assert.equal(body.fields.ufCrmAnkPrimaryDocs[0][1],'AQID');uploaded=true;return metadata();}if(url.includes('crm.item.get'))return uploaded?metadata():metadata({ufCrmAnkPrimaryDocs:[]});return new Response(new Uint8Array([1,2,3]));});const r=await adapter.append('11665',iin,[],[{name:'SYNTHETIC.pdf',bytes:new Uint8Array([1,2,3])}]);assert.equal(r.verified,true);assert.equal(r.files[0].id,'22');});
 
 test('malformed download configuration exposes only a fixed error code',()=>{assert.throws(()=>createCrmDocumentReader('not-a-url-containing-synthetic-secret','11665',iin),e=>e.code==='INVALID_DOWNLOAD_CONFIGURATION'&&!e.message.includes('synthetic-secret'));});
+test('per-file byte ceilings reject enlarged ranged, declared, streamed and decoded content',async()=>{
+ for(const variant of ['range','declared','stream','compressed']){
+  let downloads=0;
+  const read=createCrmDocumentReader(webhook,'11665',iin,async(url,o)=>{
+   if(o.method==='POST')return metadata();downloads++;
+   if(variant==='range')return new Response(new Uint8Array(8192),{status:206,headers:{'content-range':'bytes 0-8191/18000','content-length':'8192'}});
+   return new Response(new Uint8Array([1,2,3,4]),{headers:variant==='declared'?{'content-length':'4'}:variant==='compressed'?{'content-length':'2','content-encoding':'gzip'}:{}});
+  });
+  await assert.rejects(read({id:'22'},undefined,{maxBytes:variant==='range'?10000:3}),/CRM_FILE_TOO_LARGE/);
+  assert.equal(downloads,1);
+ }
+});
+test('byte ceilings are isolated per call and never relax the existing maximum',async()=>{
+ let metadataReads=0;
+ const read=createCrmDocumentReader(webhook,'11665',iin,async(url,o)=>{
+  if(o.method==='POST'){metadataReads++;return metadata();}
+  return new Response(new Uint8Array([1,2,3]),{headers:{'content-length':'3'}});
+ });
+ await assert.rejects(read({id:'22'},undefined,{maxBytes:2}),/CRM_FILE_TOO_LARGE/);
+ assert.deepEqual(await read({id:'22'},undefined,{maxBytes:3}),new Uint8Array([1,2,3]));
+ assert.deepEqual(await read({id:'22'}),new Uint8Array([1,2,3]));
+ for(const maxBytes of [0,-1,NaN,Infinity,1.5])await assert.rejects(read({id:'22'},undefined,{maxBytes}),/INVALID_DOWNLOAD_LIMIT/);
+ assert.equal(metadataReads,3);
+ const oversized=createCrmDocumentReader(webhook,'11665',iin,async(url,o)=>o.method==='POST'?metadata():new Response('x',{headers:{'content-length':String(36*1024*1024)}}));
+ await assert.rejects(oversized({id:'22'},undefined,{maxBytes:40*1024*1024}),/CRM_FILE_TOO_LARGE/);
+});
 test('complete Content-Length bytes finish even if the upstream never closes the stream',async()=>{
  let cancelled=false;const progress=[];
  const read=createCrmDocumentReader(webhook,'11665',iin,async(url,o)=>o.method==='POST'?metadata():new Response(new ReadableStream({start(c){c.enqueue(new Uint8Array([1,2,3]));},cancel(){cancelled=true;return new Promise(()=>{});}}),{headers:{'content-length':'3'}}),{onProgress:e=>progress.push(e)});
