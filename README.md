@@ -18,6 +18,7 @@ Canonical Site: https://antikrizis-assessment-card.mukhamet-ali-ma.chatgpt.site
 4. Check document ownership, type, periods and conflicts. Ask the client for unanswered information. Preserve whether a value came from a document or a client answer.
 5. Draft answers and ordinary original files are saved in D1/R2. They are not sent to Bitrix just because the employee leaves or reloads the draft.
 6. Click «Скачать договор»: complete required checks, upload ordinary documents, save the assessment, verify Bitrix readback and history, then download the saved contract. Moving between Documents, Answers and Contract does not approve facts or bypass this final check.
+8. Complete the existing lawyer handoff with ЭЦП, доверенность and the signed TrustMe PDF. After verified delivery, the portal moves the deal directly from sales to «Юристы → В ожидании» (category 1, `C1:NEW`; owner correction 5 Oct 2026).
 7. Use «Сообщить об ошибке» to report a problem without changing the client assessment. Ali sees all reports at `/assessment-feedback`; other workers see their own.
 
 Documents, drafts, inspections, submissions and upload receipts are separate records. A timeout does not prove that an external write failed. Retrying recovers the original operation. An owner can cancel an upload only while the server can prove it never started; cancellation remains available after reopening the case.
