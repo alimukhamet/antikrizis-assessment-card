@@ -151,6 +151,7 @@ test('built Worker persists a complete contract and recovers a handoff without d
  const handoffRequest=crypto.randomUUID();
  const handoff=await api(root+'/handoff',{action:'send',requestId:handoffRequest,destination,stage,powerId:fixture.documents.find(d=>d.kind==='power_of_attorney').documentId,signedId:fixture.documents.find(d=>d.kind==='unknown').documentId,signedConfirmed:true});
  assert.equal(handoff.handoff.state,'uncertain',JSON.stringify(handoff));assert.equal(crm.counts.stageWrites,1);assert.equal(crm.deal.TITLE,'ВП SYNTHETIC ONLY');
+ assert.match(crm.deal.UF_CRM_1777554129345,/^\d{4}-\d{2}-\d{2}$/,'Required lawyer-transfer date must survive the lost response');
  const preparedHandoff=await (await mf.getD1Database('DB')).prepare('SELECT payload_json FROM assessment_handoffs WHERE request_id=?').bind(handoffRequest).first();
  const titlePlan=JSON.parse(preparedHandoff.payload_json).titlePlan;assert.equal(titlePlan.policy,'VP_FIO_1');assert.equal(titlePlan.source.requestId,requestId);assert.equal(titlePlan.beforeTitle,'SYNTHETIC ONLY - [whatcrm] line #21');assert.equal(titlePlan.desiredTitle,'ВП SYNTHETIC ONLY');
  // Destroy the process, preserving only D1/R2 and the remote CRM state.

@@ -20,14 +20,15 @@ function transport(){const state={deal:{ID:'900001',CATEGORY_ID:'13',STAGE_ID:'C
  state.send=async(url,options)=>{const method=url.split('/').at(-1),body=JSON.parse(options.body);let result;
   if(method==='crm.deal.get.json')result=state.deal;
   else if(method==='crm.status.list.json'){assert.ok(['DEAL_STAGE_13','DEAL_STAGE_1'].includes(body.filter.ENTITY_ID));result=body.filter.ENTITY_ID==='DEAL_STAGE_13'?[{ENTITY_ID:'DEAL_STAGE_13',STATUS_ID:'C13:FINAL_INVOICE',NAME:'Договор'},{ENTITY_ID:'DEAL_STAGE_13',STATUS_ID:'C13:WON',NAME:'Сделка завершена',SEMANTICS:'S'}]:[{ENTITY_ID:'DEAL_STAGE_1',STATUS_ID:'C1:PAUSE',NAME:'Пауза'},{STATUS_ID:'C1:NEW',NAME:state.name,SEMANTICS:state.semantic,ENTITY_ID:'DEAL_STAGE_1'}];}
-  else if(method==='crm.item.update.json'){assert.equal(body.entityTypeId,2);state.writes.push(body);if(state.timeout)throw Error('network lost');state.deal={...state.deal,CATEGORY_ID:String(body.fields.categoryId),STAGE_ID:state.robot?'C1:LATER':body.fields.stageId,...(body.fields.title&&!state.dropTitle?{TITLE:body.fields.title}:{})};result={item:{id:body.id}};}
+  else if(method==='crm.item.update.json'){assert.equal(body.entityTypeId,2);assert.equal(body.useOriginalUfNames,'Y');state.writes.push(body);if(state.timeout)throw Error('network lost');state.deal={...state.deal,CATEGORY_ID:String(body.fields.categoryId),STAGE_ID:state.robot?'C1:LATER':body.fields.stageId,...(body.fields.title&&!state.dropTitle?{TITLE:body.fields.title}:{}),...(body.fields[crm.HANDOFF_DATE_FIELD]&&!state.dropDate?{[crm.HANDOFF_DATE_FIELD]:body.fields[crm.HANDOFF_DATE_FIELD]}:{})};if(state.loseAppliedResponse)throw Error('response lost after applying');result={item:{id:body.id}};}
   else if(method==='crm.stagehistory.list.json')result={items:state.history};else throw Error(method);
   return{ok:true,json:async()=>({result})};};return state;
 }
 test('handoff moves directly to lawyer waiting, preserving unrelated fields',async()=>{
  const s=transport(),adapter=crm.createHandoffAdapter('https://synthetic.invalid/rest/',s.send),stage=await adapter.discover(record.external_id,record.client_iin);
- assert.deepEqual(JSON.parse(JSON.stringify(stage)),destination);assert.equal(await adapter.move(record.external_id,record.client_iin,stage,'2026-09-16T08:00:00Z'),true);
- assert.deepEqual(s.writes,[{id:'900001',entityTypeId:2,fields:{categoryId:1,stageId:'C1:NEW'}}]);
+ const datePlan=await adapter.planDate(record.external_id,record.client_iin);
+ assert.deepEqual(JSON.parse(JSON.stringify(stage)),destination);assert.equal(await adapter.move(record.external_id,record.client_iin,stage,'2026-09-16T08:00:00Z',undefined,datePlan),true);
+ assert.deepEqual(s.writes,[{id:'900001',entityTypeId:2,useOriginalUfNames:'Y',fields:{categoryId:1,stageId:'C1:NEW',[crm.HANDOFF_DATE_FIELD]:datePlan.day}}]);
 });
 test('wrong identity, another pipeline, changed source stage and invalid destination semantics cannot move a deal',async()=>{
  for(const change of [s=>s.deal.UF_CRM_AI_IIN='000000000029',s=>s.deal.CATEGORY_ID='1',s=>s.deal.STAGE_ID='C13:NEW',s=>s.semantic='F']){
@@ -38,7 +39,7 @@ test('wrong identity, another pipeline, changed source stage and invalid destina
 test('later movement after lawyer waiting is reconciled from stage history, not overwritten',async()=>{
  const s=transport();s.robot=true;s.history=[{OWNER_ID:'900001',CATEGORY_ID:1,STAGE_ID:'C1:NEW',CREATED_TIME:'2026-09-16T08:01:00Z'}];
  const a=crm.createHandoffAdapter('https://synthetic.invalid/rest/',s.send);
- assert.equal(await a.move(record.external_id,record.client_iin,destination,'2026-09-16T08:00:00Z'),true);assert.equal(s.writes.length,1);assert.equal(s.deal.CATEGORY_ID,'1');
+ assert.equal(await a.move(record.external_id,record.client_iin,destination,'2026-09-16T08:00:00Z',undefined,await a.planDate(record.external_id,record.client_iin)),true);assert.equal(s.writes.length,1);assert.equal(s.deal.CATEGORY_ID,'1');
  s.history[0].CREATED_TIME='2026-09-15T08:00:00Z';await assert.rejects(a.reconcile(record.external_id,record.client_iin,destination,'2026-09-16T08:00:00Z'),/HANDOFF_TARGET_NOT_IN_HISTORY/);assert.equal(s.writes.length,1);
 });
 function database(){const sql=new DatabaseSync(':memory:');for(const file of fs.readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort())sql.exec(fs.readFileSync('drizzle/'+file,'utf8'));
@@ -285,8 +286,8 @@ test('waiting label normalization keeps the approved cross-pipeline transition',
   const s=transport();s.name=name;const a=crm.createHandoffAdapter('https://synthetic.invalid/rest/',s.send);
   const target=await a.discover(record.external_id,record.client_iin);
   assert.equal(target.targetCategoryId,'1');assert.equal(target.stageId,'C1:NEW');assert.equal(target.stageName,name);
-  assert.equal(await a.move(record.external_id,record.client_iin,destination,'2026-09-16T08:00:00Z'),true);
-  assert.deepEqual(s.writes,[{id:'900001',entityTypeId:2,fields:{categoryId:1,stageId:'C1:NEW'}}]);
+  assert.equal(await a.move(record.external_id,record.client_iin,destination,'2026-09-16T08:00:00Z',undefined,await a.planDate(record.external_id,record.client_iin)),true);
+  assert.deepEqual(s.writes,[{id:'900001',entityTypeId:2,useOriginalUfNames:'Y',fields:{categoryId:1,stageId:'C1:NEW',[crm.HANDOFF_DATE_FIELD]:crm.handoffDay()}}]);
  }
 });
 test('destination comparison accepts labels only, never a different pipeline or stage',()=>{
@@ -319,7 +320,7 @@ test('preparation freezes verified submission title intent and one claimed updat
   const originalPayload=s.submission.payload_json;
   const done=await service.runHandoff(s.deps,record,actor,s.row,'2026-09-16');
   assert.equal(done.state,'verified');assert.equal(done.outcome_code,'STAGE_AND_TITLE_READBACK_VERIFIED');
-  assert.deepEqual(s.remote.writes,[{id:record.external_id,entityTypeId:2,fields:{categoryId:1,stageId:'C1:NEW',title:'ВП SYNTHETIC ONLY'}}]);
+  assert.deepEqual(s.remote.writes,[{id:record.external_id,entityTypeId:2,useOriginalUfNames:'Y',fields:{categoryId:1,stageId:'C1:NEW',title:'ВП SYNTHETIC ONLY',[crm.HANDOFF_DATE_FIELD]:frozen.datePlan.day}}]);
   assert.equal(s.submission.payload_json,originalPayload);assert.equal(done.payload_json,s.row.payload_json);
   await service.runHandoff(s.deps,record,actor,done,'2026-09-16');assert.equal(s.remote.writes.length,1);
  }finally{s.sql.close();}
@@ -328,8 +329,9 @@ test('only exact VP intake titles receive a policy; custom titles and unsupporte
  for(const [title,procedure]of [['Manager custom title','199'],['SYNTHETIC ONLY [whatcrm] note','199'],['SYNTHETIC ONLY - [whatcrm] line #21','201'],['SYNTHETIC ONLY - [whatcrm] line #21','203'],['SYNTHETIC ONLY - [whatcrm] line #21','205']]){
   const s=transport();s.deal.TITLE=title;s.deal.UF_CRM_1773655613972=procedure;
   const a=crm.createHandoffAdapter('https://synthetic.invalid/rest/',s.send),plan=await a.planTitle(record.external_id,record.client_iin,{requestId:webcrypto.randomUUID(),payloadHash:'a'.repeat(64),fio:s.deal.UF_CRM_1773669702495,procedure});
-  assert.equal(plan,null);assert.equal(await a.move(record.external_id,record.client_iin,destination,'2026-09-16T08:00:00Z'),true);
-  assert.deepEqual(s.writes,[{id:record.external_id,entityTypeId:2,fields:{categoryId:1,stageId:'C1:NEW'}}]);assert.equal(s.deal.TITLE,title);
+  const datePlan=await a.planDate(record.external_id,record.client_iin);
+  assert.equal(plan,null);assert.equal(await a.move(record.external_id,record.client_iin,destination,'2026-09-16T08:00:00Z',undefined,datePlan),true);
+  assert.deepEqual(s.writes,[{id:record.external_id,entityTypeId:2,useOriginalUfNames:'Y',fields:{categoryId:1,stageId:'C1:NEW',[crm.HANDOFF_DATE_FIELD]:datePlan.day}}]);assert.equal(s.deal.TITLE,title);
  }
  const s=transport();s.deal.TITLE='SYNTHETIC ONLY - [whatcrm] line #21';s.deal.UF_CRM_1773669702495='  SYNTHETIC   ONLY  ';
  const a=crm.createHandoffAdapter('https://synthetic.invalid/rest/',s.send),plan=await a.planTitle(record.external_id,record.client_iin,{requestId:webcrypto.randomUUID(),payloadHash:'a'.repeat(64),fio:s.deal.UF_CRM_1773669702495,procedure:'199'});
@@ -392,7 +394,7 @@ test('outer title whitespace reconciles a persisted uncertain handoff without re
  const s=await plannedHandoff();try{
   await s.handoffs.claim(record,s.row);
   const pending=await s.handoffs.finish(record,s.row,'uncertain','HANDOFF_TITLE_UNVERIFIED');
-  s.remote.deal.CATEGORY_ID='1';s.remote.deal.STAGE_ID='C1:LATER';
+  s.remote.deal.CATEGORY_ID='1';s.remote.deal.STAGE_ID='C1:LATER';s.remote.deal[crm.HANDOFF_DATE_FIELD]=JSON.parse(s.row.payload_json).datePlan.day;
   s.remote.deal.TITLE=' '+s.plan.desiredTitle+'\u00a0';
   s.remote.history=[{OWNER_ID:record.external_id,CATEGORY_ID:1,STAGE_ID:'C1:NEW',CREATED_TIME:new Date().toISOString()}];
   const result=await service.reconcileHandoffOutcome({handoffs:new HandoffRepository(s.db),stages:s.deps.stages},record,pending);
@@ -498,4 +500,98 @@ test('a renamed, closed, missing or misidentified lawyer target never writes',as
   await assert.rejects(a.move(record.external_id,record.client_iin,destination,'2026-09-16T08:00:00Z'),e=>e.notStarted===true);
   assert.equal(s.writes.length,0);
  }
+});
+
+test('a missing required lawyer date is the actual Almaty day in the same single transition',async()=>{
+ const remote=transport(),a=crm.createHandoffAdapter('https://synthetic.invalid/rest/',remote.send,()=>new Date('2026-10-10T20:30:00Z'));
+ assert.equal(crm.handoffDay(new Date('2026-10-10T18:59:59Z')),'2026-10-10');
+ assert.equal(crm.handoffDay(new Date('2026-10-10T19:00:00Z')),'2026-10-11');
+ const plan=await a.planDate(record.external_id,record.client_iin);assert.equal(plan.beforeValue,null);assert.equal(plan.day,'2026-10-11');
+ assert.equal(await a.move(record.external_id,record.client_iin,destination,'2026-10-07T00:00:00Z',undefined,plan),true);
+ assert.equal(remote.writes.length,1);assert.equal(remote.writes[0].useOriginalUfNames,'Y');assert.equal(remote.writes[0].fields[crm.HANDOFF_DATE_FIELD],'2026-10-11');
+ assert.equal(remote.deal[crm.HANDOFF_DATE_FIELD],'2026-10-11');
+});
+
+test('existing lawyer dates retain exact bytes and are never resent or replaced with today',async()=>{
+ for(const before of ['2026-09-30','2026-09-30T00:00:00+05:00','30.09.2026']){
+  const remote=transport();remote.deal[crm.HANDOFF_DATE_FIELD]=before;
+  const a=crm.createHandoffAdapter('https://synthetic.invalid/rest/',remote.send,()=>new Date('2026-10-10T20:30:00Z'));
+  const plan=await a.planDate(record.external_id,record.client_iin);assert.equal(plan.beforeValue,before);assert.equal(plan.day,'2026-09-30');
+  assert.equal(await a.move(record.external_id,record.client_iin,destination,'2026-10-07T00:00:00Z',undefined,plan),true);
+  assert.equal(Object.hasOwn(remote.writes[0].fields,crm.HANDOFF_DATE_FIELD),false);assert.equal(remote.deal[crm.HANDOFF_DATE_FIELD],before);
+ }
+ for(const before of ['2026-02-30','not a date',123,['2026-10-10']]){
+  const remote=transport();remote.deal[crm.HANDOFF_DATE_FIELD]=before;const a=crm.createHandoffAdapter('https://synthetic.invalid/rest/',remote.send);
+  await assert.rejects(a.planDate(record.external_id,record.client_iin),/HANDOFF_DATE_UNVERIFIED/);assert.equal(remote.writes.length,0);
+ }
+});
+
+test('blank-date plans crossing midnight and externally changed dates stop before another write',async()=>{
+ let now='2026-10-10T18:59:59Z';const remote=transport(),a=crm.createHandoffAdapter('https://synthetic.invalid/rest/',remote.send,()=>new Date(now));
+ const plan=await a.planDate(record.external_id,record.client_iin);now='2026-10-10T19:00:00Z';
+ await assert.rejects(a.validateTitle(record.external_id,record.client_iin,destination,undefined,plan),/HANDOFF_DATE_PLAN_EXPIRED/);
+ await assert.rejects(a.move(record.external_id,record.client_iin,destination,'2026-10-10T18:00:00Z',undefined,plan),e=>e.notStarted&&e.code==='HANDOFF_DATE_PLAN_EXPIRED');
+ now='2026-10-10T18:59:59Z';remote.deal[crm.HANDOFF_DATE_FIELD]='2026-10-09';
+ await assert.rejects(a.move(record.external_id,record.client_iin,destination,'2026-10-10T18:00:00Z',undefined,plan),e=>e.notStarted&&e.code==='HANDOFF_DATE_CHANGED');
+ assert.equal(remote.writes.length,0);assert.equal(remote.deal[crm.HANDOFF_DATE_FIELD],'2026-10-09');
+});
+
+test('legacy prepared operations require date planning before uploads; claimed legacy receipts stay read-only',async()=>{
+ const s=await deliveredHandoff(),remote=transport();s.deps.stages=crm.createHandoffAdapter('https://synthetic.invalid/rest/',remote.send);
+ try{
+  await assert.rejects(service.runHandoff(s.deps,record,actor,s.row,'2026-10-10'),/HANDOFF_DATE_PLAN_REQUIRED/);assert.equal(s.counts.uploads,0);assert.equal(remote.writes.length,0);
+  await s.handoffs.claim(record,s.row);remote.deal.CATEGORY_ID='1';remote.deal.STAGE_ID='C1:NEW';
+  const result=await service.reconcileHandoffOutcome(s.deps,record,await s.handoffs.active(record.id));assert.equal(result.state,'verified');
+  assert.equal(remote.deal[crm.HANDOFF_DATE_FIELD],undefined);assert.equal(remote.writes.length,0);
+ }finally{s.sql.close();}
+});
+
+test('date changed during uploads is preserved and prevents the claimed transition',async()=>{
+ const s=await plannedHandoff();try{
+  const append=s.deps.upload.append;s.deps.upload.append=async(...args)=>{const receipt=await append(...args);s.remote.deal[crm.HANDOFF_DATE_FIELD]='2026-09-30';return receipt;};
+  const result=await service.runHandoff(s.deps,record,actor,s.row,'2026-10-10');
+  assert.equal(result.state,'prepared');assert.equal(result.outcome_code,'HANDOFF_DATE_CHANGED');assert.equal(s.remote.writes.length,0);assert.equal(s.remote.deal[crm.HANDOFF_DATE_FIELD],'2026-09-30');
+ }finally{s.sql.close();}
+});
+
+test('new handoffs cannot report success from stage alone when date readback is missing or wrong',async()=>{
+ const s=await plannedHandoff();try{
+  s.remote.dropDate=true;
+  let result=await service.runHandoff(s.deps,record,actor,s.row,'2026-10-10');
+  assert.equal(result.state,'uncertain');assert.equal(result.outcome_code,'HANDOFF_DATE_UNVERIFIED');assert.equal(s.remote.writes.length,1);
+  const day=JSON.parse(s.row.payload_json).datePlan.day;
+  s.remote.deal[crm.HANDOFF_DATE_FIELD]='2020-01-01';
+  result=await service.runHandoff(s.deps,record,actor,result,'2026-10-10');assert.equal(result.state,'uncertain');assert.equal(result.outcome_code,'HANDOFF_DATE_UNVERIFIED');
+  s.remote.deal[crm.HANDOFF_DATE_FIELD]=day+'T00:00:00+05:00';
+  result=await service.runHandoff(s.deps,record,{...actor,id:'other'},result,'2026-10-10');assert.equal(result.state,'verified');assert.equal(s.remote.writes.length,1);
+ }finally{s.sql.close();}
+});
+
+test('lost transition response and next-day restart reconcile the frozen date without resending it',async()=>{
+ const s=await plannedHandoff();try{
+  const day=JSON.parse(s.row.payload_json).datePlan.day;let unavailable=true;
+  s.remote.loseAppliedResponse=true;
+  s.deps.stages=crm.createHandoffAdapter('https://synthetic.invalid/rest/',async(url,options)=>{if(s.remote.writes.length&&unavailable)throw Error('lost readback');return s.remote.send(url,options);});
+  let result=await service.runHandoff(s.deps,record,actor,s.row,'2026-10-10');assert.equal(result.state,'uncertain');assert.equal(s.remote.writes.length,1);assert.equal(s.remote.deal[crm.HANDOFF_DATE_FIELD],day);
+  unavailable=false;s.deps.handoffs=new HandoffRepository(s.db);s.deps.stages=crm.createHandoffAdapter('https://synthetic.invalid/rest/',s.remote.send,()=>new Date('2027-01-01T00:00:00Z'));
+  result=await service.runHandoff(s.deps,record,{...actor,id:'other'},await s.deps.handoffs.active(record.id),'2027-01-01');
+  assert.equal(result.state,'verified');assert.equal(s.remote.writes.length,1);assert.equal(s.remote.deal[crm.HANDOFF_DATE_FIELD],day);assert.equal(result.payload_json,s.row.payload_json);
+ }finally{s.sql.close();}
+});
+
+test('explicit CRM rejection survives later read-only checks without raw error details or retries',async()=>{
+ const s=await plannedHandoff();try{
+  s.deps.stages=crm.createHandoffAdapter('https://synthetic.invalid/rest/',async(url,options)=>{if(url.endsWith('crm.item.update.json')){s.remote.writes.push(JSON.parse(options.body));return Response.json({error:'',error_description:'SYNTHETIC PRIVATE REJECTION'}, {status:400});}return s.remote.send(url,options);});
+  let result=await service.runHandoff(s.deps,record,actor,s.row,'2026-10-10');assert.equal(result.state,'uncertain');assert.equal(result.outcome_code,'HANDOFF_CRM_WRITE_REJECTED');
+  result=await service.runHandoff(s.deps,record,{...actor,id:'other'},result,'2026-10-10');assert.equal(result.outcome_code,'HANDOFF_CRM_WRITE_REJECTED');assert.equal(s.remote.writes.length,1);
+  assert.equal(JSON.stringify(result).includes('SYNTHETIC PRIVATE REJECTION'),false);
+ }finally{s.sql.close();}
+});
+
+test('fresh identity mismatch takes precedence over an explicit CRM rejection',async()=>{
+ const s=await plannedHandoff();try{
+  s.deps.stages=crm.createHandoffAdapter('https://synthetic.invalid/rest/',async(url,options)=>{if(url.endsWith('crm.item.update.json')){s.remote.writes.push(JSON.parse(options.body));s.remote.deal.UF_CRM_AI_IIN='000000000029';return Response.json({error:'REJECTED'}, {status:400});}return s.remote.send(url,options);});
+  let result=await service.runHandoff(s.deps,record,actor,s.row,'2026-10-10');assert.equal(result.state,'uncertain');assert.equal(result.outcome_code,'CASE_IDENTITY_CHANGED');
+  result=await service.runHandoff(s.deps,record,{...actor,id:'other'},result,'2026-10-10');assert.equal(result.outcome_code,'CASE_IDENTITY_CHANGED');assert.equal(s.remote.writes.length,1);
+ }finally{s.sql.close();}
 });

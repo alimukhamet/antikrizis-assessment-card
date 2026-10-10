@@ -39,11 +39,13 @@ export function syntheticCrm(){
    case 'crm.item.update.json':{
     assert.equal(String(body.id),deal.ID);
     if(body.fields.stageId){
-     assert.equal(body.entityTypeId,2);assert.deepEqual(body.fields,{categoryId:1,stageId:'C1:NEW',title:'ВП SYNTHETIC ONLY'});counts.stageWrites++;
+     assert.equal(body.entityTypeId,2);assert.equal(body.useOriginalUfNames,'Y');
+     const transferDay=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Almaty',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+     assert.deepEqual(body.fields,{categoryId:1,stageId:'C1:NEW',title:'ВП SYNTHETIC ONLY',UF_CRM_1777554129345:transferDay});counts.stageWrites++;
      history.push({ID:'1',OWNER_ID:deal.ID,CATEGORY_ID:1,STAGE_ID:'C1:NEW',CREATED_TIME:new Date().toISOString()});
      // The direct transition succeeds, then another automation moves onward.
      // Lost response/readback must recover through history without another write.
-     Object.assign(deal,{TITLE:body.fields.title,CATEGORY_ID:'1',STAGE_ID:'C1:LATER',STAGE_SEMANTIC_ID:'P'});blocked=true;
+     Object.assign(deal,{UF_CRM_1777554129345:body.fields.UF_CRM_1777554129345,TITLE:body.fields.title,CATEGORY_ID:'1',STAGE_ID:'C1:LATER',STAGE_SEMANTIC_ID:'P'});blocked=true;
      return lost();
     }
     assert.deepEqual(Object.keys(body.fields),['ufCrmAnkPrimaryDocs']);counts.fileWrites++;
