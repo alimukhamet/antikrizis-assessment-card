@@ -47,6 +47,18 @@ test('owner readback preserves original author, requires an audit record and can
  const failed=setup({auditFails:true});assert.equal((await failed.run({})).status,503);assert.equal(failed.stats().reconciles,0);
 });
 
+test('staff checks and old-tab resumes reconcile another actor receipt without write adapters',async()=>{
+ for(const action of ['check','resume'])for(const worker of ['ali','ramazan','darkhan']){
+  const s=setup({actor:{id:'worker:'+worker,worker}}),r=await s.run({action,expectedHash:undefined});
+  assert.equal(r.status,200);assert.equal((await r.json()).handoff.state,'verified');
+  assert.deepEqual(s.stats(),{reconciles:1,audits:1});
+ }
+ for(const [options,body] of [[{denied:401},{}],[{denied:403},{}],[{row:{state:'prepared'}},{}],[{row:{state:'cancelled'}},{}],[{row:{identity_revision:2}},{}],[{row:{payload_json:'changed'}},{}],[{row:{case_id:'other'}},{}],[{missing:true},{}],[{},{requestId:'other'}],[{},{destination:{dealId:'other'}}]]){
+  const s=setup(options);assert.ok((await s.run({action:'check',expectedHash:undefined,...body})).status>=400);assert.deepEqual(s.stats(),{reconciles:0,audits:0});
+ }
+ const failed=setup({auditFails:true});assert.equal((await failed.run({action:'check'})).status,503);assert.equal(failed.stats().reconciles,0);
+});
+
 test('staff delivery readback exposes only typed mismatch keys and keeps receipt read-only',async()=>{
  for(const [deliveryError,expected] of [
   [new HandoffAssessmentChangedError(['card','debt']),{ready:false,code:'HANDOFF_ASSESSMENT_CHANGED',mismatchedFields:['card','debt']}],

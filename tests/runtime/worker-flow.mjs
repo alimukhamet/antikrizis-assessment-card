@@ -158,11 +158,19 @@ test('built Worker persists a complete contract and recovers a handoff without d
  assert.deepEqual(await api('/api/sales-compensation',salesPlan,201),salesReceipt,'bulk plan receipts survive a Worker restart');
  assert.equal((await api('/api/personal-sales?person=darkhan&month=2026-09')).earned,winnerEarnings.earned,'Reopening does not add the first-place bonus twice');
  assert.equal((await api('/api/operations-monitor')).events[0].occurrences,1,'automatic diagnostics survive a Worker restart');
- const resumed=await api(root+'/handoff',{action:'resume',requestId:handoffRequest,destination});
+ // Another authenticated employee must recover the exact claimed receipt after
+ // restart without inheriting permission to send a new transfer.
+ await api('/api/session',{worker:'ramazan',password:'synthetic-password'});
+ const beforeReconciliation={...crm.counts};
+ const resumed=await api(root+'/handoff',{action:'check',requestId:handoffRequest,destination});
+ assert.deepEqual(crm.counts,beforeReconciliation,'Cross-worker result check must never write to CRM');
+ const preservedOwner=await (await mf.getD1Database('DB')).prepare('SELECT actor_id FROM assessment_handoffs WHERE request_id=?').bind(handoffRequest).first();
+ assert.equal(preservedOwner.actor_id,'worker:ali','Readback does not take ownership of the original operation');
  assert.equal(resumed.handoff.state,'verified',JSON.stringify(resumed));assert.equal(resumed.handoff.outcomeCode,'STAGE_AND_TITLE_READBACK_VERIFIED');assert.equal(crm.deal.TITLE,'ВП SYNTHETIC ONLY');
  const counts={...crm.counts};
  await api(root+'/handoff',{action:'resume',requestId:handoffRequest,destination});
  assert.deepEqual(crm.counts,counts);assert.equal(crm.counts.stageWrites,1);
+ await api('/api/session',{worker:'ali',password:'synthetic-password'});
  const recovered=await api(root+'/submission',{action:'contract',requestId});assert.deepEqual(recovered.contract,complete.contract);
  assert.deepEqual((await api(root+'/draft')).draft,saved.draft);
  // Optimistic concurrency must reject a stale save without damaging recovery.
