@@ -39,7 +39,7 @@ test('later movement after lawyer waiting is reconciled from stage history, not 
  const s=transport();s.robot=true;s.history=[{OWNER_ID:'900001',CATEGORY_ID:1,STAGE_ID:'C1:NEW',CREATED_TIME:'2026-09-16T08:01:00Z'}];
  const a=crm.createHandoffAdapter('https://synthetic.invalid/rest/',s.send);
  assert.equal(await a.move(record.external_id,record.client_iin,destination,'2026-09-16T08:00:00Z'),true);assert.equal(s.writes.length,1);assert.equal(s.deal.CATEGORY_ID,'1');
- s.history[0].CREATED_TIME='2026-09-15T08:00:00Z';assert.equal(await a.reconcile(record.external_id,record.client_iin,destination,'2026-09-16T08:00:00Z'),false);assert.equal(s.writes.length,1);
+ s.history[0].CREATED_TIME='2026-09-15T08:00:00Z';await assert.rejects(a.reconcile(record.external_id,record.client_iin,destination,'2026-09-16T08:00:00Z'),/HANDOFF_TARGET_NOT_IN_HISTORY/);assert.equal(s.writes.length,1);
 });
 function database(){const sql=new DatabaseSync(':memory:');for(const file of fs.readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort())sql.exec(fs.readFileSync('drizzle/'+file,'utf8'));
  sql.exec("INSERT INTO assessment_cases (id,external_system,external_id,client_iin,title,created_at,updated_at) VALUES ('case','bitrix','900001','000000000010','Synthetic','now','now')");
@@ -258,7 +258,7 @@ test('status inspection verifies assessment and current original refs without do
 });
 test('writing and uncertain operations reconcile read-only even if current delivery is missing',async()=>{
  for(const state of ['writing','uncertain']){
-  let reconciles=0;const row={state,case_id:record.id,actor_id:actor.id,identity_revision:1,payload_json:JSON.stringify({destination}),created_at:'2026-09-16T08:00:00Z'};
+  let reconciles=0;const row={state,case_id:record.id,actor_id:actor.id,identity_revision:1,payload_json:JSON.stringify({destination}),created_at:'2026-09-16T08:00:00Z'};row.payload_hash=await evidence.sha256(row.payload_json);
   const result=await service.runHandoff({submissions:{latestForCase:async()=>{throw Error('delivery guard must not replay claimed operations');}},handoffs:{finish:async(record,row,state)=>({state})},stages:{reconcile:async()=>{reconciles++;return false;}}},record,actor,row,'2026-09-16');assert.equal(result.state,'uncertain');assert.equal(reconciles,1);
  }
 });
@@ -449,11 +449,47 @@ test('legacy uncertain transition reconciles only the original sales-final histo
  const s=transport();s.deal.CATEGORY_ID='1';s.deal.STAGE_ID='C1:LATER';
  const a=crm.createHandoffAdapter('https://synthetic.invalid/rest/',s.send),since='2026-09-16T08:00:00Z';
  s.history=[{OWNER_ID:record.external_id,CATEGORY_ID:1,STAGE_ID:'C1:NEW',CREATED_TIME:'2026-09-16T08:01:00Z'}];
- assert.equal(await a.reconcile(record.external_id,record.client_iin,legacyDestination,since),false);
+ await assert.rejects(a.reconcile(record.external_id,record.client_iin,legacyDestination,since),/HANDOFF_TARGET_NOT_IN_HISTORY/);
  s.history=[{OWNER_ID:record.external_id,CATEGORY_ID:13,STAGE_ID:'C13:WON',CREATED_TIME:'2026-09-16T08:01:00Z'}];
  assert.equal(await a.reconcile(record.external_id,record.client_iin,legacyDestination,since),true);
- assert.equal(await a.reconcile(record.external_id,record.client_iin,destination,since),false);
+ await assert.rejects(a.reconcile(record.external_id,record.client_iin,destination,since),/HANDOFF_TARGET_NOT_IN_HISTORY/);
  assert.equal(s.writes.length,0);
+});
+
+test('another employee recovers a claimed receipt across restart without uploads or another transition',async()=>{
+ const s=await deliveredHandoff(),checker={id:'worker:ali',worker:'ali',authentication:'test'};
+ try{
+  await assert.rejects(service.runHandoff(s.deps,record,checker,s.row,'2026-10-10'),/HANDOFF_OWNED_BY_ANOTHER_WORKER/);
+  assert.equal(s.counts.uploads,0);assert.equal(s.counts.moves,0);
+  await s.handoffs.claim(record,s.row);
+  let observed=false;
+  const deps={handoffs:new HandoffRepository(s.db),stages:{reconcile:async()=>observed}};
+  let result=await service.runHandoff(deps,record,checker,await deps.handoffs.active(record.id),'2026-10-10');
+  assert.equal(result.state,'uncertain');assert.equal(result.actor_id,actor.id);
+  observed=true;
+  result=await service.runHandoff(deps,record,checker,await new HandoffRepository(s.db).active(record.id),'2026-10-10');
+  assert.equal(result.state,'verified');assert.equal(result.actor_id,actor.id);
+  assert.equal(s.counts.uploads,0);assert.equal(s.counts.moves,0);
+  const corrupted={...result,state:'uncertain',payload_json:'{}'};
+  await assert.rejects(service.runHandoff(deps,record,checker,corrupted,'2026-10-10'),/HANDOFF_RECEIPT_CHANGED/);
+  await assert.rejects(service.runHandoff(deps,record,checker,{...result,case_id:'other'},'2026-10-10'),/CASE_IDENTITY_CHANGED/);
+  await assert.rejects(s.handoffs.cancel(record,s.row,checker),/HANDOFF_OWNED_BY_ANOTHER_WORKER/);
+ }finally{s.sql.close();}
+});
+
+test('uncertain readback distinguishes unchanged source, missing history, outage and identity without writing',async()=>{
+ for(const expected of ['HANDOFF_STILL_AT_SOURCE','HANDOFF_TARGET_NOT_IN_HISTORY','HANDOFF_CRM_UNAVAILABLE','CASE_IDENTITY_CHANGED']){
+  const s=await deliveredHandoff(),remote=transport();
+  try{
+   await s.handoffs.claim(record,s.row);
+   if(expected==='HANDOFF_TARGET_NOT_IN_HISTORY')Object.assign(remote.deal,{CATEGORY_ID:'1',STAGE_ID:'C1:LATER'});
+   if(expected==='CASE_IDENTITY_CHANGED')remote.deal.UF_CRM_AI_IIN='000000000029';
+   const send=expected==='HANDOFF_CRM_UNAVAILABLE'?async()=>{throw Error('SYNTHETIC PRIVATE UPSTREAM BODY');}:remote.send;
+   const result=await service.reconcileHandoffOutcome({handoffs:s.handoffs,stages:crm.createHandoffAdapter('https://synthetic.invalid/rest/',send)},record,await s.handoffs.active(record.id));
+   assert.equal(result.state,'uncertain');assert.equal(result.outcome_code,expected);assert.equal(remote.writes.length,0);
+   assert.equal(result.actor_id,actor.id);assert.equal(result.payload_json,s.row.payload_json);
+  }finally{s.sql.close();}
+ }
 });
 
 test('a renamed, closed, missing or misidentified lawyer target never writes',async()=>{

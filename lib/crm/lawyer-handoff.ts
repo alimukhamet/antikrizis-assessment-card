@@ -27,9 +27,11 @@ export function sameHandoffDestination(value:unknown,expected:HandoffDestination
 export function createHandoffAdapter(webhook:string,send:typeof fetch=fetch){
  async function call(method:string,body:unknown):Promise<unknown>{
   if(!webhook)throw new RepositoryError('BITRIX_NOT_CONFIGURED',503);
+  try{
   const response=await send(webhook.replace(/\/?$/,'/')+method+'.json',{method:'POST',headers:bitrixHeaders(webhook),body:JSON.stringify(body),redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(20000)});
   if(!response.ok)throw new RepositoryError('HANDOFF_CRM_UNAVAILABLE',503);
   const data:unknown=await response.json();if(!isRecord(data)||data.error||data.result===undefined)throw new RepositoryError('HANDOFF_CRM_UNAVAILABLE',503);return data.result;
+  }catch{throw new RepositoryError('HANDOFF_CRM_UNAVAILABLE',503);}
  }
  async function read(dealId:string,iin:string){
   if(!/^[1-9]\d*$/.test(dealId)||!/^\d{12}$/.test(iin))throw new RepositoryError('CLIENT_IDENTITY_UNVERIFIED');
@@ -81,19 +83,21 @@ export function createHandoffAdapter(webhook:string,send:typeof fetch=fetch){
   if(!stageVerified){
   // Later CRM automation may have moved onward. Match the frozen target in fresh history.
   const history=await call('crm.stagehistory.list',{entityTypeId:2,filter:{OWNER_ID:dealId,CATEGORY_ID:Number(targetCategoryId),STAGE_ID:destination.stageId,'>=CREATED_TIME':since},order:{ID:'DESC'},select:['ID','OWNER_ID','CATEGORY_ID','STAGE_ID','CREATED_TIME'],start:0});
+  if(!isRecord(history)||!Array.isArray(history.items))throw new RepositoryError('HANDOFF_CRM_UNAVAILABLE',503);
   stageVerified=isRecord(history)&&Array.isArray(history.items)&&history.items.some((row:unknown)=>isRecord(row)&&typeof row.CREATED_TIME==='string'&&String(row.OWNER_ID)===dealId&&String(row.CATEGORY_ID)===targetCategoryId&&row.STAGE_ID===destination.stageId&&Number.isFinite(Date.parse(row.CREATED_TIME))&&Date.parse(row.CREATED_TIME)>=Math.floor(Date.parse(since)/1000)*1000);
   }
   // Bitrix can return the correctly applied title with outer whitespace. Keep
   // the frozen source and all title characters exact; only trim the boundary.
   if(stageVerified&&plan&&(!validTitlePlan(plan)||!titleMatchesSource(deal,plan.source)||typeof deal.TITLE!=='string'||deal.TITLE.trim()!==plan.desiredTitle))throw new HandoffMoveError('HANDOFF_TITLE_UNVERIFIED');
-  return stageVerified;
+  if(!stageVerified)throw new HandoffMoveError(String(deal.CATEGORY_ID)===destination.categoryId&&deal.STAGE_ID===destination.fromStageId?'HANDOFF_STILL_AT_SOURCE':'HANDOFF_TARGET_NOT_IN_HISTORY');
+  return true;
  }
  async function move(dealId:string,iin:string,destination:HandoffDestination,since:string,plan?:HandoffTitlePlan){
   try{const deal=await read(dealId,iin),fresh=await discoverDeal(deal);if(!sameHandoffDestination(destination,fresh))throw new RepositoryError('HANDOFF_STAGE_CHANGED');validateTitleBeforeWrite(deal,plan);}
   catch(error){throw new HandoffMoveError(error instanceof RepositoryError?error.code:'HANDOFF_STAGE_UNVERIFIED',true);}
   // No automatic retry of this write, including on timeout. Recovery is read-only.
   try{await call('crm.item.update',{entityTypeId:2,id:dealId,fields:{categoryId:Number(destination.targetCategoryId),stageId:destination.stageId,...(plan?{title:plan.desiredTitle}:{})}});}catch{/* Reconcile below. */}
-  try{return await reconcile(dealId,iin,destination,since,plan);}catch(error){if(error instanceof HandoffMoveError)throw error;return false;}
+  try{return await reconcile(dealId,iin,destination,since,plan);}catch(error){if(error instanceof HandoffMoveError)throw error;if(error instanceof RepositoryError&&error.code==='HANDOFF_CRM_UNAVAILABLE')throw new HandoffMoveError(error.code);return false;}
  }
  return{discover,planTitle,validateTitle,move,reconcile};
 }
