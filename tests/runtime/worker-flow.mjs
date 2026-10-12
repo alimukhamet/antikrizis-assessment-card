@@ -29,7 +29,7 @@ test('built Worker persists a complete contract and recovers a handoff without d
  // compatibility date; this local suite does not claim production parity.
  const options={modules,compatibilityDate:'2026-05-22',compatibilityFlags:['nodejs_compat'],
   d1Databases:{DB:'synthetic-db'},r2Buckets:{FILES:'synthetic-files'},d1Persist:join(dir,'d1'),r2Persist:join(dir,'r2'),
-  bindings:{AUTH_PROVIDER:'local',SITE_ACCESS_PASSWORD:'synthetic-password',SITE_SESSION_TOKEN:'synthetic-session-key-never-used-in-production',BITRIX_WEBHOOK:'https://bitrix.synthetic.invalid/rest/'},
+  bindings:{AUTH_PROVIDER:'local',SITE_ACCESS_PASSWORD:'synthetic-password',PLATFORM_ENTRY_SECRET:'synthetic-platform-entry-key-never-used-in-production',SITE_SESSION_TOKEN:'synthetic-session-key-never-used-in-production',BITRIX_WEBHOOK:'https://bitrix.synthetic.invalid/rest/'},
   assets:{directory:resolve('dist/client'),binding:'ASSETS',routerConfig:{has_user_worker:true},assetConfig:{html_handling:'none'}},
   outboundService:crm.handle
  };
@@ -48,6 +48,7 @@ test('built Worker persists a complete contract and recovers a handoff without d
  await api('/api/assessment/900001',undefined,401);
  await api('/api/session',{worker:'ali',password:'synthetic-password'});
  assert.equal((await api('/api/session')).ok,true);
+ assert.equal((await mf.dispatchFetch(origin+'/platform-entry',{method:'POST',headers:{origin,cookie}})).status,403,'Owner session cannot mint a sales entry');
  const salesPlan={kind:'plans',requestId:crypto.randomUUID(),people:['darkhan','ramazan'],start:'2099-10-03',end:'2099-10-31',metric:'volume',target:12000000,baseRate:1.5,targetRate:2};
  const winnerEarnings=await api('/api/personal-sales?person=darkhan&month=2026-09');
  assert.equal(winnerEarnings.earningsMonths[0].leaderBonus,100000);
@@ -63,6 +64,15 @@ test('built Worker persists a complete contract and recovers a handoff without d
  const conflict=await api('/api/sales-compensation',{...salesPlan,requestId:crypto.randomUUID(),people:['ramazan','nurdaulet']},409);
  assert.deepEqual(conflict.people,['ramazan']);assert.equal((await api('/api/sales-compensation?person=nurdaulet')).plans.length,0);
  await api('/api/session',{worker:'ramazan',password:'synthetic-password'});
+ const launcher=await mf.dispatchFetch(origin+'/assessment-card.html',{headers:{cookie}});
+ assert.match(await launcher.text(),/<form data-platform-entry="" method="post"/);
+ const entry=await mf.dispatchFetch(origin+'/platform-entry',{method:'POST',headers:{origin,cookie}});
+ assert.equal(entry.status,200);
+ const entryHtml=await entry.text(),ticket=entryHtml.match(/name="ticket" value="([^"]+)"/)[1];
+ const entryClaims=JSON.parse(Buffer.from(ticket.split('.')[0],'base64url'));
+ assert.equal(entryClaims.sub,'ramazan');assert.equal(entryClaims.exp-entryClaims.iat,60);
+ assert.equal(entry.headers.get('cache-control'),'private, no-store');
+ assert.equal((await mf.dispatchFetch(origin+'/platform-entry',{method:'POST',headers:{origin:'https://evil.invalid',cookie}})).status,403);
  assert.equal((await api('/api/sales-compensation')).plans[0].target,12000000);
  assert.equal((await api('/api/sales-compensation',salesPlan,403)).error,'ROP_REQUIRED');
  await api('/api/sales-compensation?person=darkhan',undefined,403);

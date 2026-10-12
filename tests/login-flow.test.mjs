@@ -119,3 +119,5 @@ test('login redirects accept only local approved pages and a numeric deal ID', (
   assert.equal(navigation.loginDestination('/assessment-review?dealId=11665&edit=1'), '/assessment-review?dealId=11665');
   for (const value of ['https://other.invalid', '//other.invalid', '/\\other.invalid', '/api/export', 'javascript:alert(1)', '/login', null]) assert.equal(navigation.loginDestination(value), '/');
 });
+
+test("platform-entry login return discards subject and ticket query parameters",()=>{assert.equal(navigation.loginDestination("/platform-entry?sub=ali&ticket=discard"),"/platform-entry");});

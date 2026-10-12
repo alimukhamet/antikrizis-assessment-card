@@ -12,6 +12,8 @@ For each report record the deal, employee action, observed error, client/server 
 
 ### Open issue register
 
+Sales Platform entry — 12 October 2026: owner requested the saved «Сделки» SSO design. Implementation is isolated on `codex/assessment-entry`; three authenticated sales subjects only, same-origin POST issuer, 60-second single-use ticket in a form body, fixed Platform destination, new tab preserving Assessment. Platform companion enforces active/view-only on every request and provides administrator disablement. Status: IMPLEMENTED; local and paired verification in progress. No production secrets, migration, merge, release, employee password or real-client write. Separate owner approval remains required before each release; Assessment main auto-deploys. Release gates: docs/platform-entry.md.
+
 
 Profile empty-answer shortcut — 12 October 2026: reproduced in the live profile form: clicking the empty-answer button opened step 3 and highlighted the invisible contract-number input. The logical visibility check intentionally includes inactive workflow steps, but incorrectly included the sales-only card hidden by profile mode. It now excludes profile-hidden controls from missing-answer and pending-source navigation while preserving those stored controls and source bindings. A regression reproduces the pre-fix count and verifies that navigation stays on the actual missing profile answer; sales contract requirements remain covered separately. Status: implemented; canonical checks and live post-release verification pending in PR76.
 
