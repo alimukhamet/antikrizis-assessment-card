@@ -46,4 +46,53 @@ test('profile feed: bearer token only, exact deal, verified profile with its has
   assert.equal(body.schema, 'antikrizis.profile-feed.v1');assert.equal(body.requestId, 'req-new');assert.equal(body.savedBy, 'Azhar');assert.equal(body.savedAt, now);
   assert.deepEqual(body.profile, JSON.parse(profileJson));
   assert.equal(body.sha256, createHash('sha256').update(profileJson).digest('hex'));
+  assert.equal(body.receiptState, 'verified');
+  assert.equal(body.contentReceiptId, 's2');
+  assert.equal(body.latestReceiptId, 's2');
+  assert.equal(body.latestReceiptAt, now);
+
+  await t.test('newer reopened receipt invalidates completion while retaining historical verified content', async () => {
+    const reopenedAt = '2026-09-28T10:00:00.000Z';
+    await save('s4', 'req-reopened', 'reopened', reopenedAt, '{"mustNotBeExposed":true}');
+    await save('s5', 'req-failed', 'failed', '2026-09-29T10:00:00.000Z', '{}');
+    // A later history update on an older save must not undo a reopen.
+    await db.prepare("UPDATE assessment_profile_saves SET updated_at='2026-10-01T10:00:00.000Z' WHERE id='s2'").run();
+    const current = await (await get('/api/profile-feed/900001', token)).json();
+    assert.equal(current.receiptState, 'reopened');
+    assert.equal(current.latestReceiptId, 's4');
+    assert.equal(current.contentReceiptId, 's2');
+    assert.equal(current.latestReceiptAt, reopenedAt);
+    assert.equal(current.requestId, 'req-new');
+    assert.deepEqual(current.profile, JSON.parse(profileJson));
+    assert.equal(current.sha256, body.sha256);
+
+    // Created-at ties use rowid, exactly as completion reporting does.
+    const newerProfileJson = JSON.stringify({ ...JSON.parse(profileJson), answers: [{ key: 'regAddress', label: 'Адрес прописки', value: 'NEW TEST CITY' }] });
+    await save('s6', 'req-reverified', 'verified', reopenedAt, newerProfileJson);
+    const reverified = await (await get('/api/profile-feed/900001', token)).json();
+    assert.equal(reverified.receiptState, 'verified');
+    assert.equal(reverified.latestReceiptId, 's6');
+    assert.equal(reverified.contentReceiptId, 's2');
+    assert.notEqual(reverified.contentReceiptId, reverified.latestReceiptId);
+    assert.deepEqual(reverified.profile, JSON.parse(profileJson));
+  });
+
+  await t.test('a reopened-only case exposes empty compatible content, not the revoked payload', async () => {
+    await db.prepare("INSERT INTO assessment_cases (id,external_system,external_id,client_iin,identity_revision,title,created_at,updated_at) VALUES ('case-2','bitrix','900002','000000000020',1,'SYNTHETIC',?,?)").bind(now, now).run();
+    await db.prepare("INSERT INTO assessment_profile_saves (id,case_id,request_id,identity_revision,actor_id,authentication,payload_json,payload_hash,state,created_at,updated_at) VALUES ('reopened-only','case-2','revoked',1,'worker:azhar','test',?,'x','reopened',?,?)")
+      .bind(JSON.stringify({ values: { profileJson: JSON.stringify({ answers: [{ value: 'REVOKED' }] }) } }), now, now).run();
+    const response = await get('/api/profile-feed/900002', token);
+    assert.equal(response.status, 200);
+    const current = await response.json();
+    assert.equal(current.schema, 'antikrizis.profile-feed.v1');
+    assert.equal(current.receiptState, 'reopened');
+    assert.equal(current.latestReceiptId, 'reopened-only');
+    assert.equal(current.contentReceiptId, null);
+    assert.equal(current.latestReceiptAt, now);
+    assert.equal(current.requestId, '');
+    assert.equal(current.savedAt, '');
+    assert.equal(current.savedBy, '');
+    assert.deepEqual(current.profile, { schema: 'antikrizis.profile.v1', dealId: '900002', iin: '', savedAt: '', savedBy: '', totalDebt: '', debtComplete: false, answers: [], unresolved: [] });
+    assert.equal(current.sha256, createHash('sha256').update(JSON.stringify(current.profile)).digest('hex'));
+  });
 });
