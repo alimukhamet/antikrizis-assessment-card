@@ -167,6 +167,10 @@ test("summary finds stuck preparations and unfinished writes, excludes completed
   }
   await repo.record(input(), "worker:ali", now);
   await repo.record(input({ code: "MONITOR_PROBE" }), "worker:ali", now);
+  for (const code of ['OWNER_HANDOFF_RECONCILIATION', 'HANDOFF_RESULT_CHECK']) {
+    await repo.record({ ...input(), code, action: 'handoff', status: 0 }, 'worker:ali', now);
+    assert.equal(sql.prepare('SELECT COUNT(*) n FROM assessment_operations_events WHERE code=?').get(code).n, 1);
+  }
   await repo.record(
     input({ code: "PAGE_OPEN", clientVersion: "assessment-old" }),
     "worker:ali",
@@ -181,7 +185,7 @@ test("summary finds stuck preparations and unfinished writes, excludes completed
     ["s1", "s3", "s5"],
   );
   assert.equal(result.staleClients.length, 1);
-  assert.equal(result.activity.samples, 3);
+  assert.equal(result.activity.samples, 5);
   assert.equal(JSON.stringify(result).includes("payload_json"), false);
 });
 test("summary reports only aged unfinished handoffs without mutating their receipts", async (t) => {

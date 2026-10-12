@@ -161,7 +161,7 @@ export class OperationsRepository {
     const events = await this.db
       .prepare(
         `SELECT deal_id,action,code,client_version,server_version,status,asset,line,COUNT(*) AS occurrences,MIN(created_at) AS first_seen,MAX(created_at) AS last_seen
-   FROM assessment_operations_events WHERE created_at>=? AND code NOT IN ('MONITOR_PROBE','PAGE_OPEN')
+   FROM assessment_operations_events WHERE created_at>=? AND code NOT IN ('MONITOR_PROBE','PAGE_OPEN','OWNER_HANDOFF_RECONCILIATION','HANDOFF_RESULT_CHECK')
    GROUP BY deal_id,action,code,client_version,server_version,status,asset,line ORDER BY last_seen DESC LIMIT 200`,
       )
       .bind(since)

@@ -213,12 +213,12 @@ test('reopening handoff retains signed PDF and power without silently confirming
  assert.equal(s.d.getElementById('fio').value,'');
  const manual=await setup(t,{mode:'handoff',draft,powerReady:false});await manual.load();await tick();assert.match(manual.d.getElementById('handoffPowerReview').textContent,/2 стр/);assert.equal(manual.d.getElementById('handoffSend').disabled,true);
 });
-test('unknown Bitrix destination fails closed and a saved uncertain attempt only resumes',async t=>{
+test('unknown Bitrix destination fails closed and uncertain recovery only checks the saved receipt',async t=>{
  const blocked=await setup(t,{mode:'handoff',stageError:'HANDOFF_STAGE_UNVERIFIED'});await blocked.load();assert.equal(blocked.d.getElementById('handoffSend').disabled,true);assert.match(blocked.d.getElementById('handoffStage').textContent,/не подтверждена/);
  const handoff={requestId:'12345678-1234-1234-1234-123456789012',state:'uncertain',destination:{fromStageName:'Договор',stageName:'Сделка завершена'}};
- const s=await setup(t,{mode:'handoff',handoff});await s.load();s.w.ClientContextUI.confirm=async()=>({dealId:'900001',iin:'000000000010',identityRevision:1});s.w.CredentialUpload.submit=()=>{throw Error('Must not resend keys');};
+ const s=await setup(t,{mode:'handoff',handoff});await s.load();s.w.ClientContextUI.confirm=()=>{throw Error('Result checks must not confirm a transition');};s.w.CredentialUpload.submit=()=>{throw Error('Must not resend keys');};s.w.ServerDrafts.save=()=>{throw Error('Result checks must not save drafts');};
  assert.equal(s.d.getElementById('handoffSend').disabled,false);await s.d.getElementById('handoffSend').onclick();
- const writes=s.calls.filter(c=>c.method==='POST'&&c.path.endsWith('/handoff'));assert.equal(writes.length,1);assert.equal(JSON.parse(writes[0].body).action,'resume');assert.equal(JSON.parse(writes[0].body).requestId,handoff.requestId);
+ const checks=s.calls.filter(c=>c.method==='POST'&&c.path.endsWith('/handoff'));assert.equal(checks.length,2,'One automatic check plus one explicit check');for(const call of checks){assert.equal(JSON.parse(call.body).action,'check');assert.equal(JSON.parse(call.body).requestId,handoff.requestId);}
 });
 
  test('missing-answer links stay visible after navigation to the field and back to contract',async t=>{

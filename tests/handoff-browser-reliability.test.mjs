@@ -8,10 +8,10 @@ const saved={requestId:'12345678-1234-1234-1234-123456789012',state:'uncertain',
 const response=(data,status=200)=>({ok:status<400,status,json:async()=>data});
 async function setup(t,handler){
  const dom=new JSDOM('<main class="wrap"><div class="wf-credential"><div class="field"><input id="previewEdsPassword"></div></div><div id="require-power"><input type="file" data-required-picker="Доверенность"></div></main>',{url:'https://synthetic.invalid/?mode=handoff',runScripts:'outside-only'}),w=dom.window,d=w.document;
- t.after(()=>w.close());const calls=[],analysed=[];
+ t.after(()=>w.close());const calls=[],analysed=[],confirmations=[];
  let current={identityRevision:1,client:{title:'SYNTHETIC',iin:'000000000010',external:{dealId:'900001'}}};
  const make=(tag,text,cls)=>{const n=d.createElement(tag);if(text)n.textContent=text;if(cls)n.className=cls;return n;};
- w.ClientContextUI={mode:'handoff',make,context:()=>current,ready:()=>Boolean(current),sync:()=>{},confirm:async()=>({dealId:current.client.external.dealId,iin:current.client.iin,identityRevision:current.identityRevision})};
+ w.ClientContextUI={mode:'handoff',make,context:()=>current,ready:()=>Boolean(current),sync:()=>{},confirm:async(...args)=>{confirmations.push(args);return{dealId:current.client.external.dealId,iin:current.client.iin,identityRevision:current.identityRevision};}};
  w.selectedFiles=[];w.fileSequence=0;w.af={busy:false,results:new Map()};w.renderDocuments=()=>{};
  w.afSource=()=>{};w.afAnalyze=()=>{throw Error('Intake autofill must not run from Tool 02');};
  w.ServerDrafts={capture:()=>({answers:[{key:'fio',value:'KEEP',checked:false}],documents:[]}),save:async()=>true};
@@ -25,7 +25,7 @@ async function setup(t,handler){
  w.fetch=async(path,options={})=>{calls.push({path,method:options.method||'GET',body:options.body});return handler?handler(path,options):response({handoff:null,destination:stage,stageError:null,delivery:{ready:true}});};
  w.eval(fs.readFileSync('public/operations.js','utf8'));w.eval(fs.readFileSync('public/lawyer-handoff.js','utf8'));
  await tick();
- return {w,d,calls,analysed,open(id){current={...current,client:{...current.client,external:{dealId:id}}};d.dispatchEvent(new w.Event('assessment-case-opened'));},context:()=>current};
+ return {w,d,calls,analysed,confirmations,open(id){current={...current,client:{...current.client,external:{dealId:id}}};d.dispatchEvent(new w.Event('assessment-case-opened'));},context:()=>current};
 }
 test('handoff status timeout releases retry controls and never triggers a write',async t=>{
  const s=await setup(t,()=>new Promise(()=>{}));await new Promise(r=>setTimeout(r,55));
@@ -47,7 +47,7 @@ test('handoff client change clears the old pending transfer even when the new re
  assert.equal(s.d.getElementById('handoffSend').disabled,true);
  assert.notEqual(s.d.getElementById('handoffSend').textContent,'Проверить результат');
  assert.equal(s.d.getElementById('handoffStage').textContent,'');
- assert.equal(s.calls.filter(c=>c.method==='POST').length,0);
+ const checks=s.calls.filter(c=>c.method==='POST');assert.equal(checks.length,1);assert.equal(checks[0].path.includes('900001'),true);assert.equal(JSON.parse(checks[0].body).action,'check');
 });
 test('late failure from an old client does not overwrite the current handoff state',async t=>{
  let rejectOld;const s=await setup(t,path=>path.includes('900001')?new Promise((_,reject)=>{rejectOld=reject;}):response({handoff:null,destination:stage,stageError:null,delivery:{ready:true}}));
@@ -65,19 +65,20 @@ test('handoff power check reads only that document, not the intake questionnaire
  assert.deepEqual(check.payload.documents,[{documentId:'power',type:'Доверенность',person:'Клиент'}]);assert.deepEqual(check.payload.answers,[]);
  assert.equal(s.w.ServerDrafts.capture().answers[0].value,'KEEP');
 });
-test('lost handoff response is checked read-only before retry uses the existing operation',async t=>{
+test('lost automatic check response leaves an explicit read-only check of the same receipt',async t=>{
  let state=null,sent=0;const s=await setup(t,(path,options)=>{
-  if(options.method==='POST'){sent++;if(sent===1){state=saved;return new Promise(()=>{});}assert.equal(JSON.parse(options.body).action,'resume');state={...saved,state:'verified'};return response({handoff:state});}
+  if(options.method==='POST'){sent++;assert.equal(JSON.parse(options.body).action,'check');if(sent===1){state=saved;return new Promise(()=>{});}state={...saved,state:'verified'};return response({handoff:state});}
   return response({handoff:state,destination:state?null:stage,stageError:null,delivery:{ready:true}});
  });
  // A restored uncertain operation skips keys and uploads entirely.
- state=saved;await s.d.getElementById('handoffRefresh').onclick();
  s.w.CredentialUpload.submit=()=>{throw Error('Must not replay keys');};
- await s.d.getElementById('handoffSend').onclick();assert.equal(sent,1);
+ s.w.ServerDrafts.save=()=>{throw Error('Must not rewrite draft');};
+ s.w.ClientContextUI.confirm=()=>{throw Error('No robot confirmation for a result check');};
+ state=saved;await s.d.getElementById('handoffRefresh').onclick();assert.equal(sent,1);
  assert.equal(s.d.getElementById('handoffSend').disabled,false);
  await s.d.getElementById('handoffSend').onclick();assert.equal(sent,2);
  const writes=s.calls.filter(c=>c.method==='POST').map(c=>JSON.parse(c.body));
- assert.ok(writes.every(c=>c.action==='resume'&&c.requestId===saved.requestId));
+ assert.ok(writes.every(c=>c.action==='check'&&c.requestId===saved.requestId));
  assert.equal(s.d.getElementById('handoffSend').disabled,true);
 });
 test('handoff guidance is collapsed; three cards and explicit signature agreement remain',async t=>{
@@ -101,7 +102,7 @@ test('new and prepared transfers cannot bypass missing delivery; uncertain recov
   const s=await setup(t,()=>response({handoff:state?{...saved,state}:null,destination:state?null:stage,stageError:null,delivery:{ready:false,code:'HANDOFF_ORIGINALS_REQUIRED'}}));
   assert.equal(s.d.getElementById('handoffSend').disabled,state!=='uncertain');
   assert.equal(s.d.getElementById('handoffAssessmentLink').hidden,false);
-  assert.equal(s.calls.filter(c=>c.method==='POST').length,0);
+  const checks=s.calls.filter(c=>c.method==='POST');assert.equal(checks.length,state==='uncertain'?1:0);assert.ok(checks.every(c=>JSON.parse(c.body).action==='check'));
  }
 });
 
@@ -154,7 +155,7 @@ test('an uncertain title readback explains the remaining gap after page reload w
  const s=await setup(t,()=>response({handoff:{...saved,outcomeCode:'HANDOFF_TITLE_UNVERIFIED'},destination:null,stageError:null,delivery:{ready:true}}));
  assert.match(s.d.getElementById('handoffReason').textContent,/название сделки не подтверждено/);
  assert.match(s.d.getElementById('handoffReason').textContent,/Проверить результат/);assert.equal(s.d.getElementById('handoffSend').textContent,'Проверить результат');assert.equal(s.d.getElementById('handoffCancel').hidden,true);
- assert.equal(s.calls.filter(c=>c.method==='POST').length,0);
+ const checks=s.calls.filter(c=>c.method==='POST');assert.equal(checks.length,1);assert.equal(JSON.parse(checks[0].body).action,'check');assert.equal(s.confirmations.length,0);
 });
 
 
@@ -178,4 +179,44 @@ test('old prepared target gives cancellation guidance then reloads the new desti
  assert.match(s.d.getElementById('handoffStage').textContent,/Юристы.*В ожидании/);
  assert.equal(s.calls.filter(call=>call.method==='POST').length,1);
  assert.equal(s.d.getElementById('handoffSignedFile').disabled,false);
+});
+
+test('reopening a claimed handoff checks once, preserves files and presents saved-state readiness',async t=>{
+ let checks=0;const s=await setup(t,(_path,options)=>{
+  if(options.method==='POST'){checks++;assert.equal(JSON.parse(options.body).action,'check');return response({handoff:{...saved,outcomeCode:'HANDOFF_STILL_AT_SOURCE'}});}
+  return response({handoff:saved,destination:null,stageError:null,delivery:{ready:true}});
+ });
+ assert.equal(checks,1);assert.equal(s.confirmations.length,0);assert.equal(s.analysed.length,0);
+ assert.equal(s.d.getElementById('handoffCount').textContent,'Пакет проверен при отправке');
+ assert.ok([...s.d.querySelectorAll('.ux-handoff-card')].every(card=>card.hidden));
+ assert.match(s.d.getElementById('handoffReason').textContent,/исходной стадии/);
+ const files=[{id:3,type:'Подписанный договор',person:'Клиент',file:{name:'saved.pdf'},storedDocumentId:'saved'}];s.w.selectedFiles=files;
+ await s.d.getElementById('handoffRefresh').onclick();s.d.dispatchEvent(new s.w.Event('assessment-client-readiness-changed'));await tick();
+ assert.equal(checks,1);assert.equal(s.w.selectedFiles,files);assert.equal(s.d.getElementById('handoffSend').disabled,false);
+ await s.d.getElementById('handoffSend').onclick();assert.equal(checks,2);assert.equal(s.confirmations.length,0);
+ assert.ok(s.calls.filter(c=>c.method==='POST').every(c=>JSON.parse(c.body).action==='check'));
+});
+
+test('automatic handoff readback waits for client readiness and ignores a late result for another client',async t=>{
+ let releaseStatus,releaseCheck,checks=0;
+ const s=await setup(t,(path,options)=>{
+  if(options.method==='POST'){checks++;return new Promise(resolve=>{releaseCheck=resolve;});}
+  if(path.includes('900001'))return new Promise(resolve=>{releaseStatus=resolve;});
+  return response({handoff:null,destination:stage,stageError:null,delivery:{ready:true}});
+ });
+ let ready=false;s.w.ClientContextUI.ready=()=>ready;
+ releaseStatus(response({handoff:saved,destination:null,stageError:null,delivery:{ready:true}}));await tick();assert.equal(checks,0);
+ ready=true;s.d.dispatchEvent(new s.w.Event('assessment-client-readiness-changed'));await tick();
+ releaseStatus(response({handoff:saved,destination:null,stageError:null,delivery:{ready:true}}));await tick();assert.equal(checks,1);
+ s.open('900002');await tick();releaseCheck(response({handoff:{...saved,state:'verified'}}));await tick();
+ assert.equal(s.context().client.external.dealId,'900002');assert.notEqual(s.d.getElementById('handoffSend').textContent,'Стадия изменена');
+ assert.doesNotMatch(s.d.getElementById('handoffReason').textContent,/Передача подтверждена/);
+ assert.ok([...s.d.querySelectorAll('.ux-handoff-card')].every(card=>!card.hidden));assert.equal(checks,1);
+});
+
+test('a successful automatic check after reload completes the UI without a transfer confirmation',async t=>{
+ const s=await setup(t,(_path,options)=>options.method==='POST'?response({handoff:{...saved,state:'verified'}}):response({handoff:saved,destination:null,stageError:null,delivery:{ready:true}}));
+ assert.equal(s.d.getElementById('handoffSend').textContent,'Стадия изменена');assert.equal(s.d.getElementById('handoffSend').disabled,true);
+ assert.match(s.d.getElementById('handoffReason').textContent,/Передача подтверждена/);assert.equal(s.confirmations.length,0);
+ assert.deepEqual(s.calls.filter(c=>c.method==='POST').map(c=>JSON.parse(c.body).action),['check']);
 });

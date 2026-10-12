@@ -42,13 +42,16 @@ export async function POST(request:Request,context:{params:Promise<{dealId:strin
   const body=await boundedJson(request,16000),{dealId}=await context.params,{record,repository,actor}=await evidenceContext(request,dealId),stores=await store();
   assertSubmissionDestination(record,body.destination);
   let row=await stores.handoffs.active(record.id);
-  if(body.action==='reconcile'){
-   if(actor.worker!=='ali')throw new RepositoryError('OWNER_REQUIRED',403);
-   if(!row||row.request_id!==body.requestId||typeof body.expectedHash!=='string'||body.expectedHash!==row.payload_hash)throw new RepositoryError('HANDOFF_RECEIPT_CHANGED');
+  // Old open tabs use resume for both prepared writes and claimed readback.
+  // Route claimed resumes here before constructing any upload/write adapters.
+  const claimedResume=body.action==='resume'&&row&&['writing','uncertain','verified'].includes(row.state);
+  if(body.action==='check'||body.action==='reconcile'||claimedResume){
+   if(body.action==='reconcile'&&actor.worker!=='ali')throw new RepositoryError('OWNER_REQUIRED',403);
+   if(!row||row.request_id!==body.requestId||body.action==='reconcile'&&(typeof body.expectedHash!=='string'||body.expectedHash!==row.payload_hash))throw new RepositoryError('HANDOFF_RECEIPT_CHANGED');
    if(await sha256(row.payload_json)!==row.payload_hash)throw new RepositoryError('HANDOFF_RECEIPT_CHANGED');
    if(!['writing','uncertain','verified'].includes(row.state))throw new RepositoryError('HANDOFF_NOT_STARTED');
    if(row.case_id!==record.id||row.identity_revision!==record.identity_revision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
-   if(row.state!=='verified'&&!await stores.operations.record({id:crypto.randomUUID(),dealId,action:'handoff',code:'OWNER_HANDOFF_RECONCILIATION',clientVersion:release.version,status:0,asset:null,line:null},actor.id))throw new RepositoryError('RECOVERY_AUDIT_UNAVAILABLE',503);
+   if(row.state!=='verified'&&!await stores.operations.record({id:crypto.randomUUID(),dealId,action:'handoff',code:body.action==='reconcile'?'OWNER_HANDOFF_RECONCILIATION':'HANDOFF_RESULT_CHECK',clientVersion:release.version,status:0,asset:null,line:null},actor.id))throw new RepositoryError('RECOVERY_AUDIT_UNAVAILABLE',503);
    const stages=createHandoffAdapter(process.env.BITRIX_WEBHOOK??'');
    // No runHandoff call: even the owner cannot send or upload from this action.
    return Response.json({handoff:view(await reconcileHandoffOutcome({handoffs:stores.handoffs,stages},record,row))},{headers:{'cache-control':'no-store'}});

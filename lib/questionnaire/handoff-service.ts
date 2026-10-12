@@ -112,10 +112,11 @@ export async function verifyHandoffDelivery(deps:DeliveryDependencies,record:Cas
  return {requestId,payloadHash,originals};
 }
 /** Freeze title intent from the verified submission, never from request/draft fields. */
-export async function prepareHandoffTitle(deps:DeliveryDependencies&{stages:Pick<ReturnType<typeof createHandoffAdapter>,'planTitle'>},record:CaseRow){
+export async function prepareHandoffTitle(deps:DeliveryDependencies&{stages:Pick<ReturnType<typeof createHandoffAdapter>,'planTitle'|'planDate'>},record:CaseRow){
  const delivered=await verifiedDelivery(deps,record,{verifyBytes:false});
  const titlePlan=await deps.stages.planTitle(record.external_id,record.client_iin!,delivered.titleSource);
- return titlePlan?{titlePlan}:{};
+ const datePlan=await deps.stages.planDate(record.external_id,record.client_iin!);
+ return{...(titlePlan?{titlePlan}:{}),datePlan};
 }
 function assertTitleSource(payload:HandoffPayload,source:HandoffTitleSource){
  const frozen=payload.titlePlan?.source;
@@ -125,26 +126,28 @@ type Dependencies=DeliveryDependencies&{repository:EvidenceRepository;handoffs:H
 /** Verify an already claimed operation. This path has no CRM write capability. */
 export async function reconcileHandoffOutcome(deps:{handoffs:Pick<HandoffRepository,'finish'>;stages:Pick<ReturnType<typeof createHandoffAdapter>,'reconcile'>},record:CaseRow,row:HandoffRow){
  if(row.case_id!==record.id||row.identity_revision!==record.identity_revision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
+ if(await sha256(row.payload_json)!==row.payload_hash)throw new RepositoryError('HANDOFF_RECEIPT_CHANGED');
  if(row.state==='verified')return row;
  if(!['writing','uncertain'].includes(row.state))throw new RepositoryError('HANDOFF_NOT_STARTED');
  const payload=JSON.parse(row.payload_json) as HandoffPayload;
  let verified=false,code='HANDOFF_OUTCOME_UNCERTAIN';
- try{verified=await deps.stages.reconcile(record.external_id,record.client_iin!,payload.destination,row.created_at,payload.titlePlan);}catch(error){if(error instanceof HandoffMoveError)code=error.code;}
+ try{verified=await deps.stages.reconcile(record.external_id,record.client_iin!,payload.destination,row.created_at,payload.titlePlan,payload.datePlan);}catch(error){if(error instanceof HandoffMoveError||error instanceof RepositoryError&&['HANDOFF_CRM_UNAVAILABLE','CASE_IDENTITY_CHANGED'].includes(error.code))code=error.code;}
+ if(!verified&&row.outcome_code==='HANDOFF_CRM_WRITE_REJECTED'&&['HANDOFF_OUTCOME_UNCERTAIN','HANDOFF_STILL_AT_SOURCE','HANDOFF_TARGET_NOT_IN_HISTORY','HANDOFF_CRM_UNAVAILABLE'].includes(code))code=row.outcome_code;
  return deps.handoffs.finish(record,row,verified?'verified':'uncertain',verified?(payload.titlePlan?'STAGE_AND_TITLE_READBACK_VERIFIED':'STAGE_READBACK_VERIFIED'):code);
 }
 /** A timeout never authorizes a second stage update. All recovery after claim is read-only. */
 export async function runHandoff(deps:Dependencies,record:CaseRow,actor:Actor,row:HandoffRow,day:string){
  const {repository,handoffs,manifests,upload,stages}=deps,payload=JSON.parse(row.payload_json) as HandoffPayload;
- if(row.identity_revision!==record.identity_revision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
+ if(row.case_id!==record.id||row.identity_revision!==record.identity_revision)throw new RepositoryError('CASE_IDENTITY_CHANGED');
  if(row.state==='verified')return row;
- if(row.actor_id!==actor.id)throw new RepositoryError('HANDOFF_OWNED_BY_ANOTHER_WORKER');
  if(row.state==='writing'||row.state==='uncertain')return reconcileHandoffOutcome(deps,record,row);
+ if(row.actor_id!==actor.id)throw new RepositoryError('HANDOFF_OWNED_BY_ANOTHER_WORKER');
  if(row.state!=='prepared')throw new RepositoryError('HANDOFF_CANCELLED');
  const delivered=await verifiedDelivery(deps,record);
  assertTitleSource(payload,delivered.titleSource);
  // A legacy prepared VP intake handoff has no frozen title intent. Stop before
  // uploads; cancelling/repreparing preserves all existing file receipts.
- await stages.validateTitle(record.external_id,record.client_iin!,payload.destination,payload.titlePlan);
+ await stages.validateTitle(record.external_id,record.client_iin!,payload.destination,payload.titlePlan,payload.datePlan);
  const verify=async()=>{
   const current=await validateHandoffDocuments(repository,record,payload.powerId,payload.signedId,day);
   if(current.credentialRequestId!==payload.credentialRequestId||JSON.stringify(current.reviewIds)!==JSON.stringify(payload.reviewIds))throw new RepositoryError('HANDOFF_DOCUMENTS_CHANGED');
@@ -187,7 +190,7 @@ export async function runHandoff(deps:Dependencies,record:CaseRow,actor:Actor,ro
  if(currentDelivery.requestId!==delivered.requestId||currentDelivery.payloadHash!==delivered.payloadHash)throw new RepositoryError('HANDOFF_ASSESSMENT_CHANGED');
  if(!await handoffs.claim(record,row))return handoffs.get(record.id,row.request_id);
  let verified=false,code='HANDOFF_OUTCOME_UNCERTAIN';
- try{verified=await stages.move(record.external_id,record.client_iin!,payload.destination,row.created_at,payload.titlePlan);}
+ try{verified=await stages.move(record.external_id,record.client_iin!,payload.destination,row.created_at,payload.titlePlan,payload.datePlan);}
  catch(error){if(error instanceof HandoffMoveError){if(error.notStarted)return handoffs.finish(record,row,'prepared',error.code);code=error.code;}}
  return handoffs.finish(record,row,verified?'verified':'uncertain',verified?(payload.titlePlan?'STAGE_AND_TITLE_READBACK_VERIFIED':'STAGE_READBACK_VERIFIED'):code);
 }
