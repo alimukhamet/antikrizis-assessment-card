@@ -33,8 +33,8 @@ export async function platformEntryResponse(request: Request, actor: Actor, secr
   const headers = {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'private, no-store',
-    // Keep Origin on the cross-origin POST; no query or ticket appears in Referer.
-    'referrer-policy': 'same-origin',
+    // Preserve Origin on the cross-origin POST; Referer contains only the issuer origin.
+    'referrer-policy': 'strict-origin',
     'x-content-type-options': 'nosniff',
     'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; form-action 'self' ${PLATFORM_ORIGIN}; base-uri 'none'; frame-ancestors 'none'`,
   };

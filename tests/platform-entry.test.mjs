@@ -47,7 +47,7 @@ test('entry requires signed session and same-origin POST; GET and prefetch never
 });
 test('POST uses authenticated subject only and puts signed one-minute ticket in a no-store form body',async()=>{
  const response=await request('/platform-entry?sub=ali&returnTo=https://evil.invalid','ramazan',{method:'POST',headers:{origin},body:'sub=ali'});
- assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'private, no-store');assert.equal(response.headers.get('referrer-policy'),'same-origin');
+ assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'private, no-store');assert.equal(response.headers.get('referrer-policy'),'strict-origin');
  assert.match(response.headers.get('content-security-policy'),/default-src 'none'.*form-action 'self' https:\/\/platform.anti-krizis.kz/);
  assert.equal(response.headers.get('location'),null);
  const dom=new JSDOM(await response.text()); const form=dom.window.document.querySelector('form');

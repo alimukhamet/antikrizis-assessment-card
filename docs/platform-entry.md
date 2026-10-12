@@ -45,3 +45,21 @@ An administrator can disable a person at Настройка → Входы со�
 (source «через анкету»). Disablement blocks new entry and existing sales sessions
 on their next server request. It cannot recall content already viewed/downloaded.
 Re-enablement is not added by this change.
+
+## Local verification — 12 October 2026
+
+Both built Workers ran locally with synthetic D1/R2 and an HTTPS proxy that
+kept canonical-origin redirects on the local computer. Chromium verified the
+three identities, two visible fictional deals in different stages, preserved
+Assessment tab, noopener, mutation denial, single-use redemption, and revocation
+of both an existing session and a new entry. Unit checks additionally cover
+expiry, forgery, audience, wrong subjects/origins, account promotion, concurrent
+redemption, audit rollback and preserving an existing privileged session.
+
+The locally installed Worker binaries use supported compatibility dates
+(Assessment May 22, Platform August 6); production-date parity and hosted
+verification remain release gates. No real employee/client record or secret
+was used. The initial full runs encountered local port restrictions (Assessment)
+and resource timeouts (Platform); affected files passed unchanged on isolated
+reruns. The GitHub push was blocked by automatic approval review pending
+explicit permission to transfer source to the existing repositories.
