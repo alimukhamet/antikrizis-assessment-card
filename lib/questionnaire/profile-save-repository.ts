@@ -32,6 +32,10 @@ export class ProfileSaveRepository {
   latestVerifiedByDeal(dealId: string) {
     return this.db.prepare("SELECT s.* FROM assessment_profile_saves s JOIN assessment_cases c ON c.id=s.case_id WHERE c.external_system='bitrix' AND c.external_id=? AND s.state='verified' ORDER BY s.updated_at DESC, s.rowid DESC LIMIT 1").bind(dealId).first<ProfileSaveRow>();
   }
+  /** Current completion state, using the same receipt order as the profile queue. */
+  latestEffectiveByDeal(dealId: string) {
+    return this.db.prepare("SELECT s.* FROM assessment_profile_saves s JOIN assessment_cases c ON c.id=s.case_id WHERE c.external_system='bitrix' AND c.external_id=? AND s.state IN ('verified','reopened') ORDER BY s.created_at DESC, s.rowid DESC LIMIT 1").bind(dealId).first<ProfileSaveRow>();
+  }
   /** Deal ID → «time · worker» of the latest verified profile save per deal (the queue's «done» marker). */
   async savedByDeal(names: Record<string, string>) {
     return new Map((await this.completedByDeal(names)).map(row => [row.dealId, `${row.savedAt} · ${row.workerName}`]));
