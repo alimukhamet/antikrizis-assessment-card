@@ -39,7 +39,9 @@ function isAssessmentIntakeMachineRequest(request: Request, url: URL): boolean {
     && segments[5] === 'documents'
     && Boolean(segments[6])
     && request.method === 'GET';
-  return manifest || original;
+  const handoff = request.method === 'POST'
+    && /^\/api\/assessment\/[1-9]\d*\/crm-handoff$/.test(url.pathname);
+  return manifest || original || handoff;
 }
 
 /** Platform CRM profile feed: bearer-token checked in the route; GET of one exact deal only. */
@@ -56,7 +58,7 @@ function isProfileFeedMachineRequest(request: Request, url: URL): boolean {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    // These two exact paths perform their own dedicated HMAC, timestamp,
+    // These exact machine paths perform their own dedicated HMAC, timestamp,
     // replay and origin checks in the route handlers. Keep the exception
     // narrow so every other API endpoint remains staff-session protected.
     if (isAssessmentIntakeMachineRequest(request, url) || isProfileFeedMachineRequest(request, url)) {
