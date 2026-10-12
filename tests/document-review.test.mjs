@@ -68,11 +68,12 @@ test('ENPF accepts annual dated coverage and rechecks incomplete approvals',asyn
  const leap={...v,issuedAt:'2024-02-29',from:'2023-02-28',to:'2024-02-29'};
  assert.equal(review.validateDocumentReview(leap,analysis,record,'2024-02-29').from,'2023-02-28');
 });
-test('staff can confirm a GKB report by hand, but only for the client and a fresh matching issue date',()=>{
+test('staff can confirm a GKB report by hand, but only for the client and a valid matching issue date',()=>{
  const gkb={read:{totalPages:2,pages:[{needsOcr:false},{needsOcr:false}]},extraction:{kind:'gkb_short',identity:{iin:'test-client'},issuedAt:'2026-09-05'}};
  const v=()=>({...input(),type:'ГКБ — краткий отчёт',issuedAt:'2026-09-05',expiresAt:''});
  assert.equal(review.validateDocumentReview(v(),gkb,record,'2026-09-10').type,'ГКБ — краткий отчёт');
  for(const [change,error]of [[x=>x.issuedAt='','GKB_DATE_NOT_ACCEPTABLE'],[x=>x.issuedAt='2026-09-04','GKB_DATE_NOT_ACCEPTABLE'],[x=>x.iin='other','DOCUMENT_CLIENT_UNVERIFIED'],[x=>x.pages=1,'DOCUMENT_INSPECTION_INCOMPLETE']]){const x=v();change(x);assert.throws(()=>review.validateDocumentReview(x,gkb,record,'2026-09-10'),new RegExp(error));}
- assert.throws(()=>review.validateDocumentReview(v(),gkb,record,'2027-01-20'),/GKB_DATE_NOT_ACCEPTABLE/);
+ assert.equal(review.validateDocumentReview(v(),gkb,record,'2027-01-20').issuedAt,'2026-09-05');
+ assert.throws(()=>review.validateDocumentReview(v(),gkb,record,'2026-09-04'),/DOCUMENT_DATE_NOT_ACCEPTABLE/);
  assert.throws(()=>review.validateDocumentReview({...v(),type:'ГКБ — полный отчёт'},gkb,record,'2026-09-10'),/DOCUMENT_TYPE_CONFLICT/);
 });

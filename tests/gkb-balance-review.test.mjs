@@ -62,7 +62,7 @@ test('unknown totals reject mismatched debt, unknown principal or arrears, repor
   s=>s.full.extraction.identity.iin='other',
   s=>s.short.extraction.identity.iin=null,
   s=>s.full.extraction.issuedAt='2026-09-20',
-  s=>s.full.extraction.issuedAt=s.short.extraction.issuedAt='2026-05-20',
+  s=>s.full.extraction.issuedAt=s.short.extraction.issuedAt='2026-02-30',
   s=>s.full.read.pages[0].needsOcr=true,
   s=>s.full.extraction.creditList.complete=false,
   s=>s.full.extraction.credits.push(credit('CONTRACT-A-456','0.00')),
@@ -92,7 +92,8 @@ test('unsaved/different answers and replacement files cannot reuse the confirmat
  const next=await service.inspectGkbBalanceReview(f.repo,f.record,f.short,replacement,day);assert.equal(next.review,null);assert.notEqual(next.planKey,plan.planKey);
  await assert.rejects(()=>service.confirmGkbBalanceReview(f.repo,f.record,{...f.input,fullDocumentId:replacement.document.id},f.payload,actor,day),/GKB_REVIEW_CHANGED/);
  await assert.rejects(()=>service.confirmGkbBalanceReview(f.repo,{...f.record,identity_revision:2},f.input,f.payload,actor,day),/CASE_IDENTITY_CHANGED/);
- assert.equal(await service.inspectGkbBalanceReview(f.repo,f.record,f.short,f.full,'2027-01-22'),null);
+ assert.equal((await service.inspectGkbBalanceReview(f.repo,f.record,f.short,f.full,'2027-01-22')).review.reviewId,(await f.inspect()).review.reviewId,'aging alone must not invalidate an unchanged saved review');
+ assert.equal(await service.inspectGkbBalanceReview(f.repo,f.record,f.short,f.full,'2026-01-22'),null,'a future report is still ineligible');
 });
 test('withdrawal is durable and retry-safe, and a stale withdrawal cannot cancel a newer confirmation',async t=>{
  const f=await fixture(t),plan=await f.inspect();f.input.planKey=plan.planKey;const first=await service.confirmGkbBalanceReview(f.repo,f.record,f.input,f.payload,actor,day);

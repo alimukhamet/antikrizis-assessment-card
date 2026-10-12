@@ -41,7 +41,7 @@ test('document supplies missing IIN, persists its provenance, and preserves the 
  assert.equal((await s.repo.syncCase(client(otherIin))).identity_revision,2,'A genuinely different identity still invalidates old evidence');
 });
 test('document identity cannot bypass employee confirmation, owner, revision, extraction version or document quality',async()=>{
- for(const change of [{confirmed:false},{revision:2},{documentId:'another-case'},{extractionId:'wrong'},{parsed:{identity:{iin:otherIin,name:'OTHER'}},existing:iin},{parsed:{issuedAt:'2020-01-01'}},{parsed:{creditList:{complete:false}}},{parsed:{findings:['OCR_OR_PAGE_REVIEW_REQUIRED']}},{parsed:{identity:{iin:'000000000000',name:'BAD'}}}]){
+ for(const change of [{confirmed:false},{revision:2},{documentId:'another-case'},{extractionId:'wrong'},{parsed:{identity:{iin:otherIin,name:'OTHER'}},existing:iin},{parsed:{issuedAt:'2099-01-01'}},{parsed:{creditList:{complete:false}}},{parsed:{findings:['OCR_OR_PAGE_REVIEW_REQUIRED']}},{parsed:{identity:{iin:'000000000000',name:'BAD'}}}]){
   const s=setup(),c=client(change.existing??null),r=await s.repo.syncCase(c),d=await source(s,r,change.parsed),net=network({value:c.iin});
   await assert.rejects(()=>confirmDocumentIdentity(s.repo,r,c,actor,{confirmed:change.confirmed??true,identityRevision:change.revision??1,documentId:change.documentId??d.document.id,extractionId:change.extractionId??d.extraction.id},net.adapter));assert.equal(net.writes,0);
  }

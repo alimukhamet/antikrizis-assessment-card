@@ -81,9 +81,10 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
   }
   if(requiresDocumentValidation(parsed.findings)||read.pages.some(p=>p.needsOcr)){issue('DOCUMENT_COMPLETENESS_UNVERIFIED','Есть нечитаемые страницы или полнота документа не подтверждена.');continue;}
   if(parsed.kind.startsWith('gkb_')){
-   if(gkbFreshness(parsed.issuedAt||'',day).length){issue('GKB_DATE_NOT_ACCEPTABLE','ГКБ должен быть выдан в последние 3 календарных месяца и не иметь будущую дату.');continue;}
+   if(gkbFreshness(parsed.issuedAt||'',day).length){issue('GKB_DATE_NOT_ACCEPTABLE','Проверьте дату выдачи ГКБ: она должна быть действительной и не находиться в будущем.');continue;}
    if(parsed.findings.includes('CONTRACT_LIST_INCOMPLETE_OR_OTHER_ROLES'))issue('CREDIT_LIST_REVIEW_REQUIRED','Нужно сверить полноту обязательств и роль клиента.');
-   if(parsed.kind==='gkb_full'&&parsed.creditList?.complete)coverageReports.push({documentId:document.id,analysis:cached.result as Analysis});
+   // A newer partial report cannot retire obligations from an older complete one.
+   if(parsed.creditList?.complete&&!parsed.findings.includes('CONTRACT_LIST_INCOMPLETE_OR_OTHER_ROLES')&&read.pages.length&&parsed.credits.every(credit=>credit.contractNumber&&credit.facts.some(f=>f.key==='creditor'&&f.value)))coverageReports.push({documentId:document.id,analysis:cached.result as Analysis});
    for(const credit of parsed.credits){
     const creditor=credit.facts.find(f=>f.key==='creditor')?.value;
     if(!creditor||!credit.contractNumber){issue('CREDIT_IDENTITY_UNVERIFIED','Не удалось однозначно определить кредитора и номер обязательства.');continue;}
@@ -124,20 +125,46 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
    issues.push({code:'SHORT_CREDIT_REVIEW_REQUIRED',documentId:short.documentId,type:short.type,message:short.message+' '+[...new Set(reasons)].join(' ')});
   }
  }
- const conflicts:Array<{documentIds:string[];field:string;clientConfirmedAmount?:string;values:string[];issuedAt:Array<string|null>;creditor:string;contractNumber:string;sources:Array<{documentId:string;issuedAt:string|null;value:string;page:number|null}>}>=[];
- for(const [key,sources] of credits){
-  const [,contractNumber]=JSON.parse(key) as [string,string],creditor=sources[0].creditor;
-  const fields=new Set(sources.flatMap(s=>Object.keys(s.values)));
-  for(const field of fields){const found=sources.filter(s=>s.values[field]!==undefined);const values=[...new Set(found.map(s=>s.values[field]))];if(values.length>1)conflicts.push({documentIds:found.map(s=>s.documentId),field,values,issuedAt:found.map(s=>s.issuedAt),creditor,contractNumber,sources:found.map(s=>({documentId:s.documentId,issuedAt:s.issuedAt,value:s.values[field],page:Number.isInteger(s.pages[field])&&s.pages[field]>0?s.pages[field]:null}))});}
- }
+ // Preserve the existing full-report obligation union. A complete short list
+ // reconciles only its printed rows/totals and can omit active zero limits.
+ // Newer short reports may add obligations, never silently retire full ones.
+ const latestCoverageDate=coverageReports.map(report=>report.analysis.extraction.issuedAt!).sort().at(-1);
+ const currentCoverageReports=coverageReports.filter(report=>report.analysis.extraction.kind==='gkb_full'||report.analysis.extraction.issuedAt===latestCoverageDate).sort((a,b)=>Number(b.analysis.extraction.kind==='gkb_full')-Number(a.analysis.extraction.kind==='gkb_full'));
+ const completeReportIds=new Set(coverageReports.map(report=>report.documentId));
  const creditGroup=payload.groups?.find(g=>g.id==='creditors');
  // Check actual saved answers, not stale row keys or an editable total/count.
  // Every active borrower obligation remains required, including explicit zero balances.
- const expectedLoans=new Map<string,{creditor:string;contractNumber:string;aliases:string[];documentId:string;page:number}>();
- for(const report of coverageReports)for(const credit of report.analysis.extraction.credits){
+ const expectedLoans=new Map<string,{creditor:string;contractNumber:string;aliases:string[];documentId:string;page:number;issuedAt:string}>();
+ for(const report of currentCoverageReports)for(const credit of report.analysis.extraction.credits){
   const creditor=credit.facts.find(f=>f.key==='creditor')?.value||'',aliases=[credit.contractCode,credit.contractNumber].filter((v):v is string=>!!v).map(v=>v.trim());
   const key=JSON.stringify([creditorKey(creditor),aliases[0]]);
-  if(!expectedLoans.has(key))expectedLoans.set(key,{creditor,contractNumber:aliases[0],aliases,documentId:report.documentId,page:credit.page});
+  // A full report may print both its contract code and number. An exact,
+  // unique short-report alias is the same obligation, not another loan.
+  const matches=[...expectedLoans.values()].filter(loan=>loan.documentId!==report.documentId&&creditorKey(loan.creditor)===creditorKey(creditor)&&aliases.some(alias=>loan.aliases.includes(alias)));
+  const existing=expectedLoans.get(key)||(report.analysis.extraction.kind==='gkb_short'&&matches.length===1?matches[0]:undefined);
+  if(existing){
+   existing.aliases=[...new Set([...existing.aliases,...aliases])];
+   if(report.analysis.extraction.issuedAt!>existing.issuedAt){existing.documentId=report.documentId;existing.page=credit.page;existing.issuedAt=report.analysis.extraction.issuedAt!;}
+  }else expectedLoans.set(key,{creditor,contractNumber:aliases[0],aliases,documentId:report.documentId,page:credit.page,issuedAt:report.analysis.extraction.issuedAt!});
+ }
+ const conflicts:Array<{documentIds:string[];field:string;clientConfirmedAmount?:string;values:string[];issuedAt:Array<string|null>;creditor:string;contractNumber:string;sources:Array<{documentId:string;issuedAt:string|null;value:string;page:number|null}>}>=[];
+ const currentCredits:typeof credits=new Map();
+ for(const [key,sources] of credits){
+  const [creditor,number]=JSON.parse(key) as [string,string];
+  const matches=[...expectedLoans.values()].filter(loan=>creditorKey(loan.creditor)===creditor&&loan.aliases.includes(number));
+  const canonicalKey=matches.length===1?JSON.stringify([creditor,matches[0].contractNumber]):key;
+  currentCredits.set(canonicalKey,[...(currentCredits.get(canonicalKey)||[]),...sources]);
+ }
+ for(const [key,allSources] of currentCredits){
+  // Supersede historical figures only for this exact obligation, and only
+  // from a complete report containing it. Omitted loans retain their sources.
+  // Partial reports never gain authority merely by having a newer date.
+  const latestLoanDate=allSources.filter(source=>completeReportIds.has(source.documentId)).map(source=>source.issuedAt!).sort().at(-1);
+  const sources=allSources.filter(source=>!completeReportIds.has(source.documentId)||!latestLoanDate||source.issuedAt!>=latestLoanDate);
+  if(!sources.length)continue;
+  const [,contractNumber]=JSON.parse(key) as [string,string],creditor=sources[0].creditor;
+  const fields=new Set(sources.flatMap(s=>Object.keys(s.values)));
+  for(const field of fields){const found=sources.filter(s=>s.values[field]!==undefined);const values=[...new Set(found.map(s=>s.values[field]))];if(values.length>1)conflicts.push({documentIds:found.map(s=>s.documentId),field,values,issuedAt:found.map(s=>s.issuedAt),creditor,contractNumber,sources:found.map(s=>({documentId:s.documentId,issuedAt:s.issuedAt,value:s.values[field],page:Number.isInteger(s.pages[field])&&s.pages[field]>0?s.pages[field]:null}))});}
  }
  const coverageRows=[...expectedLoans.values()].map(loan=>{
   const rows=(creditGroup?.rows||[]).flatMap((row,index)=>{const values=Object.fromEntries(row.map(a=>[a.key,a.value]));return creditorKey(values.n8038||'')===creditorKey(loan.creditor)&&loan.aliases.includes((values.loanContractId||'').trim())?[index]:[];});
@@ -146,11 +173,11 @@ export async function checkDocumentPackage(repository:EvidenceRepository,record:
   const expectedKeys=loan.aliases.map(number=>loanRowKey(`creditors|${record.client_iin}|${loan.creditor}|${number}`));
   const numberReviewRows=(creditGroup?.rows||[]).flatMap((row,index)=>!rows.includes(index)&&creditorKey(row.find(a=>a.key==='n8038')?.value||'')===creditorKey(loan.creditor)&&expectedKeys.includes(loanRowKey(creditGroup?.rowKeys[index]))?[index]:[]);
   // Typing another lender's number into an old source row cannot hide a
-  // duplicate. Only a different actual loan in the full report supersedes a
+  // duplicate. Only a different actual loan in the current reports supersedes a
   // stale source key; a source key alone never establishes coverage.
   const unmatchedSourceRows=numberReviewRows.filter(index=>{const number=(creditGroup?.rows[index].find(a=>a.key==='loanContractId')?.value||'').trim();return ![...expectedLoans.values()].some(other=>creditorKey(other.creditor)===creditorKey(loan.creditor)&&other.aliases.includes(number));});
   const duplicateRows=[...rows,...unmatchedSourceRows].sort((a,b)=>a-b);
-  return {...loan,rows,numberReviewRows,duplicateRows,status:rows.length===1&&!unmatchedSourceRows.length?'present':rows.length?'duplicate':'missing'};
+  return {...loan,priorReportOnly:!!latestCoverageDate&&loan.issuedAt<latestCoverageDate,rows,numberReviewRows,duplicateRows,status:rows.length===1&&!unmatchedSourceRows.length?'present':rows.length?'duplicate':'missing'};
  });
  // One questionnaire row cannot account for two different source obligations.
  for(const loan of coverageRows)if(loan.rows.some(row=>coverageRows.filter(other=>other.rows.includes(row)).length>1))loan.status='duplicate';

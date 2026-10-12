@@ -54,6 +54,19 @@ export function planProfileSourceFill(draft,context,analyses,validateDraft,histo
   const fields=c.facts.filter(f=>loanFields[f.key]).map(f=>({key:loanFields[f.key],value:f.value,source:evidence(a,f,`credits.${index}.${f.key}`)}));
   loans.push({lender:creditorKey(lender),aliases,number:identifier(c.contractCode)?c.contractCode:c.contractNumber,fields});
  }
+ // Original dates/types can supplement an exact current loan. Historical
+ // balances, status, participants and historical-only loans never carry forward.
+ const matches=(a,b)=>a.lender===b.lender&&a.aliases.some(id=>b.aliases.includes(id));
+ const historical=reports.filter(a=>a.document.extraction.issuedAt&&a.document.extraction.issuedAt<latest).flatMap(a=>a.document.extraction.credits.map((c,index)=>({
+  lender:creditorKey(c.facts.find(f=>f.key==='creditor')?.value||''),aliases:[c.contractNumber,c.contractCode].filter(identifier).map(n=>n.trim()),a,c,index,date:a.document.extraction.issuedAt,
+ })));
+ for(const loan of loans)for(const [factKey,key]of [['startedAtMonth','n8038Start'],['creditType','n8039']]){
+  if(loans.some(other=>matches(loan,other)&&other.fields.some(f=>f.key===key)))continue;
+  const candidates=historical.filter(h=>matches(loan,h)&&!loans.some(other=>matches(h,other)&&!matches(loan,other))&&historical.filter(other=>other.a===h.a&&matches(loan,other)).length===1&&h.c.facts.some(f=>f.key===factKey)).sort((a,b)=>b.date.localeCompare(a.date));
+  const newest=candidates.filter(h=>h.date===candidates[0]?.date);
+  if(!newest.length)continue;
+  for(const h of newest){const f=h.c.facts.find(f=>f.key===factKey);loan.fields.push({key,value:f.value,source:evidence(h.a,f,`credits.${h.index}.${factKey}`)});}
+ }
  let group=payload.groups.find(g=>g.id==='creditors');
  const createdRows=new Set();
  const rowMatches=(loan,row,key)=>{const p=key?.split('|'),lender=get(row,'n8038')?.value,number=get(row,'loanContractId')?.value;return p?.length===4&&p[0]==='creditors'&&p[1]===context.client.iin&&creditorKey(p[2])===loan.lender&&loan.aliases.includes(p[3].trim())||lender&&number&&creditorKey(lender)===loan.lender&&loan.aliases.includes(number.trim());};
