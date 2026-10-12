@@ -52,7 +52,7 @@ async function afSource(src){
  try{const viewer=await import('/pdf-preview.mjs');if(!dialog.open||preview.dataset.request!==token)return;await viewer.mount(preview,{url:sourceUrl,page:src.page||1,onPage:update});}catch{if(dialog.open&&preview.dataset.request===token)preview.textContent='Не удалось открыть просмотр. Закройте документ и попробуйте ещё раз.';}
 }
 function afLogicalVisible(e,styles){
- if(!e||!e.isConnected||e.disabled||e.closest('.hidden,[hidden],[data-legacy-answer]'))return false;
+ if(!e||!e.isConnected||e.disabled||e.closest('.hidden,[hidden],[data-legacy-answer],[data-profile-hidden]'))return false;
  if(!e.closest('[data-assessment-step]'))return e.getClientRects().length>0;
  // A workflow step only hides presentation. Conditional fields still follow their business rules.
  for(let node=e;node&&node!==document.body;node=node.parentElement){

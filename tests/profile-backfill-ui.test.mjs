@@ -234,3 +234,22 @@ for(const mode of ['', 'profile'])test(`${mode || 'contract'} reopening saved co
   assert.equal(restored.answers.find(a=>a.key===key).value,payload.answers.find(a=>a.key===key).value,key);
  }
 });
+
+
+test('profile empty-answer navigation excludes hidden sales fields and stays on the real missing answer',async t=>{
+ const s=await setup(t);await s.load();const {d,w}=s;
+ // Isolate the last real answer while the unused contract remains incomplete.
+ for(const input of d.querySelectorAll('#questionnaireStep input,#questionnaireStep select,#questionnaireStep textarea'))if(!input.closest('[data-profile-hidden]'))input.setAttribute('data-optional','');
+ const address=d.getElementById('regAddress');address.removeAttribute('data-optional');address.value='';
+ s.run('for(const group of afMissingGroups())group.querySelector("input").checked=true;af.sources.set("dognum",{pending:true});af.sources.set("regAddress",{pending:true});');
+ const before=JSON.stringify(w.ServerDrafts.capture());
+ w.AssessmentWorkflow.show('answers',{focus:false});s.run('afRefresh()');
+ assert.deepEqual(Array.from(s.run('afMissing().map(e=>e.id)')),['regAddress']);
+ assert.deepEqual(Array.from(s.run('afPending().map(([id])=>id)')),['regAddress']);
+ d.getElementById('afNext').click();
+ assert.equal(d.body.dataset.assessmentWorkflow,'answers');assert.equal(d.activeElement,address);
+ assert.equal(JSON.stringify(w.ServerDrafts.capture()),before,'navigation preserves the saved contract controls and all answers');
+ address.value='SYNTHETIC ADDRESS';s.run('afRefresh()');
+ assert.equal(s.run('afMissing().length'),0);assert.equal(d.getElementById('afNext').hidden,true);
+ assert.equal(d.getElementById('dognum').value,'');assert.ok(s.run('af.sources.has("dognum")'),'hidden evidence remains stored');
+});
