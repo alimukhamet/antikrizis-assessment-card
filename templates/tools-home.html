@@ -26,6 +26,7 @@
   .profile-link{display:inline-flex;align-items:center;gap:7px;padding:9px 13px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--green-dark);text-decoration:none;font-size:.78rem;font-weight:750}
   .profile-link:hover{background:var(--green-pale);border-color:#abc5b3}
   .profile-link:focus-visible{outline:3px solid #b9d8c3;outline-offset:2px}
+  [data-platform-entry]{margin:0}[data-platform-entry] .profile-link{font-family:inherit;cursor:pointer}
   .home-signout{border:0;background:none;color:var(--text-muted);cursor:pointer;font-size:.75rem;padding:9px 4px}
   .home-hero{max-width:720px;margin:0 auto;text-align:center}
   .eyebrow{font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.11em;color:var(--green-mid);margin-bottom:12px}
@@ -278,6 +279,7 @@
       <div class="brand-mark">A+</div>
       <div class="brand-copy"><strong>Антикризис</strong><span>Инструменты отдела продаж</span></div>
       <div class="home-account">
+        <form data-platform-entry="" hidden="" method="post" action="/platform-entry" target="_blank" rel="noopener"><button class="profile-link" type="submit" aria-label="Открыть сделки в новой вкладке">Сделки <span aria-hidden="true">↗</span></button></form>
         <a class="profile-link" href="/my-results" target="_top" aria-label="Открыть личный профиль">Профиль <span aria-hidden="true">→</span></a>
         <button class="home-signout" id="signOut" type="button">Выйти</button>
       </div>
