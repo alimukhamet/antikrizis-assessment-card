@@ -2,11 +2,11 @@
 const fact=(credit,key)=>credit.facts?.find(f=>f.key===key);
 const debt=credit=>fact(credit,'debtOutstanding')||credit.comparisonDebt;
 // Keep the browser comparison aligned with policy.ts; the parity test covers
-// the approved three-calendar-month window, invalid dates and year boundaries.
+// the absence of an age cutoff, invalid dates and future dates.
 function reportDateAccepted(issuedAt,day){
  const parse=value=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(value||''))return null;const date=new Date(value+'T00:00:00.000Z');return Number.isFinite(date.getTime())&&date.toISOString().slice(0,10)===value?date:null;};
  const issued=parse(issuedAt),assessment=parse(day);
- return !!issued&&!!assessment&&issued<=assessment&&issued>=new Date(Date.UTC(assessment.getUTCFullYear(),assessment.getUTCMonth()-3,1));
+ return !!issued&&!!assessment&&issued<=assessment;
 }
 export const creditorKey=value=>value.normalize('NFKC').toLocaleLowerCase('ru-RU').replace(/[\s«»“”„"]/g,'').replace(/^too(?=.)/u,'тоо').replace(/^ao(?=.)/u,'ао').replace(/^(?:до|дочерняяорганизация)(?=ао|акционерногообщества)/u,'').replace(/^акционерногообщества(?=.)/u,'ао').replace(/^акционерноеобщество(?=.)/u,'ао').replace(/^товариществосограниченнойответственностью(?=.)/u,'тоо').replace(/^тоомикрофинансоваяорганизация(?=.)/u,'тоомфо').replace(/^народныйбанкказахстана$/u,'аонародныйбанкказахстана').replace(/^тоомфоакф$/u,'тоомфоазиатскийкредитныйфонд').replace(/^(?:дочернийбанк)?(?:акционерноеобщество|ао)?(?:дб)?(?:ао)?сбербанкроссии$/u,'аоberekebank').replace(/^аоberekebank(?:\(дбleshabankllc\(public\)\))?$/u,'аоberekebank').replace(/^ао(?:жилстройсбербанк|жилищныйстроительныйсберегательныйбанк)отбасыбанк$/u,'аоотбасыбанк');
 const bank=credit=>creditorKey(String(fact(credit,'creditor')?.value||''));
@@ -44,7 +44,7 @@ export function compareGkb(reports,{iin,day}={}){
  const [short]=shorts,[full]=fulls;
  if(!iin||list.some(r=>r.identity?.iin!==iin))return unavailable('Не подтверждено, что оба отчёта относятся к этому клиенту.');
  if(!short.date||short.date!==full.date)return unavailable('У отчётов разные даты или дата не прочитана. Нужна пара на одну дату.');
- if(!reportDateAccepted(short.date,day))return unavailable('Для сверки нужны ГКБ за последние 3 календарных месяца, без будущей даты.');
+ if(!reportDateAccepted(short.date,day))return unavailable('Проверьте дату выдачи ГКБ: она должна быть действительной и не находиться в будущем.');
  if(list.some(r=>r.error||r.blocked&&!shortenedOnly(r)||!r.creditEvidence?.readable||r.creditEvidence.findings?.some(f=>['PAGE_COMPLETENESS_UNVERIFIED','OCR_OR_PAGE_REVIEW_REQUIRED'].includes(f))))return unavailable('Есть непрочитанные страницы или отчёт ещё не прошёл проверку.');
  const a=short.creditEvidence.credits,b=full.creditEvidence.credits,rows=[],used=new Set();
  const complete=listRead(short)&&full.creditEvidence.creditList?.complete===true;

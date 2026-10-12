@@ -27,9 +27,10 @@ test('cached incomplete, unreadable or unclassified documents cannot autofill or
   assert.ok(result.findings.includes(code));
  }
 });
-test('GKB from the last three calendar months is eligible; older and future reports cannot reuse reviews',async()=>{
+test('old GKB remains eligible; future and invalid reports cannot reuse reviews',async()=>{
  const valid=await analyze();assert.equal(valid.result.eligibleForAutofill,true);assert.equal(valid.reviewReads,1);
- for(const date of ['2026-05-31','2026-09-11']){const {result,reviewReads}=await analyze([],date);assert.equal(result.eligibleForAutofill,false);assert.equal(reviewReads,0);}
+ assert.equal((await analyze([],'2020-01-01')).result.eligibleForAutofill,true);
+ for(const date of ['invalid','2026-09-11']){const {result,reviewReads}=await analyze([],date);assert.equal(result.eligibleForAutofill,false);assert.equal(reviewReads,0);}
 });
 test('cached extraction is rechecked against the current deal identity',async()=>{
  const {result,reviewReads}=await analyze([],'2026-09-10','different-client');
@@ -38,7 +39,7 @@ test('cached extraction is rechecked against the current deal identity',async()=
 test('missing CRM IIN permits only complete readable draft proposals, never reviews or wrong-client bypass',async()=>{
  const run=async({iin=null,findings=[],complete=true,date='2026-09-10',owner='991231300003'}={})=>analysisResponse({iin},{id:'case',identity_revision:1},{currentReviews:async()=>{throw Error('Draft proposals must not replay reviews');}},{document:{id:'doc'},extraction:{id:'parsed'},result:{read:{totalPages:1},extraction:{identity:{iin:owner},kind:'gkb_short',issuedAt:date,findings,creditList:{complete}}}},true);
  const r=await run();assert.equal(r.eligibleForDraftAutofill,true);assert.equal(r.eligibleForAutofill,false);assert.equal(r.reviews.length,0);
- for(const input of [{iin:'different'}, {complete:false},{owner:null},{date:'2020-01-01'},...policy.DOCUMENT_VALIDATION_BLOCKERS.map(code=>({findings:[code]}))])assert.equal((await run(input)).eligibleForDraftAutofill,false,JSON.stringify(input));
+ for(const input of [{iin:'different'}, {complete:false},{owner:null},{date:'2026-09-11'},...policy.DOCUMENT_VALIDATION_BLOCKERS.map(code=>({findings:[code]}))])assert.equal((await run(input)).eligibleForDraftAutofill,false,JSON.stringify(input));
 });
 
 test('valid employee inspection stays visible on reopen but never approves OCR facts or a different identity',async()=>{

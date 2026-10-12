@@ -60,18 +60,11 @@ export const DOCUMENT_MAX_AGE_MONTHS = 3;
 function monthsBefore(day: Date, months: number): Date {
   return new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth() - months, 1));
 }
-export function gkbFreshness(issuedAt: string, assessmentDay: string, boundary: 'calendar-month' | '30-days' | 'three-months' = 'three-months'): Finding[] {
+/** Owner decision 12 Oct: GKB age is not a blocker. Dates must still be real and not future. */
+export function gkbFreshness(issuedAt: string, assessmentDay: string): Finding[] {
   const issued = parseDay(issuedAt), assessment = parseDay(assessmentDay);
   if (!issued || !assessment) return [{ code: 'DATE_UNVERIFIED', severity: 'block' }];
-  if (issued > assessment) return [{ code: 'FUTURE_DOCUMENT_DATE', severity: 'block' }];
-  let minimum: Date;
-  if (boundary === 'three-months') minimum = monthsBefore(assessment, DOCUMENT_MAX_AGE_MONTHS);
-  else if (boundary === '30-days') minimum = new Date(assessment.getTime() - 30 * 86400000);
-  else {
-    const lastDay = new Date(Date.UTC(assessment.getUTCFullYear(), assessment.getUTCMonth(), 0)).getUTCDate();
-    minimum = new Date(Date.UTC(assessment.getUTCFullYear(), assessment.getUTCMonth() - 1, Math.min(assessment.getUTCDate(), lastDay)));
-  }
-  return issued < minimum ? [{ code: 'GKB_TOO_OLD', severity: 'block' }] : [];
+  return issued > assessment ? [{ code: 'FUTURE_DOCUMENT_DATE', severity: 'block' }] : [];
 }
 export type Representative = { kind: 'person' | 'organization'; legalName: string; identifier: string };
 export function representativeAllowed(found: Representative | null, approved: Representative[]): Finding[] {

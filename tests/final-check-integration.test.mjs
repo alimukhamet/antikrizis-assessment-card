@@ -106,3 +106,90 @@ test('a pensioner without an ENPF account needs the benefits certificate instead
  const draft=fixture();draft.docContext={social:'1',salary:'0',salaryBank:'none',enpf:'none'};assert.equal(validateDraft(draft).docContext.enpf,'none');
  draft.docContext={social:'0',salary:'0',salaryBank:'none',enpf:'none'};assert.throws(()=>validateDraft(draft),/INVALID_ENPF_CONTEXT/);
 });
+
+test('newest short GKB updates matched amounts but missing prior-full obligations require reconciliation',async()=>{
+ const p=fixture(),s=repositoryFor(p),full=s.sources.get('full').extraction,short=s.sources.get('short').extraction;
+ full.issuedAt='2026-06-17';full.creditList={complete:true,declared:2};short.issuedAt='2026-08-04';short.creditList={complete:true,declared:1};
+ const historical=structuredClone(full.credits[0]);historical.contractNumber='OLDER-ONLY';full.credits.push(historical);
+ full.credits[0].facts.find(f=>f.key==='monthlyPayment').value='55.00';full.credits[0].facts.find(f=>f.key==='debtOutstanding').value='500.00';
+ const before=JSON.stringify(p),originals=JSON.stringify([...s.sources]);
+ let r=await check(p,s);assert.equal(r.readyToSubmit,false,JSON.stringify(r));assert.equal(r.documents.loanCoverage.expected,2);assert.equal(r.documents.loanCoverage.rows[0].documentId,'short');assert.equal(r.documents.conflicts.length,0);
+ const prior=r.documents.loanCoverage.rows.find(loan=>loan.contractNumber==='OLDER-ONLY');assert.equal(prior.priorReportOnly,true);assert.equal(prior.status,'missing');
+ const priorIssue=r.issues.find(i=>i.code==='ACTIVE_LOAN_MISSING');assert.match(priorIssue.label,/сверьте обязательство из более раннего ГКБ/);assert.match(priorIssue.label,/не подтверждает закрытие/);assert.doesNotMatch(priorIssue.label,/добавьте активный/);
+ assert.equal(JSON.stringify(p),before);assert.equal(JSON.stringify([...s.sources]),originals);
+ p.groups.find(g=>g.id==='creditors').rows[0].find(a=>a.key==='loanContractId').value='WRONG';
+ r=await check(p,s);assert.equal(r.readyToSubmit,false);assert.equal(r.documents.loanCoverage.missing,2);assert.match(r.issues.find(i=>i.code==='ACTIVE_LOAN_MISSING').label,/В ГКБ/);assert.doesNotMatch(r.issues.find(i=>i.code==='ACTIVE_LOAN_MISSING').label,/полном/);
+});
+
+test('newer incomplete, unreadable, wrongly selected or wrong-owner GKB cannot hide earlier complete obligations',async()=>{
+ for(const failure of ['incomplete','role-warning','unreadable','wrong-owner','wrong-type','future','invalid','no-pages']){
+  const p=fixture(),s=repositoryFor(p),full=s.sources.get('full').extraction,short=s.sources.get('short').extraction;
+  full.issuedAt='2026-06-17';full.creditList={complete:true,declared:2};const historical=structuredClone(full.credits[0]);historical.contractNumber='STILL-REQUIRED';full.credits.push(historical);
+  short.issuedAt='2026-08-04';short.creditList={complete:true,declared:1};
+  if(failure==='incomplete')short.creditList.complete=false;
+  if(failure==='role-warning')short.findings=['CONTRACT_LIST_INCOMPLETE_OR_OTHER_ROLES'];
+  if(failure==='unreadable')s.sources.get('short').read.pages[0].needsOcr=true;
+  if(failure==='wrong-owner')short.identity.iin='another-client';
+  if(failure==='wrong-type')p.documents.find(d=>d.documentId==='short').type='ГКБ — полный отчёт';
+  if(failure==='future')short.issuedAt='2099-01-01';
+  if(failure==='invalid')short.issuedAt='2026-02-30';
+  if(failure==='no-pages')s.sources.get('short').read.pages=[];
+  const before=JSON.stringify(p),r=await check(p,s);assert.equal(r.readyToSubmit,false,failure);assert.equal(r.documents.loanCoverage.expected,2,failure);assert.equal(r.documents.loanCoverage.missing,1,failure);assert.ok(r.issues.some(i=>i.code==='ACTIVE_LOAN_MISSING'),failure);assert.equal(JSON.stringify(p),before);
+ }
+});
+
+test('newest full report also supersedes an older short report; same-date conflicts still block',async()=>{
+ const p=fixture(),s=repositoryFor(p),full=s.sources.get('full').extraction,short=s.sources.get('short').extraction;
+ full.creditList={complete:true,declared:1};short.creditList={complete:true,declared:1};short.issuedAt='2025-01-01';short.credits[0].facts.find(f=>f.key==='monthlyPayment').value='55.00';
+ let r=await check(p,s);assert.equal(r.readyToSubmit,true);assert.equal(r.documents.conflicts.length,0);assert.equal(r.documents.loanCoverage.rows[0].documentId,'full');
+ short.issuedAt=full.issuedAt;r=await check(p,s);assert.equal(r.readyToSubmit,false);assert.equal(r.documents.conflicts.length,1);assert.deepEqual(Array.from(r.documents.conflicts[0].documentIds),['short','full']);assert.ok(r.documents.issues.some(i=>i.code==='CREDIT_REPORT_CONFLICT'));
+});
+
+test('same-date complete reports retain every active obligation including full-report zero limits',async()=>{
+ const p=fixture(),s=repositoryFor(p),full=s.sources.get('full').extraction,short=s.sources.get('short').extraction;
+ full.creditList={complete:true,declared:2};short.creditList={complete:true,declared:1};const zero=structuredClone(full.credits[0]);zero.contractNumber='ZERO-LIMIT';zero.facts.find(f=>f.key==='debtOutstanding').value='0.00';full.credits.push(zero);
+ const r=await check(p,s);assert.equal(r.readyToSubmit,false);assert.equal(r.documents.loanCoverage.expected,2);assert.equal(r.documents.loanCoverage.missing,1);assert.equal(r.documents.loanCoverage.rows.find(loan=>loan.contractNumber==='ZERO-LIMIT').status,'missing');
+});
+
+test('same-date complete report aliases identify one loan only when the match is unique',async()=>{
+ const p=fixture(),s=repositoryFor(p),full=s.sources.get('full').extraction,short=s.sources.get('short').extraction;
+ full.creditList={complete:true,declared:1};short.creditList={complete:true,declared:1};full.credits[0].contractCode='CODE1';
+ let r=await check(p,s);assert.equal(r.readyToSubmit,true,JSON.stringify(r));assert.equal(r.documents.loanCoverage.expected,1);assert.deepEqual(Array.from(r.documents.loanCoverage.rows[0].aliases),['CODE1','LOAN1']);
+ short.credits[0].facts.find(f=>f.key==='monthlyPayment').value='11.00';r=await check(p,s);assert.equal(r.readyToSubmit,false);assert.ok(r.documents.issues.some(i=>i.code==='CREDIT_REPORT_CONFLICT'),'a printed alias cannot hide a same-date financial conflict');
+ short.credits[0].facts.find(f=>f.key==='monthlyPayment').value='10.00';
+ const ambiguous=structuredClone(full.credits[0]);ambiguous.contractCode='CODE2';full.credits.push(ambiguous);full.creditList.declared=2;
+ r=await check(p,s);assert.equal(r.readyToSubmit,false);assert.ok(r.documents.loanCoverage.duplicates>0,'one printed alias must never satisfy two distinct contract codes');
+});
+
+test('a newer short report cannot erase zero or unknown obligations from a prior full report',async()=>{
+ for(const amount of ['0.00',null]){
+  const p=fixture(),s=repositoryFor(p),full=s.sources.get('full').extraction,short=s.sources.get('short').extraction;
+  full.issuedAt='2026-06-17';full.creditList={complete:true,declared:2};short.issuedAt='2026-08-04';short.creditList={complete:true,declared:1};
+  const omitted=structuredClone(full.credits[0]);omitted.contractNumber='OMITTED';
+  if(amount===null)omitted.facts=omitted.facts.filter(f=>f.key!=='debtOutstanding');else omitted.facts.find(f=>f.key==='debtOutstanding').value=amount;
+  full.credits.push(omitted);
+  const before=JSON.stringify(p),r=await check(p,s);assert.equal(r.readyToSubmit,false);assert.equal(r.documents.loanCoverage.expected,2);assert.equal(r.documents.loanCoverage.missing,1);assert.equal(r.documents.loanCoverage.rows.find(loan=>loan.contractNumber==='OMITTED').priorReportOnly,true);assert.equal(JSON.stringify(p),before);
+ }
+});
+
+test('newer unrelated short rows do not hide prior obligation conflicts and may add coverage',async()=>{
+ const p=fixture(),s=repositoryFor(p),full=s.sources.get('full').extraction,short=s.sources.get('short').extraction;
+ full.issuedAt='2026-06-17';full.creditList={complete:true,declared:1};short.issuedAt='2026-08-04';short.creditList={complete:true,declared:1};short.credits[0].contractNumber='NEW-LOAN';
+ const secondFull=structuredClone(s.sources.get('full'));secondFull.extraction.credits[0].facts.find(f=>f.key==='monthlyPayment').value='12.00';s.sources.set('full-2',secondFull);p.documents.push({documentId:'full-2',type:'ГКБ — полный отчёт',person:'Клиент'});
+ const r=await check(p,s);assert.equal(r.readyToSubmit,false);assert.equal(r.documents.loanCoverage.expected,2);assert.ok(r.documents.loanCoverage.rows.some(loan=>loan.contractNumber==='NEW-LOAN'&&loan.status==='missing'));
+ assert.equal(r.documents.conflicts.length,1);assert.equal(r.documents.conflicts[0].contractNumber,'LOAN1');assert.deepEqual(Array.from(r.documents.conflicts[0].documentIds),['full','full-2']);assert.ok(r.documents.issues.some(i=>i.code==='CREDIT_REPORT_CONFLICT'));
+});
+
+test('partial reports cannot supersede matched financial evidence regardless of their date',async()=>{
+ for(const date of ['2026-06-17','2026-09-14']){
+  const p=fixture(),s=repositoryFor(p),full=s.sources.get('full').extraction,short=s.sources.get('short').extraction;
+  full.issuedAt='2026-08-04';full.creditList={complete:true,declared:1};short.issuedAt=date;short.creditList={complete:false,declared:2};short.credits[0].facts.find(f=>f.key==='monthlyPayment').value='55.00';short.findings=['CONTRACT_LIST_INCOMPLETE_OR_OTHER_ROLES'];
+  const r=await check(p,s);assert.equal(r.readyToSubmit,false);assert.equal(r.documents.loanCoverage.expected,1);assert.equal(r.documents.conflicts.length,1);assert.ok(r.documents.issues.some(i=>i.code==='CREDIT_REPORT_CONFLICT'));assert.ok(r.documents.issues.some(i=>i.code==='CREDIT_LIST_REVIEW_REQUIRED'));
+ }
+});
+
+test('existing full-report coverage union is preserved without automatically declaring prior-only loans closed',async()=>{
+ const p=fixture(),s=repositoryFor(p),full=s.sources.get('full').extraction;full.issuedAt='2026-06-17';full.creditList={complete:true,declared:2};const prior=structuredClone(full.credits[0]);prior.contractNumber='PRIOR-ONLY';full.credits.push(prior);
+ const latest=structuredClone(s.sources.get('full'));latest.extraction.issuedAt=day;latest.extraction.credits.pop();latest.extraction.creditList.declared=1;s.sources.set('latest-full',latest);p.documents.push({documentId:'latest-full',type:'ГКБ — полный отчёт',person:'Клиент'});
+ const r=await check(p,s);assert.equal(r.readyToSubmit,false);assert.equal(r.documents.loanCoverage.expected,2);assert.equal(r.documents.loanCoverage.rows.find(loan=>loan.contractNumber==='PRIOR-ONLY').priorReportOnly,true);assert.match(r.issues.find(i=>i.code==='ACTIVE_LOAN_MISSING').label,/сверьте обязательство/);
+});

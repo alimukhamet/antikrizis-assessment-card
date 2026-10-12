@@ -13,7 +13,7 @@ export async function finalCheck(repository:EvidenceRepository,record:CaseRow,ra
  const [documents,evidence]=await Promise.all([checkDocumentPackage(repository,record,payload,day),checkReviewBindings(repository,record,payload,checked.displayAnswers,bindings,day)]);
  evidence.approved.push(...documents.gkbEvidence||[]);
  for(const loan of documents.loanCoverage?.rows||[])if(loan.status!=='present'){
-  const action=loan.status==='missing'?(loan.numberReviewRows.length?'проверьте номер договора в кредитах '+loan.numberReviewRows.map(row=>row+1).join(', ')+'. В полном ГКБ, стр. '+loan.page+', указан № '+loan.contractNumber:'добавьте активный кредит из полного ГКБ, стр. '+loan.page):'повтор в кредитах '+loan.duplicateRows.map(row=>row+1).join(', ')+'. Сверьте записи и оставьте одну, чтобы не считать долг дважды';
+  const action=loan.status==='missing'?(loan.priorReportOnly?'сверьте обязательство из более раннего ГКБ от '+loan.issuedAt+', стр. '+loan.page+'. Отсутствие в новом отчёте не подтверждает закрытие':loan.numberReviewRows.length?'проверьте номер договора в кредитах '+loan.numberReviewRows.map(row=>row+1).join(', ')+'. В ГКБ, стр. '+loan.page+', указан № '+loan.contractNumber:'добавьте активный кредит из ГКБ, стр. '+loan.page):'повтор в кредитах '+loan.duplicateRows.map(row=>row+1).join(', ')+'. Сверьте записи и оставьте одну, чтобы не считать долг дважды';
   checked.issues.push({key:'loanContractId',group:'creditors',row:(loan.status==='duplicate'?loan.duplicateRows[0]:loan.numberReviewRows[0])??loan.rows[0]??0,code:loan.status==='missing'?'ACTIVE_LOAN_MISSING':'ACTIVE_LOAN_DUPLICATE',label:`${loan.creditor} · № ${loan.contractNumber}: ${action}`});
  }
  checked.answersComplete=checked.issues.length===0;

@@ -52,7 +52,7 @@ async function afSource(src){
  try{const viewer=await import('/pdf-preview.mjs');if(!dialog.open||preview.dataset.request!==token)return;await viewer.mount(preview,{url:sourceUrl,page:src.page||1,onPage:update});}catch{if(dialog.open&&preview.dataset.request===token)preview.textContent='Не удалось открыть просмотр. Закройте документ и попробуйте ещё раз.';}
 }
 function afLogicalVisible(e,styles){
- if(!e||!e.isConnected||e.disabled||e.closest('.hidden,[hidden],[data-legacy-answer]'))return false;
+ if(!e||!e.isConnected||e.disabled||e.closest('.hidden,[hidden],[data-legacy-answer],[data-profile-hidden]'))return false;
  if(!e.closest('[data-assessment-step]'))return e.getClientRects().length>0;
  // A workflow step only hides presentation. Conditional fields still follow their business rules.
  for(let node=e;node&&node!==document.body;node=node.parentElement){
@@ -168,6 +168,33 @@ function afRow(group,key,loan=null){
  const row=empty||add(g);if(!row.id)row.id='af-row-'+(++nextRow);af.rowKeys.set(canonical,row.id);return row;
 }
 function afRowFields(row,fields,src){if(!row)return;for(const [key,value]of Object.entries(fields)){const e=[...row.querySelectorAll('input,select,textarea')].find(e=>e.id===key||e.id.startsWith(key+'_r'));if(key==='n8038'&&e?.value&&e.value!==String(value)&&afCreditorKey(e.value)===afCreditorKey(value))continue;afPut(e,value,{...src,serverFactKey:src.fieldKeys?.[key],...src.fieldReview?.[key]});}}
+function afHistoricalLoanDetails(docs,latest,client){
+ if(!latest)return;
+ const reports=docs.filter(([,r])=>['gkbFull','gkbShort'].includes(r.kind));
+ const aliases=loan=>new Set((loan.aliases||[loan.key]).filter(key=>!/\.{2,}|…/.test(key.split('|').at(-1))).map(key=>afLoanRowKey('creditors|'+client+'|'+key)));
+ const matches=(a,b)=>[...aliases(a)].some(key=>aliases(b).has(key));
+ const current=reports.filter(([,r])=>r.date===latest).flatMap(([id,r])=>r.loans.map(loan=>({id,loan})));
+ const older=reports.filter(([,r])=>/^\d{4}-\d{2}-\d{2}$/.test(r.date||'')&&r.date<latest);
+ for(const {loan}of current){
+  // Never create a historical obligation or guess between repeated identities.
+  if(current.filter(other=>matches(loan,other.loan)).some(other=>current.filter(candidate=>candidate.id===other.id&&matches(loan,candidate.loan)).length!==1))continue;
+  const restoring=af.restoringEvidence;let row;
+  af.restoringEvidence=true;try{row=afRow('creditors',client+'|'+loan.key,loan);}finally{af.restoringEvidence=restoring;}
+  if(!row)continue;
+  for(const key of ['n8038Start','n8039']){
+   if(current.some(other=>matches(loan,other.loan)&&other.loan.fields[key]))continue;
+   const candidates=older.flatMap(([id,r])=>{
+    const found=r.loans.filter(other=>matches(loan,other));
+    return found.length===1&&!current.some(other=>matches(found[0],other.loan)&&!matches(loan,other.loan))&&found[0].fields[key]?[{id,date:r.date,loan:found[0]}]:[];
+   }).sort((a,b)=>b.date.localeCompare(a.date));
+   const newest=candidates.filter(c=>c.date===candidates[0]?.date);
+   if(!newest.length||new Set(newest.map(c=>c.loan.fields[key])).size!==1)continue;
+   const source=newest[0],input=[...row.querySelectorAll('input,select')].find(e=>e.id.replace(/_r\d+$/,'')===key);
+   if(!input||input.dataset.sourceReplaced||!restoring&&input.value)continue;
+   afRowFields(row,{[key]:source.loan.fields[key]},{...source.loan,fileId:source.id,date:source.date});
+  }
+ }
+}
 function afLoanParticipantsNotice(row,loan,fileId){
  if(!row)return;
  // Older drafts intentionally keep blank/deleted answers. Put the exact report
@@ -275,14 +302,16 @@ async function afApply(preferences={}){
  // A restored draft retains every original source binding. New fills use the
  // newest readable GKB date, so an earlier short report cannot seed old balances
  // or reintroduce loans absent from the newer report merely by upload order.
- const loanDate=docs.filter(([,r])=>['gkbFull','gkbShort'].includes(r.kind)).map(([,r])=>r.date).filter(date=>/^\d{4}-\d{2}-\d{2}$/.test(date||'')).sort().at(-1);
+ const loanDocs=docs.filter(([,r])=>['gkbFull','gkbShort'].includes(r.kind)&&r.creditEvidence?.readable&&r.creditEvidence.creditList?.complete===true&&!r.findings?.includes('CONTRACT_LIST_INCOMPLETE_OR_OTHER_ROLES'));
+ const loanDate=loanDocs.map(([,r])=>r.date).filter(date=>/^\d{4}-\d{2}-\d{2}$/.test(date||'')).sort().at(-1);
  for(const [id,r]of docs){const item=selectedFiles.find(x=>x.id===id);if(item&&!item.person)item.person='Клиент';
   for(const f of r.fields){if(f.key==='fio'&&best&&id!==best[0])continue;afPut($af(f.key),f.value,{...f,fileId:id,date:r.date});}
-  if(af.restoringEvidence||!loanDate||r.date===loanDate)for(const loan of r.loans){const row=afRow('creditors',client+'|'+loan.key,loan);afRowFields(row,loan.fields,{...loan,fileId:id});afLoanParticipantsNotice(row,loan,id);}
+  if(af.restoringEvidence||loanDocs.some(([fileId])=>fileId===id)&&r.date===loanDate)for(const loan of r.loans){const row=afRow('creditors',client+'|'+loan.key,loan);afRowFields(row,loan.fields,{...loan,fileId:id,date:r.date});if(!loanDate||r.date===loanDate)afLoanParticipantsNotice(row,loan,id);}
   if(r.properties.length&&afHolding('real',{fileId:id,page:r.properties[0].page,quote:'Зарегистрированная недвижимость'})){
    for(const prop of r.properties){const row=afRow('clientreal',client+'|'+prop.key);afRowFields(row,prop.fields,{...prop,fileId:id,date:r.date});}
   }
  }
+ afHistoricalLoanDetails(loanDocs,loanDate,client);
  // Family/vehicle documents without an IIN require an exact full-name match in their contents.
  const kids=new Map();let marriage=null;
  for(const [id,r]of af.results){if(!selectedFiles.some(x=>x.id===id)||r.blocked||r.duplicate||r.error||!name)continue;const item=selectedFiles.find(x=>x.id===id);

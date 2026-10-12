@@ -27,8 +27,8 @@ test('shortened or duplicate identifiers cannot choose an arbitrary loan',()=>{
 test('full contract number and code are exact aliases, different codes stay distinct',()=>{
  const r=reports();r[1].creditEvidence.credits[0].contractNumber='LONG A';r[1].creditEvidence.credits[0].contractCode='A';assert.equal(compare(r).status,'matched');r[1].creditEvidence.credits[0].contractCode='A2';assert.equal(compare(r).status,'mismatch');
 });
-test('wrong owner, dates, stale reports, partial pages, and multiple reports cannot claim a match',()=>{
- for(const mutate of [r=>r[1].identity.iin='other',r=>r[1].date='2026-09-13',r=>r.forEach(x=>x.date='2026-05-31'),r=>r.forEach(x=>x.date='2026-09-15'),r=>r[1].creditEvidence.readable=false,r=>r[1].creditEvidence.findings.push('PAGE_COMPLETENESS_UNVERIFIED'),r=>r[1].creditEvidence.creditList.complete=false,r=>r.push({...r[1],fileId:3,hash:'another'}),r=>r.pop()]){const r=reports();mutate(r);assert.equal(compare(r).status,'unavailable');}
+test('wrong owner, dates, future reports, partial pages, and multiple reports cannot claim a match',()=>{
+ for(const mutate of [r=>r[1].identity.iin='other',r=>r[1].date='2026-09-13',r=>r.forEach(x=>x.date='2099-01-01'),r=>r.forEach(x=>x.date='2026-09-15'),r=>r[1].creditEvidence.readable=false,r=>r[1].creditEvidence.findings.push('PAGE_COMPLETENESS_UNVERIFIED'),r=>r[1].creditEvidence.creditList.complete=false,r=>r.push({...r[1],fileId:3,hash:'another'}),r=>r.pop()]){const r=reports();mutate(r);assert.equal(compare(r).status,'unavailable');}
  const r=reports();r.push({...r[1],fileId:3});assert.equal(compare(r).status,'matched','identical bytes should not count twice');
 });
 test('browser comparison follows server freshness at calendar boundaries and for August reports on 1 October',async()=>{

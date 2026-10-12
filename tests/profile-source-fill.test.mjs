@@ -76,3 +76,10 @@ test('a manually truncated contract identifier cannot cause a duplicate source l
 test('a saved answer for another IIN blocks filling even when case revision and source match',()=>{
  const f=fixture();f.draft.payload.answers.push({key:'iin',value:'991231300004',checked:false});assert.throws(()=>f.run(),/DRAFT_CLIENT_IDENTITY_CONFLICT/);
 });
+
+test('newer short report keeps membership and money while older full supplies dates and types only',()=>{
+ const f=fixture();f.analysis.document.extraction.issuedAt='2026-06-17';f.analysis.document.extraction.credits[0].facts.push(fact('startedAtMonth','2022-08'),fact('creditType','Потребительский кредит'),fact('debtOutstanding','999'),fact('relatedParties','Нет'));
+ f.analysis.document.extraction.credits.push(credit('OLD-ONLY'));
+ const b=structuredClone(f.analysis);b.documentId='short';b.extractionId='short-ext';b.document.extraction.kind='gkb_short';b.document.extraction.issuedAt='2026-08-04';b.document.extraction.credits=[credit('LOAN1',[fact('debtOutstanding','100')])];f.draft.payload.documents.push({documentId:'short',type:'ГКБ — краткий отчёт',person:'Клиент'});
+ for(const reports of [[f.analysis,b],[b,f.analysis]]){const p=planProfileSourceFill(f.draft,context,reports,validateDraft);assert.equal(p.newLoans,1);assert.equal(value(p,'n8038Start'),'2022-08');assert.equal(value(p,'n8039'),'Потребительский кредит');assert.equal(value(p,'n8040'),'100');assert.equal(value(p,'loanParticipants'),undefined);assert.equal(p.changes.find(c=>c.key==='n8038Start').source.documentId,'doc');}
+});

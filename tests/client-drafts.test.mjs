@@ -234,7 +234,7 @@ for(const reverse of [false,true])test(`new loan autofill uses the newest report
  const s=await setup(t);await s.load();s.edit('iin','991231300003');
  s.run(`HostedAssessment.getContext().client.iin='991231300003';
  const loan=(number,amount)=>({key:'SYNTHETIC BANK|'+number,aliases:['SYNTHETIC BANK|'+number],page:1,fields:{n8038:'SYNTHETIC BANK',loanContractId:number,n8040:amount,loanStatus:'В просрочке — требуют полную сумму'}});
- const source=(id,kind,date,loans)=>({kind,date,identity:{iin:'991231300003',fio:'SYNTHETIC'},fields:[],loans,properties:[],notes:[],server:{dealId:'11665',documentId:'doc-'+id,extractionId:'extract-'+id}});
+ const source=(id,kind,date,loans)=>({kind,date,creditEvidence:{readable:true,creditList:{complete:true}},identity:{iin:'991231300003',fio:'SYNTHETIC'},fields:[],loans,properties:[],notes:[],server:{dealId:'11665',documentId:'doc-'+id,extractionId:'extract-'+id}});
  selectedFiles=[{id:1,file:{name:'older-short.pdf'},type:'ГКБ — краткий отчёт',person:'Клиент',storedDocumentId:'doc-1'},{id:2,file:{name:'newer-full.pdf'},type:'ГКБ — полный отчёт',person:'Клиент',storedDocumentId:'doc-2'}];
  const sources=[[1,source(1,'gkbShort','2026-07-23',[loan('CURRENT','90.00'),loan('OLDER-ONLY','20.00')])],[2,source(2,'gkbFull','2026-08-03',[loan('CURRENT','100.00')])]];
  af.results=new Map(${reverse}?[...sources].reverse():sources);afClientChoices();`);
@@ -299,4 +299,39 @@ test('loan account warning gives the Gold replacement action before generic miss
  const s=await setup(t,{currentIin:'test-client'});await s.load();
  s.run("selectedFiles=[{id:1,file:{name:'synthetic.pdf'},type:'Выписка Kaspi Gold',person:'Клиент'}];af.results.set(1,{kind:'other',blocked:true,identity:{iin:null},findings:['DOCUMENT_IDENTITY_UNVERIFIED','DOCUMENT_TYPE_UNVERIFIED','KASPI_LOAN_STATEMENT_NOT_GOLD']});");
  assert.match(s.run('afDocumentAttention(selectedFiles[0]).message'),/Это выписка по кредитам.*по карте Kaspi Gold/);
+});
+
+for(const reverse of [false,true])test(`older report supplements exact current loans without stale financial facts (${reverse})`,async t=>{
+ const s=await setup(t);await s.load();s.edit('iin','991231300003');
+ s.run(`HostedAssessment.getContext().client.iin='991231300003';
+ const make=(number,fields)=>({key:'TEST BANK|'+number,aliases:['TEST BANK|'+number],page:2,fields:{n8038:'TEST BANK',loanContractId:number,...fields},fieldKeys:{n8038Start:'credits.0.startedAtMonth',n8039:'credits.0.creditType'},server:{dealId:'11665',documentId:'full',extractionId:'old-extraction',identityRevision:1}});
+ const oldLoan=make('CURRENT',{n8038Start:'2022-08',n8039:'Потребительский кредит',n8040:'999',n8042:'9',loanParticipants:'Нет',loanStatus:'Платится по графику'});
+ const source=(kind,date,loans)=>({kind,date,creditEvidence:{readable:true,creditList:{complete:true}},identity:{iin:'991231300003'},fields:[],loans,properties:[],notes:[]});
+ selectedFiles=[{id:1,file:{name:'old-full.pdf'},type:'ГКБ — полный отчёт',person:'Клиент',storedDocumentId:'full'},{id:2,file:{name:'new-short.pdf'},type:'ГКБ — краткий отчёт',person:'Клиент',storedDocumentId:'short'}];
+ const sources=[[1,source('gkbFull','2026-06-17',[oldLoan,make('OLD-ONLY',{n8040:'300'})])],[2,source('gkbShort','2026-08-04',[make('CURRENT',{n8040:'100',n8042:'3',loanStatus:'В просрочке — требуют полную сумму'})])]];
+ af.results=new Map(${reverse}?[...sources].reverse():sources);afClientChoices();`);
+ await s.d.getElementById('afApply').onclick();
+ const get=()=>s.w.ServerDrafts.capture().groups.find(g=>g.id==='creditors');const values=()=>Object.fromEntries(get().rows[0].map(a=>[a.key,a.value]));
+ assert.equal(get().rows.length,1);assert.equal(values().n8038Start,'2022-08');assert.equal(values().n8039,'Потребительский кредит');assert.equal(values().n8040,'100');assert.equal(values().n8042,'3');assert.equal(values().loanParticipants,'');
+ assert.equal(s.run("[...af.sources].find(([id])=>/^n8038Start/.test(id))[1].date"),'2026-06-17');
+ assert.equal(s.run("[...af.sources].find(([id])=>/^n8038Start/.test(id))[1].pending"),true);
+ const saved=JSON.stringify(s.store.payload);await s.d.getElementById('afApply').onclick();assert.equal(JSON.stringify(s.store.payload),saved);
+ const reopened=await setup(t,s.store);reopened.run('afAnalyze=async()=>{}');await reopened.load();const restored=reopened.w.ServerDrafts.capture().groups.find(g=>g.id==='creditors');assert.equal(restored.rows[0].find(a=>a.key==='n8038Start').value,'2022-08');assert.equal(restored.rows.length,1);
+ // Employee values, removed rows and explicitly replaced sources stay intact on restore.
+ const date=s.d.querySelector('#creditors input[type=month]');date.value='2021-01';s.run('af.restoringEvidence=true');await s.run('afApply()');s.run('af.restoringEvidence=false');assert.equal(date.value,'2021-01');
+});
+
+test('historical detail fill rejects ambiguous, truncated and conflicting matches',async t=>{
+ const s=await setup(t);await s.load();s.edit('iin','991231300003');
+ s.run(`HostedAssessment.getContext().client.iin='991231300003';af.client='991231300003';
+ const make=(id,date)=>({key:'TEST BANK|'+id,aliases:['TEST BANK|'+id],fields:{n8038:'TEST BANK',loanContractId:id,n8038Start:date},page:1});
+ const current=make('CURRENT','');afRowFields(afRow('creditors',af.client+'|'+current.key,current),current.fields,{fileId:3});
+ const source=(date,loans)=>({kind:'gkbFull',date,loans});
+ const latest=[3,source('2026-08-04',[current])];
+ const attempt=(older)=>afHistoricalLoanDetails([...older,latest],'2026-08-04',af.client);`);
+ for(const code of [
+  "attempt([[1,source('2026-06-17',[make('CURRENT','2020-01'),make('CURRENT','2020-01')])]])",
+  "attempt([[1,source('2026-06-17',[make('CUR…','2020-01')])]])",
+  "attempt([[1,source('2026-06-17',[make('CURRENT','2020-01')])],[2,source('2026-06-17',[make('CURRENT','2021-01')])]])"
+ ]){s.run(code);assert.equal(s.d.querySelector('#creditors input[type=month]').value,'');}
 });
