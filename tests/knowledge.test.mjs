@@ -6,17 +6,36 @@ import {TEST_SECRET,testCookie} from './session-helper.mjs';
 const built=await build({entryPoints:['lib/knowledge/source.ts'],bundle:true,write:false,platform:'node',format:'esm'});
 const {buildKnowledgeData}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'));
 const model=await build({entryPoints:['lib/knowledge/model.ts'],bundle:true,write:false,platform:'node',format:'esm'});
-const {filterRows,periodFor,sortByLatestRate}=await import('data:text/javascript;base64,'+Buffer.from(model.outputFiles[0].text).toString('base64'));
+const {filterRows,formatSourceDate,periodFor,snapshotLabels,sortByLatestRate}=await import('data:text/javascript;base64,'+Buffer.from(model.outputFiles[0].text).toString('base64'));
 const data=buildKnowledgeData();
 test('import preserves the full source hierarchy and exact outcome totals',()=>{
- assert.equal(data.regions.length,20);assert.equal(data.courts.length,222);
- assert.deepEqual([data.total.granted,data.total.refused,data.total.decided,data.total.withoutConsideration,data.total.undated],[4850,3663,8513,4516,109]);
+ assert.equal(data.snapshotDate,'2026-10-13');assert.equal(data.importedAt,'2026-10-13');
+ assert.equal(data.regions.length,20);assert.equal(data.courts.length,225);
+ assert.deepEqual([data.total.granted,data.total.refused,data.total.decided,data.total.withoutConsideration,data.total.undated],[5680,4194,9874,5071,6]);
  for(const field of ['granted','refused','decided','withoutConsideration','undated']){
   assert.equal(data.courts.reduce((n,r)=>n+r[field],0),data.total[field]);
   assert.equal(data.regions.reduce((n,r)=>n+r[field],0),data.total[field]);
   for(const region of data.regions)assert.equal(data.courts.filter(r=>r.region===region.name).reduce((n,r)=>n+r[field],0),region[field]);
  }
- assert.deepEqual(data.total.periods.map(p=>p.count),[752,1436,3584,2520]);
+ assert.deepEqual(data.total.periods.map(p=>p.count),[752,1452,3651,3901]);
+ assert.equal(data.total.delta2026,-2.993606973919205);
+ assert.equal(data.total.months2026.length,10);
+ assert.deepEqual(data.total.months2026[9],{rate:57.9,count:390});
+});
+test('snapshot labels move the partial-month marker and period cutoff from September to October',async()=>{
+ const september=snapshotLabels('2026-09-17'),october=snapshotLabels(data.snapshotDate);
+ assert.equal(september.latestPeriod,'1 июля–17 сентября 2026');
+ assert.equal(september.partialMonthIndex,8);
+ assert.equal(october.date,'13.10.2026');
+ assert.equal(october.latestPeriod,'1 июля–13 октября 2026');
+ assert.equal(october.latestPeriodShort,'Июл–13 окт 2026');
+ assert.equal(october.partialMonthIndex,9);
+ assert.equal(october.partialMonthNote,'* Октябрь — 1–13 октября. ');
+ assert.equal(snapshotLabels('2026-10-31').partialMonthIndex,null);
+ assert.equal(formatSourceDate('2026-11-01'),'01.11.2026');
+ assert.throws(()=>snapshotLabels('2026-10-32'),/Invalid source date/);
+ const page=await readFile('app/knowledge/Knowledge.tsx','utf8');
+ for(const obsolete of ['17.09.2026','1 июля–17 сентября','222 суда','109 решений','i===8'])assert.ok(!page.includes(obsolete),obsolete);
 });
 test('each source row keeps its region, exact displayed rates, monthly values and supplied percentage-point change',async()=>{
  const source=JSON.parse(await readFile('data/vps-sheet-snapshot.json','utf8'));
@@ -39,7 +58,7 @@ test('search and filters preserve court-region pairing, keep missing data distin
  assert.ok(filterRows(data.courts,'','',4,30,'rate').every(r=>r.periods[3].count>=30));
  const empty=data.courts.find(r=>!r.periods[3].count);assert.equal(periodFor(empty,4).rate,null);
  const zero=data.courts.find(r=>r.periods[3].count&&r.periods[3].rate===0);assert.equal(periodFor(zero,4).rate,0);
- assert.equal(periodFor(data.total,0).rate,4850/8513*100);
+ assert.equal(periodFor(data.total,0).rate,5680/9874*100);
 });
 process.env.SITE_SESSION_TOKEN=TEST_SECRET;
 test('both navigation directions preserve zero rates and keep missing data last without changing source order',()=>{

@@ -1,4 +1,5 @@
 import snapshot from '../../data/vps-sheet-snapshot.json';
+import {snapshotLabels} from './model';
 import type {KnowledgeData, KnowledgeRow, Period} from './model';
 
 type SourceRow = (string | null)[];
@@ -35,6 +36,8 @@ function keyedRows(name: string) {
   return result;
 }
 export function buildKnowledgeData(): KnowledgeData {
+  snapshotLabels(snapshot.snapshotDate);
+  const currentMonthCount = Number(snapshot.snapshotDate.slice(5, 7));
   const totals = keyedRows('Регионы и суды'), trends = keyedRows('Тренды 2025–2026');
   const m25 = keyedRows('По месяцам 2025'), m26 = keyedRows('По месяцам 2026');
   if (![trends, m25, m26].every(rows => rows.size === totals.size)) throw Error('Source row coverage mismatch');
@@ -46,9 +49,9 @@ export function buildKnowledgeData(): KnowledgeData {
       id: key, kind: info.kind, name: row[0]!.trim(), region: info.region, sourceRow: info.index + 1,
       granted: integer(row[1]), refused: integer(row[2]), decided: integer(row[3]), withoutConsideration: integer(row[5]), undated: integer(t[11]), delta2026: t[9] === '—' ? null : Number(t[9]),
       periods: [1, 3, 5, 7].map(i => ({rate: rate(t[i]), count: integer(t[i + 1])})),
-      months2025: a.slice(1, 13).map(monthly), months2026: b.slice(1, 10).map(monthly)
+      months2025: a.slice(1, 13).map(monthly), months2026: b.slice(1, 13).map(monthly)
     };
-    if (item.granted + item.refused !== item.decided || item.months2025.length !== 12 || item.months2026.length !== 9) throw Error('Source arithmetic mismatch');
+    if (item.granted + item.refused !== item.decided || item.months2025.length !== 12 || item.months2026.length !== currentMonthCount) throw Error('Source arithmetic mismatch');
     const months = [item.months2025.slice(0, 6), item.months2025.slice(6), item.months2026.slice(0, 6), item.months2026.slice(6)];
     item.periods.forEach((p, i) => {
       if ((p.rate === null) !== (p.count === 0) || months[i].reduce((s, v) => s + v.count, 0) !== p.count) throw Error('Source period mismatch');
