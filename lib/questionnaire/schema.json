@@ -776,6 +776,7 @@
     {
       "key": "choice:debtPurpose:Погашение других долгов",
       "type": "checkbox",
+      "profileTaskOwned": true,
       "label": "На что в целом брали кредиты / почему возникли долги?*",
       "required": false,
       "conditions": []
@@ -783,6 +784,7 @@
     {
       "key": "choice:debtPurpose:Жильё",
       "type": "checkbox",
+      "profileTaskOwned": true,
       "label": "На что в целом брали кредиты / почему возникли долги?*",
       "required": false,
       "conditions": []
@@ -790,6 +792,7 @@
     {
       "key": "choice:debtPurpose:Автомобиль",
       "type": "checkbox",
+      "profileTaskOwned": true,
       "label": "На что в целом брали кредиты / почему возникли долги?*",
       "required": false,
       "conditions": []
@@ -797,6 +800,7 @@
     {
       "key": "choice:debtPurpose:Бизнес",
       "type": "checkbox",
+      "profileTaskOwned": true,
       "label": "На что в целом брали кредиты / почему возникли долги?*",
       "required": false,
       "conditions": []
@@ -804,6 +808,7 @@
     {
       "key": "choice:debtPurpose:Лечение",
       "type": "checkbox",
+      "profileTaskOwned": true,
       "label": "На что в целом брали кредиты / почему возникли долги?*",
       "required": false,
       "conditions": []
@@ -811,6 +816,7 @@
     {
       "key": "choice:debtPurpose:Образование",
       "type": "checkbox",
+      "profileTaskOwned": true,
       "label": "На что в целом брали кредиты / почему возникли долги?*",
       "required": false,
       "conditions": []
@@ -818,6 +824,7 @@
     {
       "key": "choice:debtPurpose:Ремонт",
       "type": "checkbox",
+      "profileTaskOwned": true,
       "label": "На что в целом брали кредиты / почему возникли долги?*",
       "required": false,
       "conditions": []
@@ -825,6 +832,7 @@
     {
       "key": "choice:debtPurpose:Повседневные расходы",
       "type": "checkbox",
+      "profileTaskOwned": true,
       "label": "На что в целом брали кредиты / почему возникли долги?*",
       "required": false,
       "conditions": []
@@ -832,6 +840,7 @@
     {
       "key": "choice:debtPurpose:Азартные игры / ставки",
       "type": "checkbox",
+      "profileTaskOwned": true,
       "label": "На что в целом брали кредиты / почему возникли долги?*",
       "required": false,
       "conditions": []
@@ -839,6 +848,7 @@
     {
       "key": "choice:debtPurpose:Для другого человека",
       "type": "checkbox",
+      "profileTaskOwned": true,
       "label": "На что в целом брали кредиты / почему возникли долги?*",
       "required": false,
       "conditions": []
@@ -846,6 +856,7 @@
     {
       "key": "choice:debtPurpose:Штраф",
       "type": "checkbox",
+      "profileTaskOwned": true,
       "label": "На что в целом брали кредиты / почему возникли долги?*",
       "required": false,
       "conditions": []
@@ -853,6 +864,7 @@
     {
       "key": "choice:debtPurpose:Другое",
       "type": "checkbox",
+      "profileTaskOwned": true,
       "label": "На что в целом брали кредиты / почему возникли долги?*",
       "required": false,
       "conditions": []
@@ -861,6 +873,7 @@
       "key": "debtPurposeVersion",
       "type": "hidden",
       "legacy": true,
+      "profileTaskOwned": true,
       "label": "На что в целом брали кредиты / почему возникли долги?*",
       "required": false,
       "conditions": []
@@ -868,6 +881,7 @@
     {
       "key": "debtPurposeOther",
       "type": "textarea",
+      "profileTaskOwned": true,
       "label": "Уточните другую цель*",
       "required": true,
       "conditions": [
@@ -877,6 +891,7 @@
     {
       "key": "hardshipReason",
       "type": "select-one",
+      "profileTaskOwned": true,
       "label": "Почему сейчас не получается платить по долгам?*",
       "options": [
         "",
@@ -896,6 +911,7 @@
     {
       "key": "n12008",
       "type": "textarea",
+      "profileTaskOwned": true,
       "label": "Что произошло и когда?*",
       "required": true,
       "conditions": [
@@ -905,6 +921,7 @@
     {
       "key": "n12009",
       "type": "select-one",
+      "profileTaskOwned": true,
       "label": "Есть документы или другие подтверждения этой причины?*",
       "options": [
         "",
@@ -920,6 +937,7 @@
     {
       "key": "proofDetails",
       "type": "textarea",
+      "profileTaskOwned": true,
       "label": "Какие подтверждения есть или можно получить?*",
       "required": true,
       "conditions": [

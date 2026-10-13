@@ -139,44 +139,27 @@ test('profile unknown addresses survive saved-draft restore and stay explicit',a
  for(const key of ['regAddress','factAddressSame','filingDestination','clientPhone'])assert.equal(restored.answers.find(answer=>answer.key===key).value,payload.answers.find(answer=>answer.key===key).value,key);
 });
 
-test('profile explanation prompts show the hard minimum and restore partial text without an unknown shortcut',async t=>{
+test('profile removes the duplicate explanation interview and restores its historical draft unchanged',async t=>{
  const s=await setup(t);await s.load();const {d,w}=s;
  w.AssessmentWorkflow.show('answers',{focus:false});
- const purpose=d.getElementById('debtPurposeOther'),hardship=d.getElementById('n12008'),reason=d.getElementById('hardshipReason');
- assert.ok(!d.getElementById('debtPurposeOtherField').classList.contains('hidden'),'the explanation is visible without Other');
- assert.match(purpose.closest('.field').textContent,/кто пользовался деньгами/);
- assert.match(hardship.closest('.field').textContent,/месяц\/год/);
- for(const field of [purpose,hardship]){
-  assert.equal(field.minLength,30);
-  assert.equal(field.closest('.field').querySelector('.pb-unknown,[data-unknown],[data-legacy-unknown]'),null);
+ for(const id of ['debtPurposes','debtPurposeOther','hardshipReason','n12008','n12009','proofDetails']){
+  const input=d.getElementById(id);
+  assert.ok(input.closest('[data-profile-hidden]'),id+' is absent from profile filling');
+  assert.equal(d.getElementById(id+'Count'),null,'no duplicate explanation counter');
  }
- const original='Кредитные деньги потратили на покупку жилья для проживания семьи клиента.';
- purpose.value=(original.slice(0,28)+'.')+' \n ';purpose.dispatchEvent(new w.Event('input',{bubbles:true}));
- assert.match(d.getElementById('debtPurposeOtherCount').textContent,/29 \/ 30.*ещё 1/);
- assert.equal(purpose.validity.customError,true);
- const draft=w.ServerDrafts.capture();purpose.value='';
+ const historical={debtPurposeOther:'Частичный прежний ответ',hardshipReason:'Снижение дохода',n12008:'Прежнее пояснение',n12009:'Есть на руках',proofDetails:'Справка'};
+ for(const [key,value] of Object.entries(historical))d.getElementById(key).value=value;
+ const draft=w.ServerDrafts.capture();
+ for(const key of Object.keys(historical))d.getElementById(key).value='';
  await w.ServerDrafts.restore({draft:{revision:2,identityRevision:1,payload:draft},automatic:true});
- assert.equal(purpose.value,(original.slice(0,28)+'.')+' \n ');
- assert.equal(purpose.validity.customError,true);
- assert.match(d.getElementById('debtPurposeOtherCount').textContent,/29 \/ 30/);
- purpose.value=original.slice(0,29)+'.';purpose.dispatchEvent(new w.Event('input',{bubbles:true}));
- assert.equal(purpose.validity.customError,false);
- assert.match(d.getElementById('debtPurposeOtherCount').textContent,/30 \/ 30/);
- reason.value='Снижение дохода';reason.dispatchEvent(new w.Event('change',{bubbles:true}));
- const unicode='Доход с января упал 🏠 на треть';
- for(const field of [purpose,hardship])for(const length of [29,30]){
-  field.value='\u00a0'+Array.from(unicode).slice(0,length).join('').replaceAll(' ',' \u2003\n ')+'\u00a0';
-  field.dispatchEvent(new w.Event('input',{bubbles:true}));
-  assert.equal(field.validity.customError,length===29,field.id+': normalized Unicode boundary');
-  assert.match(d.getElementById(field.id+'Count').textContent,new RegExp(length+' / 30'));
+ for(const [key,value] of Object.entries(historical)){
+  const input=d.getElementById(key);
+  assert.equal(input.value,value,'restore preserves historical text');
+  assert.ok(input.closest('[data-profile-hidden]'),'restore cannot reopen the duplicate editor');
+  assert.equal(input.validity.customError,false);
  }
- hardship.value='Не знаю';hardship.dispatchEvent(new w.Event('input',{bubbles:true}));
- assert.equal(hardship.validity.customError,true);
- hardship.value='С марта сократились рабочие часы и доход. После оплаты жилья денег на платежи не хватает.';
- hardship.dispatchEvent(new w.Event('input',{bubbles:true}));assert.equal(hardship.validity.customError,false);
- reason.value='Платежи вношу, трудностей нет';reason.dispatchEvent(new w.Event('change',{bubbles:true}));
- hardship.value='';hardship.dispatchEvent(new w.Event('input',{bubbles:true}));
- assert.equal(hardship.validity.customError,false,'hidden inapplicable details do not block');
+ const restored=w.ServerDrafts.capture();
+ for(const key of Object.keys(historical))assert.deepEqual(restored.answers.find(a=>a.key===key),draft.answers.find(a=>a.key===key));
 });
 
 test('a failed draft save stops profile publication and retains entered answers',async t=>{
