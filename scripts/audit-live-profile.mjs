@@ -39,15 +39,18 @@ try{
  // with an incomplete in-memory payload; do not copy or create client answers.
  const draft={schemaVersion:1,answers:[],groups:[],docContext:{social:'',salary:''},documents:[],pendingFiles:[]};
  const set=(key,value)=>{let a=draft.answers.find(a=>a.key===key);if(!a){a={key,value:'',checked:false};draft.answers.push(a);}a.value=value;};
- set('hardshipReason','Снижение дохода');
- const detail='Тестовая проверка длины объяснения без сохранения клиентских данных. '.slice(0,28)+'..';assert.equal(detail.length,30);assert.equal(detail.trim().length,30);
- const unicode='Доход с января упал 🏠 на треть';assert.equal(Array.from(unicode).length,30);assert.equal(unicode.length,31);
- const padded=text=>'\u00a0\t'+text.replaceAll(' ',' \u2003\n ')+'\u00a0\n';
- for(const [name,text,expected] of [['short',detail.slice(0,29),true],['whitespace',detail.slice(0,29)+' \n   ',true],['unknown','Не знаю. '.repeat(10),true],['minimum',detail,false],['unicode-short',padded(Array.from(unicode).slice(0,29).join('')),true],['unicode-minimum',padded(unicode),false]]){
+ // Explanation belongs to its Platform task. Profile checks accept absent,
+ // partial and historical narrative without turning it into another interview.
+ const explanationKeys=['debtPurposes','debtPurposeOther','hardshipReason','n12008','n12009','proofDetails'];
+ for(const [name,text,reason] of [['missing','',''],['partial','Короткий ответ','Снижение дохода'],['historical','Историческое пояснение из прежнего профиля.','Снижение дохода'],['unknown','Не знаю. '.repeat(10),'Снижение дохода']]){
+  set('hardshipReason',reason);
   for(const key of ['debtPurposeOther','n12008'])set(key,text);
+  const payloadBefore=digest(draft);
   const check=await json(root+'/profile',{action:'check',requestId:randomUUID(),draft});
   assert.equal(check.ready,false,'The incomplete audit payload must never become a complete client profile');
-  for(const key of ['debtPurposeOther','n12008'])assert.equal(check.issues.some(i=>i.key===key&&i.code==='EXPLANATION_REQUIRED'),expected,name+':'+key);
+  assert.ok(check.issues.length,'Unrelated required facts still block incomplete profiles');
+  for(const key of explanationKeys)assert.ok(!check.issues.some(i=>i.key===key),name+': retired explanation field '+key);
+  assert.equal(digest(draft),payloadBefore,'Validation payload must stay unchanged');
  }
  // Contract preparation must collect spouse status independently of the
  // client's answer. These incomplete synthetic payloads are validation only.
@@ -63,7 +66,7 @@ try{
  assert.ok(!(await json(root+'/check',{payload:unmarried,bindings:[]})).issues.some(i=>i.key==='choice:partnerSocialStatus:'));
  const after=(await json(root+'/draft')).draft;
  assert.equal(digest(before),digest(after),'Audit draft changed; investigate concurrent edits');
- report.explanations={minimum:30,shortBlocked:true,whitespacePaddingBlocked:true,unknownBlocked:true,minimumAccepted:true,normalizedUnicodeBoundary:true,draftUnchanged:true};
+ report.explanations={taskOwned:true,missingDoesNotBlock:true,partialLegacyDoesNotBlock:true,historicalUnknownDoesNotBlock:true,otherRequiredFactsStillChecked:true,draftUnchanged:true};
  report.spouseStatus={marriedRequiresAnswer:true,unknownBlocked:true,explicitNoneAccepted:true,pensionerAccepted:true,unmarriedExempt:true,draftUnchanged:true};
  // Read the new OCR sidecar without claiming work or writing page results on a real case.
  const ocrRoot='/api/assessment/8595',ocrBefore=(await json(ocrRoot+'/draft')).draft;
@@ -82,5 +85,5 @@ try{
  assert.equal(digest(ocrBefore),digest((await json(ocrRoot+'/draft')).draft),'OCR read changed the saved draft or a concurrent edit occurred');
  report.browserOcr={authenticatedRead:true,anonymousBlocked:true,engineVersion:ocr.engineVersion,eligiblePages:ocr.eligiblePages.length,completedPages:ocr.completedPages.length,draftUnchanged:true,noOcrWrite:true};
  Object.assign(report,{anonymousBlocked:true,authenticated:true,completed:activity.completed.length,activeProfiles:new Set(activity.active.map(s=>s.dealId)).size,workers:activity.workers,passed:true});
- console.log('Profile verified: team activity, queue order, explanation/spouse validation and browser OCR storage read. Audit drafts unchanged; no client writes.');
+ console.log('Profile verified: team activity, queue order, task-owned explanation/spouse validation and browser OCR storage read. Audit drafts unchanged; no client writes.');
 }finally{await writeFile('live-profile-audit.json',JSON.stringify(report,null,2)+'\n');}
