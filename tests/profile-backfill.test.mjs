@@ -77,68 +77,37 @@ test('profile mode: complete answers pass, «Не знаю» becomes an open que
  assert.ok(!checkAnswers(validateDraft({...fixture(),answers:fixture().answers.map(a=>a.key==='hardshipReason'?{...a,value:'Не знаю'}:a)}),iin).answersComplete);
 });
 
-test('every profile needs a 30-character overall purpose explanation; partial drafts remain intact',()=>{
- const p=fixture({profile:true}),original=p.answers.find(a=>a.key==='debtPurposeOther').value;
+test('profile saves without a duplicate explanation interview, including old-tab partial answers',()=>{
+ const p=fixture({profile:true}),keys=['debtPurposeOther','hardshipReason','n12008','n12009','proofDetails'];
+ for(const a of p.answers)if(a.key.startsWith('choice:debtPurpose:'))a.checked=false;
+ for(const key of keys)set(p,key,'');
  const check=()=>checkAnswers(validateDraft(p),iin,'2026-09-25',{profile:true});
- for(const text of ['',(original.slice(0,28)+'.'),'   '+(original.slice(0,28)+'.')+' \n  ','Не знаю','Не знаю. '.repeat(10)]){
-  set(p,'debtPurposeOther',text);
-  assert.equal(validateDraft(p).answers.find(a=>a.key==='debtPurposeOther').value,text,'draft saving keeps incomplete text');
-  assert.ok(has(check(),'debtPurposeOther','EXPLANATION_REQUIRED'),JSON.stringify(text));
-  assert.ok(!check().unresolved.some(a=>a.key==='debtPurposeOther'));
-  assert.throws(()=>compileProfile(p,iin,'11665',author),/ANSWERS_INCOMPLETE/,'direct save cannot bypass the check');
- }
- const minimum=original.slice(0,29)+'.';
- set(p,'debtPurposeOther',minimum);
  assert.equal(check().answersComplete,true,JSON.stringify(check().issues));
- assert.equal(profileExplanations.explanationLength('  '+minimum+' \n '),30);
- set(p,'debtPurposeOther',original);
- const compiled=compileProfile(p,iin,'11665',author);
- assert.ok(compiled.json.answers.some(a=>a.key==='debtPurposeOther'&&a.value===original&&a.label===profileExplanations.PROFILE_EXPLANATIONS.debtPurposeOther.label));
- set(p,'choice:debtPurpose:Другое','Другое',true);
- assert.equal(check().displayAnswers.filter(a=>a.key==='debtPurposeOther').length,1,'one shared explanation, including other purposes');
-});
-
-test('payment difficulties need 30 characters only when applicable; sales requirements stay unchanged',()=>{
- const p=fixture({profile:true}),check=()=>checkAnswers(validateDraft(p),iin,'2026-09-25',{profile:true});
- set(p,'hardshipReason','Снижение дохода');set(p,'n12009','Нет');
- const text='С марта 2026 года сократились рабочие часы и доход. После оплаты жилья денег на платежи не хватает.';
- for(const value of ['',text.slice(0,29),'Не знаю','Неизвестно; '.repeat(10)]){
-  set(p,'n12008',value);assert.ok(has(check(),'n12008','EXPLANATION_REQUIRED'));
-  assert.throws(()=>compileProfile(p,iin,'11665',author),/ANSWERS_INCOMPLETE/);
- }
- set(p,'n12008',text.slice(0,29)+'.');assert.equal(check().answersComplete,true,JSON.stringify(check().issues));
- set(p,'hardshipReason','Платежи вношу, трудностей нет');set(p,'n12008','Не знаю');
- assert.equal(check().answersComplete,true,'do not invent difficulties when the client has none');
- const sales=fixture();set(sales,'hardshipReason','Снижение дохода');set(sales,'n12008','Доход снизился');set(sales,'n12009','Нет');
- set(sales,'choice:debtPurpose:Другое','Другое',true);set(sales,'debtPurposeOther','Короткое объяснение');
- const result=checkAnswers(validateDraft(sales),iin,'2026-09-25');
- assert.equal(result.answersComplete,true,JSON.stringify(result.issues));
-});
-
-test('shared and server profile checks enforce 29/30 Unicode characters after whitespace normalization',()=>{
- const minimum='Доход с января упал 🏠 на треть',short=Array.from(minimum).slice(0,29).join('');
- assert.equal(Array.from(minimum).length,30);
- const padded=text=>'\u00a0\t'+text.replaceAll(' ',' \u2003\n ')+'\u00a0\n';
- for(const key of ['debtPurposeOther','n12008']){
-  const p=fixture({profile:true});set(p,'hardshipReason','Снижение дохода');set(p,'n12009','Нет');
-  set(p,'n12008',minimum);
-  const check=()=>checkAnswers(validateDraft(p),iin,'2026-09-25',{profile:true});
-  for(const [normalized,length,blocked] of [[short,29,true],[minimum,30,false]]){
-   const value=padded(normalized);assert.ok(value.length>30,'raw whitespace and UTF-16 length cannot satisfy the minimum');
-   assert.equal(profileExplanations.explanationText(value),normalized);
-   assert.equal(profileExplanations.explanationLength(value),length);
-   assert.equal(Boolean(profileExplanations.explanationError(value)),blocked);
-   set(p,key,value);
-   assert.equal(has(check(),key,'EXPLANATION_REQUIRED'),blocked,key+':'+length);
-   assert.equal(validateDraft(p).answers.find(a=>a.key===key).value,value,'draft retains original text');
-   if(blocked)assert.throws(()=>compileProfile(p,iin,'11665',author),/ANSWERS_INCOMPLETE/);
-   else{
-    assert.equal(check().answersComplete,true,JSON.stringify(check().issues));
-    assert.ok(compileProfile(p,iin,'11665',author).json.answers.some(a=>a.key===key),'direct save accepts the same boundary');
-   }
+ assert.ok(compileProfile(p,iin,'11665',author));
+ for(const text of ['Не знаю','Частичный текст','Старое объяснение до завершения отдельной задачи']){
+  set(p,'debtPurposeOther',text);set(p,'hardshipReason','Снижение дохода');set(p,'n12008',text);
+  p.answers.find(a=>a.key==='n12008').sourceReplaced=true;
+  const before=JSON.stringify(p);
+  assert.equal(check().answersComplete,true,JSON.stringify(check().issues));
+  const compiled=compileProfile(p,iin,'11665',author);
+  for(const key of ['debtPurposeOther','n12008']){
+   assert.equal(validateDraft(p).answers.find(a=>a.key===key).value,text,'draft keeps original');
+   assert.equal(compiled.json.answers.find(a=>a.key===key).value,text,'historical feed keeps original');
   }
+  assert.equal(JSON.stringify(p),before,'checking and compiling do not rewrite history');
  }
- assert.match(profileExplanations.explanationError('Не знаю. '.repeat(10)),/минимум 30 символов/);
+});
+
+test('sales retains its purpose and difficulty questions independently of the profile',()=>{
+ const p=fixture();
+ for(const a of p.answers)if(a.key.startsWith('choice:debtPurpose:'))a.checked=false;
+ set(p,'hardshipReason','Снижение дохода');set(p,'n12008','');set(p,'n12009','');
+ let result=checkAnswers(validateDraft(p),iin,'2026-09-25');
+ for(const key of ['debtPurposes','n12008','n12009'])assert.ok(has(result,key),key);
+ set(p,'choice:debtPurpose:Другое','Другое',true);set(p,'debtPurposeOther','Короткое объяснение');
+ set(p,'n12008','Доход снизился');set(p,'n12009','Нет');
+ result=checkAnswers(validateDraft(p),iin,'2026-09-25');
+ assert.equal(result.answersComplete,true,JSON.stringify(result.issues));
 });
 
 test('married profile does not require spouse social status, and keeps it when given',()=>{

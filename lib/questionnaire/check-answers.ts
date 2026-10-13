@@ -1,5 +1,4 @@
 import {normalizeIntake} from '../../public/intake-data.mjs';
-import {PROFILE_EXPLANATIONS,explanationError} from '../../public/profile-explanations.mjs';
 import schema from './schema.json';
 import {parseParticipants} from '../../public/loan-participants.mjs';
 import type {Answer,DraftPayload} from './draft';
@@ -7,7 +6,7 @@ import {validIin} from '../documents/extract-native';
 import {createPaymentSchedule} from '../../public/payment-schedule.mjs';
 export type AnswerIssue={key:string;group?:string;row?:number;code:string;label:string};
 export type DisplayAnswer={key:string;group?:string;row?:number;label:string;value:string};
-type Definition={key:string;type:string;label:string;required?:boolean;legacy?:boolean;supportOnly?:boolean;conditions?:string[];min?:string;max?:string;compactCount?:boolean};
+type Definition={key:string;type:string;label:string;required?:boolean;legacy?:boolean;supportOnly?:boolean;profileTaskOwned?:boolean;conditions?:string[];min?:string;max?:string;compactCount?:boolean};
 /** Answer completeness only. Document eligibility and fact review are separate gates. */
 /** Contract/payment answers belong to sales. The profile backfill never asks for or writes them. */
 export const SALES_ONLY_KEYS=new Set(['dognum','summa','contractDate','months','payDay','grafType']);
@@ -60,12 +59,10 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
  function field(f:Definition,row?:Map<string,Answer>,group?:string,index?:number){
   if(f.legacy||!active(f.conditions,row)||f.key.startsWith('exact:'))return;
   if(profile&&SALES_ONLY_KEYS.has(f.key))return;
-  const explanation=profile&&!group?PROFILE_EXPLANATIONS[f.key as keyof typeof PROFILE_EXPLANATIONS]:undefined;
-  if(explanation)f={...f,label:explanation.label};
   const required=f.required||(!profile&&f.key==='partnerSocialOther');
-  // Support owns these historical court answers. Keep the display/profile feed,
+  // Support owns court and client explanation answers. Keep the historical feed,
   // but never ask assessment workers to resolve or validate them.
-  const retired=f.supportOnly===true||profile&&(group==='profilefamily'||RETIRED_PROFILE_KEYS.has(f.key)||f.key.startsWith('choice:partnerSocialStatus:'));
+  const retired=f.supportOnly===true||profile&&(f.profileTaskOwned===true||group==='profilefamily'||RETIRED_PROFILE_KEYS.has(f.key)||f.key.startsWith('choice:partnerSocialStatus:'));
   if(!retired&&(row?.get(f.key)||all.get(f.key))?.sourceReplaced)issue(f.key,'ANSWER_SOURCE_REPLACED','Источник заменён: '+f.label,group,index);
   if(f.type==='checkbox'){
    if(group==='creditors'&&f.key==='loanClaimIncluded'){
@@ -79,13 +76,6 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   const unknown=f.key!=='loanParticipants'&&(row?row.get(unknownKey)?.checked===true:checked(unknownKey))&&(group?schema.groups.find(g=>g.id===group)?.fields:schema.scalar)?.some(x=>x.key===unknownKey);
   displayAnswers.push({key:f.key,label:f.label,value:unknown?'Неизвестно — уточнить':v,...(group?{group,row:index}:{})});
   if(retired)return;
-  // Drafts keep partial text, but these two explanations must be complete before
-  // publishing a profile. Old tabs and explicit unknowns cannot bypass the rule.
-  if(explanation){
-   const error=explanationError(v);
-   if(unknown||error)issue(f.key,'EXPLANATION_REQUIRED',f.label+' — '+(error||'Уточните факты у клиента.'),group,index);
-   return;
-  }
   if(unknown||['unknown','Не знаю'].includes(v)){if(profile)unresolved.push({key:f.key,label:f.label,value:'Неизвестно — уточнить',...(group?{group,row:index}:{})});else issue(f.key,'ANSWER_REQUIRED',f.label,group,index);return;}
   if(!v){if(required)issue(f.key,'ANSWER_REQUIRED',f.label,group,index);return;}
   if(f.key==='loanParticipants'&&!parseParticipants(v).valid)issue(f.key,'PARTICIPANTS_REQUIRED','Выберите «Нет» или укажите ФИО и роль каждого участника',group,index);
@@ -105,7 +95,7 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
  if(/^\d+$/.test(benefitCount)&&['0','1'].includes(payload.docContext.social)&&((Number(benefitCount)>0)!==(payload.docContext.social==='1')))issue('clientBenefitsCount','BENEFITS_CONTEXT_CONFLICT','Количество выплат не совпадает с ответом о пенсии и пособиях в документах');
  const purposes=payload.answers.filter(a=>a.key.startsWith('choice:debtPurpose:')&&a.checked).map(a=>a.key.slice('choice:debtPurpose:'.length));
  if(purposes.length)displayAnswers.push({key:'debtPurposes',label:'На что в целом брали кредиты / почему возникли долги?',value:purposes.join('; ')});
- else issue('debtPurposes','CHOICE_REQUIRED','Укажите цели кредитов');
+ else if(!profile)issue('debtPurposes','CHOICE_REQUIRED','Укажите цели кредитов');
  if(value('gamblingTransfers')==='no'&&value('n8044')&&Number(value('n8044'))!==0)issue('n8044','GAMBLING_AMOUNT_CONFLICT','При ответе «Нет» сумма переводов должна быть 0');
  if(value('gamblingTransfers')==='yes'&&value('n8044')&&Number(value('n8044'))===0)issue('n8044','GAMBLING_AMOUNT_CONFLICT','Уточните сумму переводов или выберите «Нет»');
  if(value('enforcementStatus')==='legacy'){
