@@ -1,14 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { ENGINE_VERSION, MODEL_ASSETS } from '../lib/browser-ocr/config.mjs';
+import {digest,downloadVerifiedModel} from './browser-ocr-model-download.mjs';
 const root=path.resolve(import.meta.dirname,'..');
 const target=path.join(root,'public/browser-ocr-assets');
 const versionTarget=path.join(target,ENGINE_VERSION);
 const cache=path.join(root,'node_modules/.cache/browser-ocr-models');
-const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 await fs.mkdir(versionTarget,{recursive:true});
 await fs.mkdir(cache,{recursive:true});
 
@@ -16,10 +15,9 @@ for(const asset of MODEL_ASSETS) {
   const cached=path.join(cache,asset.sha256+'.tar');
   let bytes=await fs.readFile(cached).catch(()=>null);
   if(!bytes || bytes.byteLength!==asset.bytes || digest(bytes)!==asset.sha256) {
-    const response=await fetch(asset.url,{signal:AbortSignal.timeout(180_000)});
-    if(!response.ok) throw new Error(`OCR model download failed: ${asset.file} (${response.status})`);
-    bytes=Buffer.from(await response.arrayBuffer());
-    if(bytes.byteLength!==asset.bytes || digest(bytes)!==asset.sha256) throw new Error(`OCR model integrity mismatch: ${asset.file}`);
+    const downloaded=await downloadVerifiedModel(asset);
+    bytes=downloaded.bytes;
+    if(downloaded.source==='production')console.log(`Verified OCR model fallback used: ${asset.file}`);
     await fs.writeFile(cached,bytes);
   }
   await fs.writeFile(path.join(versionTarget,asset.file),bytes);

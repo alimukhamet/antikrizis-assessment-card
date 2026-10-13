@@ -9,8 +9,35 @@ export type KnowledgeData = {
   snapshotDate: string; importedAt: string; sourceUrl: string;
   regions: KnowledgeRow[]; courts: KnowledgeRow[]; total: KnowledgeRow;
 };
-export const PERIODS = ['Все годы в источнике', 'Январь–июнь 2025', 'Июль–декабрь 2025', 'Январь–июнь 2026', '1 июля–17 сентября 2026'];
 export const MONTHS = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
+const MONTH_NAMES = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+const MONTH_TITLES = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+function sourceDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) throw Error('Invalid source date');
+  const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (month < 1 || month > 12 || day < 1 || day > lastDay) throw Error('Invalid source date');
+  return {year, month, day, lastDay};
+}
+export function formatSourceDate(value: string) {
+  const {year, month, day} = sourceDate(value);
+  return `${String(day).padStart(2, '0')}.${String(month).padStart(2, '0')}.${year}`;
+}
+export function snapshotLabels(snapshotDate: string) {
+  const {year, month, day, lastDay} = sourceDate(snapshotDate);
+  if (year !== 2026 || month < 7) throw Error('Invalid source cutoff');
+  const latestPeriod = `1 июля–${day} ${MONTH_NAMES[month - 1]} ${year}`;
+  const partialMonth = day < lastDay;
+  return {
+    date: formatSourceDate(snapshotDate),
+    latestPeriod,
+    latestPeriodShort: `Июл–${day} ${MONTHS[month - 1].toLocaleLowerCase('ru')} ${year}`,
+    latestPeriodIncomplete: month < 12 || partialMonth,
+    partialMonthIndex: partialMonth ? month - 1 : null,
+    partialMonthNote: partialMonth ? `* ${MONTH_TITLES[month - 1]} — 1–${day} ${MONTH_NAMES[month - 1]}. ` : ''
+  };
+}
 export function periodFor(row: KnowledgeRow, period: number): Period {
   return period === 0 ? {rate: row.decided ? row.granted / row.decided * 100 : null, count: row.decided} : row.periods[period - 1];
 }
