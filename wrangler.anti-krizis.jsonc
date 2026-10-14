@@ -30,6 +30,11 @@
       "database_name": "antikrizis-assessment-card-production-db",
       "database_id": "52579528-2df1-42ca-9ec7-526893d7727f",
       "migrations_dir": "drizzle"
+    },
+    {
+      "binding": "FINANCE_DB",
+      "database_name": "antikrizis-payment-control-db",
+      "database_id": "60c268e7-859c-4e77-97d5-7941c99a43fe"
     }
   ],
   "r2_buckets": [

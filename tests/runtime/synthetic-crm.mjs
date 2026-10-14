@@ -21,7 +21,7 @@ export function syntheticCrm(){
    case 'crm.deal.list.json':{
     const filter=body.filter||{};
     if(filter.UF_CRM_1781335943568==='263')return Response.json({result:[]});
-    const rows=[['7609',550000],['2093',450000],['4351',500000]].map(([manager,value],index)=>({ID:String(910001+index),TITLE:'SYNTHETIC SALES ONLY',ASSIGNED_BY_ID:manager,OPPORTUNITY:value,UF_CRM_1777554129345:'2026-09-15',UF_CRM_1781335943568:index===1?'423':'261',STAGE_ID:'C1:NEW'}));
+    const rows=[['7609',550000],['2093',450000],['4351',500000]].map(([manager,value],index)=>({ID:String(910001+index),TITLE:'SYNTHETIC SALES ONLY',ASSIGNED_BY_ID:manager,OPPORTUNITY:value,UF_CRM_1773655613972:'199',UF_CRM_1777554129345:'2026-09-15',UF_CRM_1781335943568:index===1?'423':'261',STAGE_ID:'C1:NEW'}));
     return Response.json({result:rows.filter(row=>row.ASSIGNED_BY_ID===filter.ASSIGNED_BY_ID&&row.UF_CRM_1777554129345>=filter['>=UF_CRM_1777554129345']&&row.UF_CRM_1777554129345<=filter['<=UF_CRM_1777554129345']&&Number(row.ID)>Number(filter['>ID']||0))});
    }
    case 'crm.item.list.json':{

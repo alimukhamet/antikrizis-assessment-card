@@ -5,10 +5,10 @@ import vm from 'node:vm';
 import ts from 'typescript';
 function load(path,deps={}){const exports={};vm.runInNewContext(ts.transpileModule(readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:name=>deps[name],Intl,Date,AbortSignal,Number,Math,Object,Promise});return exports;}
 const rules=load('lib/personal-sales.ts');
-const crm=load('lib/crm/personal-compensation.ts',{'../personal-sales':rules,'./http-headers':{bitrixHeaders:()=>({'content-type':'application/json'})}});
-const deal=(id,type='261',date='2026-09-15')=>({ID:String(id),TITLE:'Test',ASSIGNED_BY_ID:'2093',OPPORTUNITY:400000,STAGE_ID:'C1:NEW',UF_CRM_1781335943568:type,UF_CRM_1777554129345:date});
+const crm=load('lib/crm/personal-compensation.ts',{'../personal-sales':rules,'../salary-payment-register':{},'./http-headers':{bitrixHeaders:()=>({'content-type':'application/json'})}});
+const deal=(id,type='261',date='2026-09-15')=>({ID:String(id),TITLE:'Test',ASSIGNED_BY_ID:'2093',OPPORTUNITY:400000,STAGE_ID:'C1:NEW',UF_CRM_1781335943568:type,UF_CRM_1777554129345:date,UF_CRM_1773655613972:'199'});
 const invoice=(id,parent,overrides={})=>({id:String(id),parentId2:Number(parent),stageId:'DT31_3:P',opportunity:200000,ufCrm_SMART_INVOICE_1772428866812:'195',ufCrm_SMART_INVOICE_1773231423587:'2026-10-01',...overrides});
-function fixture(rows,pages){
+function fixture(rows,pages,readPayments=async()=>new Map()){
  rows=[...rows].sort((a,b)=>Number(a.ID)-Number(b.ID));
  const calls=[];
  const send=async(url,options)=>{
@@ -17,24 +17,24 @@ function fixture(rows,pages){
   const page=await pages(String(body.filter.parentId2),body.start);
   return Response.json(Array.isArray(page)?{result:{items:page}}:page);
  };
- return {calls,run:(from='2026-09-01',to='2026-09-30')=>crm.loadCompensationDeals('https://crm.test/rest/','2093',from,to,send)};
+ return {calls,run:(from='2026-09-01',to='2026-09-30')=>crm.loadCompensationDeals('https://crm.test/rest/','2093',from,to,send,readPayments)};
 }
-test('only linked positive paid first invoices qualify both types; later payment dates preserve the handoff month',async()=>{
- const invalid=[invoice(1,1,{stageId:'DT31_3:NEW'}),invoice(2,1,{ufCrm_SMART_INVOICE_1772428866812:'other'}),invoice(3,999)];
- const f=fixture([deal(1),deal(2,'423'),deal(3),deal(4,'461')],id=>id==='1'?[...invalid,invoice(4,1,{opportunity:10000})]:id==='2'?[invoice(5,2,{stageId:'DT31_3:N',ufCrm_SMART_INVOICE_1773231423587:''})]:invalid);
+test('register receipts qualify both types once, preserve handoff month and never read legacy invoices',async()=>{
+ let scope;
+ const read=async deals=>{scope=deals;return new Map(deals.map(deal=>[deal.id,{amount:deal.id==='3'?null:80000,date:'2026-10-01',status:deal.id==='3'?'not_registered':'received',source:'payment_register',entryId:deal.id==='3'?null:Number(deal.id)}]));};
+ const f=fixture([deal(1),deal(2,'423'),deal(3),deal(4,'461')],()=>{throw Error('Legacy invoices must not be read');},read);
  const rows=await f.run();
- assert.equal(rows.length,4);assert.equal(rows[0].firstPayment,10000);assert.equal(rows[1].firstPayment,200000);assert.equal(rows[2].firstPayment,null);
+ assert.equal(rows.length,4);assert.equal(rows[0].firstPayment,80000);assert.equal(rows[1].firstPayment,80000);assert.equal(rows[2].firstPayment,null);
  assert.ok(rows.every(row=>row.commissionDate==='2026-09-15'));assert.equal(rules.commissionForDeals(rows.slice(0,3)),48000);
- assert.equal(f.calls.filter(call=>call.url.endsWith('crm.item.list.json')).length,3);
+ assert.deepEqual(Array.from(scope,d=>[d.id,d.serviceType]),[['1','199'],['2','199'],['3','199']]);
+ assert.equal(f.calls.filter(call=>call.url.endsWith('crm.item.list.json')).length,0);
 });
-test('first payments on later invoice pages qualify; duplicate invoice-day payments do not duplicate contract commission',async()=>{
- const f=fixture([deal(1,'423')],(_id,start)=>start?{result:{items:[invoice(3,1),invoice(4,1,{opportunity:10000})]}}:{result:{items:[invoice(1,1,{stageId:'DT31_3:NEW'})]},next:50});
- const rows=await f.run();assert.equal(rows[0].firstPayment,210000);assert.equal(rules.commissionForDeals(rows),24000);
- assert.deepEqual(f.calls.filter(call=>call.url.endsWith('crm.item.list.json')).map(call=>call.body.start),[0,50]);
+test('unavailable or incomplete register cannot become zero salary',async()=>{
+ for(const read of [async()=>{throw Error('unavailable');},async()=>new Map()])await assert.rejects(()=>fixture([deal(1)],()=>[],read).run());
 });
 test('failed, malformed, missing-amount and truncated invoice reads fail instead of inventing an unpaid or complete result',async()=>{
  for(const page of [()=>{throw Error('unavailable');},()=>({result:{}}),()=>[invoice(1,1,{opportunity:null})],(_id,start)=>({result:{items:[]},next:start+50})]){
-  await assert.rejects(()=>fixture([deal(1)],page).run());
+  await assert.rejects(()=>fixture([deal(1,'263')],page).run());
  }
 });
 test('before-decision first-payment sums and owner-confirmed June invoice exceptions remain intact',async()=>{
@@ -46,9 +46,9 @@ test('before-decision first-payment sums and owner-confirmed June invoice except
 });
 test('historical invoice loading is bounded and each returned deal is counted once',async()=>{
  let active=0,maximum=0;
- const f=fixture(Array.from({length:18},(_,i)=>deal(i+1,i%2?'423':'261')),async id=>{
-  active++;maximum=Math.max(maximum,active);await new Promise(resolve=>setTimeout(resolve,2));active--;return [invoice(id,id)];
+ const f=fixture(Array.from({length:18},(_,i)=>deal(i+1,'263')),async id=>{
+  active++;maximum=Math.max(maximum,active);await new Promise(resolve=>setTimeout(resolve,2));active--;return [invoice(id,id,{ufCrm_SMART_INVOICE_1773231423587:'2026-09-20'})];
  });
  const rows=await f.run();assert.equal(rows.length,18);assert.equal(new Set(rows.map(row=>row.id)).size,18);assert.ok(maximum<=6);assert.ok(maximum>1);
- assert.equal(rules.commissionForDeals(rows),432000);
+ assert.equal(rules.commissionForDeals(rows),684000);
 });

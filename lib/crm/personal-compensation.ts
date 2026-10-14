@@ -1,8 +1,10 @@
+import {loadRegisterFirstPayments,type RegisterPaymentEvidence} from '../salary-payment-register';
 import {bitrixHeaders} from './http-headers';
 import {PEOPLE,hasFirstPaymentContractRate,type Person,type Totals} from '../personal-sales';
 
 const HANDOFF_DATE_FIELD='UF_CRM_1777554129345';
 const PAYMENT_TYPE_FIELD='UF_CRM_1781335943568';
+const SERVICE_TYPE_FIELD='UF_CRM_1773655613972';
 const CASE_OUTCOME_FIELD='UF_CRM_1781518191377';
 const INVOICE_PAYMENT_TYPE_FIELD='ufCrm_SMART_INVOICE_1772428866812';
 const INVOICE_TRANSACTION_DATE_FIELD='ufCrm_SMART_INVOICE_1773231423587';
@@ -24,6 +26,7 @@ export type CompensationDeal={
   stageId:string;
   outcomeId:string;
   firstPayment:number|null;
+  paymentEvidence?:RegisterPaymentEvidence;
 };
 
 type BitrixEnvelope<T>={result?:T;error?:string;error_description?:string;next?:number};
@@ -45,7 +48,7 @@ function money(value:unknown){
 
 type FirstPayment={amount:number|null;date:string};
 
-async function firstPayment(webhook:string,dealId:string,send:typeof fetch,invoiceId?:string,dateRequired=true):Promise<FirstPayment>{
+async function firstPayment(webhook:string,dealId:string,send:typeof fetch,invoiceId?:string):Promise<FirstPayment>{
   let start=0;
   const payments:Array<{id:string;amount:number;date:string}>=[];
   for(let page=0;page<20;page+=1){
@@ -69,8 +72,8 @@ async function firstPayment(webhook:string,dealId:string,send:typeof fetch,invoi
     start=payload.next;
   }
   const dated=payments.filter(item=>/^\d{4}-\d{2}-\d{2}$/.test(item.date)).sort((a,b)=>a.date.localeCompare(b.date)||Number(a.id)-Number(b.id));
-  // The fixed 6% uses the handoff month, so a paid first invoice need not supply a payroll date.
-  if(!dated.length)return {amount:dateRequired?null:payments[0]?.amount??null,date:''};
+  // The legacy before-determination rule still needs its invoice payroll date.
+  if(!dated.length)return {amount:null,date:''};
   const date=dated[0].date;
   return {amount:dated.filter(item=>item.date===date).reduce((sum,item)=>sum+item.amount,0),date};
 }
@@ -83,7 +86,7 @@ async function dealRows(webhook:string,filterBase:Record<string,string>,send:typ
     if(lastId)filter['>ID']=String(lastId);
     const payload=await call<Array<Record<string,unknown>>>(webhook,'crm.deal.list',{
       order:{ID:'ASC'},filter,
-      select:['ID','TITLE','ASSIGNED_BY_ID','OPPORTUNITY','STAGE_ID',HANDOFF_DATE_FIELD,PAYMENT_TYPE_FIELD,CASE_OUTCOME_FIELD],
+      select:['ID','TITLE','ASSIGNED_BY_ID','OPPORTUNITY','STAGE_ID',HANDOFF_DATE_FIELD,PAYMENT_TYPE_FIELD,CASE_OUTCOME_FIELD,SERVICE_TYPE_FIELD],
       start:-1,
     },send);
     if(!Array.isArray(payload.result))throw new Error('Invalid Bitrix deal list');
@@ -97,23 +100,27 @@ async function dealRows(webhook:string,filterBase:Record<string,string>,send:typ
   throw new Error('Sales deal pagination is incomplete');
 }
 
-export async function loadCompensationDeals(webhook:string,managerId:string,from:string,to:string,send:typeof fetch=fetch):Promise<CompensationDeal[]>{
+export async function loadCompensationDeals(webhook:string,managerId:string,from:string,to:string,send:typeof fetch=fetch,readPayments=loadRegisterFirstPayments):Promise<CompensationDeal[]>{
   const [periodRows,firstPaymentRows]=await Promise.all([
     dealRows(webhook,{[`>=${HANDOFF_DATE_FIELD}`]:from,[`<=${HANDOFF_DATE_FIELD}`]:to,ASSIGNED_BY_ID:managerId},send),
     dealRows(webhook,{ASSIGNED_BY_ID:managerId,[PAYMENT_TYPE_FIELD]:'263'},send),
   ]);
   const rows=new Map([...periodRows,...firstPaymentRows].map(row=>[String(row.ID),row]));
+  if([...rows.values()].some(row=>String(row.ASSIGNED_BY_ID)!==managerId))throw new Error('Salary manager scope mismatch');
+  const registered=await readPayments([...rows.values()].filter(row=>hasFirstPaymentContractRate(String(row[PAYMENT_TYPE_FIELD]??''))).map(row=>({id:String(row.ID),serviceType:String(row[SERVICE_TYPE_FIELD]??'')})));
   const pending=[...rows.values()],deals:CompensationDeal[]=[];
   // Expanded eligibility must not fan out one simultaneous CRM request per historical deal.
   await Promise.all(Array.from({length:Math.min(6,pending.length)},async()=>{
    for(let row=pending.shift();row;row=pending.shift()){
     const id=String(row.ID),paymentType=String(row[PAYMENT_TYPE_FIELD]??'');
     const juneOverride=paymentType==='263'&&managerId===RAMAZAN_ID?RAMAZAN_JUNE_FIRST_PAYMENTS.get(id):undefined;
-    const payment=paymentType==='263'||hasFirstPaymentContractRate(paymentType)?await firstPayment(webhook,id,send,juneOverride?.invoiceId,paymentType==='263'):{amount:null,date:''};
+    const evidence=hasFirstPaymentContractRate(paymentType)?registered.get(id):undefined;
+    if(hasFirstPaymentContractRate(paymentType)&&!evidence)throw new Error('Payment register response is incomplete');
+    const payment=paymentType==='263'?await firstPayment(webhook,id,send,juneOverride?.invoiceId):evidence??{amount:null,date:''};
     const invoiceDate=juneOverride?.date??(managerId===RAMAZAN_ID&&payment.date.startsWith('2026-06')?'2026-05-31':payment.date);
     deals.push({
       id,title:String(row.TITLE??'').trim()||`Сделка #${id}`,handoffDate:String(row[HANDOFF_DATE_FIELD]??'').slice(0,10),commissionDate:paymentType==='263'?invoiceDate:String(row[HANDOFF_DATE_FIELD]??'').slice(0,10),
-      contractValue:money(row.OPPORTUNITY),paymentType,stageId:String(row.STAGE_ID??''),outcomeId:String(row[CASE_OUTCOME_FIELD]??''),firstPayment:payment.amount,
+      contractValue:money(row.OPPORTUNITY),paymentType,stageId:String(row.STAGE_ID??''),outcomeId:String(row[CASE_OUTCOME_FIELD]??''),firstPayment:payment.amount,...(evidence?{paymentEvidence:evidence}:{}),
     });
    }
   }));

@@ -79,7 +79,7 @@ test('current plan shows fixed first-payment commission and the unawarded first-
  const {report}=await mount(t,success);
  report.periods=[{id:'synthetic-plan',start:'2026-10-01',end:'2026-10-21',target:12000000,metric:'volume',tiers:[[0,1.5],[12000000,2]],leaderBonus:100000,count:0,volume:0,missing:0,progress:0,remaining:12000000,ongoing:true}];
  await act(async()=>document.querySelectorAll('.rop-nav button')[1].click());await act(async()=>document.querySelectorAll('.rop-nav button')[0].click());
- assert.match(document.querySelector('.ps-current').textContent,/После определения и 50\/50 — 6% от договора после первого платежа/);
+ assert.match(document.querySelector('.ps-current').textContent,/После определения и 50\/50 — 6% от суммы договора после первой зарегистрированной оплаты/);
  assert.doesNotMatch(document.querySelector('.ps-current').textContent,/До цели —|При выполнении —/);
  assert.match(document.querySelector('.ps-current').textContent,/За 1-е место — 100.000 ₸ · итоги после 21 октября/);
 });

@@ -141,7 +141,7 @@ test('retroactive 6% covers plan gaps once, retains handoff dates, exclusions an
  assert.equal(month.commission,48000);assert.equal(month.earned,148000);assert.equal(month.paid,125000);assert.equal(month.owed,23000);
  assert.deepEqual(data.payments,payments);assert.equal(data.monthly.count,4);assert.equal(data.periods[0].count,3);
  assert.deepEqual(month.commissionDeals.map(row=>[row.id,row.date,row.formula,row.amount]),[
-  ['1','2026-06-01','400000 × 6%',24000],['2','2026-06-15','400000 × 6%',24000],['3','2026-06-20','0 · Первый платёж не подтверждён',0],
+  ['1','2026-06-01','400000 × 6%',24000],['2','2026-06-15','400000 × 6%',24000],['3','2026-06-20','0 · Нет зарегистрированной оплаты по договору',0],
  ]);
 });
 test('current fixed commission without any plan is visible but remains unaccrued until month end',async()=>{
