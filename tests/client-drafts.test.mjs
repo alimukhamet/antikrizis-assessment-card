@@ -335,3 +335,30 @@ test('historical detail fill rejects ambiguous, truncated and conflicting matche
   "attempt([[1,source('2026-06-17',[make('CURRENT','2020-01')])],[2,source('2026-06-17',[make('CURRENT','2021-01')])]])"
  ]){s.run(code);assert.equal(s.d.querySelector('#creditors input[type=month]').value,'');}
 });
+
+test('recognized F6 requires an explicit inspection and opens its unchecked review from the file card',async t=>{
+ const s=await setup(t,{currentIin:'test-client'});await s.load();
+ s.run(`selectedFiles=[{id:1,type:'Ф6 об отсутствии имущества',person:'Клиент',storedDocumentId:'f6',file:{name:'synthetic-f6.pdf'}}];af.results.set(1,{kind:'f6',type:'Ф6 об отсутствии имущества',identity:{iin:'test-client'},pages:6,findings:[],blocked:false,server:{documentId:'f6',dealId:'11665'},reviewContext:{iin:'test-client',pages:6}});afRenderResults();`);
+ const card=()=>s.d.querySelector('[data-file-id="1"]'),label=()=>card().querySelector('summary').textContent;
+ assert.match(label(),/Нужно проверить/);assert.doesNotMatch(label(),/Нет замечаний/);
+ assert.match(card().textContent,/Ф6 требует проверки сотрудником/);
+ s.run(fs.readFileSync('public/document-review.js','utf8'));
+ const container=s.d.createElement('details');s.d.body.append(container);
+ const result={identityRevision:1,documents:{issues:[{documentId:'f6',code:'DOCUMENT_RULES_PENDING'}],inspections:[{documentId:'f6',type:'Ф6 об отсутствии имущества',context:{iin:'test-client',pages:6},review:null}]}};
+ let refreshed=0;
+ s.w.AssessmentCheck={documents:async()=>{container.replaceChildren();s.w.DocumentReview.render(container,result,'11665',[{documentId:'f6',type:'Ф6 об отсутствии имущества',person:'Клиент'}],async()=>{refreshed++;});}};
+ const inspect=[...card().querySelectorAll('button')].find(button=>button.textContent==='Проверить документ');assert.ok(inspect);
+ await inspect.onclick();
+ const section=container.querySelector('[data-review-document-id="f6"]');assert.equal(container.open,true);assert.equal(section.open,true);
+ assert.equal(section.querySelector('[type=checkbox]').checked,false);assert.match(section.textContent,/6 стр\./);
+ const writes=s.writes.length;await [...section.querySelectorAll('button')].find(button=>button.textContent==='Документ проверен').onclick();
+ assert.match(section.querySelector('[role=status]').textContent,/Подтвердите/);assert.equal(refreshed,0);assert.equal(s.writes.length,writes);
+ assert.equal(s.run('af.results.get(1).documentReview'),null);
+ // A server-confirmed review clears attention; a later fresh check reporting withdrawal restores it.
+ result.documents.inspections[0].review={reviewId:'synthetic-review',documentId:'f6',type:'Ф6 об отсутствии имущества',reviewedAt:'2026-10-14T00:00:00Z'};
+ await s.w.AssessmentCheck.documents();assert.match(label(),/Нет замечаний/);assert.match(card().textContent,/Проверено сотрудником/);
+ result.documents.inspections[0].review=null;await s.w.AssessmentCheck.documents();assert.match(label(),/Нужно проверить/);
+ s.run('af.results.get(1).identity.iin="other-client";afRenderResults()');assert.match(label(),/ИИН отличается/);assert.equal([...card().querySelectorAll('button')].some(button=>button.textContent==='Проверить документ'),false);
+ s.run('af.results.get(1).identity.iin="test-client";selectedFiles[0].person="Супруг(а)"');assert.equal(s.run('afDocumentAttention(selectedFiles[0])'),null);
+ assert.equal(refreshed,0);
+});
