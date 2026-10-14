@@ -21,8 +21,13 @@ export function syntheticCrm(){
    case 'crm.deal.list.json':{
     const filter=body.filter||{};
     if(filter.UF_CRM_1781335943568==='263')return Response.json({result:[]});
-    const rows=[['7609',550000],['2093',450000],['4351',500000]].map(([manager,value],index)=>({ID:String(910001+index),TITLE:'SYNTHETIC SALES ONLY',ASSIGNED_BY_ID:manager,OPPORTUNITY:value,UF_CRM_1777554129345:'2026-09-15',UF_CRM_1781335943568:'261',STAGE_ID:'C1:NEW'}));
+    const rows=[['7609',550000],['2093',450000],['4351',500000]].map(([manager,value],index)=>({ID:String(910001+index),TITLE:'SYNTHETIC SALES ONLY',ASSIGNED_BY_ID:manager,OPPORTUNITY:value,UF_CRM_1777554129345:'2026-09-15',UF_CRM_1781335943568:index===1?'423':'261',STAGE_ID:'C1:NEW'}));
     return Response.json({result:rows.filter(row=>row.ASSIGNED_BY_ID===filter.ASSIGNED_BY_ID&&row.UF_CRM_1777554129345>=filter['>=UF_CRM_1777554129345']&&row.UF_CRM_1777554129345<=filter['<=UF_CRM_1777554129345']&&Number(row.ID)>Number(filter['>ID']||0))});
+   }
+   case 'crm.item.list.json':{
+    assert.equal(body.entityTypeId,31);
+    const parent=body.filter.parentId2;assert.ok([910001,910002,910003].includes(parent));
+    return Response.json({result:{items:[{id:parent+100,parentId2:parent,stageId:parent===910003?'DT31_3:NEW':'DT31_3:P',opportunity:100000,ufCrm_SMART_INVOICE_1772428866812:'195',ufCrm_SMART_INVOICE_1773231423587:'2026-10-01'}]}});
    }
    case 'crm.deal.get.json': assert.equal(String(body.id),deal.ID);return Response.json({result:deal});
    case 'crm.deal.update.json':{
