@@ -5,8 +5,9 @@ import { RepositoryError } from '../documents/repository';
 import type { ProfileValues } from '../crm/profile-fields';
 
 export const PROFILE_SCHEMA = 'antikrizis.profile.v1';
-/** Bitrix string fields are stored as text; keep a wide margin below practical limits. */
-const MAX_FIELD_BYTES = 60000;
+/** The readable card goes to the timeline; structured v1 data stays in D1. */
+const MAX_PROFILE_CARD_BYTES = 60000;
+const MAX_PROFILE_JSON_BYTES = 1000000;
 
 export type ProfileAuthor = { name: string; at: string };
 export type CompiledProfile = {
@@ -82,9 +83,10 @@ export function compileProfile(raw: DraftPayload, trustedIin: string | null, dea
     unresolved: checked.unresolved.map(a => ({ key: a.key, label: clean(a.label), ...(a.group ? { group: a.group, row: a.row } : {}) })),
   };
   const jsonText = JSON.stringify(json);
-  // Bitrix stores string fields in a 64 KB text column; Cyrillic takes 2 bytes per character.
+  // Keep the existing readable-card budget. The structured copy is not a Bitrix
+  // string field; its repeated labels must remain intact for downstream readers.
   const bytes = (text: string) => new TextEncoder().encode(text).length;
-  if (bytes(card) > MAX_FIELD_BYTES || bytes(jsonText) > MAX_FIELD_BYTES) throw new RepositoryError('PROFILE_TOO_LARGE', 413);
+  if (bytes(card) > MAX_PROFILE_CARD_BYTES || bytes(jsonText) > MAX_PROFILE_JSON_BYTES) throw new RepositoryError('PROFILE_TOO_LARGE', 413);
 
   const values: ProfileValues = {
     fio: value('fio'), marital: value('marital'), debt: debt.total,

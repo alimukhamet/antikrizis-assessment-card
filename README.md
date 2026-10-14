@@ -43,6 +43,8 @@ Documents, drafts, inspections, submissions and upload receipts are separate rec
 - other supported «Не знаю» answers save an open question («Требует уточнения») and survive draft restore. Retired family/contact answers remain in old drafts and saved history without blocking profile completion;
 - «Сохранить профиль» writes only the existing `UF_CRM_1773669702495` (ФИО), `UF_CRM_AI_MARITAL` and `UF_CRM_AI_DEBT`, with conflict detection and readback. No new Bitrix fields: the full profile (card text + `antikrizis.profile.v1` JSON) is kept in `assessment_profile_saves` and posted as a deal timeline comment together with the previous values. Contract, payment, procedure and the old card are never written.
 
+Large profiles keep every loan and answer in the same v1 structure. The readable timeline card retains its 60,000-byte budget; structured JSON has a separate 1,000,000-byte budget and the full saved record is checked at 1,500,000 bytes before storage or CRM writes. The profile check compiles complete answers before reporting readiness.
+
 Storage: `0016_profile_saves` and `0017_profile_presence`; no Bitrix fields are needed. The additive presence migration was applied and read back in production on 29 September before publication.
 
 ## Confirmed business rules
