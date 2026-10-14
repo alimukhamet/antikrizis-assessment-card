@@ -62,7 +62,8 @@ function afLogicalVisible(e,styles){
 }
 function afControls(){const styles=new WeakMap();return [...$af('questionnaireStep').querySelectorAll('input,select,textarea')].filter(e=>!e.closest('.af-source')&&afLogicalVisible(e,styles));}
 function afLabel(e){return e.closest('.field')?.querySelector('label.lbl')?.textContent.trim()||e.getAttribute('aria-label')||e.id||'Ответ';}
-function afMissing(){return afControls().filter(e=>e.dataset.sourceReplaced||!e.hasAttribute('data-optional')&&!['checkbox','file','button'].includes(e.type)&&(!e.value.trim()||!e.checkValidity()));}
+function afLoanStartOptional(e){return /^n8038Start(?:_r\d+)?$/.test(e.id)&&window.LoanDates?.loanDatePrecision(e.closest('.repeat-item')?.querySelector('input[id^=loanDisbursementDate]')?.value)==='day';}
+function afMissing(){return afControls().filter(e=>e.dataset.sourceReplaced||!e.hasAttribute('data-optional')&&!(!e.value.trim()&&afLoanStartOptional(e))&&!['checkbox','file','button'].includes(e.type)&&(!e.value.trim()||!e.checkValidity()));}
 function afMissingGroups(){return [...$af('questionnaireStep').querySelectorAll('.holdings,.chips')].filter(g=>afLogicalVisible(g)&&!g.querySelector('input:checked'));}
 function afPending(){return [...af.sources].filter(([id,s])=>s.pending&&afLogicalVisible($af(id)));}
 function afRefresh(){
@@ -523,7 +524,7 @@ $af('afExport').onclick=()=>{
  afDownload('assessment-'+$af('afDate').value+'.txt',lines.join('\n'),'text/plain;charset=utf-8');
 };
 // API controls and file selectors must never become questionnaire-required fields.
-visibilityRules=function(){const styles=new WeakMap(),states=[...document.querySelectorAll('input:not([type="checkbox"]),select,textarea')].map(e=>[e,!e.hasAttribute('data-optional')&&!( /^n8038Start(?:_r\d+)?$/.test(e.id)&&window.LoanDates?.loanDatePrecision(e.closest('.repeat-item')?.querySelector('input[id^=loanDisbursementDate]')?.value)==='day')&&!e.closest('#afWorkspace,#afSourceDialog,#selectedDocuments,.af-source')&&e.type!=='file'&&afLogicalVisible(e,styles)]);for(const [e,required]of states)if(e.required!==required)e.required=required;};
+visibilityRules=function(){const styles=new WeakMap(),states=[...document.querySelectorAll('input:not([type="checkbox"]),select,textarea')].map(e=>[e,!e.hasAttribute('data-optional')&&!afLoanStartOptional(e)&&!e.closest('#afWorkspace,#afSourceDialog,#selectedDocuments,.af-source')&&e.type!=='file'&&afLogicalVisible(e,styles)]);for(const [e,required]of states)if(e.required!==required)e.required=required;};
 $af('afIdentity').style.display='none';
 $af('afFiles').addEventListener('toggle',()=>visibilityRules());
 setTimeout(afRefresh,50);

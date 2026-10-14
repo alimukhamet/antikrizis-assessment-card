@@ -249,3 +249,12 @@ test('retained date supplement refines a legacy month only on explicit use and k
  date.value='2023-04-19';s.run('af.restoringEvidence=true');
  s.run('afRowFields(document.getElementById("n8038Start").closest(".repeat-item"),af.results.get(1).loans[0].fields,{...af.results.get(1).loans[0],fileId:1});af.restoringEvidence=false');assert.equal(date.value,'2023-04-19');
 });
+
+
+test('issuance-only full date removes the unknown start from missing answers and progress without inventing one',async t=>{
+ const s=await setup(t);await s.load();const start=s.d.getElementById('n8038Start'),issued=s.d.getElementById('loanDisbursementDate');
+ assert.equal(s.run('afMissing().some(e=>e.id==="n8038Start")'),true);const before=s.run('afMissing().length');
+ issued.value='2023-04-18';issued.dispatchEvent(new s.w.Event('change',{bubbles:true}));s.run('visibilityRules();afRefresh()');
+ assert.equal(start.value,'');assert.equal(start.required,false);assert.equal(s.run('afMissing().some(e=>e.id==="n8038Start")'),false);assert.equal(s.run('afMissing().length'),before-1);
+ issued.value='';issued.dispatchEvent(new s.w.Event('change',{bubbles:true}));s.run('visibilityRules();afRefresh()');assert.equal(s.run('afMissing().some(e=>e.id==="n8038Start")'),true);
+});

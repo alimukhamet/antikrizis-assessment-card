@@ -11,7 +11,7 @@ const image=load('lib/documents/read-image.ts',{'./read-document-limits':load('l
 const repoModule=load('lib/documents/repository.ts',{'./extract-native':rules,'./read-image':image,'./pdf-text-heuristics':load('lib/documents/pdf-text-heuristics.ts')});
 const crm=load('lib/crm/bitrix.ts',{'../documents/extract-native':rules});
 const adapterModule=load('lib/crm/document-identity.ts',{'../documents/repository':repoModule,'../documents/extract-native':rules,'./bitrix':crm});
-const analysis=load('lib/documents/analysis-service.ts',{'./read-pdf':{},'./read-image':image,'./read-document':{},'./extract-native':rules,'./policy':load('lib/documents/policy.ts'),'./request-context':{operatingDay:()=> '2026-09-16'},'./repository':repoModule,'./power-validation':{},'./analysis-version':{analysisVersion:'test-version'},'./document-review':{}});
+const analysis=load('lib/documents/analysis-service.ts',{'./loan-date-evidence':load('lib/documents/loan-date-evidence.ts',{'./extract-native':rules}),'./read-pdf':{},'./read-image':image,'./read-document':{},'./extract-native':rules,'./policy':load('lib/documents/policy.ts'),'./request-context':{operatingDay:()=> '2026-09-16'},'./repository':repoModule,'./power-validation':{},'./analysis-version':{analysisVersion:'test-version'},'./document-review':{}});
 const {confirmDocumentIdentity}=load('lib/documents/identity-service.ts',{'./analysis-service':analysis,'./repository':repoModule,'./extract-native':rules});
 const {DraftRepository}=load('lib/questionnaire/repository.ts',{'./draft-recovery':load('lib/questionnaire/draft-recovery.ts'),'../documents/repository':repoModule});
 const actor={id:'worker:synthetic',authentication:'test'},iin='991231300003',otherIin='000000000010';
