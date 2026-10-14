@@ -1,6 +1,6 @@
 import{test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import vm from'node:vm';import ts from'typescript';
 function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>imports[n],Date,Map,Set});return exports;}
-const policy=load('lib/documents/policy.ts'),{checkDocumentPackage,REQUIRED_DOCUMENTS}=load('lib/documents/package-check.ts',{'./loan-identity':load('lib/documents/loan-identity.ts'),'./analysis-service':{analysisVersion:'current',documentReviewContext:load('lib/documents/analysis-service.ts',{'./policy':policy,'./extract-native':load('lib/documents/extract-native.ts')}).documentReviewContext},'./policy':policy,'./credit-report-match':load('lib/documents/credit-report-match.ts',{'./policy':policy,'./loan-identity':load('lib/documents/loan-identity.ts')}),'./document-review':{MANUAL_DOCUMENT_TYPES:{'Удостоверение личности':'identity','Сведения об обременениях':'encumbrance','Доверенность':'power_of_attorney'},currentDocumentReview:async(repository,...args)=>repository.review?.(...args)||null}});
+const policy=load('lib/documents/policy.ts'),{checkDocumentPackage,REQUIRED_DOCUMENTS}=load('lib/documents/package-check.ts',{'./loan-identity':load('lib/documents/loan-identity.ts'),'./analysis-service':{analysisVersion:'current',documentReviewContext:load('lib/documents/analysis-service.ts',{'./policy':policy,'./extract-native':load('lib/documents/extract-native.ts')}).documentReviewContext},'./policy':policy,'./credit-report-match':load('lib/documents/credit-report-match.ts',{'./policy':policy,'./loan-identity':load('lib/documents/loan-identity.ts')}),'./document-review':{MANUAL_DOCUMENT_TYPES:{'Ф6 об отсутствии имущества':'property','Удостоверение личности':'identity','Сведения об обременениях':'encumbrance','Доверенность':'power_of_attorney'},currentDocumentReview:async(repository,...args)=>repository.review?.(...args)||null}});
 function fixture(){
  const sources=new Map();let reads=0;
  const payload={documents:[],pendingFiles:[],docContext:{social:'0',salary:'0'}};
@@ -147,4 +147,14 @@ test('Kaspi loan account statement requests the actual Gold statement even witho
  Object.assign(s.sources.get('loan-account').extraction,{identity:{iin:null},credits:[],findings:['DOCUMENT_IDENTITY_UNVERIFIED','DOCUMENT_TYPE_UNVERIFIED','KASPI_LOAN_STATEMENT_NOT_GOLD']});
  const r=await s.run();assert.ok(r.issues.some(i=>i.documentId==='loan-account'&&i.code==='KASPI_LOAN_STATEMENT_NOT_GOLD'&&i.message.includes('по карте Kaspi Gold')));
  assert.equal(r.packageReady,false);assert.equal(r.structurallyChecked.includes('Выписка Kaspi Gold'),false);
+});
+
+
+test('readable six-page F6 stays blocked until a current employee inspection exists',async()=>{
+ const s=fixture();s.add('f6','Ф6 об отсутствии имущества','property');
+ s.sources.get('f6').read={totalPages:6,pages:Array.from({length:6},()=>({text:'SYNTHETIC F6 PAGE',needsOcr:false}))};
+ let r=await s.run();assert.ok(r.issues.some(i=>i.documentId==='f6'&&i.code==='DOCUMENT_RULES_PENDING'));assert.equal(r.structurallyChecked.includes('Ф6 об отсутствии имущества'),false);assert.equal(r.inspections[0].review,null);
+ s.repository.review=async()=>({id:'f6-review',actorId:'worker:test',reviewedAt:'2026-09-10',value:{type:'Ф6 об отсутствии имущества'}});
+ r=await s.run();assert.equal(r.issues.some(i=>i.documentId==='f6'),false);assert.ok(r.structurallyChecked.includes('Ф6 об отсутствии имущества'));assert.equal(r.manuallyReviewed[0].reviewId,'f6-review');
+ s.repository.review=async()=>null;r=await s.run();assert.ok(r.issues.some(i=>i.documentId==='f6'&&i.code==='DOCUMENT_RULES_PENDING'));assert.equal(r.structurallyChecked.includes('Ф6 об отсутствии имущества'),false);
 });
