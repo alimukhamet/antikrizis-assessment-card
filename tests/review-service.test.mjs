@@ -1,5 +1,6 @@
+import * as loanDates from '../public/loan-dates.mjs';
 import {test} from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';import ts from 'typescript';
-function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>imports[n],Date,Map});return exports;}
+function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>n==='../../public/loan-dates.mjs'?loanDates:imports[n],Date,Map});return exports;}
 const {RepositoryError}=load('lib/documents/repository.ts');const policy=load('lib/documents/policy.ts');const {assertReviewAllowed}=load('lib/documents/review-service.ts',{'./repository':{RepositoryError},'./policy':policy,'./analysis-service':{analysisVersion:'current-version'}});
 const c={id:'c',client_iin:'synthetic-same-identity',identity_revision:1},d={id:'d',case_id:'c'},e={id:'e',document_id:'d',version:'current-version'};
 const result={extraction:{identity:{iin:'synthetic-same-identity'},kind:'gkb_full',issuedAt:'2026-09-10',findings:[],facts:[],credits:[{facts:[{key:'monthlyPayment',value:'10.00',page:1,source:'TEST ONLY'}]}]}};

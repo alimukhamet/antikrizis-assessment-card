@@ -1,23 +1,25 @@
+import {deriveLoanDateEvidence,LOAN_DATE_EVIDENCE_VERSION} from '../documents/loan-date-evidence';
 import { EvidenceRepository, RepositoryError, type DocumentRow, type ExtractionRow } from '../documents/repository';
 import { MAX_DOCUMENT_BYTES } from '../documents/read-document-limits';
 import { validIin, type NativeExtraction } from '../documents/extract-native';
 import type { PageText } from '../documents/read-pdf';
 
-type LoanDate = { documentId: string; sha256: string; subjectIin: string; contractCode: string | null; contractNumber: string; startDate: string; disbursementDate: null; page: number; quote: string };
+type LoanDate = { documentId: string; sha256: string; subjectIin: string; contractCode: string | null; contractNumber: string; startDate: string | null; disbursementDate: string | null; page: number; quote: string; evidenceVersion?:string; sourceExtractionId?:string };
 
 /** Only native, exact-day evidence for the same applicant; no saved answer changes. */
 export function retainedLoanDates(document: DocumentRow, result: { extraction?: NativeExtraction; read?: { pages?: PageText[] } }, subjectIin: unknown): LoanDate[] {
   const extracted = result.extraction, pages = result.read?.pages;
-  if (typeof subjectIin !== 'string' || !validIin(subjectIin) || extracted?.version !== 'rules-native-32' || extracted.kind !== 'gkb_full' || extracted.identity.iin !== subjectIin || !pages?.length || pages[0].needsOcr) return [];
-  return extracted.credits.flatMap(credit => {
-    const fact = credit.contractStartDate, page = pages.find(p => p.page === fact?.page);
-    if (!fact || !/^\d{4}-\d{2}-\d{2}$/.test(fact.value) || !page || page.needsOcr || !fact.source || fact.source.length > 4000 || !page.text.includes(fact.source) || !credit.contractNumber || credit.contractNumber.length > 512 || (credit.contractCode?.length ?? 0) > 512) return [];
+  if (typeof subjectIin !== 'string' || !validIin(subjectIin) || !['rules-native-32','rules-native-33',LOAN_DATE_EVIDENCE_VERSION].includes(extracted?.version||'') || extracted?.kind !== 'gkb_full' || extracted.identity?.iin !== subjectIin || !Array.isArray(pages)||!pages.length || !pages[0]||pages[0].needsOcr) return [];
+  if(!Array.isArray(extracted.credits))return [];
+  return extracted.credits.flatMap(credit => [credit.contractStartDate,credit.disbursementDate].flatMap(fact => {
+    const page = pages.find(p => p.page === fact?.page);
+    if (!fact || !['contractStartDate','disbursementDate'].includes(fact.key) || !/^\d{4}-\d{2}-\d{2}$/.test(fact.value) || !page || page.needsOcr || !fact.source || fact.source.length > 4000 || !page.text.includes(fact.source) || !credit.contractNumber || credit.contractNumber.length > 512 || (credit.contractCode?.length ?? 0) > 512) return [];
     const parsed = new Date(fact.value + 'T00:00:00Z');
     if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== fact.value) return [];
     const printed = fact.value.slice(8) + '.' + fact.value.slice(5, 7) + '.' + fact.value.slice(0, 4);
     if (!fact.source.includes(printed)) return [];
-    return [{ documentId: document.id, sha256: document.original_sha256, subjectIin, contractCode: credit.contractCode ?? null, contractNumber: credit.contractNumber, startDate: fact.value, disbursementDate: null, page: fact.page, quote: fact.source }];
-  });
+    return [{ documentId: document.id, sha256: document.original_sha256, subjectIin, contractCode: credit.contractCode ?? null, contractNumber: credit.contractNumber, startDate: fact.key==='contractStartDate'?fact.value:null, disbursementDate: fact.key==='disbursementDate'?fact.value:null, page: fact.page, quote: fact.source }];
+  }));
 }
 
 /** Original names are labels, never instructions or a source of ownership. */
@@ -40,17 +42,19 @@ export async function iskOriginals(db: D1Database, files: R2Bucket, dealId: stri
   if (rows.results.length > 500) throw new RepositoryError('ISK_ORIGINAL_LIMIT_EXCEEDED', 413);
   const loanDates: LoanDate[] = [];
   if (typeof subjectIin === 'string' && validIin(subjectIin)) {
-    // No legacy reparsing and no remote OCR. Only newly retained full-date data.
+    // Date-only proposals use verified retained text; never read PDFs, run OCR or save profiles here.
     const extractions = await db.prepare(`SELECT e.* FROM assessment_extractions e JOIN assessment_documents d ON d.id=e.document_id
-      WHERE d.case_id=? AND e.version LIKE 'native-pdf-%:rules-native-32'
-      AND e.id=(SELECT x.id FROM assessment_extractions x WHERE x.document_id=e.document_id ORDER BY x.created_at DESC,x.rowid DESC LIMIT 1)
+      WHERE d.case_id=? AND e.version LIKE 'native-pdf-%:rules-native-%'
+      AND e.id=(SELECT x.id FROM assessment_extractions x WHERE x.document_id=e.document_id AND x.version LIKE 'native-pdf-%:rules-native-%' ORDER BY x.created_at DESC,x.rowid DESC LIMIT 1)
       ORDER BY e.created_at,e.id LIMIT 501`).bind(record.id).all<ExtractionRow>();
     if (extractions.results.length > 500) throw new RepositoryError('ISK_ORIGINAL_LIMIT_EXCEEDED', 413);
     for (const extraction of extractions.results) {
       const document = rows.results.find(d => d.id === extraction.document_id);
       if (!document || !iskOriginalType(document)) continue;
       const result = await repository.readResult(extraction) as Parameters<typeof retainedLoanDates>[1];
-      loanDates.push(...retainedLoanDates(document, result, subjectIin));
+      const supplemental=deriveLoanDateEvidence(document,extraction,result as Parameters<typeof deriveLoanDateEvidence>[2],subjectIin);
+      const dateRows=retainedLoanDates(document,supplemental?{...result,extraction:supplemental}:result,subjectIin);
+      loanDates.push(...dateRows.map(row=>({...row,evidenceVersion:supplemental?LOAN_DATE_EVIDENCE_VERSION:result.extraction?.version,sourceExtractionId:extraction.id})));
       if (loanDates.length > 1000) throw new RepositoryError('ISK_LOAN_DATE_LIMIT_EXCEEDED', 413);
     }
   }

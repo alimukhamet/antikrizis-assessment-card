@@ -1,9 +1,10 @@
+import * as loanDates from '../public/loan-dates.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
-function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>imports[n],Date,Map,Set});return exports;}
+function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>n==='../../public/loan-dates.mjs'?loanDates:imports[n],Date,Map,Set});return exports;}
 const parser=load('lib/documents/power-of-attorney.ts'),policy=load('lib/documents/policy.ts');
 const validation=load('lib/documents/power-validation.ts',{'./power-of-attorney':parser,'./policy':policy,'./approved-representatives.server.json':[{kind:'person',legalName:'TEST APPROVED PERSON',identifier:'000000000002'}]});
 const text=`ДОВЕРЕННОСТЬ

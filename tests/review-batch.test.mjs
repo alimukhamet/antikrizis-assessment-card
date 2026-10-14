@@ -1,10 +1,11 @@
+import * as loanDates from '../public/loan-dates.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 import {webcrypto} from 'node:crypto';
-function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>imports[n],Date,Map,Set});return exports;}
+function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>n==='../../public/loan-dates.mjs'?loanDates:imports[n],Date,Map,Set});return exports;}
 const {RepositoryError}=load('lib/documents/repository.ts'),policy=load('lib/documents/policy.ts');
 const service=load('lib/documents/review-service.ts',{'./repository':{RepositoryError},'./policy':policy,'./analysis-service':{analysisVersion:'current'}});
 const {reviewBatch}=load('lib/documents/review-batch.ts',{'./repository':{RepositoryError},'./review-service':service});

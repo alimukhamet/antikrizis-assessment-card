@@ -18,7 +18,7 @@ export async function sha256(data:Uint8Array|string){const input=typeof data==='
 function sameQuestionnaireExtraction(previous:NativeExtraction,current:NativeExtraction){
  const withoutDateMetadata=(extraction:NativeExtraction)=>{
   const comparable={...extraction,version:current.version};
-  if(Array.isArray(extraction.credits))comparable.credits=extraction.credits.map(credit=>{const copy={...credit};delete copy.contractStartDate;return copy;});
+  if(Array.isArray(extraction.credits))comparable.credits=extraction.credits.map(credit=>{const copy={...credit};delete copy.contractStartDate;delete copy.disbursementDate;return copy;});
   return comparable;
  };
  return JSON.stringify(withoutDateMetadata(previous))===JSON.stringify(withoutDateMetadata(current));
@@ -90,6 +90,7 @@ export class EvidenceRepository {
   if(extraction)return {document,extraction,result:await this.readResult(extraction)};
   // v32 adds optional full-date metadata only. Preserve existing questionnaire
   // facts, immutable analyses and employee confirmations; new reads retain it.
+  if(version.endsWith(':rules-native-33'))return this.cached(caseId,originalHash,version.replace(/:rules-native-33$/,':rules-native-32'));
   if(version.endsWith(':rules-native-32'))return this.cached(caseId,originalHash,version.replace(/:rules-native-32$/,':rules-native-31'));
   // Reader v5 changes only the strict, sparse final Kaspi disclaimer. Cached
   // text can identify a candidate, but the original operators must be reread

@@ -228,3 +228,35 @@ test('unknown Bitrix destination fails closed and uncertain recovery only checks
  const links=s.d.getElementById('answerCheckIssues');assert.equal(links.hidden,false);assert.equal(links.closest('[data-assessment-step]').dataset.stepCurrent,'true');assert.equal(s.d.body.dataset.assessmentWorkflow,'answers');assert.equal(s.d.activeElement.tagName,'MONEY-INPUT');assert.match(s.d.activeElement.source.id,/^n8041/);assert.equal(s.d.activeElement.shadowRoot.activeElement.tagName,'INPUT');
  s.w.AssessmentWorkflow.show('contract');assert.equal(links.closest('[data-assessment-step]').dataset.stepCurrent,'true');links.querySelector('button').click();assert.equal(s.d.body.dataset.assessmentWorkflow,'answers');
 });
+
+test('retained date supplement refines a legacy month only on explicit use and keeps its own review identity',async t=>{
+ const s=await setup(t);await s.load();const p=evidence(s.context),credit=p.document.extraction.credits[0];
+ credit.facts.push({key:'startedAtMonth',value:'2023-04',page:1,source:'Дата начала срока действия контракта: 17.04.2023'});
+ p.dateSupplement={extractionId:'date-supplement',reviews:[],extraction:{credits:[{...credit,contractStartDate:{key:'contractStartDate',value:'2023-04-17',page:1,source:'Дата начала срока действия контракта: 17.04.2023'},disbursementDate:{key:'disbursementDate',value:'2023-04-18',page:2,source:'Дата фактической выдачи: 18.04.2023'}}]}};
+ s.run('selectedFiles.push({id:1,file:{name:"synthetic.pdf"},storedDocumentId:"gkb",type:"ГКБ — полный отчёт",person:"Клиент"})');
+ s.run('af.results.set(1,HostedAssessment.adapt('+JSON.stringify(p)+'))');
+ const date=s.d.getElementById('n8038Start');date.value='2023-04';date.dispatchEvent(new s.w.Event('change',{bubbles:true}));
+ s.run('af.restoringEvidence=true;afRowFields(document.getElementById("n8038Start").closest(".repeat-item"),af.results.get(1).loans[0].fields,{...af.results.get(1).loans[0],fileId:1});af.restoringEvidence=false');
+ assert.equal(date.value,'2023-04');assert.equal(s.run('af.sources.has("n8038Start")'),false);
+ s.run('afLoanParticipantsNotice(document.getElementById("n8038Start").closest(".repeat-item"),af.results.get(1).loans[0],1)');
+ const use=s.d.querySelector('.af-profile-proposal[data-for="n8038Start"] button');assert.match(use.textContent,/17\.04\.2023/);await use.onclick();
+ assert.equal(date.value,'2023-04-17');assert.equal(s.run('af.sources.get("n8038Start").server.extractionId'),'date-supplement');assert.equal(s.run('af.sources.get("n8038Start").pending'),true);
+ const captured=s.w.ServerDrafts.capture();assert.equal(captured.loanDatesVersion,1);assert.equal(captured.groups.find(g=>g.id==='creditors').rows[0].find(a=>a.key==='n8038Start').value,'2023-04-17');
+ // A separately confirmed precise source cannot be downgraded by the old month review.
+ p.reviews=[{id:'old-review',fact_key:'credits.0.startedAtMonth',value_json:'"2023-04"',disposition:'confirmed'}];
+ p.dateSupplement.reviews=[{id:'date-review',fact_key:'credits.0.contractStartDate',value_json:'"2023-04-17"',disposition:'confirmed'}];
+ const updated=s.w.HostedAssessment.adapt(p);assert.equal(updated.loans[0].fields.n8038Start,'2023-04-17');assert.equal(updated.loans[0].fieldReview.n8038Start.priorReview.id,'date-review');
+ date.value='2023-04-19';s.run('af.restoringEvidence=true');
+ s.run('afRowFields(document.getElementById("n8038Start").closest(".repeat-item"),af.results.get(1).loans[0].fields,{...af.results.get(1).loans[0],fileId:1});af.restoringEvidence=false');assert.equal(date.value,'2023-04-19');
+});
+
+
+test('issuance-only full date removes the unknown start from missing answers and progress without inventing one',async t=>{
+ const s=await setup(t);await s.load();const start=s.d.getElementById('n8038Start'),issued=s.d.getElementById('loanDisbursementDate');
+ assert.equal(s.run('afMissing().some(e=>e.id==="n8038Start")'),true);const before=s.run('afMissing().length');
+ issued.value='2023-04-18';issued.dispatchEvent(new s.w.Event('change',{bubbles:true}));s.run('visibilityRules();afRefresh()');
+ assert.equal(start.value,'');assert.equal(start.required,false);assert.equal(s.run('afMissing().some(e=>e.id==="n8038Start")'),false);assert.equal(s.run('afMissing().length'),before-1);
+ s.w.AssessmentWorkflow.refresh();const row=start.closest('.repeat-item'),summary=row.querySelector('summary');const expected=s.run('[...document.getElementById("n8038Start").closest(".repeat-item").querySelectorAll("input,select,textarea")].filter(e=>!e.closest(".af-source")&&afLogicalVisible(e)&&afControlMissing(e)).length');assert.match(summary.textContent,new RegExp('заполнить: '+expected+'$'));
+ issued.value='2023-02-30';issued.dispatchEvent(new s.w.Event('change',{bubbles:true}));assert.equal(s.run('afMissing().some(e=>e.id==="loanDisbursementDate")'),true);
+ issued.value='';issued.dispatchEvent(new s.w.Event('change',{bubbles:true}));s.run('visibilityRules();afRefresh()');assert.equal(s.run('afMissing().some(e=>e.id==="n8038Start")'),true);
+});

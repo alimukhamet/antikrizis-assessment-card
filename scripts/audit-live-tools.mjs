@@ -75,7 +75,7 @@ try{
          }
          // Recheck existing employee reviews without approving or changing anything.
          const direct={'identity.iin':'iin','identity.name':'fio','statement.topUps':'kaspiAnnual','employment.payersCount':'count-clientjobs','benefits.count':'clientBenefitsCount','statement.gambling':'n8044'};
-         const loanKeys={creditor:'n8038',contractIdentifier:'loanContractId',loanStatus:'loanStatus',startedAtMonth:'n8038Start',monthlyPayment:'n8041',overdueDays:'n8042',debtOutstanding:'n8040',creditType:'n8039',purpose:'n8043',relatedParties:'loanParticipants'};
+         const loanKeys={creditor:'n8038',contractIdentifier:'loanContractId',loanStatus:'loanStatus',startedAtMonth:'n8038Start',contractStartDate:'n8038Start',disbursementDate:'loanDisbursementDate',monthlyPayment:'n8041',overdueDays:'n8042',debtOutstanding:'n8040',creditType:'n8039',purpose:'n8043',relatedParties:'loanParticipants'};
          for(const review of a.reviews||[]){
           const loan=/^credits\.(\d+)\.([A-Za-z]+)$/.exec(review.fact_key);let key=direct[review.fact_key],group,row,answer;
           if(loan){

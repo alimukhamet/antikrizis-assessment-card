@@ -1,8 +1,9 @@
+import * as loanDates from '../public/loan-dates.mjs';
 import * as profileExplanations from '../public/profile-explanations.mjs';
 import * as intake from '../public/intake-data.mjs';
 import * as participants from '../public/loan-participants.mjs';
 import {test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import vm from'node:vm';import ts from'typescript';import * as schedule from'../public/payment-schedule.mjs';
-function load(path,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+path,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>n==='../../public/intake-data.mjs'?intake:imports[n],Date,Map,Set,TextEncoder});return exports;}
+function load(path,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+path,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>n==='../../public/loan-dates.mjs'?loanDates:n==='../../public/intake-data.mjs'?intake:imports[n],Date,Map,Set,TextEncoder});return exports;}
 const json=path=>JSON.parse(fs.readFileSync(new URL('../'+path,import.meta.url),'utf8'));
 const schema=json('lib/questionnaire/schema.json'),native=load('lib/documents/extract-native.ts',{'./power-of-attorney':load('lib/documents/power-of-attorney.ts'),'./kz-labels.json':json('lib/documents/kz-labels.json')});
 const {checkAnswers}=load('lib/questionnaire/check-answers.ts',{'../../public/profile-explanations.mjs':profileExplanations,'./schema.json':schema,'../documents/extract-native':native,'../../public/payment-schedule.mjs':schedule,'../../public/loan-participants.mjs':participants});
@@ -123,7 +124,7 @@ test('benefit answers cannot silently contradict the document-step answer',()=>{
 test('received-loan month is bounded by the operating day through validation and contract compilation',()=>{
  const p=fixture(),answer=p.groups.find(g=>g.id==='creditors').rows[0].find(a=>a.key==='n8038Start');
  for(const [month,day,valid] of [['2026-09','2026-09-01',true],['2026-10','2026-09-30',false],['2027-01','2026-12-31',false],['2027-01','2027-01-01',true],['2099-01','2026-09-14',false]]){answer.value=month;const checked=checkAnswers(validateDraft(p),iin,day);assert.equal(checked.answersComplete,valid,month+' / '+day);if(valid)assert.ok(contractData(p,iin,[],day));else{assert.ok(checked.issues.some(i=>i.code==='FUTURE_LOAN_MONTH'&&i.group==='creditors'&&i.row===0));assert.throws(()=>contractData(p,iin,[],day),/ANSWERS_INCOMPLETE/);}}
- for(const invalid of ['0000-01','2026-13']){answer.value=invalid;assert.ok(has(checkAnswers(p,iin,'2026-09-14'),'n8038Start','INVALID_MONTH'));}
+ for(const invalid of ['0000-01','2026-13']){answer.value=invalid;assert.ok(has(checkAnswers(p,iin,'2026-09-14'),'n8038Start','INVALID_DATE'));}
 });
 
 // These exercise the served fourth tool, rather than the retired static prototype page.
@@ -229,4 +230,14 @@ test('new land uses the unified real-estate schema and retains optional object i
  assert.equal(run(p).answersComplete,true,JSON.stringify(run(p).issues));
  for(const output of [contractData(p,iin).property,compileAssessment(p,iin).lawyerCard]){assert.match(output,/Земельный участок/);assert.match(output,/SYNTHETIC NEW LAND/);}
  g.rows[0].find(a=>a.key==='n8004').value='101';assert.ok(has(run(p),'n8004','INVALID_NUMBER'));
+});
+
+test('full loan dates survive validation, exports and partial legacy dates retain their precision',()=>{
+ const p=fixture(),row=p.groups.find(g=>g.id==='creditors').rows[0],start=row.find(a=>a.key==='n8038Start'),issuance=row.find(a=>a.key==='loanDisbursementDate');
+ start.value='2024-02-29';issuance.value='2024-03-02';
+ assert.equal(checkAnswers(validateDraft(p),iin,'2026-09-14').answersComplete,true);
+ const compiled=compileAssessment(p,iin,[],'2026-09-14');assert.match(JSON.stringify(compiled),/29.02.2024/);assert.match(JSON.stringify(compiled),/02.03.2024/);
+ start.value='2024-02';assert.match(JSON.stringify(compileAssessment(p,iin,[],'2026-09-14')),/02.2024 \(день не указан\)/);
+ for(const invalid of ['2025-02-29','2026-09-15','2026-02-30']){start.value=invalid;assert.equal(checkAnswers(p,iin,'2026-09-14').answersComplete,false,invalid);}
+ start.value='2024-02-29';issuance.value='2024-03';assert.ok(has(checkAnswers(p,iin,'2026-09-14'),'loanDisbursementDate','INVALID_DATE'));
 });

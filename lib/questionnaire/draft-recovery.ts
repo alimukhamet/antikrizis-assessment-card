@@ -16,3 +16,8 @@ export function distinctDraftDocuments<T extends DraftPayload['documents'][numbe
  }
  return result;
 }
+
+/** An old month-only editor cannot round-trip a precise date or the issuance field. */
+export function requiresFullLoanDateEditor(previous:DraftPayload|undefined,next:DraftPayload){
+ return next.loanDatesVersion!==1&&Boolean(previous?.groups.some(g=>g.id==='creditors'&&g.rows.some(row=>row.some(a=>(a.key==='n8038Start'||a.key==='loanDisbursementDate')&&/^\d{4}-\d{2}-\d{2}$/.test(a.value)))));
+}

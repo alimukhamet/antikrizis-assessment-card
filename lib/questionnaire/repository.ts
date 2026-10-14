@@ -1,3 +1,4 @@
+import {requiresFullLoanDateEditor} from './draft-recovery';
 import {RepositoryError,sha256,type CaseRow}from'../documents/repository';
 import type{Actor}from'../worker-session';import type{DraftPayload}from'./draft';
 export type DraftRow={id:string;case_id:string;revision:number;identity_revision:number;request_id:string;payload_json:string;payload_hash:string;actor_id:string;created_at:string};
@@ -14,6 +15,8 @@ export class DraftRepository{
   const hash=await sha256(JSON.stringify({payload,expectedRevision,identityRevision:record.identity_revision,actorId:actor.id}));
   const old=await this.db.prepare('SELECT * FROM assessment_draft_versions WHERE case_id=? AND request_id=?').bind(record.id,requestId).first<DraftRow>();
   if(old){if(old.payload_hash!==hash)throw new RepositoryError('IDEMPOTENCY_KEY_REUSED');return old;}
+  const current=await this.latest(record.id);
+  if(current&&current.identity_revision===record.identity_revision&&requiresFullLoanDateEditor(JSON.parse(current.payload_json),payload))throw new RepositoryError('FULL_LOAN_DATE_EDITOR_REQUIRED',409);
   await this.db.prepare('INSERT INTO assessment_draft_versions (id,case_id,revision,identity_revision,request_id,payload_json,payload_hash,actor_id,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM assessment_cases WHERE id=? AND identity_revision=?) AND COALESCE((SELECT MAX(revision) FROM assessment_draft_versions WHERE case_id=?),0)=? AND NOT EXISTS (SELECT 1 FROM assessment_identity_bindings b WHERE b.case_id=? AND b.identity_revision=? AND ? NOT IN (\'\',b.iin)) ON CONFLICT DO NOTHING').bind(crypto.randomUUID(),record.id,expectedRevision+1,record.identity_revision,requestId,serialized,hash,actor.id,new Date().toISOString(),record.id,record.identity_revision,record.id,expectedRevision,record.id,record.identity_revision,payload.answers.find(a=>a.key==='iin')?.value.trim()||'').run();
   const saved=await this.db.prepare('SELECT * FROM assessment_draft_versions WHERE case_id=? AND request_id=?').bind(record.id,requestId).first<DraftRow>();if(!saved)throw new RepositoryError('DRAFT_CHANGED');if(saved.payload_hash!==hash)throw new RepositoryError('IDEMPOTENCY_KEY_REUSED');return saved;
  }

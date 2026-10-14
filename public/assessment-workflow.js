@@ -152,7 +152,7 @@ window.AssessmentWorkflow=(()=>{
    let fold=row.querySelector(':scope > details.wf-loan');
    if(!fold){fold=details('Кредит','wf-loan');for(const child of [...row.children])fold.append(child);row.append(fold);}
    const get=key=>[...row.querySelectorAll('input,select')].find(e=>e.id.replace(/_r\d+$/,'')===key)?.value||'';
-   const missing=[...row.querySelectorAll('input,select,textarea')].filter(e=>!e.closest('.af-source')&&afLogicalVisible(e)&&!e.hasAttribute('data-optional')&&!['checkbox','file'].includes(e.type)&&(!e.value.trim()||!e.checkValidity())).length;
+   const missing=[...row.querySelectorAll('input,select,textarea')].filter(e=>!e.closest('.af-source')&&afLogicalVisible(e)&&afControlMissing(e)).length;
    const summary=fold.querySelector('summary'),amount=get('n8040'),title=get('n8038')||'Новый кредит',contract=get('loanContractId'),status=get('loanStatus');
    const excluded=row.querySelector('[data-loan-claim]')?.checked===false;
    summary.textContent=title+(contract?' · № '+contract:'')+(status?' · '+status:'')+(amount?' · '+Number(amount).toLocaleString('ru-RU')+' ₸':'')+(excluded?' · Не включать в иск':'')+(missing?' · заполнить: '+missing:'');

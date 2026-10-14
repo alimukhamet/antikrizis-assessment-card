@@ -1,3 +1,4 @@
+import {formatLoanDate} from '../../public/loan-dates.mjs';
 import {validateDraft,type DraftPayload} from './draft';
 import {checkAnswers,type DisplayAnswer} from './check-answers';
 import {RepositoryError} from '../documents/repository';
@@ -13,6 +14,7 @@ export function propertySummaryAnswers(answers:DisplayAnswer[]){
  return answers.filter(a=>{const land=/^holding:(client|partner):land$/.exec(a.key);return !land||!answers.some(other=>other.key===`holding:${land[1]}:real`);});
 }
 export function displayAnswer(answer:DisplayAnswer){
+ if(['n8038Start','loanDisbursementDate'].includes(answer.key))return formatLoanDate(answer.value);
  if(['gamblingTransfers','lawyerNotesStatus','enforcementStatus'].includes(answer.key))return answer.value==='yes'?'Да':answer.value==='no'?'Нет':answer.value==='legacy'?'Сведения из прежней анкеты':answer.value;
  if(['n8004Kind','n8019Kind','clientLandOwnership','partnerLandOwnership'].includes(answer.key))return ({sole:'Единоличная собственность',joint:'Совместная собственность',share:'Долевая собственность'} as Record<string,string>)[answer.value]||answer.value;
  if(answer.key.startsWith('holding:'))return holdings[answer.value]||answer.value;
@@ -67,7 +69,7 @@ export function compileAssessment(payload:DraftPayload,trustedIin:string|null,ev
     if(!answer||answer.value!==item.value)throw new RepositoryError('REVIEW_VALUE_CHANGED');
     if(!includeContract&&salesOnly.has(item.key))continue;
     const row=item.group?`${groupNames[item.group]||item.group} ${item.row!+1} · `:'';
-    lines.push(`• ${row}${answer.label.replace(/\*/g,'')}: ${item.value} — ${item.documentName}, стр. ${item.page}; ${item.disposition==='corrected'?'исправлено сотрудником':'подтверждено сотрудником'}.`);
+    lines.push(`• ${row}${answer.label.replace(/\*/g,'')}: ${displayAnswer(answer)} — ${item.documentName}, стр. ${item.page}; ${item.disposition==='corrected'?'исправлено сотрудником':'подтверждено сотрудником'}.`);
    }
   }
   if(includeContract){lines.push('','ДОГОВОР (только продажи)');checked.displayAnswers.filter(a=>salesOnly.has(a.key)).forEach(append);lines.push('','ГРАФИК ПЛАТЕЖЕЙ',scheduleText);}

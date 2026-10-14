@@ -1,3 +1,4 @@
+import * as loanDates from '../public/loan-dates.mjs';
 import * as profileExplanations from '../public/profile-explanations.mjs';
 /** Profile backfill (documentologist mode). Synthetic data only; no real client or CRM data. */
 import * as participants from '../public/loan-participants.mjs';
@@ -11,7 +12,7 @@ import {JSDOM} from 'jsdom';
 import * as schedule from '../public/payment-schedule.mjs';
 import {httpHeaders} from './bitrix-headers-helper.mjs';
 
-function load(path,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+path,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>n==='./http-headers'?httpHeaders:n==='../../public/intake-data.mjs'?intake:imports[n],Date,Map,Set,TextEncoder,AbortSignal,JSON,BigInt,Number,String,Object,Array,Error,Promise,Response});return exports;}
+function load(path,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+path,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>n==='../../public/loan-dates.mjs'?loanDates:n==='./http-headers'?httpHeaders:n==='../../public/intake-data.mjs'?intake:imports[n],Date,Map,Set,TextEncoder,AbortSignal,JSON,BigInt,Number,String,Object,Array,Error,Promise,Response});return exports;}
 const json=path=>JSON.parse(fs.readFileSync(new URL('../'+path,import.meta.url),'utf8'));
 const schema=json('lib/questionnaire/schema.json'),native=load('lib/documents/extract-native.ts',{'./power-of-attorney':load('lib/documents/power-of-attorney.ts'),'./kz-labels.json':json('lib/documents/kz-labels.json')});
 const repository=load('lib/documents/repository.ts');

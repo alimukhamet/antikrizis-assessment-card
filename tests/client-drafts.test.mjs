@@ -318,7 +318,7 @@ for(const reverse of [false,true])test(`older report supplements exact current l
  const saved=JSON.stringify(s.store.payload);await s.d.getElementById('afApply').onclick();assert.equal(JSON.stringify(s.store.payload),saved);
  const reopened=await setup(t,s.store);reopened.run('afAnalyze=async()=>{}');await reopened.load();const restored=reopened.w.ServerDrafts.capture().groups.find(g=>g.id==='creditors');assert.equal(restored.rows[0].find(a=>a.key==='n8038Start').value,'2022-08');assert.equal(restored.rows.length,1);
  // Employee values, removed rows and explicitly replaced sources stay intact on restore.
- const date=s.d.querySelector('#creditors input[type=month]');date.value='2021-01';s.run('af.restoringEvidence=true');await s.run('afApply()');s.run('af.restoringEvidence=false');assert.equal(date.value,'2021-01');
+ const date=s.d.querySelector('#creditors input[data-loan-date]');date.value='2021-01';s.run('af.restoringEvidence=true');await s.run('afApply()');s.run('af.restoringEvidence=false');assert.equal(date.value,'2021-01');
 });
 
 test('historical detail fill rejects ambiguous, truncated and conflicting matches',async t=>{
@@ -333,7 +333,7 @@ test('historical detail fill rejects ambiguous, truncated and conflicting matche
   "attempt([[1,source('2026-06-17',[make('CURRENT','2020-01'),make('CURRENT','2020-01')])]])",
   "attempt([[1,source('2026-06-17',[make('CUR…','2020-01')])]])",
   "attempt([[1,source('2026-06-17',[make('CURRENT','2020-01')])],[2,source('2026-06-17',[make('CURRENT','2021-01')])]])"
- ]){s.run(code);assert.equal(s.d.querySelector('#creditors input[type=month]').value,'');}
+ ]){s.run(code);assert.equal(s.d.querySelector('#creditors input[data-loan-date]').value,'');}
 });
 
 test('recognized F6 requires an explicit inspection and opens its unchecked review from the file card',async t=>{

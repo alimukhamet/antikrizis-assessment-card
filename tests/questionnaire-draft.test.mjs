@@ -1,7 +1,7 @@
 import * as intake from '../public/intake-data.mjs';
 import {test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import vm from'node:vm';import ts from'typescript';import{DatabaseSync}from'node:sqlite';import{webcrypto}from'node:crypto';
 function load(path,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+path,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>n==='../../public/intake-data.mjs'?intake:imports[n],crypto:webcrypto,TextEncoder,Uint8Array,Date,Map,Set});return exports;}
-const documentRepo=load('lib/documents/repository.ts',{'./extract-native':load('lib/documents/extract-native.ts',{'./kz-labels.json':JSON.parse(fs.readFileSync('lib/documents/kz-labels.json')),'./power-of-attorney':load('lib/documents/power-of-attorney.ts')})}),schema=JSON.parse(fs.readFileSync(new URL('../lib/questionnaire/schema.json',import.meta.url),'utf8'));const {validateDraft}=load('lib/questionnaire/draft.ts',{'./schema.json':schema,'./draft-recovery':load('lib/questionnaire/draft-recovery.ts'),'../documents/repository':documentRepo});const {DraftRepository}=load('lib/questionnaire/repository.ts',{'../documents/repository':documentRepo});
+const documentRepo=load('lib/documents/repository.ts',{'./extract-native':load('lib/documents/extract-native.ts',{'./kz-labels.json':JSON.parse(fs.readFileSync('lib/documents/kz-labels.json')),'./power-of-attorney':load('lib/documents/power-of-attorney.ts')})}),schema=JSON.parse(fs.readFileSync(new URL('../lib/questionnaire/schema.json',import.meta.url),'utf8'));const {validateDraft}=load('lib/questionnaire/draft.ts',{'./schema.json':schema,'./draft-recovery':load('lib/questionnaire/draft-recovery.ts'),'../documents/repository':documentRepo});const {DraftRepository}=load('lib/questionnaire/repository.ts',{'./draft-recovery':load('lib/questionnaire/draft-recovery.ts'),'../documents/repository':documentRepo});
 const payload=()=>({schemaVersion:1,answers:[{key:'fio',value:'SYNTHETIC ONLY',checked:false}],groups:[],docContext:{social:'',salary:''},documents:[],pendingFiles:[]});
 function setup(){const sql=new DatabaseSync(':memory:');sql.exec('PRAGMA foreign_keys=ON');for(const f of fs.readdirSync(new URL('../drizzle/',import.meta.url)).filter(f=>f.endsWith('.sql')).sort())sql.exec(fs.readFileSync(new URL('../drizzle/'+f,import.meta.url),'utf8'));sql.exec("INSERT INTO assessment_cases VALUES ('case','test','test',NULL,1,'TEST','2026-09-10','2026-09-10')");const db = {
   prepare(query) {
@@ -41,4 +41,13 @@ test('client-confirmed debt source survives validation while unsupported or empt
 test('salary bank persists without changing the required package and rejects contradictory context',()=>{
  for(const [salaryBank,salary] of [['kaspi','0'],['none','0'],['other','1'],['','']]){const p=payload();p.docContext={social:'0',salary,salaryBank};assert.equal(validateDraft(p).docContext.salaryBank,salaryBank);}
  const bad=payload();bad.docContext={social:'0',salary:'0',salaryBank:'other'};assert.throws(()=>validateDraft(bad),/INVALID_SALARY_BANK/);
+});
+
+test('old month-only clients cannot erase a saved full date, but capable editors can make intentional changes',async()=>{
+ const {repo,sql}=setup(),record={id:'case',identity_revision:1},actor={id:'worker:synthetic'},p=payload();p.loanDatesVersion=1;p.groups=[{id:'creditors',rowKeys:[null],rows:[[{key:'n8038Start',value:'2023-04-17',checked:false}]]}];
+ await repo.save(record,validateDraft(p),0,webcrypto.randomUUID(),actor);
+ const old=structuredClone(p);delete old.loanDatesVersion;old.groups[0].rows[0][0].value='';
+ await assert.rejects(()=>repo.save(record,validateDraft(old),1,webcrypto.randomUUID(),actor),/FULL_LOAN_DATE_EDITOR_REQUIRED/);
+ assert.equal(JSON.parse((await repo.latest('case')).payload_json).groups[0].rows[0][0].value,'2023-04-17');
+ old.loanDatesVersion=1;await repo.save(record,validateDraft(old),1,webcrypto.randomUUID(),actor);assert.equal((await repo.latest('case')).revision,2);sql.close();
 });
