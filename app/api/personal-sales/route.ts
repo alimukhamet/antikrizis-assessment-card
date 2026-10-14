@@ -1,5 +1,5 @@
 import { readSessionCookie, verifySession } from '../../../lib/worker-session';
-import { PEOPLE, Person, plansFor, calculate, commissionForDeals, monthlyEarnings, todayAlmaty, monthRange, Totals, COMPENSATION_START_MONTH, isCommissionExcluded } from '../../../lib/personal-sales';
+import { PEOPLE, Person, plansFor, calculate, commissionForDeals, monthlyEarnings, todayAlmaty, monthRange, Totals, COMPENSATION_START_MONTH, isCommissionExcluded, hasFirstPaymentContractRate, FIRST_PAYMENT_CONTRACT_RATE } from '../../../lib/personal-sales';
 import {compensationRepository,storedPlan} from '../../../lib/sales-compensation';
 import {loadCompensationDeals,loadSalesCompetitionTotals,type CompensationDeal} from '../../../lib/crm/personal-compensation';
 import {leaderAwardsFor,leaderCompetitionFor} from '../../../lib/sales-leader-bonus';
@@ -8,16 +8,16 @@ const headers = { 'cache-control': 'private, no-store' };
 // Owner-confirmed payment-type rules are applied from live deal and invoice data.
 const EARNINGS_BASIS_CONFIRMED = true;
 const PAYMENT_LABELS:Record<string,string>={'261':'После определения','263':'До определения','423':'50/50','461':'После решения'};
-function commissionBreakdown(deals:CompensationDeal[],rate:number|null){
+function commissionBreakdown(deals:CompensationDeal[]){
   return deals.map(deal=>{
-    const amount=commissionForDeals([deal],rate),value=deal.contractValue,first=deal.firstPayment;
+    const amount=commissionForDeals([deal]),value=deal.contractValue,first=deal.firstPayment;
     let formula='Нет данных для расчёта';
     if(value!==null){
       if(deal.paymentType==='263'&&first!==null)formula=`${first} × 15% + ${value-first} × 4%`;
       else if(deal.paymentType==='461')formula=deal.outcomeId==='311'?`${value} × 8%`:'0';
-      else if(rate!==null)formula=`${value} × ${rate}%`;
+      else if(hasFirstPaymentContractRate(deal.paymentType))formula=first!==null&&first>0?`${value} × ${FIRST_PAYMENT_CONTRACT_RATE}%`:'0 · Первый платёж не подтверждён';
     }
-    return {id:deal.id,title:deal.title,date:deal.paymentType==='263'?deal.commissionDate:deal.handoffDate,paymentType:PAYMENT_LABELS[deal.paymentType]||'Не указан',formula,amount};
+    return {id:deal.id,title:deal.title,date:deal.paymentType==='263'?deal.commissionDate:deal.handoffDate,paymentType:PAYMENT_LABELS[deal.paymentType]||'Не указан',formula,amount,contractValue:value,firstPayment:first};
   });
 }
 export async function GET(request: Request) {
@@ -42,8 +42,8 @@ export async function GET(request: Request) {
     const plans = allPlans.filter(p => (!params.has('month') || p.end.slice(0, 7) === month) && p.start <= today);
     const monthly=totals(inRange(range.start,range.end));
     const periods=plans.map(plan=>{
-      const end=plan.end<today?plan.end:today,items=inRange(plan.start,end),commissionItems=commissionInRange(plan.start,end),values=totals(items),base=calculate(plan,values),commission=commissionForDeals(commissionItems,base.rate);
-      return {...plan,...values,...calculate(plan,values,commission),leaderAward:leaderAwards.find(award=>award.start===plan.start&&award.end===plan.end),commissionDeals:commissionBreakdown(commissionItems,base.rate),ongoing:plan.end>=today};
+      const end=plan.end<today?plan.end:today,items=inRange(plan.start,end),commissionItems=commissionInRange(plan.start,end),values=totals(items),commission=commissionForDeals(commissionItems);
+      return {...plan,...values,...calculate(plan,values,commission),leaderAward:leaderAwards.find(award=>award.start===plan.start&&award.end===plan.end),commissionDeals:commissionBreakdown(commissionItems),ongoing:plan.end>=today};
     });
     const coveredDays = new Set(periods.flatMap(p => {
       const days = []; for (let d = p.start; d <= (p.end < today ? p.end : today);) { days.push(d); const date = new Date(d + 'T00:00:00Z'); date.setUTCDate(date.getUTCDate() + 1); d = date.toISOString().slice(0, 10); } return days;
@@ -61,14 +61,14 @@ export async function GET(request: Request) {
     let unappliedPayments=paymentRows.reduce((sum,row)=>sum+row.amount,0);
     const earningsMonths = monthKeys.map(key => {
       const monthEnd=monthRange(key,today).end,periodsForMonth=byMonth.get(key)||[];
-      const outsidePeriods=deals.filter(deal=>deal.paymentType==='263'&&deal.commissionDate>=key+'-01'&&deal.commissionDate<=monthEnd&&!periodsForMonth.some(period=>deal.commissionDate>=period.start&&deal.commissionDate<=(period.end<today?period.end:today)));
-      const extraCommission=outsidePeriods.length?commissionForDeals(outsidePeriods,null):0;
+      const outsidePeriods=commissionInRange(key+'-01',monthEnd).filter(deal=>(deal.paymentType==='263'||hasFirstPaymentContractRate(deal.paymentType))&&!periodsForMonth.some(period=>deal.commissionDate>=period.start&&deal.commissionDate<=(period.end<today?period.end:today)));
+      const extraCommission=outsidePeriods.length?commissionForDeals(outsidePeriods):0;
       const monthAwards=leaderAwards.filter(award=>award.start.startsWith(key));
       const leaderBonus=monthAwards.some(award=>award.amount===null)?null:monthAwards.reduce((sum,award)=>sum+award.amount!,0);
       const item=monthlyEarnings(key,periodsForMonth,today,extraCommission,person,leaderBonus),rows=paymentRows.filter(row=>row.month===key);
       const paid=params.has('month')?(rows.length?rows.reduce((sum,row)=>sum+row.amount,0):null):!paymentEvidence||item.earned===null?null:Math.min(Math.max(item.earned,0),unappliedPayments);
       if(!params.has('month')&&paid!==null)unappliedPayments-=paid;
-      const commissionDeals=[...periodsForMonth.flatMap(period=>period.commissionDeals),...commissionBreakdown(outsidePeriods,null)].sort((a,b)=>a.date.localeCompare(b.date)||Number(a.id)-Number(b.id));
+      const commissionDeals=[...periodsForMonth.flatMap(period=>period.commissionDeals),...commissionBreakdown(outsidePeriods)].sort((a,b)=>a.date.localeCompare(b.date)||Number(a.id)-Number(b.id));
       return {...item,commissionDeals,ongoing:key===today.slice(0,7),paid,owed:item.earned===null||paid===null?null:item.earned-paid};
     });
     const earned = !EARNINGS_BASIS_CONFIRMED || !earningsMonths.length || earningsMonths.some(item => item.earned === null) ? null : earningsMonths.reduce((sum, item) => sum + item.earned!, 0);

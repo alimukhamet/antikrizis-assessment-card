@@ -1,5 +1,5 @@
 import {bitrixHeaders} from './http-headers';
-import {PEOPLE,type Person,type Totals} from '../personal-sales';
+import {PEOPLE,hasFirstPaymentContractRate,type Person,type Totals} from '../personal-sales';
 
 const HANDOFF_DATE_FIELD='UF_CRM_1777554129345';
 const PAYMENT_TYPE_FIELD='UF_CRM_1781335943568';
@@ -45,7 +45,7 @@ function money(value:unknown){
 
 type FirstPayment={amount:number|null;date:string};
 
-async function firstPayment(webhook:string,dealId:string,send:typeof fetch,invoiceId?:string):Promise<FirstPayment>{
+async function firstPayment(webhook:string,dealId:string,send:typeof fetch,invoiceId?:string,dateRequired=true):Promise<FirstPayment>{
   let start=0;
   const payments:Array<{id:string;amount:number;date:string}>=[];
   for(let page=0;page<20;page+=1){
@@ -65,10 +65,12 @@ async function firstPayment(webhook:string,dealId:string,send:typeof fetch,invoi
       payments.push({id:String(item.id??''),amount,date:String(item[INVOICE_TRANSACTION_DATE_FIELD]??'').slice(0,10)});
     }
     if(typeof payload.next!=='number')break;
+    if(payload.next<=start||page===19)throw new Error('First payment pagination is incomplete');
     start=payload.next;
   }
   const dated=payments.filter(item=>/^\d{4}-\d{2}-\d{2}$/.test(item.date)).sort((a,b)=>a.date.localeCompare(b.date)||Number(a.id)-Number(b.id));
-  if(!dated.length)return {amount:null,date:''};
+  // The fixed 6% uses the handoff month, so a paid first invoice need not supply a payroll date.
+  if(!dated.length)return {amount:dateRequired?null:payments[0]?.amount??null,date:''};
   const date=dated[0].date;
   return {amount:dated.filter(item=>item.date===date).reduce((sum,item)=>sum+item.amount,0),date};
 }
@@ -101,17 +103,21 @@ export async function loadCompensationDeals(webhook:string,managerId:string,from
     dealRows(webhook,{ASSIGNED_BY_ID:managerId,[PAYMENT_TYPE_FIELD]:'263'},send),
   ]);
   const rows=new Map([...periodRows,...firstPaymentRows].map(row=>[String(row.ID),row]));
-  const deals=await Promise.all([...rows.values()].map(async row=>{
+  const pending=[...rows.values()],deals:CompensationDeal[]=[];
+  // Expanded eligibility must not fan out one simultaneous CRM request per historical deal.
+  await Promise.all(Array.from({length:Math.min(6,pending.length)},async()=>{
+   for(let row=pending.shift();row;row=pending.shift()){
     const id=String(row.ID),paymentType=String(row[PAYMENT_TYPE_FIELD]??'');
-    const juneOverride=managerId===RAMAZAN_ID?RAMAZAN_JUNE_FIRST_PAYMENTS.get(id):undefined;
-    const payment=paymentType==='263'?await firstPayment(webhook,id,send,juneOverride?.invoiceId):{amount:null,date:''};
+    const juneOverride=paymentType==='263'&&managerId===RAMAZAN_ID?RAMAZAN_JUNE_FIRST_PAYMENTS.get(id):undefined;
+    const payment=paymentType==='263'||hasFirstPaymentContractRate(paymentType)?await firstPayment(webhook,id,send,juneOverride?.invoiceId,paymentType==='263'):{amount:null,date:''};
     const invoiceDate=juneOverride?.date??(managerId===RAMAZAN_ID&&payment.date.startsWith('2026-06')?'2026-05-31':payment.date);
-    return {
+    deals.push({
       id,title:String(row.TITLE??'').trim()||`Сделка #${id}`,handoffDate:String(row[HANDOFF_DATE_FIELD]??'').slice(0,10),commissionDate:paymentType==='263'?invoiceDate:String(row[HANDOFF_DATE_FIELD]??'').slice(0,10),
       contractValue:money(row.OPPORTUNITY),paymentType,stageId:String(row.STAGE_ID??''),outcomeId:String(row[CASE_OUTCOME_FIELD]??''),firstPayment:payment.amount,
-    } satisfies CompensationDeal;
+    });
+   }
   }));
-  return deals.filter(deal=>(deal.handoffDate>=from&&deal.handoffDate<=to)||(deal.commissionDate>=from&&deal.commissionDate<=to));
+  return deals.filter(deal=>(deal.handoffDate>=from&&deal.handoffDate<=to)||(deal.commissionDate>=from&&deal.commissionDate<=to)).sort((a,b)=>Number(a.id)-Number(b.id));
 }
 
 export async function loadSalesCompetitionTotals(webhook:string,from:string,to:string,send:typeof fetch=fetch):Promise<Record<Person,Totals>>{
