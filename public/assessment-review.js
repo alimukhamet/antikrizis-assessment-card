@@ -63,7 +63,7 @@ function afLogicalVisible(e,styles){
 function afControls(){const styles=new WeakMap();return [...$af('questionnaireStep').querySelectorAll('input,select,textarea')].filter(e=>!e.closest('.af-source')&&afLogicalVisible(e,styles));}
 function afLabel(e){return e.closest('.field')?.querySelector('label.lbl')?.textContent.trim()||e.getAttribute('aria-label')||e.id||'Ответ';}
 function afLoanStartOptional(e){return /^n8038Start(?:_r\d+)?$/.test(e.id)&&window.LoanDates?.loanDatePrecision(e.closest('.repeat-item')?.querySelector('input[id^=loanDisbursementDate]')?.value)==='day';}
-function afMissing(){return afControls().filter(e=>e.dataset.sourceReplaced||!e.hasAttribute('data-optional')&&!(!e.value.trim()&&afLoanStartOptional(e))&&!['checkbox','file','button'].includes(e.type)&&(!e.value.trim()||!e.checkValidity()));}
+function afMissing(){return afControls().filter(e=>e.dataset.sourceReplaced||(!e.hasAttribute('data-optional')||e.hasAttribute('data-loan-date')&&e.value.trim())&&!(!e.value.trim()&&afLoanStartOptional(e))&&!['checkbox','file','button'].includes(e.type)&&(!e.value.trim()||!e.checkValidity()));}
 function afMissingGroups(){return [...$af('questionnaireStep').querySelectorAll('.holdings,.chips')].filter(g=>afLogicalVisible(g)&&!g.querySelector('input:checked'));}
 function afPending(){return [...af.sources].filter(([id,s])=>s.pending&&afLogicalVisible($af(id)));}
 function afRefresh(){

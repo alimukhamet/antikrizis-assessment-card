@@ -256,5 +256,6 @@ test('issuance-only full date removes the unknown start from missing answers and
  assert.equal(s.run('afMissing().some(e=>e.id==="n8038Start")'),true);const before=s.run('afMissing().length');
  issued.value='2023-04-18';issued.dispatchEvent(new s.w.Event('change',{bubbles:true}));s.run('visibilityRules();afRefresh()');
  assert.equal(start.value,'');assert.equal(start.required,false);assert.equal(s.run('afMissing().some(e=>e.id==="n8038Start")'),false);assert.equal(s.run('afMissing().length'),before-1);
+ issued.value='2023-02-30';issued.dispatchEvent(new s.w.Event('change',{bubbles:true}));assert.equal(s.run('afMissing().some(e=>e.id==="loanDisbursementDate")'),true);
  issued.value='';issued.dispatchEvent(new s.w.Event('change',{bubbles:true}));s.run('visibilityRules();afRefresh()');assert.equal(s.run('afMissing().some(e=>e.id==="n8038Start")'),true);
 });
