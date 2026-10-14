@@ -48,7 +48,7 @@ function isAssessmentIntakeMachineRequest(request: Request, url: URL): boolean {
 
 /** Platform CRM profile feed: bearer-token checked in the route; GET of one exact deal only. */
 function isProfileFeedMachineRequest(request: Request, url: URL): boolean {
-  return request.method === 'GET' && /^\/api\/profile-feed\/[1-9]\d{0,11}$/.test(url.pathname);
+  return request.method === 'GET' && /^\/api\/profile-feed\/[1-9]\d{0,11}(?:\/documents\/[A-Za-z0-9_-]{1,128})?$/.test(url.pathname);
 }
 
 // Image security config. SVG sources with .svg extension auto-skip the

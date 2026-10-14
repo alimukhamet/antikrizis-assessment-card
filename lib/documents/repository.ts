@@ -79,6 +79,9 @@ export class EvidenceRepository {
   if(/\.(png|jpg)$/.test(document.original_key)&&/^native-pdf-\d+:/.test(version))version=version.replace(/^native-pdf-\d+:/,IMAGE_READER_VERSION+':');
   let extraction=await this.db.prepare('SELECT * FROM assessment_extractions WHERE document_id=? AND version=?').bind(document.id,version).first<ExtractionRow>();
   if(extraction)return {document,extraction,result:await this.readResult(extraction)};
+  // v32 adds optional full-date metadata only. Preserve existing questionnaire
+  // facts, immutable analyses and employee confirmations; new reads retain it.
+  if(version.endsWith(':rules-native-32'))return this.cached(caseId,originalHash,version.replace(/:rules-native-32$/,':rules-native-31'));
   // Reader v5 changes only the strict, sparse final Kaspi disclaimer. Cached
   // text can identify a candidate, but the original operators must be reread
   // before removing its OCR flag. Preserve every unrelated evidence/review ID.

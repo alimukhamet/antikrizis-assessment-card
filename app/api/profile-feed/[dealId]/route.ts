@@ -3,14 +3,9 @@ import { sha256 } from '../../../../lib/documents/repository';
 import { WORKERS } from '../../../../lib/worker-session';
 import type { ProfileJson } from '../../../../lib/questionnaire/compile-profile';
 
-const headers = { 'cache-control': 'no-store' };
-const fail = (status: number, error: string) => Response.json({ error }, { status, headers });
-
-function equal(left: string, right: string) {
-  let difference = left.length ^ right.length;
-  for (let index = 0; index < Math.max(left.length, right.length); index += 1) difference |= (left.charCodeAt(index) || 0) ^ (right.charCodeAt(index) || 0);
-  return difference === 0;
-}
+import { profileFeedAuthorization, profileFeedHeaders as headers, profileFeedFail as fail } from '../../../../lib/questionnaire/profile-feed-auth';
+import { iskOriginals } from '../../../../lib/questionnaire/isk-originals';
+import { RepositoryError } from '../../../../lib/documents/repository';
 
 /**
  * Server-to-server feed: historical verified content plus its current completion state.
@@ -19,14 +14,12 @@ function equal(left: string, right: string) {
  */
 export async function GET(request: Request, ctx: { params: Promise<{ dealId: string }> }) {
   const { env } = await import('cloudflare:workers');
-  const runtime = env as typeof env & { DB?: D1Database; PROFILE_FEED_TOKEN?: string };
-  const token = runtime.PROFILE_FEED_TOKEN ?? process.env.PROFILE_FEED_TOKEN ?? '';
-  if (token.length < 32 || !runtime.DB) return fail(503, 'PROFILE_FEED_NOT_CONFIGURED');
-  const presented = /^Bearer (\S{1,512})$/.exec(request.headers.get('authorization') ?? '')?.[1] ?? '';
-  if (!equal(presented, token)) return fail(401, 'PROFILE_FEED_UNAUTHORIZED');
+  const runtime = env as typeof env & { DB?: D1Database; FILES?: R2Bucket; PROFILE_FEED_TOKEN?: string };
+  const denied = profileFeedAuthorization(request, runtime);
+  if (denied) return denied;
   const { dealId } = await ctx.params;
   if (!/^[1-9]\d{0,11}$/.test(dealId)) return fail(400, 'INVALID_DEAL_ID');
-  const repository = new ProfileSaveRepository(runtime.DB);
+  const repository = new ProfileSaveRepository(runtime.DB!);
   const [row, receipt] = await Promise.all([
     repository.latestVerifiedByDeal(dealId), repository.latestEffectiveByDeal(dealId),
   ]);
@@ -40,6 +33,12 @@ export async function GET(request: Request, ctx: { params: Promise<{ dealId: str
     ? (JSON.parse(row.payload_json) as ProfileSavePayload).values.profileJson
     : JSON.stringify(emptyProfile);
   const worker = row?.actor_id.replace(/^worker:/, '') ?? '';
+  let originals;
+  if (new URL(request.url).searchParams.get('include') === 'isk-originals') {
+    if (!runtime.FILES) return fail(503, 'EVIDENCE_STORAGE_NOT_CONFIGURED');
+    try { originals = await iskOriginals(runtime.DB!, runtime.FILES, dealId, JSON.parse(profileJson).iin); }
+    catch (error) { return fail(error instanceof RepositoryError ? error.status : 503, error instanceof RepositoryError ? error.code : 'ISK_ORIGINALS_UNAVAILABLE'); }
+  }
   return Response.json({
     schema: 'antikrizis.profile-feed.v1', dealId, requestId: row?.request_id ?? '', savedAt: row?.updated_at ?? '',
     savedBy: (WORKERS as Record<string, string>)[worker] ?? row?.actor_id ?? '',
@@ -47,5 +46,6 @@ export async function GET(request: Request, ctx: { params: Promise<{ dealId: str
     contentReceiptId: row?.id ?? null,
     receiptState: receipt?.state ?? null, latestReceiptId: receipt?.id ?? null,
     latestReceiptAt: receipt?.updated_at ?? null,
+    ...(originals ? { iskOriginals: originals } : {}),
   }, { headers });
 }

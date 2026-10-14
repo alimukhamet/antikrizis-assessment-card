@@ -301,3 +301,13 @@ test('reader v5 rereads only sparse closing-disclaimer candidates and preserves 
   assert.deepEqual(await repo.original(old.document),new Uint8Array([index]));
  }
 });
+
+test('full contract-date metadata preserves existing native v31 evidence and confirmations',async()=>{
+ const {repo,sqlite}=setup(),c=await repo.syncCase(client());
+ const old=await repo.store(c.id,new Uint8Array([211]),'synthetic.pdf',actor,'native-pdf-5:rules-native-31',{read:{pages:[{page:1,text:'synthetic native text',needsOcr:false}]},extraction:{kind:'gkb_full',credits:[]}});
+ const review=await repo.appendReview({caseId:c.id,documentId:old.document.id,extractionId:old.extraction.id,identityRevision:1,requestId:'date-metadata-only',factKey:'synthetic',value:'saved fact',disposition:'confirmed',reason:''},actor);
+ const cached=await repo.cached(c.id,old.document.original_sha256,'native-pdf-5:rules-native-32');
+ assert.equal(cached.extraction.id,old.extraction.id);
+ assert.equal(sqlite.prepare('SELECT count(*) AS n FROM assessment_extractions').get().n,1);
+ assert.equal(sqlite.prepare('SELECT id FROM assessment_reviews').get().id,review.id);
+});

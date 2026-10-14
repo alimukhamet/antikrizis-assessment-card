@@ -1,9 +1,9 @@
 import labels from './kz-labels.json';
 import type { PageText } from './read-pdf';
 import {extractPowerParties,type PowerParties} from './power-of-attorney';
-export const EXTRACTION_VERSION = 'rules-native-31';
+export const EXTRACTION_VERSION = 'rules-native-32';
 export type Fact = { key: string; value: string; page: number; source: string };
-export type Credit = { contractNumber: string; contractCode?: string; page: number; facts: Fact[]; components: Record<string, string | null>; comparisonDebt?:Fact; relatedPartiesNotice?: {page:number;source:string} };
+export type Credit = { contractStartDate?: Fact; contractNumber: string; contractCode?: string; page: number; facts: Fact[]; components: Record<string, string | null>; comparisonDebt?:Fact; relatedPartiesNotice?: {page:number;source:string} };
 export type BankStatement={from:string|null;to:string|null;credits:string;topUps:string;topUpsVerified:boolean;debits:string;transactions:number;reconciled:boolean;rowsReadable:boolean;sourcePage:number;reconciliation?:string;gambling?:{total:string;matches:Array<{date:string;amount:string;description:string;page:number}>}};
 export type NativeExtraction = { version: string; kind: string; identity: { iin: string | null; name: string | null }; issuedAt: string | null; expiresAt?:string|null; facts: Fact[]; credits: Credit[]; findings: string[];creditList?:{complete:boolean;declared:number|null};bankStatement?:BankStatement;coverage?:{from:string|null;to:string|null};power?:PowerParties };
 export function validIin(s: string | null): s is string {
@@ -27,6 +27,21 @@ function day(v: string | null): string | null {
   if (!v || !/^\d{2}\.\d{2}\.\d{4}$/.test(v)) return null;
   const iso = v.slice(6)+'-'+v.slice(3,5)+'-'+v.slice(0,2), d = new Date(iso+'T00:00:00Z');
   return Number.isFinite(d.getTime()) && d.toISOString().slice(0,10) === iso ? iso : null;
+}
+/** Keep original page wording with an exact printed day, outside questionnaire fields. */
+function contractDateFact(start:string|null, monthFact:Fact|undefined, pages:PageText[]):Fact|undefined {
+  if(!start||!monthFact)return undefined;
+  const page=pages.find(p=>p.page===monthFact.page),printed=start.slice(8)+'.'+start.slice(5,7)+'.'+start.slice(0,4);
+  if(!page)return undefined;
+  const normalized=canonical(page.text),pattern=/Дата\s+начала\s+срока\s+действия\s+(?:контракта|договора)\s*:\s*(\d{2}\.\d{2}\.\d{4})/gu;
+  const match=[...normalized.matchAll(pattern)].find(m=>m[1]===printed);
+  if(!match)return undefined;
+  // Translation changes label lengths, never date order. Locate that same date
+  // occurrence in the untouched original page instead of quoting a report date.
+  const dateAt=match.index+match[0].lastIndexOf(printed),ordinal=normalized.slice(0,dateAt).split(printed).length-1;
+  let at=-1;for(let i=0;i<=ordinal;i++)at=page.text.indexOf(printed,at+1);
+  if(at<0)return undefined;
+  return {key:'contractStartDate',value:start,page:monthFact.page,source:page.text.slice(Math.max(0,at-160),at+printed.length+160)};
 }
 /** Date proposals from an ID's printed labels or its explicit validity range, never its birthday. */
 export function identityCardDates(pages:Array<{page:number;text:string}>){
@@ -233,6 +248,8 @@ export function extractNative(pages: PageText[]): NativeExtraction {
       add('contractIdentifier',contractCode??contractNumber,contractCode?'Код контракта':'Номер договора');
       add('loanStatus',overdue===null?null:defaulted?'В просрочке — требуют полную сумму':'Платится по графику','Статус по количеству дней просрочки','Количество дней просрочки');
       add('startedAtMonth',start?.slice(0,7)||null,'Дата начала срока действия контракта');
+      const startFact=facts.find(f=>f.key==='startedAtMonth');
+      const contractStartDate=contractDateFact(start,startFact,pages);
       if(!defaulted)add('monthlyPayment',scheduledPayment??nextPayment,'Ежемесячный платёж по графику',scheduledPayment!==null?(/Ежемесячная сумма взноса|Сумма ежемесячного платежа/.exec(block)?.[0]||''):'Сумма предстоящего платежа');
       add('overdueDays',overdue,'Количество дней просрочки');
       const ambiguous = overdue === null || arrears===null || Number(arrears)>0 || [penalty,interest,fine].some(v => v!==null && Number(v)>0);
@@ -272,7 +289,7 @@ export function extractNative(pages: PageText[]): NativeExtraction {
        if(!facts.some(f=>f.key==='debtOutstanding'))facts.push({...comparisonDebt,key:'debtOutstanding'});
       }
       if(!facts.some(f=>f.key==='debtOutstanding'))output.findings.push('TOTAL_DEBT_REQUIRES_RECONCILIATION');
-      output.credits.push({contractNumber,...(contractCode?{contractCode}:{}),page,facts,components:{remaining,arrears,penalty,interest,fine},...(comparisonDebt?{comparisonDebt}:{}),...(relatedPartiesNotice?{relatedPartiesNotice}:{})});
+      output.credits.push({contractNumber,...(contractCode?{contractCode}:{}),page,facts,...(contractStartDate?{contractStartDate}:{}),components:{remaining,arrears,penalty,interest,fine},...(comparisonDebt?{comparisonDebt}:{}),...(relatedPartiesNotice?{relatedPartiesNotice}:{})});
     }
     // A borrower can also be the pledgor of the same loan. The role total can
     // therefore exceed the number of debts; use the borrower's summary row.
@@ -408,6 +425,10 @@ function parseFirstCreditBureau(pages:PageText[],output:NativeExtraction,origina
   add('creditor',creditor,'Источник информации',`ПКБ: источник информации (кредитор): ${creditor}`);
   add('contractIdentifier',usableCode||contractNumber,usableCode?'Код контракта':'Номер договора');
   add('startedAtMonth',start?.slice(0,7)||null,'Дата начала срока действия');
+  const startFact=facts.find(f=>f.key==='startedAtMonth');
+  // The old Kazakh PKB month mapping uses an actual-disbursement label.
+  // Preserve that UI behavior, but never promote it to a contract-start day.
+  const contractStartDate=originalPages?undefined:contractDateFact(start,startFact,pages);
   add('overdueDays',overdue,'Количество дней просрочки');
   add('loanStatus',overdue===null?null:Number(overdue)>0?'В просрочке — требуют полную сумму':'Платится по графику','Количество дней просрочки');
   if(overdue==='0')add('monthlyPayment',payment,balance.includes('Минимальный платеж')?'Минимальный платеж':'Сумма периодического платежа');
@@ -432,7 +453,7 @@ function parseFirstCreditBureau(pages:PageText[],output:NativeExtraction,origina
    const people=[...related.matchAll(/(?:^|\n)\s*(Соза[её]мщик|Гарант|Поручитель|Залогодатель)\s+([\p{L}\s'-]{3,180}?)\s+(\d{12})\b/giu)];
    if(people.length&&people.length===(related.match(/\b\d{12}\b/g)||[]).length&&people.every(p=>validIin(p[3])))add('relatedParties',people.map(p=>`${p[2].replace(/\s+/g,' ').trim()} — ${p[1]}`).join('; '),'СВЯЗАННЫЕ',related.trim());
   }
-  output.credits.push({contractNumber,...(usableCode?{contractCode:usableCode}:{}),page,facts,components:{remaining,arrears,penalty,interest:null,fine:null}});
+  output.credits.push({contractNumber,...(usableCode?{contractCode:usableCode}:{}),page,facts,...(contractStartDate?{contractStartDate}:{}),components:{remaining,arrears,penalty,interest:null,fine:null}});
  }
  const unique=new Set(output.credits.map(c=>`${c.facts.find(f=>f.key==='creditor')?.value}|${c.contractCode||c.contractNumber}`)).size===output.credits.length;
  const complete=declared!==null&&declared===activeCards&&declared===output.credits.length&&unique&&!output.findings.includes('INCOMPLETE_CONTRACT');
