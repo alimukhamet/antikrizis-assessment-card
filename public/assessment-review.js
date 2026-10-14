@@ -351,6 +351,8 @@ function afDocumentAttention(item){
  if(reason)return {kind:reason.startsWith('SHORT_')?'credits':'error',message:reason.startsWith('SHORT_')?window.GkbComparison?.task?.()?.label||'Сверьте кредиты двух отчётов.':HostedAssessment.error(reason)};
  if(!HostedAssessment.getContext()?.client.iin)return null; // The missing deal identity is shown once, with its next action.
  if(r.blocked)return {kind:'manual',message:item.type==='Доверенность'?'Сверьте владельца, срок и полномочия по оригиналу.':findings.includes('DOCUMENT_TYPE_UNVERIFIED')?'Не удалось определить тип. Откройте файл и укажите тип документа.':findings.includes('OCR_OR_PAGE_REVIEW_REQUIRED')?'Часть страниц не прочитана. Проверьте их по оригиналу.':'Сверьте владельца и срок по оригиналу.'};
+ // Reading F6 successfully does not replace its required whole-document inspection.
+ if(item.type==='Ф6 об отсутствии имущества'&&item.person==='Клиент'&&r.server)return {kind:'manual',message:'Ф6 требует проверки сотрудником. Откройте оригинал, просмотрите все страницы и подтвердите проверку документа.'};
  return null;
 }
 function afGkbReadingSummary(r){
