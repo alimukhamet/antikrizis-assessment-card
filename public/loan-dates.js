@@ -27,7 +27,8 @@ var window;
     loanDatePrecision: () => loanDatePrecision
   });
   function loanDatePrecision(value) {
-    const text = String(value || "");
+    const text = String(value || ""), year = Number(text.slice(0, 4));
+    if (year < 1900 || year > 2200) return null;
     if (/^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(text)) return "month";
     if (!/^[1-9]\d{3}-\d{2}-\d{2}$/.test(text)) return null;
     const date = /* @__PURE__ */ new Date(text + "T00:00:00Z");

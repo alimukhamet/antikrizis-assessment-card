@@ -11,7 +11,7 @@ const text='Персональный кредитный отчет\nИИН: 9912
 function source(){const pages=[{page:1,text,nativeCharacters:text.length,needsOcr:false}],extraction=dates.extractNative(pages);extraction.version='rules-native-29';for(const c of extraction.credits)delete c.contractStartDate;return{extraction,read:{pages,originalSha256:'original-hash',readAllPhysicalPages:true,totalPages:1}};}
 const document={id:'doc',case_id:'case',original_sha256:'original-hash'},row={id:'original-extraction',result_sha256:'original-result-hash'};
 test('full dates have calendar precision; old months never acquire an invented day',()=>{
- assert.equal(loanDatePrecision('2024-02-29'),'day');assert.equal(loanDatePrecision('2023-02-29'),null);assert.equal(formatLoanDate('2023-04'),'04.2023 (день не указан)');assert.equal(formatLoanDate('2023-04-17'),'17.04.2023');
+ assert.equal(loanDatePrecision('1899-12-31'),null);assert.equal(loanDatePrecision('1900-01-01'),'day');assert.equal(loanDatePrecision('2201-01'),null);assert.equal(loanDatePrecision('2200-12-31'),'day');assert.equal(loanDatePrecision('2024-02-29'),'day');assert.equal(loanDatePrecision('2023-02-29'),null);assert.equal(formatLoanDate('2023-04'),'04.2023 (день не указан)');assert.equal(formatLoanDate('2023-04-17'),'17.04.2023');
 });
 test('pre-v32 retained pages yield separately identified dates without altering old facts',()=>{
  const result=source(),before=structuredClone(result),evidence=dates.deriveLoanDateEvidence(document,row,result,'991231300003');
