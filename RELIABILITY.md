@@ -1,5 +1,9 @@
 # Tools 03 and 04 reliability checks
 
+## Deal 10363: partial GKB draft balances — 14 October 2026
+
+Open, implemented pending release and employee workflow verification. Scoped read-only audit38550445263 and protected D1/R2 reads find draft62, seven originals,46/46loan rows, no final profile/submission/handoff receipts. Full GKB has35missing balances; the same-date short report has45rows with matching count/total but one printed truncated identifier, which blocks report-wide autofill.29matching balance fields are blank; six existing differing amounts must remain untouched. A separate draft-only exact-contract supplement now fills only blank balances on the explicit fill action, restores unconfirmed source badges without recreating cleared answers, and leaves monthly payment/status, report eligibility, review and package gates unchanged. OriginalPDF pages4(short)/38(full) visually checked. Full-only loan and other discrepancies remain unresolved; no report acceptance or client write claimed. Private evidence: shared checkout outputs/deal-10363-2026-10-14/.
+
 ## Ownership and completion rules — 23 September 2026
 
 Codex owns technical triage, prioritization, fixes, regression prevention and verification. Ali owns business decisions and approvals that change the authorized scope. Automatic diagnostics and scheduled checks are the first source of incidents; employee reports are optional additional evidence. Ali can identify a problem by deal ID. Inspect diagnostics, saved state and reports before asking an employee to repeat anything.

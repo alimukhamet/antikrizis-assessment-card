@@ -84,13 +84,13 @@ function afBadge(e,src){
  if(src.stale&&!selectedFiles.some(item=>item.id===src.fileId)){
   label.textContent='Источник заменён. Сверьте ответ с новым документом.';
   const clear=afEl('button','Очистить ответ');clear.type='button';clear.onclick=()=>{if(e.type==='checkbox')e.checked=false;else e.value='';af.sources.delete(e.id);delete e.dataset.sourceReplaced;e.setCustomValidity('');box.remove();e.dispatchEvent(new Event('change',{bubbles:true}));afRefresh();};box.append(clear);
- }else if(src.pending&&src.server?.draftOnly){box.append(afEl("span","Из ГКБ · подтвердите клиента для сохранения ИИН"));}else if(src.pending&&src.edited){const yes=afEl('button','Сохранить исправление');yes.type='button';yes.onclick=async()=>{yes.disabled=true;try{await HostedAssessment.review(e,src);delete e.dataset.sourceReplaced;e.setCustomValidity('');field.querySelectorAll('[data-replacement-notice]').forEach(node=>node.remove());src.pending=false;src.stale=false;afBadge(e,src);afRefresh();}catch(error){afStatus(error.message,true);yes.disabled=false;}};box.append(yes);}
+ }else if(src.gkbDraftSupplement){box.append(afEl('span','Сумма из краткого ГКБ · требуется сверка отчётов'));const check=afEl('button','Сверить кредиты');check.type='button';check.onclick=()=>window.GkbComparison?.open();box.append(check);}else if(src.pending&&src.server?.draftOnly){box.append(afEl("span","Из ГКБ · подтвердите клиента для сохранения ИИН"));}else if(src.pending&&src.edited){const yes=afEl('button','Сохранить исправление');yes.type='button';yes.onclick=async()=>{yes.disabled=true;try{await HostedAssessment.review(e,src);delete e.dataset.sourceReplaced;e.setCustomValidity('');field.querySelectorAll('[data-replacement-notice]').forEach(node=>node.remove());src.pending=false;src.stale=false;afBadge(e,src);afRefresh();}catch(error){afStatus(error.message,true);yes.disabled=false;}};box.append(yes);}
  field.append(box);
 }
 // Used by the separately loaded server-answer-check.js classic script.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function afConfirmPending(){
- const pending=afPending();if(!pending.length)return true;
+ const pending=afPending().filter(([,src])=>!src.gkbDraftSupplement);if(!pending.length)return true;
  if(af.conflicts.length)throw Error('Сначала разберите расхождения с документами.');
  if(pending.some(([,src])=>src.stale||src.server?.draftOnly))throw Error('Есть заменённые или неподтверждённые источники. Проверьте документы клиента.');
  const entries=pending.map(([id,src])=>[$af(id),src]);
@@ -124,7 +124,7 @@ function afPut(e,value,src){
    const key=e.id+'|'+value+'|'+src.fileId;
    if(!af.conflicts.some(x=>x.key===key))af.conflicts.push({key,id:e.id,value,src});return false;
   }
-  if(e.value===value&&af.sources.has(e.id)&&!af.sources.get(e.id).stale&&!src.priorReview)return false;
+  if(e.value===value&&af.sources.has(e.id)&&!af.sources.get(e.id).stale&&!af.sources.get(e.id).gkbDraftSupplement&&!src.priorReview)return false;
   if(e.tagName==='SELECT'&&![...e.options].some(o=>o.value===value)){
    if(e.hasAttribute('data-compact-count'))setCount(e,Number(value));else if(value==='Кредитная карта')e.add(new Option(value,value));else return false;
   }
@@ -263,6 +263,31 @@ async function afEnsureIdentity(){
  afClientChoices();await afApply({identityOnly:true});
  return Boolean(HostedAssessment.getContext()?.client.iin);
 }
+// Draft-only balances never change report eligibility or create an approval.
+async function afSupplementDraftBalances(){
+ if(!af.fillingMissing&&!af.restoringEvidence)return 0;
+ const context=HostedAssessment.getContext();if(!context?.client.iin)return 0;
+ const reports=[...af.results].filter(([id,r])=>selectedFiles.some(item=>item.id===id&&item.person==='Клиент')&&!r.error&&!r.excluded&&!r.duplicate&&r.server?.dealId===context.client.external.dealId&&r.server?.identityRevision===context.identityRevision).map(([fileId,r])=>({...r,fileId}));
+ if(!reports.some(r=>r.kind==='gkbShort'&&r.blocked))return 0;
+ const planner=window.GkbDraftSupplements||await import('./gkb-draft-supplements.mjs');
+ if(HostedAssessment.getContext()!==context)return 0;
+ const proposals=planner.planGkbDraftBalanceSupplements(reports,{iin:context.client.iin,day:context.assessmentDay});let filled=0;
+ for(const proposal of proposals){
+  const short=af.results.get(proposal.shortFileId),full=af.results.get(proposal.fullFileId);
+  if(!short||!full||reports.find(r=>r.fileId===proposal.shortFileId)?.server?.extractionId!==short.server?.extractionId||reports.find(r=>r.fileId===proposal.fullFileId)?.server?.extractionId!==full.server?.extractionId||!selectedFiles.some(item=>item.id===proposal.shortFileId&&item.person==='Клиент')||!selectedFiles.some(item=>item.id===proposal.fullFileId&&item.person==='Клиент'))continue;
+  const rows=[...document.querySelectorAll('#creditors > .repeat-rows > .repeat-item')].filter(row=>{
+   const value=key=>[...row.querySelectorAll('input')].find(e=>e.id.replace(/_r\d+$/,'')===key)?.value||'';
+   return afCreditorKey(value('n8038'))===afCreditorKey(proposal.creditor)&&proposal.fullAliases.includes(value('loanContractId').trim());
+  });
+  if(rows.length!==1)continue;
+  const input=[...rows[0].querySelectorAll('input')].find(e=>e.id.replace(/_r\d+$/,'')==='n8040');
+  if(!input||input.dataset.sourceReplaced||input.dataset.clientConfirmedValue||af.sources.has(input.id))continue;
+  if(af.restoringEvidence?input.value!==proposal.amount:input.value!=='')continue;
+  const fact=short.creditEvidence.credits[proposal.shortIndex].facts.find(f=>f.key==='debtOutstanding');
+  if(afPut(input,proposal.amount,{fileId:proposal.shortFileId,page:proposal.shortPage,date:short.date,quote:fact.source,server:short.server,serverFactKey:proposal.shortFactKey,gkbDraftSupplement:true}))filled++;
+ }
+ return filled;
+}
 async function afApply(preferences={}){
  if(af.identityBusy)return;
  const client=$af('afClient').value;if(!client){afStatus('В документах несколько людей или ИИН не распознан. Выберите клиента в результатах документов или загрузите читаемый ГКБ.',true);return;}
@@ -325,7 +350,8 @@ async function afApply(preferences={}){
  }
  if(marriage)afPut($af('marital'),'В браке',marriage);
  if(kids.size){const first=[...kids.values()][0];afPut($af('childrenTotal'),kids.size,{fileId:first.id,page:1,quote:'Найдены документы '+kids.size+' разных детей с совпадением ФИО родителя. Подтвердите, что других детей нет.'});}
- renderDocuments();afRenderResults();afRenderConflicts();kaspi();visibilityRules();afRefresh();afStatus('Распознанные ответы перенесены. Проверьте отмеченные поля и заполните оставшиеся. Ваши ответы не перезаписывались.');
+ const supplementalBalances=await afSupplementDraftBalances();
+ renderDocuments();afRenderResults();afRenderConflicts();kaspi();visibilityRules();afRefresh();afStatus('Распознанные ответы перенесены. Проверьте отмеченные поля и заполните оставшиеся. Ваши ответы не перезаписывались.'+(supplementalBalances?' Суммы из краткого ГКБ: '+supplementalBalances+'. Сверка отчётов остаётся обязательной.':''));
 }
 $af('afApply').onclick=async()=>{
  if(af.busy||window.ServerDrafts&&!ServerDrafts.canSwitch())return;
