@@ -73,7 +73,7 @@ test('profile feed: bearer token only, exact deal, verified profile with its has
     await files.put('private/analysis',retainedText);
     await db.prepare("INSERT INTO assessment_extractions (id,document_id,version,result_key,result_sha256,created_at) VALUES ('extraction-test','original-1','native-pdf-5:rules-native-32','private/analysis',?,?)").bind(createHash('sha256').update(retainedText).digest('hex'),now).run();
     const withDates = await (await get('/api/profile-feed/900001?include=isk-originals',token)).json();
-    assert.deepEqual(withDates.iskOriginals.loanDates,[{documentId:'original-1',sha256:hash,subjectIin:'991231300003',contractCode:'CODE-ONLY-TEST',contractNumber:'NUMBER-ONLY-TEST',startDate:'2023-04-17',disbursementDate:null,page:1,quote:sourceText}]);
+    assert.deepEqual(withDates.iskOriginals.loanDates,[{documentId:'original-1',sha256:hash,subjectIin:'991231300003',contractCode:'CODE-ONLY-TEST',contractNumber:'NUMBER-ONLY-TEST',startDate:'2023-04-17',disbursementDate:null,page:1,quote:sourceText,evidenceVersion:'rules-native-32',sourceExtractionId:'extraction-test'}]);
     await files.put('private/analysis',JSON.stringify({...retained,corrupt:true}));
     assert.equal((await get('/api/profile-feed/900001?include=isk-originals',token)).status,503);
     assert.equal((await get('/api/profile-feed/900001',token)).status,200);

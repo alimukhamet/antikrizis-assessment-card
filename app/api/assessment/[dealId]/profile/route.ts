@@ -1,3 +1,4 @@
+import {requiresFullLoanDateEditor} from '../../../../../lib/questionnaire/draft-recovery';
 import { requireStaffRequest } from '../../../staff-access';
 import { boundedJson, evidenceContext, evidenceError, operatingDay } from '../../../../../lib/documents/request-context';
 import { RepositoryError } from '../../../../../lib/documents/repository';
@@ -99,7 +100,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ dealId: st
     if (active) return Response.json({ error: 'PROFILE_SAVE_PENDING', pendingRequestId: active.request_id }, { status: 409, headers });
     if (body.identityRevision !== record.identity_revision) throw new RepositoryError('CASE_IDENTITY_CHANGED');
 
-    const draft = validateDraft(body.draft), deal = await adapter.context(dealId);
+    const draft = validateDraft(body.draft), latest = await repo.latestVerifiedByDeal(dealId);
+    if(latest&&requiresFullLoanDateEditor((JSON.parse(latest.payload_json) as ProfileSavePayload).draft,draft))throw new RepositoryError('FULL_LOAN_DATE_EDITOR_REQUIRED',409);
+    const deal = await adapter.context(dealId);
     if (deal.iin !== client.iin) throw new RepositoryError('CASE_IDENTITY_CHANGED');
     const at = new Date().toISOString();
     const compiled = compileProfile(draft, client.iin, dealId, { name: actor.displayName, at }, operatingDay());

@@ -12,3 +12,5 @@ const schema={version:1,scalar,groups};await fs.writeFile('lib/questionnaire/sch
 
 await build({entryPoints:['public/intake-data.mjs'],outfile:'public/intake-data.js',bundle:true,format:'iife',globalName:'window.IntakeData'});
 await build({entryPoints:['public/profile-explanations.mjs'],outfile:'public/profile-explanations.js',bundle:true,format:'iife',globalName:'window.ProfileExplanationRules'});
+
+await build({entryPoints:['public/loan-dates.mjs'],outfile:'public/loan-dates.js',bundle:true,format:'iife',globalName:'window.LoanDates'});

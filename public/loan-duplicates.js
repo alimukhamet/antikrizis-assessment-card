@@ -6,8 +6,8 @@ window.LoanDuplicates=(()=>{
  const key=e=>e.id.replace(/_r\d+$/,'');
  const values=row=>Object.fromEntries(controls(row).map(e=>[key(e),e.type==='checkbox'?(e.checked?'Да':'Нет'):e.value]));
  const busy=()=>af.busy||ServerDrafts.isBusy?.()||document.getElementById('checkQuestions')?.disabled;
- const fields=[['loanContractId','№ договора'],['n8040','Долг, ₸'],['n8041','Платёж в месяц, ₸'],['n8038Start','Дата кредита'],['n8039','Тип кредита'],['loanStatus','Статус'],['n8042','Дней просрочки'],['loanClaimIncluded','Включить в иск'],['loanParticipants','Другие участники'],['n8043','Цель кредита'],['creditPurposeOther','Пояснение']];
- const display=(key,value)=>value&&['n8040','n8041'].includes(key)&&Number.isFinite(Number(value))?Number(value).toLocaleString('ru-RU',{maximumFractionDigits:2}):value||'Не указано';
+ const fields=[['loanContractId','№ договора'],['n8040','Долг, ₸'],['n8041','Платёж в месяц, ₸'],['n8038Start','Дата начала обязательства'],['loanDisbursementDate','Дата выдачи кредита'],['n8039','Тип кредита'],['loanStatus','Статус'],['n8042','Дней просрочки'],['loanClaimIncluded','Включить в иск'],['loanParticipants','Другие участники'],['n8043','Цель кредита'],['creditPurposeOther','Пояснение']];
+ const display=(key,value)=>value&&['n8038Start','loanDisbursementDate'].includes(key)?window.LoanDates?.formatLoanDate(value)||value:value&&['n8040','n8041'].includes(key)&&Number.isFinite(Number(value))?Number(value).toLocaleString('ru-RU',{maximumFractionDigits:2}):value||'Не указано';
  function close(){if(current){current.close();current.remove();current=null;}}
  function refresh(group){renumber(group);afRefresh();window.AssessmentWorkflow?.refresh();}
  function stash(row){const ids=new Set(controls(row).map(e=>e.id));return {row,next:row.nextSibling,keys:[...af.rowKeys].filter(([,id])=>id===row.id),sources:[...af.sources].filter(([id])=>ids.has(id)),conflicts:af.conflicts.filter(c=>ids.has(c.id))};}

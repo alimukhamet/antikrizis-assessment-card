@@ -1,3 +1,4 @@
+import {loanDatePrecision} from '../../public/loan-dates.mjs';
 import {analysisVersion,type Analysis}from'./analysis-service';
 import {checkPowerTemplate}from'./power-validation';
 import {RepositoryError,EvidenceRepository,type CaseRow,type ExtractionRow,type DocumentRow} from './repository';
@@ -7,7 +8,7 @@ import {gkbFreshness,requiresDocumentValidation,statementPeriod} from './policy'
 export type StoredResult={read:unknown;extraction:NativeExtraction};
 export function extractFactMap(extraction:NativeExtraction){
  const facts=new Map(extraction.facts.map(f=>[f.key,f]));
- extraction.credits.forEach((credit,index)=>credit.facts.forEach(f=>facts.set(`credits.${index}.${f.key}`,f)));
+ extraction.credits.forEach((credit,index)=>[...credit.facts,...(credit.contractStartDate?[credit.contractStartDate]:[]),...(credit.disbursementDate?[credit.disbursementDate]:[])].forEach(f=>facts.set(`credits.${index}.${f.key}`,f)));
  return facts;
 }
 export function assertReviewAllowed(record:CaseRow,document:DocumentRow,extraction:ExtractionRow,result:StoredResult,input:{factKey:string;value:unknown;disposition:string;reason:string;identityRevision:number},assessmentDay:string,compatibleExtractionId?:string){
@@ -30,6 +31,7 @@ export function assertReviewAllowed(record:CaseRow,document:DocumentRow,extracti
   if(!input.reason.trim()||input.reason.length>2000||typeof input.value!=='string'||!input.value.trim()||input.value.length>1000)throw new RepositoryError('CORRECTION_REQUIRES_VALUE_AND_REASON',400);
   if((/(?:Payment|Outstanding)$/.test(fact.key)||fact.key==='statement.topUps')&&!/^\d+(\.\d{1,2})?$/.test(input.value))throw new RepositoryError('INVALID_MONEY',400);
   if(fact.key==='startedAtMonth'&&!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.value))throw new RepositoryError('INVALID_MONTH',400);
+  if(['contractStartDate','disbursementDate'].includes(fact.key)&&loanDatePrecision(input.value)!=='day')throw new RepositoryError('INVALID_DATE',400);
   if(fact.key==='overdueDays'&&!/^\d{1,6}$/.test(input.value))throw new RepositoryError('INVALID_DAYS',400);
   // Identity cannot be corrected through a generic fact review; rebind the case explicitly instead.
   if(fact.key.startsWith('identity.'))throw new RepositoryError('IDENTITY_REBIND_REQUIRED');
@@ -39,6 +41,11 @@ export function assertReviewAllowed(record:CaseRow,document:DocumentRow,extracti
 /** Use the same server-owned compatibility decision as document reopening. */
 export async function compatibleReviewExtraction(repository:EvidenceRepository,record:CaseRow,document:DocumentRow,extraction:ExtractionRow){
  if(extraction.version===analysisVersion)return extraction.id;
+ if(extraction.version.startsWith('loan-dates-1:')){
+  const result=await repository.readResult(extraction) as StoredResult&{sourceExtractionId?:string;evidenceVersion?:string;read?:{originalSha256?:string}};
+  if(result.evidenceVersion!=='loan-dates-1'||extraction.version!=='loan-dates-1:'+result.sourceExtractionId||result.read?.originalSha256!==document.original_sha256||!result.sourceExtractionId||!await repository.extraction(record.id,document.id,result.sourceExtractionId))throw new RepositoryError('EXTRACTION_VERSION_CHANGED');
+  return extraction.id;
+ }
  const cached=await repository.cached(record.id,document.original_sha256,analysisVersion);
  if(!cached||cached.extraction.id!==extraction.id)throw new RepositoryError('EXTRACTION_VERSION_CHANGED');
  return cached.extraction.id;

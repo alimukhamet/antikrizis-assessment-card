@@ -83,3 +83,15 @@ test('newer short report keeps membership and money while older full supplies da
  const b=structuredClone(f.analysis);b.documentId='short';b.extractionId='short-ext';b.document.extraction.kind='gkb_short';b.document.extraction.issuedAt='2026-08-04';b.document.extraction.credits=[credit('LOAN1',[fact('debtOutstanding','100')])];f.draft.payload.documents.push({documentId:'short',type:'ГКБ — краткий отчёт',person:'Клиент'});
  for(const reports of [[f.analysis,b],[b,f.analysis]]){const p=planProfileSourceFill(f.draft,context,reports,validateDraft);assert.equal(p.newLoans,1);assert.equal(value(p,'n8038Start'),'2022-08');assert.equal(value(p,'n8039'),'Потребительский кредит');assert.equal(value(p,'n8040'),'100');assert.equal(value(p,'loanParticipants'),undefined);assert.equal(p.changes.find(c=>c.key==='n8038Start').source.documentId,'doc');}
 });
+
+test('legacy analyses use separate date evidence without importing old reviews or overwriting staff dates',()=>{
+ const f=fixture();f.analysis.document.extraction.credits[0].facts.push(fact('startedAtMonth','2023-04'));
+ f.analysis.dateSupplement={extractionId:'date-only',reviews:[{id:'irrelevant'}],extraction:{credits:[{...credit(),contractStartDate:fact('contractStartDate','2023-04-17')}]}};
+ const plan=f.run();assert.equal(value(plan,'n8038Start'),'2023-04-17');assert.equal(plan.changes.find(c=>c.target?.key==='n8038Start'||c.key==='n8038Start')?.source.extractionId,'date-only');
+ f.draft.payload=plan.payload;const saved=f.draft.payload.groups.find(g=>g.id==='creditors').rows[0].find(a=>a.key==='n8038Start');saved.value='2023-04-20';assert.equal(value(f.run(),'n8038Start'),'2023-04-20');
+});
+
+
+test('marker-absent legacy drafts gain date capability only after lossless normalization',()=>{
+ const f=fixture();assert.equal('loanDatesVersion' in f.draft.payload,false);const before=structuredClone(f.draft.payload);const p=f.run();assert.equal(p.payload.loanDatesVersion,1);assert.deepEqual(f.draft.payload,before);assert.equal(p.changes.length>0,true);
+});

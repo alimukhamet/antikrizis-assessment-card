@@ -166,19 +166,19 @@ test('answers open the first unfinished section and preserve the employee select
 });
 
 
-test('Russian month editors preserve ISO drafts, sources and newly added loan rows',async t=>{
+test('full loan date editor preserves legacy precision, ISO drafts and added rows',async t=>{
  const s=setup(t);await s.load();collect(s);s.mount();
- const input=s.d.querySelector('#creditors input[type="month"]');input.value='2023-05';
- const before=s.capture();s.run(fs.readFileSync('public/russian-month.js','utf8'));
+ const input=s.d.querySelector('#creditors input[data-loan-date]');input.value='2023-05';
+ const before=s.capture();s.run(fs.readFileSync('public/loan-dates.js','utf8'));s.run(fs.readFileSync('public/loan-date-editor.js','utf8'));
  assert.deepEqual(s.capture(),before);assert.equal(s.run('afControls().filter(e=>e.id==="'+input.id+'").length'),1);
- const shadow=input.nextElementSibling.shadowRoot,month=shadow.querySelector('select'),year=shadow.querySelector('input');
- assert.equal(month.selectedOptions[0].textContent,'Май');assert.equal(year.value,'2023');
- month.value='09';month.dispatchEvent(new s.w.Event('change',{bubbles:true}));year.value='2024';year.dispatchEvent(new s.w.Event('input',{bubbles:true}));
- assert.equal(input.value,'2024-09');assert.equal(s.capture().groups.find(g=>g.id==='creditors').rows[0].find(a=>a.key==='n8038Start').value,'2024-09');
- input.value='2022-02';input.dispatchEvent(new s.w.Event('change',{bubbles:true}));assert.equal(month.selectedOptions[0].textContent,'Февраль');assert.equal(year.value,'2022');
- year.value='20';year.dispatchEvent(new s.w.Event('input',{bubbles:true}));assert.equal(input.value,'');assert.ok(s.run('afMissing().some(e=>e.id==="'+input.id+'")'));
- const row=s.run("add(document.getElementById('creditors'))");await new Promise(resolve=>setTimeout(resolve,0));assert.ok(row.querySelector('assessment-month'));
- assert.equal(s.capture().groups.find(g=>g.id==='creditors').rows[0].some(a=>!a.key),false);
+ const shadow=input.nextElementSibling.shadowRoot,editor=shadow.querySelector('input');
+ assert.equal(editor.value,'05.2023');assert.match(shadow.textContent,/день не указан/);assert.equal(input.checkValidity(),true);
+ editor.value='17.09.2024';editor.dispatchEvent(new s.w.Event('input',{bubbles:true}));
+ assert.equal(input.value,'2024-09-17');assert.equal(s.capture().groups.find(g=>g.id==='creditors').rows[0].find(a=>a.key==='n8038Start').value,'2024-09-17');
+ input.value='2022-02-28';input.dispatchEvent(new s.w.Event('change',{bubbles:true}));assert.equal(editor.value,'28.02.2022');
+ editor.value='31.02.2024';editor.dispatchEvent(new s.w.Event('input',{bubbles:true}));assert.equal(input.checkValidity(),false);assert.ok(s.run('afMissing().some(e=>e.id==="'+input.id+'")'));
+ const row=s.run("add(document.getElementById('creditors'))");await new Promise(resolve=>setTimeout(resolve,0));assert.ok(row.querySelector('assessment-loan-date'));
+ assert.equal(editor.value,'31.02.2024');assert.equal(s.capture().groups.find(g=>g.id==='creditors').rows[0].some(a=>!a.key),false);
 });
 
 test('empty participant tables offer only a source, while named participants attach to their exact loan',async t=>{
@@ -324,14 +324,14 @@ test('an explicit No clears a stale benefits count and removes the conditional c
  s.d.getElementById('needsSocialDoc').value='1';s.d.getElementById('needsSocialDoc').dispatchEvent(new s.w.Event('change',{bubbles:true}));assert.equal(count.value,'');assert.ok(s.w.AssessmentWorkflow.collection().missing.includes('Справка по выплатам пенсии и пособий'));
  count.value='';s.run('refreshRequiredDocuments()');assert.equal(count.validity.customError,false);assert.equal(count.validity.valueMissing,true);
 });
-test('Russian editor rejects future dates on restored and new loans using the assessment day',async t=>{
- const s=setup(t);await s.load();collect(s);s.mount();s.w.AssessmentWorkflow.show('answers',{focus:false});s.run(fs.readFileSync('public/russian-month.js','utf8'));
- const input=s.d.querySelector('#creditors input[type="month"]');input.value='2099-01';input.dispatchEvent(new s.w.Event('change',{bubbles:true}));
- assert.equal(input.max,'2026-09');assert.equal(input.checkValidity(),false);assert.match(input.validationMessage,/будущем/);assert.ok(s.run('afMissing().some(e=>e.id==="'+input.id+'")'));
- const shadow=input.nextElementSibling.shadowRoot;assert.equal(shadow.querySelector('[role="status"]').hidden,false);assert.equal(shadow.querySelector('input').value,'2099');
- shadow.querySelector('input').value='2026';shadow.querySelector('input').dispatchEvent(new s.w.Event('input',{bubbles:true}));assert.equal(input.value,'2026-01');assert.equal(input.checkValidity(),true);assert.equal(shadow.querySelector('[role="status"]').hidden,true);
- const month=shadow.querySelector('select');month.value='10';month.dispatchEvent(new s.w.Event('change',{bubbles:true}));assert.equal(input.checkValidity(),false);month.value='09';month.dispatchEvent(new s.w.Event('change',{bubbles:true}));assert.equal(input.checkValidity(),true);
- const row=s.run("add(document.getElementById('creditors'))");await new Promise(resolve=>setTimeout(resolve,0));assert.equal(row.querySelector('input[type="month"]').max,'2026-09');
+test('full date editor rejects future days and preserves restored partial months',async t=>{
+ const s=setup(t);await s.load();collect(s);s.mount();s.w.AssessmentWorkflow.show('answers',{focus:false});s.run(fs.readFileSync('public/loan-dates.js','utf8'));s.run(fs.readFileSync('public/loan-date-editor.js','utf8'));
+ const input=s.d.querySelector('#creditors input[data-loan-date]');input.value='2099-01';input.dispatchEvent(new s.w.Event('change',{bubbles:true}));
+ assert.equal(input.checkValidity(),false);assert.match(input.validationMessage,/будущем/);assert.ok(s.run('afMissing().some(e=>e.id==="'+input.id+'")'));
+ const editor=input.nextElementSibling.shadowRoot.querySelector('input');assert.equal(editor.value,'01.2099');
+ editor.value='12.09.2026';editor.dispatchEvent(new s.w.Event('input',{bubbles:true}));assert.equal(input.value,'2026-09-12');assert.equal(input.checkValidity(),true);
+ editor.value='01.10.2026';editor.dispatchEvent(new s.w.Event('input',{bubbles:true}));assert.equal(input.checkValidity(),false);
+ input.value='2026-09';input.dispatchEvent(new s.w.Event('change',{bubbles:true}));assert.equal(input.checkValidity(),true);assert.equal(input.value,'2026-09');
 });
 
 test('unknown shortcuts are absent and restored unknowns become unanswered, never zero',async t=>{

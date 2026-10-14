@@ -2060,9 +2060,16 @@
         },
         {
           "key": "n8038Start",
-          "type": "month",
-          "label": "Когда получили кредит / возникло обязательство?*",
+          "type": "text",
+          "label": "Дата начала действия договора / возникновения обязательства*",
           "required": true,
+          "conditions": []
+        },
+        {
+          "key": "loanDisbursementDate",
+          "type": "text",
+          "label": "Дата фактической выдачи кредита",
+          "required": false,
           "conditions": []
         },
         {

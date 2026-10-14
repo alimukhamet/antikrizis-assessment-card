@@ -13,7 +13,7 @@ const crm=load('lib/crm/bitrix.ts',{'../documents/extract-native':rules});
 const adapterModule=load('lib/crm/document-identity.ts',{'../documents/repository':repoModule,'../documents/extract-native':rules,'./bitrix':crm});
 const analysis=load('lib/documents/analysis-service.ts',{'./read-pdf':{},'./read-image':image,'./read-document':{},'./extract-native':rules,'./policy':load('lib/documents/policy.ts'),'./request-context':{operatingDay:()=> '2026-09-16'},'./repository':repoModule,'./power-validation':{},'./analysis-version':{analysisVersion:'test-version'},'./document-review':{}});
 const {confirmDocumentIdentity}=load('lib/documents/identity-service.ts',{'./analysis-service':analysis,'./repository':repoModule,'./extract-native':rules});
-const {DraftRepository}=load('lib/questionnaire/repository.ts',{'../documents/repository':repoModule});
+const {DraftRepository}=load('lib/questionnaire/repository.ts',{'./draft-recovery':load('lib/questionnaire/draft-recovery.ts'),'../documents/repository':repoModule});
 const actor={id:'worker:synthetic',authentication:'test'},iin='991231300003',otherIin='000000000010';
 const client=(value=null)=>({external:{system:'bitrix',dealId:'900001'},title:'SYNTHETIC ONLY',iin:value});
 const payload=value=>({schemaVersion:1,answers:[{key:'iin',value,checked:false},{key:'fio',value:'MANUAL NAME',checked:false}],groups:[],documents:[],pendingFiles:[],docContext:{social:'',salary:''}});

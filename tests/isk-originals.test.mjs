@@ -22,3 +22,10 @@ test('catalog supports originals while excluding credentials, archives and malfo
  for(const name of ['client.p12','client.p12.pdf','client.pfx.pdf','client.zip','client.docx'])assert.equal(iskOriginalType({...doc,original_name:name}),null);
  assert.equal(iskOriginalType(doc),'application/pdf');assert.equal(iskOriginalType({...doc,original_name:'scan.JPG'}),'image/jpeg');assert.equal(iskOriginalType({...doc,original_name:'report.pdf.sig'}),'application/octet-stream');assert.equal(iskOriginalType({...doc,byte_size:0}),null);
 });
+
+test('start and issuance retain their separate source pages for one exact contract',()=>{
+ const input=result();input.extraction.version='rules-native-33';input.read.pages.push({page:3,text:'Дата фактической выдачи кредита: 19.04.2023',needsOcr:false});
+ input.extraction.credits[0].disbursementDate={key:'disbursementDate',value:'2023-04-19',page:3,source:'Дата фактической выдачи кредита: 19.04.2023'};
+ const rows=retainedLoanDates(doc,input,iin);assert.equal(rows.length,2);assert.equal(rows[0].startDate,'2023-04-17');assert.equal(rows[0].disbursementDate,null);assert.equal(rows[0].page,2);assert.equal(rows[1].startDate,null);assert.equal(rows[1].disbursementDate,'2023-04-19');assert.equal(rows[1].page,3);assert.equal(rows[0].contractCode,rows[1].contractCode);
+ input.extraction.credits[0].disbursementDate.page=2;assert.equal(retainedLoanDates(doc,input,iin).length,1);
+});

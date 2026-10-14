@@ -1,3 +1,4 @@
+import {loanDatePrecision} from '../../public/loan-dates.mjs';
 import {normalizeIntake} from '../../public/intake-data.mjs';
 import schema from './schema.json';
 import {parseParticipants} from '../../public/loan-participants.mjs';
@@ -77,13 +78,18 @@ export function checkAnswers(payload:DraftPayload,trustedIin:string|null,assessm
   displayAnswers.push({key:f.key,label:f.label,value:unknown?'Неизвестно — уточнить':v,...(group?{group,row:index}:{})});
   if(retired)return;
   if(unknown||['unknown','Не знаю'].includes(v)){if(profile)unresolved.push({key:f.key,label:f.label,value:'Неизвестно — уточнить',...(group?{group,row:index}:{})});else issue(f.key,'ANSWER_REQUIRED',f.label,group,index);return;}
-  if(!v){if(required)issue(f.key,'ANSWER_REQUIRED',f.label,group,index);return;}
+  if(!v){if(required&&!(group==='creditors'&&f.key==='n8038Start'&&loanDatePrecision(value('loanDisbursementDate',row))==='day'))issue(f.key,'ANSWER_REQUIRED',f.label,group,index);return;}
   if(f.key==='loanParticipants'&&!parseParticipants(v).valid)issue(f.key,'PARTICIPANTS_REQUIRED','Выберите «Нет» или укажите ФИО и роль каждого участника',group,index);
   if(f.compactCount&&v==='more')issue(f.key,'EXACT_COUNT_REQUIRED',f.label,group,index);
   if(f.key==='familyBirthDate'){const m=/^(\d{2})\.(\d{2})\.(\d{4})$/.exec(v),d=m?new Date(`${m[3]}-${m[2]}-${m[1]}T00:00:00Z`):null;if(!m||!d||!Number.isFinite(d.getTime())||d.toISOString().slice(0,10)!==`${m[3]}-${m[2]}-${m[1]}`||Number(m[3])<1900||`${m[3]}-${m[2]}`>assessmentMonth)issue(f.key,'INVALID_DATE','Дата рождения в формате ДД.ММ.ГГГГ',group,index);}
   if(f.type==='number'){
    const integer=['months','payDay','n8042'].includes(f.key);
    if(!(integer?/^\d+$/:/^\d+(\.\d{1,2})?$/).test(v)||!Number.isFinite(Number(v))||Number(v)>Number.MAX_SAFE_INTEGER/100||f.min!==undefined&&Number(v)<Number(f.min)||f.max!==undefined&&Number(v)>Number(f.max))issue(f.key,'INVALID_NUMBER',f.label,group,index);
+  }
+  if(group==='creditors'&&['n8038Start','loanDisbursementDate'].includes(f.key)){
+   const precision=loanDatePrecision(v),today=assessmentDay||new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Almaty',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+   if(!precision||f.key==='loanDisbursementDate'&&precision!=='day')issue(f.key,'INVALID_DATE','Укажите существующую дату в формате ДД.ММ.ГГГГ',group,index);
+   else if(v>(precision==='month'?today.slice(0,7):today))issue(f.key,'FUTURE_LOAN_MONTH','Дата кредита не может быть в будущем',group,index);
   }
   if(f.type==='month'){
    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(v)||v.startsWith('0000'))issue(f.key,'INVALID_MONTH',f.label,group,index);

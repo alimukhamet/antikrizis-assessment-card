@@ -1,5 +1,6 @@
+import * as loanDates from '../public/loan-dates.mjs';
 import{test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import vm from'node:vm';import ts from'typescript';
-function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>imports[n],Date,Map,Set});return exports;}
+function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:n=>n==='../../public/loan-dates.mjs'?loanDates:imports[n],Date,Map,Set});return exports;}
 const repoTypes=load('lib/documents/repository.ts'),policy=load('lib/documents/policy.ts');
 const reviews=load('lib/documents/review-service.ts',{'./repository':repoTypes,'./policy':policy,'./analysis-service':{analysisVersion:'current'}});
 const {checkReviewBindings,parseReviewBindings}=load('lib/questionnaire/review-bindings.ts',{'../documents/loan-identity':load('lib/documents/loan-identity.ts'),'../documents/repository':repoTypes,'../documents/review-service':reviews});

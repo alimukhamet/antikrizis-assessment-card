@@ -1,3 +1,4 @@
+import {loanAutofillFacts} from '../public/loan-dates.mjs';
 // Deterministic, additive draft proposals. No network, approvals or publication.
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
@@ -7,8 +8,18 @@ export const storedPayload=payload=>{const p=structuredClone(payload);for(const 
 const get=(row,key)=>row?.find(a=>a.key===key);
 const fail=code=>{throw Object.assign(new Error(code),{code});};
 const identifier=n=>typeof n==='string'&&n.trim()&&!/\.{2,}|…|[\r\n]/u.test(n);
-const loanFields={creditor:'n8038',contractIdentifier:'loanContractId',startedAtMonth:'n8038Start',monthlyPayment:'n8041',overdueDays:'n8042',debtOutstanding:'n8040',creditType:'n8039',relatedParties:'loanParticipants',loanStatus:'loanStatus'};
+const loanFields={creditor:'n8038',contractIdentifier:'loanContractId',startedAtMonth:'n8038Start',contractStartDate:'n8038Start',disbursementDate:'loanDisbursementDate',monthlyPayment:'n8041',overdueDays:'n8042',debtOutstanding:'n8040',creditType:'n8039',relatedParties:'loanParticipants',loanStatus:'loanStatus'};
 const scalarFields={'identity.iin':'iin','identity.name':'fio','statement.topUps':'kaspiAnnual','benefits.count':'clientBenefitsCount'};
+function loanFieldsFor(a,c,index){
+ const source=(f,factIndex,extractionId=a.extractionId)=>({documentId:a.documentId,extractionId,sha256:a.document.originalSha256,factKey:`credits.${factIndex}.${f.key}`,page:f.page});
+ let fields=loanAutofillFacts(c).filter(f=>loanFields[f.key]).map(f=>({key:loanFields[f.key],value:f.value,source:source(f,index)}));
+ const supplement=a.dateSupplement;
+ if(supplement){
+  const matches=(supplement.extraction?.credits||[]).map((credit,i)=>({credit,i})).filter(({credit})=>creditorKey(credit.facts.find(f=>f.key==='creditor')?.value||'')===creditorKey(c.facts.find(f=>f.key==='creditor')?.value||'')&&[credit.contractNumber,credit.contractCode].some(n=>n&&[c.contractNumber,c.contractCode].includes(n)));
+  if(matches.length===1)for(const f of [matches[0].credit.contractStartDate,matches[0].credit.disbursementDate].filter(Boolean)){const key=loanFields[f.key];fields=fields.filter(old=>old.key!==key);fields.push({key,value:f.value,source:source(f,matches[0].i,supplement.extractionId)});}
+ }
+ return fields;
+}
 const sameValue=(key,a,b)=>key==='n8038'?creditorKey(a)===creditorKey(b):String(a).trim()===String(b).trim();
 export function planProfileSourceFill(draft,context,analyses,validateDraft,history={protectedFields:[],allowNewLoans:true}){
  if(!draft||draft.recovery||draft.identityRevision!==context.identityRevision||!/^\d{12}$/.test(context.client?.iin||''))fail('CURRENT_IDENTITY_REQUIRED');
@@ -23,6 +34,7 @@ export function planProfileSourceFill(draft,context,analyses,validateDraft,histo
  if(migrated.some(a=>!migrationKeys.has(a.key)||(a.key.endsWith('businessNone')?a.value!=='businessNone':a.checked||!['','no','legacy'].includes(a.value))))fail('DRAFT_NORMALIZATION_REQUIRED');
  const comparison=structuredClone(payload);comparison.answers=comparison.answers.filter(a=>previousKeys.has(a.key));
  if(!isDeepStrictEqual(comparison,before))fail('DRAFT_NORMALIZATION_REQUIRED');
+ payload.loanDatesVersion=1;
  const selected=new Set(payload.documents.filter(d=>d.person==='Клиент'&&!/Подписанный договор|ЭЦП|парол/iu.test(d.type)).map(d=>d.documentId));
  const eligible=analyses.filter(a=>selected.has(a.documentId)&&a.caseId===context.caseId&&a.identityRevision===context.identityRevision&&a.persisted===true&&a.eligibleForAutofill===true&&a.document?.extraction?.identity?.iin===context.client.iin&&a.document.readAllPhysicalPages===true&&a.document.pages.length===a.document.totalPages&&a.document.originalSha256&&a.extractionId);
  const sources=eligible.map(a=>({documentId:a.documentId,extractionId:a.extractionId,sha256:a.document.originalSha256,issuedAt:a.document.extraction.issuedAt,kind:a.document.extraction.kind}));
@@ -51,21 +63,21 @@ export function planProfileSourceFill(draft,context,analyses,validateDraft,histo
  for(const a of reports.filter(a=>a.document.extraction.issuedAt===latest))for(const [index,c]of a.document.extraction.credits.entries()){
   const lender=c.facts.find(f=>f.key==='creditor')?.value,aliases=[c.contractNumber,c.contractCode].filter(identifier).map(n=>n.trim());
   if(!lender||!aliases.length)continue;
-  const fields=c.facts.filter(f=>loanFields[f.key]).map(f=>({key:loanFields[f.key],value:f.value,source:evidence(a,f,`credits.${index}.${f.key}`)}));
+  const fields=loanFieldsFor(a,c,index);
   loans.push({lender:creditorKey(lender),aliases,number:identifier(c.contractCode)?c.contractCode:c.contractNumber,fields});
  }
  // Original dates/types can supplement an exact current loan. Historical
  // balances, status, participants and historical-only loans never carry forward.
  const matches=(a,b)=>a.lender===b.lender&&a.aliases.some(id=>b.aliases.includes(id));
  const historical=reports.filter(a=>a.document.extraction.issuedAt&&a.document.extraction.issuedAt<latest).flatMap(a=>a.document.extraction.credits.map((c,index)=>({
-  lender:creditorKey(c.facts.find(f=>f.key==='creditor')?.value||''),aliases:[c.contractNumber,c.contractCode].filter(identifier).map(n=>n.trim()),a,c,index,date:a.document.extraction.issuedAt,
+  lender:creditorKey(c.facts.find(f=>f.key==='creditor')?.value||''),aliases:[c.contractNumber,c.contractCode].filter(identifier).map(n=>n.trim()),a,c,index,fields:loanFieldsFor(a,c,index),date:a.document.extraction.issuedAt,
  })));
- for(const loan of loans)for(const [factKey,key]of [['startedAtMonth','n8038Start'],['creditType','n8039']]){
+ for(const loan of loans)for(const key of ['n8038Start','loanDisbursementDate','n8039']){
   if(loans.some(other=>matches(loan,other)&&other.fields.some(f=>f.key===key)))continue;
-  const candidates=historical.filter(h=>matches(loan,h)&&!loans.some(other=>matches(h,other)&&!matches(loan,other))&&historical.filter(other=>other.a===h.a&&matches(loan,other)).length===1&&h.c.facts.some(f=>f.key===factKey)).sort((a,b)=>b.date.localeCompare(a.date));
+  const candidates=historical.filter(h=>matches(loan,h)&&!loans.some(other=>matches(h,other)&&!matches(loan,other))&&historical.filter(other=>other.a===h.a&&matches(loan,other)).length===1&&h.fields.some(f=>f.key===key)).sort((a,b)=>b.date.localeCompare(a.date));
   const newest=candidates.filter(h=>h.date===candidates[0]?.date);
   if(!newest.length)continue;
-  for(const h of newest){const f=h.c.facts.find(f=>f.key===factKey);loan.fields.push({key,value:f.value,source:evidence(h.a,f,`credits.${h.index}.${factKey}`)});}
+  for(const h of newest){loan.fields.push(h.fields.find(f=>f.key===key));}
  }
  let group=payload.groups.find(g=>g.id==='creditors');
  const createdRows=new Set();

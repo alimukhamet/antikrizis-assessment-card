@@ -1,3 +1,4 @@
+import * as loanDates from '../public/loan-dates.mjs';
 import * as profileExplanations from '../public/profile-explanations.mjs';
 import {webcrypto} from 'node:crypto';
 import * as intake from '../public/intake-data.mjs';
@@ -5,7 +6,7 @@ import * as intake from '../public/intake-data.mjs';
 import {test} from 'node:test';
 import fs from 'node:fs';import vm from 'node:vm';import path from 'node:path';import assert from 'node:assert/strict';import {createRequire} from 'node:module';import {fileURLToPath} from 'node:url';
 const root=fileURLToPath(new URL('../',import.meta.url)),require=createRequire(root+'package.json'),ts=require('typescript');
-function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>{if(n==='../../public/intake-data.mjs')return intake;if(n in imports)return imports[n];throw Error('Missing audit import: '+n);},Date,Map,Set,TextEncoder,crypto:webcrypto});return exports;}
+function load(file,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,require:n=>{if(n==='../../public/loan-dates.mjs')return loanDates;if(n==='../../public/intake-data.mjs')return intake;if(n in imports)return imports[n];throw Error('Missing audit import: '+n);},Date,Map,Set,TextEncoder,crypto:webcrypto});return exports;}
 const schema=JSON.parse(fs.readFileSync(root+'lib/questionnaire/schema.json'));
 const participants=await import(root+'public/loan-participants.mjs'),schedule=await import(root+'public/payment-schedule.mjs'),words=await import(root+'public/contract-words.mjs');
 const native=load('lib/documents/extract-native.ts',{'./power-of-attorney':load('lib/documents/power-of-attorney.ts'),'./kz-labels.json':JSON.parse(fs.readFileSync(root+'lib/documents/kz-labels.json'))});

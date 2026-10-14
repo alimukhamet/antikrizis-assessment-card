@@ -106,6 +106,8 @@ jobs:
             'enforcement-editor.js'
             'document-review.js'
             'loan-duplicates.js'
+            'loan-dates.js'
+            'loan-date-editor.js'
             'loan-participants.mjs'
             'loan-participants-editor.mjs'
             'gkb-comparison.mjs'

@@ -181,7 +181,7 @@ function afHistoricalLoanDetails(docs,latest,client){
   const restoring=af.restoringEvidence;let row;
   af.restoringEvidence=true;try{row=afRow('creditors',client+'|'+loan.key,loan);}finally{af.restoringEvidence=restoring;}
   if(!row)continue;
-  for(const key of ['n8038Start','n8039']){
+  for(const key of ['n8038Start','loanDisbursementDate','n8039']){
    if(current.some(other=>matches(loan,other.loan)&&other.loan.fields[key]))continue;
    const candidates=older.flatMap(([id,r])=>{
     const found=r.loans.filter(other=>matches(loan,other));
@@ -200,17 +200,18 @@ function afLoanParticipantsNotice(row,loan,fileId){
  // Older drafts intentionally keep blank/deleted answers. Put the exact report
  // proposal beside the field so filling it does not require retyping or reimport.
  row.querySelectorAll('.af-profile-proposal').forEach(node=>node.remove());
- for(const key of ['loanParticipants','n8039','n8038','loanContractId','n8038Start','loanStatus','n8040','n8041','n8042']){
+ for(const key of ['loanParticipants','n8039','n8038','loanContractId','n8038Start','loanDisbursementDate','loanStatus','n8040','n8041','n8042']){
   const value=loan.fields[key];if(!value)continue;
   const input=[...row.querySelectorAll('input,textarea,select')].find(e=>e.id.replace(/_r\d+$/,'')===key);
-  if(!input||input.dataset.sourceReplaced||input.value&&(key!=='n8039'||value!=='Ломбард'||input.value===value))continue;
+  const dateRefinement=key==='n8038Start'&&/^\d{4}-\d{2}$/.test(input?.value||'')&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&value.startsWith(input.value+'-');
+  if(!input||input.dataset.sourceReplaced||input.value&&!dateRefinement&&(key!=='n8039'||value!=='Ломбард'||input.value===value))continue;
   const previous=input.value;
   const box=afEl('div',undefined,'af-source af-profile-proposal');box.dataset.for=input.id;
-  const use=afEl('button',(previous?'Заменить по ГКБ: ':'Заполнить из ГКБ: ')+value);use.type='button';
+  const use=afEl('button',(previous?'Заменить по ГКБ: ':'Заполнить из ГКБ: ')+(['n8038Start','loanDisbursementDate'].includes(key)?window.LoanDates?.formatLoanDate(value)||value:value));use.type='button';
   const src={...loan,fileId,serverFactKey:loan.fieldKeys?.[key],...loan.fieldReview?.[key]};
   const open=afEl('button','Источник');open.type='button';open.onclick=()=>afSource(src);
   use.onclick=async()=>{
-   if(af.busy||input.value!==previous||!input.isConnected||!selectedFiles.some(item=>item.id===fileId)||af.results.get(fileId)?.server?.extractionId!==src.server?.extractionId)return;
+   if(af.busy||input.value!==previous||!input.isConnected||!selectedFiles.some(item=>item.id===fileId)||![af.results.get(fileId)?.server?.extractionId,loan.fieldReview?.[key]?.server?.extractionId].includes(src.server?.extractionId))return;
    if(previous){input.value='';af.sources.delete(input.id);}
    afPut(input,value,src);box.remove();afRefresh();await window.ServerDrafts?.save({automatic:true});
   };
@@ -359,7 +360,7 @@ function afGkbReadingSummary(r){
  if(r.kind!=='gkbShort'||!r.creditEvidence)return '';
  const credits=r.creditEvidence.credits||[],declared=r.creditEvidence.creditList?.declared;
  const count='Прочитано обязательств: '+credits.length+(Number.isInteger(declared)?' из '+declared:'')+'.';
- const labels={startedAtMonth:'дата получения',creditType:'тип кредита',monthlyPayment:'платёж по графику',relatedParties:'сведения о гарантах и других участниках'};
+ const labels={startedAtMonth:'дата начала обязательства',creditType:'тип кредита',monthlyPayment:'платёж по графику',relatedParties:'сведения о гарантах и других участниках'};
  const missing=Object.entries(labels).filter(([key])=>credits.some(c=>!c.facts.some(f=>f.key===key))).map(([,label])=>label);
  return count+(missing.length?' Из этого краткого отчёта не для всех кредитов прочитаны: '+missing.join(', ')+'. Эти сведения нужно взять из полного ГКБ этого клиента; оставшиеся вопросы уточнить у клиента.':'');
 }
@@ -516,13 +517,13 @@ document.addEventListener('change',e=>{if(af.applying||!e.target.closest?.('#que
 document.addEventListener('click',e=>{if(e.target.closest('.add-row,.remove-row'))queueMicrotask(afRefresh);});
 function afDownload(name,content,type){const url=URL.createObjectURL(new Blob([content],{type}));const a=afEl('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $af('afExport').onclick=()=>{
- const missing=afMissing().length+afMissingGroups().length,pending=afPending().length,packageState=window.AssessmentWorkflow?.collection?.(),missingDocs=packageState?.missing.length??missingDocuments().length,documentIssues=packageState?.attention.length||0,lines=['КАРТОЧКА КЛИЕНТА','Дата оценки: '+$af('afDate').value,'Статус: '+(missing||pending||missingDocs||documentIssues||af.conflicts.length?'Черновик':'Ответы заполнены; требуется итоговая проверка специалиста'),`Осталось ответов: ${missing}; проверить извлечённых: ${pending}; недостающих документов: ${missingDocs}; замечаний к документам: ${documentIssues}`,''],displayValue=e=>e.value&&/₸/.test(afLabel(e))&&Number.isFinite(Number(e.value))?Number(e.value).toLocaleString('ru-RU',{maximumFractionDigits:2})+' ₸':e.value||'НЕ ЗАПОЛНЕНО';
+ const missing=afMissing().length+afMissingGroups().length,pending=afPending().length,packageState=window.AssessmentWorkflow?.collection?.(),missingDocs=packageState?.missing.length??missingDocuments().length,documentIssues=packageState?.attention.length||0,lines=['КАРТОЧКА КЛИЕНТА','Дата оценки: '+$af('afDate').value,'Статус: '+(missing||pending||missingDocs||documentIssues||af.conflicts.length?'Черновик':'Ответы заполнены; требуется итоговая проверка специалиста'),`Осталось ответов: ${missing}; проверить извлечённых: ${pending}; недостающих документов: ${missingDocs}; замечаний к документам: ${documentIssues}`,''],displayValue=e=>e.value&&/^(?:n8038Start|loanDisbursementDate)(?:_r\d+)?$/.test(e.id)?window.LoanDates?.formatLoanDate(e.value)||e.value:e.value&&/₸/.test(afLabel(e))&&Number.isFinite(Number(e.value))?Number(e.value).toLocaleString('ru-RU',{maximumFractionDigits:2})+' ₸':e.value||'НЕ ЗАПОЛНЕНО';
  for(const card of $af('questionnaireStep').querySelectorAll('section.card')){lines.push(card.querySelector('.card-title')?.textContent.trim()||'');for(const e of card.querySelectorAll('input,select,textarea')){if(!afLogicalVisible(e)||e.closest('.af-source')||e.type==='file'||e.type==='password')continue;if(e.type==='checkbox'){if(e.matches('[data-loan-claim]'))lines.push('• Включить в иск: '+(e.checked?'Да':'Нет'));else if(e.checked)lines.push('• '+e.parentElement.textContent.trim());continue;}const src=af.sources.get(e.id);lines.push('• '+afLabel(e)+': '+displayValue(e)+(src?' ['+(src.pending?'ПРОВЕРИТЬ':src.edited?'Изменено вручную':'Проверено')+'; '+(selectedFiles.find(x=>x.id===src.fileId)?.file.name||'документ')+', стр. '+src.page+']':''));}lines.push('');}
  if(af.conflicts.length)lines.push('Неразрешённых расхождений: '+af.conflicts.length);
  afDownload('assessment-'+$af('afDate').value+'.txt',lines.join('\n'),'text/plain;charset=utf-8');
 };
 // API controls and file selectors must never become questionnaire-required fields.
-visibilityRules=function(){const styles=new WeakMap(),states=[...document.querySelectorAll('input:not([type="checkbox"]),select,textarea')].map(e=>[e,!e.hasAttribute('data-optional')&&!e.closest('#afWorkspace,#afSourceDialog,#selectedDocuments,.af-source')&&e.type!=='file'&&afLogicalVisible(e,styles)]);for(const [e,required]of states)if(e.required!==required)e.required=required;};
+visibilityRules=function(){const styles=new WeakMap(),states=[...document.querySelectorAll('input:not([type="checkbox"]),select,textarea')].map(e=>[e,!e.hasAttribute('data-optional')&&!( /^n8038Start(?:_r\d+)?$/.test(e.id)&&window.LoanDates?.loanDatePrecision(e.closest('.repeat-item')?.querySelector('input[id^=loanDisbursementDate]')?.value)==='day')&&!e.closest('#afWorkspace,#afSourceDialog,#selectedDocuments,.af-source')&&e.type!=='file'&&afLogicalVisible(e,styles)]);for(const [e,required]of states)if(e.required!==required)e.required=required;};
 $af('afIdentity').style.display='none';
 $af('afFiles').addEventListener('toggle',()=>visibilityRules());
 setTimeout(afRefresh,50);

@@ -125,13 +125,27 @@ window.HostedAssessment=(()=>{
   // never to the comparison between the two original reports.
   const creditEvidence={credits:data.credits.map(c=>({...c,facts:c.facts.map(f=>({...f}))})),creditList:data.creditList,findings:[...new Set([...(data.findings||[]),...(payload.findings||[])])],readable:read.pages.length>0&&read.pages.every(p=>!p.needsOcr)};
   const keys={'identity.iin':'iin','identity.name':'fio','statement.topUps':'kaspiAnnual','employment.payersCount':'count-clientjobs','benefits.count':'clientBenefitsCount'};
-  const loanKeys={creditor:'n8038',contractIdentifier:'loanContractId',loanStatus:'loanStatus',startedAtMonth:'n8038Start',monthlyPayment:'n8041',overdueDays:'n8042',debtOutstanding:'n8040',creditType:'n8039',relatedParties:'loanParticipants'};
+  const loanKeys={creditor:'n8038',contractIdentifier:'loanContractId',loanStatus:'loanStatus',startedAtMonth:'n8038Start',contractStartDate:'n8038Start',disbursementDate:'loanDisbursementDate',monthlyPayment:'n8041',overdueDays:'n8042',debtOutstanding:'n8040',creditType:'n8039',relatedParties:'loanParticipants'};
   const draftOnly=payload.eligibleForDraftAutofill===true&&!payload.eligibleForAutofill&&!context.client.iin;
   const server={dealId:payload.client.external.dealId,documentId:payload.documentId,extractionId:payload.extractionId,identityRevision:payload.identityRevision,...(draftOnly?{draftOnly:true}:{})};
   const reviews=new Map((payload.reviews||[]).map(r=>[r.fact_key,r]));
   const reviewed=(key,f)=>{const review=reviews.get(key);if(!review)return{value:f.value};let value;try{value=JSON.parse(review.value_json);}catch{return{value:f.value};}return typeof value==='string'?{value,originalValue:f.value,priorReview:review}:{value:f.value};};
   const fields=data.facts.filter(f=>keys[f.key]).map(f=>({key:keys[f.key],...reviewed(f.key,f),page:f.page,quote:f.source,serverFactKey:f.key,server}));
-  const loans=data.credits.map((c,i)=>{const fields={},fieldKeys={},fieldReview={};for(const f of c.facts){const key=loanKeys[f.key];if(key){const factKey=`credits.${i}.${f.key}`,saved=reviewed(factKey,f);fields[key]=saved.value;fieldKeys[key]=factKey;fieldReview[key]={...saved,page:f.page,quote:f.source};}}return {key:(c.facts.find(f=>f.key==='creditor')?.value||'')+'|'+(c.contractCode||c.contractNumber),aliases:[c.contractNumber,c.contractCode].filter(Boolean).map(number=>(c.facts.find(f=>f.key==='creditor')?.value||'')+'|'+number),number:c.contractNumber,page:c.page,fields,fieldKeys,fieldReview,server,relatedPartiesNotice:c.relatedPartiesNotice,quote:c.facts.map(f=>f.source+': '+f.value).join('; ')};});
+  const loans=data.credits.map((c,i)=>{const fields={},fieldKeys={},fieldReview={};for(const f of (window.LoanDates?.loanAutofillFacts(c)||c.facts)){const key=loanKeys[f.key];if(key){const factKey=`credits.${i}.${f.key}`,saved=reviewed(factKey,f);fields[key]=saved.value;fieldKeys[key]=factKey;fieldReview[key]={...saved,page:f.page,quote:f.source};}}return {key:(c.facts.find(f=>f.key==='creditor')?.value||'')+'|'+(c.contractCode||c.contractNumber),aliases:[c.contractNumber,c.contractCode].filter(Boolean).map(number=>(c.facts.find(f=>f.key==='creditor')?.value||'')+'|'+number),number:c.contractNumber,page:c.page,fields,fieldKeys,fieldReview,server,relatedPartiesNotice:c.relatedPartiesNotice,quote:c.facts.map(f=>f.source+': '+f.value).join('; ')};});
+  // Date-only evidence has its own immutable extraction/review identity.
+  if(payload.dateSupplement){
+   const supplement=payload.dateSupplement,dates=supplement.extraction?.credits||[],dateReviews=new Map((supplement.reviews||[]).map(r=>[r.fact_key,r]));
+   for(const [index,credit]of dates.entries()){
+    const aliases=[credit.contractNumber,credit.contractCode].filter(Boolean),lender=credit.facts.find(f=>f.key==='creditor')?.value;
+    const matches=data.credits.map((c,i)=>({c,i})).filter(({c})=>c.facts.find(f=>f.key==='creditor')?.value===lender&&[c.contractNumber,c.contractCode].some(n=>n&&aliases.includes(n)));
+    if(matches.length!==1)continue;const loan=loans[matches[0].i];
+    for(const fact of [credit.contractStartDate,credit.disbursementDate].filter(Boolean)){
+     const key=loanKeys[fact.key],factKey=`credits.${index}.${fact.key}`,review=dateReviews.get(factKey);let saved={value:fact.value};
+     if(review)try{const value=JSON.parse(review.value_json);if(typeof value==='string')saved={value,originalValue:fact.value,priorReview:review};}catch{/* An invalid review cannot approve a proposal. */}
+     loan.fields[key]=saved.value;loan.fieldKeys[key]=factKey;loan.fieldReview[key]={...saved,page:fact.page,quote:fact.source,server:{...server,extractionId:supplement.extractionId}};
+    }
+   }
+  }
   const kinds={gkb_full:'gkbFull',gkb_short:'gkbShort',identity:'id',property:'f6',encumbrance:'encumbrance',kaspi:'kaspi',power_of_attorney:'power',benefits:'benefits',enpf:'enpf',salary:'salary'};
   const types={gkb_full:'ГКБ — полный отчёт',gkb_short:'ГКБ — краткий отчёт',identity:'Удостоверение личности',property:'Ф6 об отсутствии имущества',encumbrance:'Сведения об обременениях',kaspi:'Выписка Kaspi Gold',power_of_attorney:'Доверенность',benefits:'Справка по выплатам пенсии и пособий',enpf:'Справка ЕНПФ',salary:'Выписка зарплатного банка'};
   const findings=[...(payload.findings||[])];

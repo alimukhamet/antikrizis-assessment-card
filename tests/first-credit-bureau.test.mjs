@@ -130,7 +130,7 @@ const kzPages=texts=>texts.map((text,i)=>({page:i+1,text:`${text}\nТОЛЫҚ Д
 const kzExtract=(card=kzCard)=>extractNative(kzPages([kzHeader,'ҚОЛДАНЫСТАҒЫ ШАРТ\n'+card]));
 test('Kazakh 1cb contract cards reconcile active loans and retain original language quotes',()=>{
  const e=kzExtract();assert.equal(e.kind,'gkb_full');assert.equal(e.identity.iin,'991231300003');assert.equal(e.identity.name,'СЫНАҚ ТЕСТОВ ТЕСТОВИЧ');assert.equal(e.issuedAt,'2026-08-21');assert.equal(e.creditList.complete,true);
- assert.equal(e.credits[0].contractStartDate,undefined);
+ assert.equal(e.credits[0].contractStartDate,undefined);assert.equal(e.credits[0].disbursementDate.value,'2020-11-16');assert.match(e.credits[0].disbursementDate.source,/Несиенің нақты берілген күні/);
  assert.deepEqual(fields(e),{creditor:'АО «Тест Банк»',contractIdentifier:'CODE-KZ-1',startedAtMonth:'2020-11',overdueDays:'50',loanStatus:'В просрочке — требуют полную сумму',creditType:'Кредитная карта',debtOutstanding:'129.45'});assert.ok(e.credits[0].facts.every(f=>f.page===2&&f.source.includes('оригинал:')));assert.ok(e.credits[0].facts.find(f=>f.key==='overdueDays').source.includes('Мерзімін өткізген күндер саны: 50'));assert.equal(e.credits[0].facts.some(f=>f.key==='relatedParties'),false);
 });
 test('Kazakh closed contracts, other roles, missing pages and unknown fees remain guarded',()=>{

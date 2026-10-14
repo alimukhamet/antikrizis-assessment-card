@@ -22,7 +22,7 @@ window.ProfileOcr=(()=>{
   return value;
  }
  const fieldMap={'identity.name':['fio','ФИО'],'benefits.count':['clientBenefitsCount','Количество выплат'],'employment.payersCount':['count-clientjobs','Количество мест работы'],'statement.topUps':['kaspiAnnual','Поступления Kaspi']};
- const loanMap={creditor:['n8038','Кредитор'],contractIdentifier:['loanContractId','Номер договора'],startedAtMonth:['n8038Start','Начало кредита'],monthlyPayment:['n8041','Платёж в месяц'],overdueDays:['n8042','Дней просрочки'],debtOutstanding:['n8040','Задолженность'],creditType:['n8039','Тип кредита']};
+ const loanMap={creditor:['n8038','Кредитор'],contractIdentifier:['loanContractId','Номер договора'],startedAtMonth:['n8038Start','Начало обязательства'],contractStartDate:['n8038Start','Дата начала действия договора'],disbursementDate:['loanDisbursementDate','Дата фактической выдачи кредита'],monthlyPayment:['n8041','Платёж в месяц'],overdueDays:['n8042','Дней просрочки'],debtOutstanding:['n8040','Задолженность'],creditType:['n8039','Тип кредита']};
  function targetFor(fact,credit){
   if(!credit)return document.getElementById(fieldMap[fact.key]?.[0]);
   const rows=[...document.querySelectorAll('#creditors .repeat-rows > .repeat-item')],numbers=[credit.contractNumber,credit.contractCode].filter(Boolean);
@@ -49,12 +49,12 @@ window.ProfileOcr=(()=>{
    }
   }
   const facts=(suggestion.facts||[]).filter(f=>fieldMap[f.key]).map(fact=>({fact}));
-  for(const credit of suggestion.credits||[])for(const fact of credit.facts||[])if(loanMap[fact.key])facts.push({fact,credit});
+  for(const credit of suggestion.credits||[])for(const fact of (window.LoanDates?.loanAutofillFacts(credit)||credit.facts||[]))if(loanMap[fact.key])facts.push({fact,credit});
   if(!facts.length)return;
   const details=make('details'),summary=make('summary','Данные для профиля — сверьте с оригиналом');details.append(summary);
   for(const {fact,credit}of facts.slice(0,120)){
    const row=make('div',null,'ocr-fact'),label=(credit?loanMap:fieldMap)[fact.key][1];
-   row.append(make('span',(credit?'Договор '+credit.contractNumber+' · ':'')+label+': '),make('strong',String(fact.value)));
+   row.append(make('span',(credit?'Договор '+credit.contractNumber+' · ':'')+label+': '),make('strong',['startedAtMonth','contractStartDate','disbursementDate'].includes(fact.key)?window.LoanDates?.formatLoanDate(fact.value)||String(fact.value):String(fact.value)));
    const show=make('button','Стр. '+fact.page,'btn btn-ghost');show.type='button';show.onclick=()=>{if(active(ctx,epoch,item))source(item,fact.page);};row.append(show);
    const input=targetFor(fact,credit);
    // Never silently replace an answer, select an owner, add loans or approve OCR.

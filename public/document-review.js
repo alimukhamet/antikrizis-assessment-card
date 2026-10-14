@@ -30,14 +30,14 @@ window.DocumentReview={render(container,result,dealId,selection,onSaved){
  for(const conflict of result.documents?.conflicts||[]){
   const section=document.createElement('details');
   const title=document.createElement('summary');title.textContent='Расхождение по обязательству: '+conflict.creditor+' · '+conflict.contractNumber;section.append(title);
-  const labels={debtOutstanding:'Текущая задолженность',monthlyPayment:'Ежемесячный платёж',overdueDays:'Дни просрочки',startedAtMonth:'Месяц возникновения обязательства'};
+  const labels={debtOutstanding:'Текущая задолженность',monthlyPayment:'Ежемесячный платёж',overdueDays:'Дни просрочки',startedAtMonth:'Месяц возникновения обязательства',contractStartDate:'Дата начала обязательства',disbursementDate:'Дата фактической выдачи кредита'};
   const heading=document.createElement('p');heading.textContent=labels[conflict.field]||conflict.field;section.append(heading);
   const list=document.createElement('ul');for(const source of conflict.sources||[]){
    const item=document.createElement('li'),link=document.createElement('a');
    const selected=selection.find(s=>s.documentId===source.documentId);
    link.textContent=(selected?.type||'Отчёт')+' · '+(source.issuedAt||'дата не определена')+(source.page?' · стр. '+source.page:'');
    link.href=`/document-viewer.html?dealId=${encodeURIComponent(dealId)}&documentId=${encodeURIComponent(source.documentId)}&page=${source.page||1}`;link.target='_blank';link.rel='noopener';
-   item.append(link,document.createTextNode(' — '+source.value));list.append(item);
+   item.append(link,document.createTextNode(' — '+(['startedAtMonth','contractStartDate','disbursementDate'].includes(conflict.field)?window.LoanDates?.formatLoanDate(source.value)||source.value:source.value)));list.append(item);
   }section.append(list);
   const note=document.createElement('p');note.textContent=conflict.clientConfirmedAmount!==undefined?'Сумма для анкеты уточнена у клиента: '+conflict.clientConfirmedAmount+' ₸. Расхождение источников сохранено; это не подтверждение суммы по документам.':'Сверьте значения в исходных отчётах. Если выбран устаревший или неверный файл, уберите его из пакета и добавьте актуальный. Если актуальные отчёты противоречат друг другу, запросите уточнение у источника. Простое изменение ответа анкеты не снимает расхождение.';section.append(note);container.append(section);
  }

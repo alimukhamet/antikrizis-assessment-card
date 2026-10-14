@@ -1,3 +1,4 @@
+import {deriveLoanDateEvidence,LOAN_DATE_EVIDENCE_VERSION} from './loan-date-evidence';
 import {PDF_READER_VERSION}from'./read-pdf';import {readDocument,originalDocumentFormat,type DocumentRead}from'./read-document';import {IMAGE_READER_VERSION}from'./read-image';import{extractNative,identityCardDates}from'./extract-native';import{gkbFreshness}from'./policy';import{operatingDay}from'./request-context';import type{EvidenceRepository,CaseRow,DocumentRow,ExtractionRow}from'./repository';import type{ClientContext}from'../crm/bitrix';import {RepositoryError}from'./repository';
 import type{Actor}from'../worker-session';
 import {requiresDocumentValidation,statementPeriod,salaryStatementPeriod,enpfPeriod,enpfAllHistory}from'./policy';
@@ -37,8 +38,18 @@ export async function analysisResponse(client:ClientContext,record:CaseRow,repos
   const saved=current.find(review=>review.fact_key===DOCUMENT_REVIEW_KEY);
   if(saved)try{const value=validateDocumentReview(JSON.parse(saved.value_json),stored.result as Analysis,record,today);documentReview={reviewId:saved.id,type:value.type,actorId:saved.actor_id,reviewedAt:saved.created_at};reviewedDates={issuedAt:value.issuedAt,expiresAt:value.expiresAt,from:value.from,to:value.to};}catch(error){if(!(error instanceof RepositoryError||error instanceof SyntaxError))throw error;}
  }
+ let dateSupplement=null;
+ if(eligible&&client.iin&&extraction.kind==='gkb_full'&&repository.storeExtraction){
+  const dates=deriveLoanDateEvidence(stored.document,stored.extraction,stored.result as Analysis,client.iin);
+  if(dates){
+   const version=LOAN_DATE_EVIDENCE_VERSION+':'+stored.extraction.id;
+   const existing=await repository.cached(record.id,stored.document.original_sha256,version);
+   const supplemental=existing||await repository.storeExtraction(stored.document,version,{read,extraction:dates,sourceExtractionId:stored.extraction.id,evidenceVersion:LOAN_DATE_EVIDENCE_VERSION});
+   dateSupplement={extractionId:supplemental.extraction.id,extraction:(supplemental.result as Analysis).extraction,reviews:await repository.currentReviews(record.id,stored.document.id,supplemental.extraction.id,record.identity_revision)};
+  }
+ }
  const reviewContext=documentReviewContext(stored.result as Analysis,client.iin||'',today,reviewedDates);
- return{reviews,documentReview,reviewContext,client,document:{...read,extraction},powerValidation,assessmentDay:today,findings:[...new Set(findings)],eligibleForAutofill:eligible,eligibleForDraftAutofill:draftEligible,reviewRequired:true,authenticity:'not_verified',persisted:true,caseId:record.id,identityRevision:record.identity_revision,documentId:stored.document.id,extractionId:stored.extraction.id,cacheHit};
+ return{reviews,dateSupplement,documentReview,reviewContext,client,document:{...read,extraction},powerValidation,assessmentDay:today,findings:[...new Set(findings)],eligibleForAutofill:eligible,eligibleForDraftAutofill:draftEligible,reviewRequired:true,authenticity:'not_verified',persisted:true,caseId:record.id,identityRevision:record.identity_revision,documentId:stored.document.id,extractionId:stored.extraction.id,cacheHit};
 }
 export async function storedAnalysis(client:ClientContext,record:CaseRow,repository:EvidenceRepository,document:DocumentRow,actor:Actor,cacheOnly=false){
  const cached=await repository.cached(record.id,document.original_sha256,analysisVersion);if(cached)return analysisResponse(client,record,repository,cached,true);
