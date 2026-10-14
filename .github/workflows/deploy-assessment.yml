@@ -109,6 +109,7 @@ jobs:
             'loan-participants.mjs'
             'loan-participants-editor.mjs'
             'gkb-comparison.mjs'
+            'gkb-draft-supplements.mjs'
             'gkb-comparison-ui.mjs'
             'server-answer-check.js'
             'money-input.js'

@@ -122,7 +122,7 @@ window.ServerDrafts=(()=>{
   if(HostedAssessment.ready())inspect();
  }
  function reviewBindings(){return [...af.sources].flatMap(([id,source])=>{
-  const control=$(id);if(!control||!source.server||!source.serverFactKey)return [];
+  const control=$(id);if(!control||!source.server||!source.serverFactKey||source.gkbDraftSupplement)return [];
   const row=control.closest('.repeat-item'),group=row?.closest('.repeat');
   return [{key:controlKey(control),...(group?{group:group.id,row:[...group.querySelector(':scope > .repeat-rows').children].indexOf(row)}:{}),documentId:source.server.documentId,extractionId:source.server.extractionId,factKey:source.serverFactKey,reviewId:source.pending||source.stale?null:source.reviewId||null}];
  });}
