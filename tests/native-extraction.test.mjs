@@ -176,3 +176,13 @@ test('older short reports expose payment status from explicit overdue days with 
  for(const credit of r.credits){const status=credit.facts.find(f=>f.key==='loanStatus'),days=credit.facts.find(f=>f.key==='overdueDays');assert.equal(status.page,days.page);assert.ok(status.source.includes(days.value));assert.equal(credit.facts.filter(f=>f.key==='loanStatus').length,1);}
  assert.equal(r.credits.some(c=>c.facts.some(f=>f.key==='monthlyPayment')),false);
 });
+
+test('full GKB keeps the exact contract day separately from questionnaire month and refuses invalid or absent days',()=>{
+ const report=date=>`Персональный кредитный отчет\nИИН: 991231300003\nДата выдачи: 10.09.2026\nОбязательство 1\nФаза контракта: Действующий\nРоль субъекта: Заемщик\nНомер договора: SYNTH-NUMBER\nКод контракта: SYNTH-CODE\nКредитор: Тест Банк\nДата начала срока действия контракта: ${date}\nСтраница 1 из 1`;
+ const credit=rules.extractNative(page(report('17.04.2023'))).credits[0];
+ assert.equal(credit.contractNumber,'SYNTH-NUMBER');assert.equal(credit.contractCode,'SYNTH-CODE');
+ assert.equal(credit.contractStartDate.value,'2023-04-17');assert.equal(credit.contractStartDate.page,1);
+ assert.equal(credit.facts.find(f=>f.key==='startedAtMonth').value,'2023-04');
+ assert.equal(credit.facts.some(f=>f.key==='contractStartDate'),false);
+ for(const date of ['31.02.2023','04.2023','Нет данных'])assert.equal(rules.extractNative(page(report(date))).credits[0].contractStartDate,undefined);
+});

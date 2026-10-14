@@ -23,7 +23,7 @@ test('profile feed: bearer token only, exact deal, verified profile with its has
   const db = await runtime.getD1Database('DB');
   for (const name of (await readdir(join(root, 'drizzle'))).filter(n => n.endsWith('.sql')).sort())
     for (const statement of (await readFile(join(root, 'drizzle', name), 'utf8')).split('--> statement-breakpoint').filter(s => s.trim())) await db.prepare(statement).run();
-  const now = '2026-09-27T10:00:00.000Z', profileJson = JSON.stringify({ schema: 'antikrizis.profile.v1', dealId: '900001', answers: [{ key: 'regAddress', label: 'Адрес прописки', value: 'TEST CITY' }], unresolved: [] });
+  const now = '2026-09-27T10:00:00.000Z', profileJson = JSON.stringify({ schema: 'antikrizis.profile.v1', dealId: '900001', iin: '991231300003', answers: [{ key: 'regAddress', label: 'Адрес прописки', value: 'TEST CITY' }], unresolved: [] });
   await db.prepare("INSERT INTO assessment_cases (id,external_system,external_id,client_iin,identity_revision,title,created_at,updated_at) VALUES ('case-1','bitrix','900001','000000000010',1,'SYNTHETIC',?,?)").bind(now, now).run();
   const save = (id, request, state, at, json) => db.prepare("INSERT INTO assessment_profile_saves (id,case_id,request_id,identity_revision,actor_id,authentication,payload_json,payload_hash,state,created_at,updated_at) VALUES (?,'case-1',?,1,'worker:azhar','shared-password-worker-selection',?,'x',?,?,?)")
     .bind(id, request, JSON.stringify({ schemaVersion: 1, values: { profileJson: json } }), state, at, at).run();
@@ -50,6 +50,57 @@ test('profile feed: bearer token only, exact deal, verified profile with its has
   assert.equal(body.contentReceiptId, 's2');
   assert.equal(body.latestReceiptId, 's2');
   assert.equal(body.latestReceiptAt, now);
+
+  await t.test('opt-in original catalog and downloads preserve data, authenticate and enforce exact case and hash', async () => {
+    const files = await runtime.getR2Bucket('FILES');
+    const bytes = new TextEncoder().encode('%PDF-1.7 synthetic original only');
+    const hash = createHash('sha256').update(bytes).digest('hex');
+    await files.put('private/original', bytes);
+    const insert = (id, name, key = 'private/original', sha = hash, size = bytes.length) => db.prepare("INSERT INTO assessment_documents (id,case_id,original_sha256,original_key,original_name,byte_size,uploaded_by,created_at) VALUES (?,'case-1',?,?,?,?, 'test',?)").bind(id, sha, key, name, size, now).run();
+    await insert('original-1', 'Synthetic original.pdf');
+    await insert('credential-1', 'private.p12.pdf', 'private/credential', 'a'.repeat(64));
+    const before = await db.prepare("SELECT * FROM assessment_documents ORDER BY id").all();
+    const snapshot = await db.prepare("SELECT * FROM assessment_profile_saves ORDER BY id").all();
+    assert.equal('iskOriginals' in body, false);
+    const included = await (await get('/api/profile-feed/900001?include=isk-originals', token)).json();
+    assert.equal(included.sha256, body.sha256);
+    assert.deepEqual(included.profile, body.profile);
+    assert.deepEqual(included.iskOriginals, { schema: 'antikrizis.isk-originals.v1', documents: [{id:'original-1', original_name:'Synthetic original.pdf', content_type:'application/pdf', size_bytes:bytes.length, sha256:hash}], loanDates:[] });
+    assert.equal(JSON.stringify(included).includes('private/original'), false);
+    const sourceText = 'Дата начала срока действия контракта: 17.04.2023';
+    const retained = {read:{pages:[{page:1,text:sourceText,needsOcr:false}]},extraction:{version:'rules-native-32',kind:'gkb_full',identity:{iin:'991231300003'},credits:[{contractNumber:'NUMBER-ONLY-TEST',contractCode:'CODE-ONLY-TEST',contractStartDate:{key:'contractStartDate',value:'2023-04-17',page:1,source:sourceText}}]}};
+    const retainedText = JSON.stringify(retained);
+    await files.put('private/analysis',retainedText);
+    await db.prepare("INSERT INTO assessment_extractions (id,document_id,version,result_key,result_sha256,created_at) VALUES ('extraction-test','original-1','native-pdf-5:rules-native-32','private/analysis',?,?)").bind(createHash('sha256').update(retainedText).digest('hex'),now).run();
+    const withDates = await (await get('/api/profile-feed/900001?include=isk-originals',token)).json();
+    assert.deepEqual(withDates.iskOriginals.loanDates,[{documentId:'original-1',sha256:hash,subjectIin:'991231300003',contractCode:'CODE-ONLY-TEST',contractNumber:'NUMBER-ONLY-TEST',startDate:'2023-04-17',disbursementDate:null,page:1,quote:sourceText}]);
+    await files.put('private/analysis',JSON.stringify({...retained,corrupt:true}));
+    assert.equal((await get('/api/profile-feed/900001?include=isk-originals',token)).status,503);
+    assert.equal((await get('/api/profile-feed/900001',token)).status,200);
+    await files.put('private/analysis',retainedText);
+    await db.prepare("INSERT INTO assessment_cases (id,external_system,external_id,client_iin,identity_revision,title,created_at,updated_at) VALUES ('case-foreign','bitrix','900003','000000000020',1,'SYNTHETIC',?,?)").bind(now,now).run();
+    await db.prepare("INSERT INTO assessment_profile_saves (id,case_id,request_id,identity_revision,actor_id,authentication,payload_json,payload_hash,state,created_at,updated_at) VALUES ('foreign-save','case-foreign','foreign-request',1,'worker:azhar','test','{}','x','verified',?,?)").bind(now,now).run();
+    assert.equal((await get('/api/profile-feed/900003/documents/original-1',token)).status,404);
+
+    const path = '/api/profile-feed/900001/documents/original-1';
+    assert.equal((await get(path)).status, 401);
+    assert.equal((await get(path, 'wrong')).status, 401);
+    assert.equal((await get(path, token, 'POST')).status, 401);
+    assert.equal((await get('/api/profile-feed/900002/documents/original-1', token)).status, 404);
+    assert.equal((await get('/api/profile-feed/900001/documents/credential-1', token)).status, 404);
+    assert.equal((await get('/api/profile-feed/900001/documents/missing', token)).status, 404);
+    const original = await get(path, token);
+    assert.equal(original.status, 200);
+    assert.equal(original.headers.get('cache-control'), 'no-store');
+    assert.equal(original.headers.get('x-original-sha256'), hash);
+    assert.equal(original.headers.get('x-content-type-options'), 'nosniff');
+    assert.deepEqual(new Uint8Array(await original.arrayBuffer()), bytes);
+    await files.put('private/original', new TextEncoder().encode('corrupt'));
+    assert.equal((await get(path, token)).status, 503);
+    await files.put('private/original', bytes);
+    assert.deepEqual((await db.prepare("SELECT * FROM assessment_documents ORDER BY id").all()).results, before.results);
+    assert.deepEqual((await db.prepare("SELECT * FROM assessment_profile_saves WHERE case_id='case-1' ORDER BY id").all()).results, snapshot.results);
+  });
 
   await t.test('newer reopened receipt invalidates completion while retaining historical verified content', async () => {
     const reopenedAt = '2026-09-28T10:00:00.000Z';
