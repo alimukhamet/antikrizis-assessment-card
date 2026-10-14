@@ -78,6 +78,27 @@ async function firstPayment(webhook:string,dealId:string,send:typeof fetch,invoi
   return {amount:dated.filter(item=>item.date===date).reduce((sum,item)=>sum+item.amount,0),date};
 }
 
+// CRM does not award money after register cutover. A contradictory paid invoice
+// only prevents a false "not registered" zero while Finance reconciles it.
+async function hasUnregisteredContractReceipt(webhook:string,dealId:string,serviceType:string,ignored:number[],send:typeof fetch){
+ const expected:Record<string,number>={'199':187,'201':189,'203':191,'205':193};
+ let start=0;
+ for(let page=0;page<20;page++){
+  const payload=await call<{items?:Array<Record<string,unknown>>}>(webhook,'crm.item.list',{
+   entityTypeId:31,filter:{parentId2:Number(dealId)},select:['id','parentId2','stageId','opportunity','currencyId','ufCrm_SMART_INVOICE_1772428490886','ufCrm_SMART_INVOICE_1778071148399'],order:{id:'ASC'},start,
+  },send);
+  if(!Array.isArray(payload.result?.items))throw new Error('Invalid CRM payment reconciliation');
+  for(const row of payload.result.items){
+   if(String(row.parentId2)!==dealId||ignored.includes(Number(row.id))||!PAID_INVOICE_STAGES.has(String(row.stageId))||Number(row.ufCrm_SMART_INVOICE_1778071148399)===243)continue;
+   if(expected[serviceType]&&Number(row.ufCrm_SMART_INVOICE_1772428490886)===expected[serviceType]&&row.currencyId==='KZT'&&money(row.opportunity)!==null)return true;
+  }
+  if(typeof payload.next!=='number')return false;
+  if(payload.next<=start||page===19)throw new Error('CRM payment reconciliation is incomplete');
+  start=payload.next;
+ }
+ return false;
+}
+
 async function dealRows(webhook:string,filterBase:Record<string,string>,send:typeof fetch){
   const rows:Array<Record<string,unknown>>=[];
   let lastId=0;
@@ -114,7 +135,9 @@ export async function loadCompensationDeals(webhook:string,managerId:string,from
    for(let row=pending.shift();row;row=pending.shift()){
     const id=String(row.ID),paymentType=String(row[PAYMENT_TYPE_FIELD]??'');
     const juneOverride=paymentType==='263'&&managerId===RAMAZAN_ID?RAMAZAN_JUNE_FIRST_PAYMENTS.get(id):undefined;
-    const evidence=hasFirstPaymentContractRate(paymentType)?registered.get(id):undefined;
+    const check=hasFirstPaymentContractRate(paymentType)?registered.get(id):undefined;
+    const evidence:RegisterPaymentEvidence|undefined=check?{amount:check.amount,date:check.date,status:check.status,source:check.source,entryId:check.entryId}:undefined;
+    if(evidence?.status==='not_registered'&&await hasUnregisteredContractReceipt(webhook,id,String(row[SERVICE_TYPE_FIELD]??''),check?.ignoredLegacyInvoiceIds??[],send)){evidence.status='review_required';evidence.reason='crm_paid_not_registered';}
     if(hasFirstPaymentContractRate(paymentType)&&!evidence)throw new Error('Payment register response is incomplete');
     const payment=paymentType==='263'?await firstPayment(webhook,id,send,juneOverride?.invoiceId):evidence??{amount:null,date:''};
     const invoiceDate=juneOverride?.date??(managerId===RAMAZAN_ID&&payment.date.startsWith('2026-06')?'2026-05-31':payment.date);

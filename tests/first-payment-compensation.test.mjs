@@ -19,15 +19,15 @@ function fixture(rows,pages,readPayments=async()=>new Map()){
  };
  return {calls,run:(from='2026-09-01',to='2026-09-30')=>crm.loadCompensationDeals('https://crm.test/rest/','2093',from,to,send,readPayments)};
 }
-test('register receipts qualify both types once, preserve handoff month and never read legacy invoices',async()=>{
+test('register receipts qualify both types once, preserve handoff month and only unpaid cases check CRM contradictions',async()=>{
  let scope;
  const read=async deals=>{scope=deals;return new Map(deals.map(deal=>[deal.id,{amount:deal.id==='3'?null:80000,date:'2026-10-01',status:deal.id==='3'?'not_registered':'received',source:'payment_register',entryId:deal.id==='3'?null:Number(deal.id)}]));};
- const f=fixture([deal(1),deal(2,'423'),deal(3),deal(4,'461')],()=>{throw Error('Legacy invoices must not be read');},read);
+ const f=fixture([deal(1),deal(2,'423'),deal(3),deal(4,'461')],()=>[],read);
  const rows=await f.run();
  assert.equal(rows.length,4);assert.equal(rows[0].firstPayment,80000);assert.equal(rows[1].firstPayment,80000);assert.equal(rows[2].firstPayment,null);
  assert.ok(rows.every(row=>row.commissionDate==='2026-09-15'));assert.equal(rules.commissionForDeals(rows.slice(0,3)),48000);
  assert.deepEqual(Array.from(scope,d=>[d.id,d.serviceType]),[['1','199'],['2','199'],['3','199']]);
- assert.equal(f.calls.filter(call=>call.url.endsWith('crm.item.list.json')).length,0);
+ assert.equal(f.calls.filter(call=>call.url.endsWith('crm.item.list.json')).length,1);
 });
 test('unavailable or incomplete register cannot become zero salary',async()=>{
  for(const read of [async()=>{throw Error('unavailable');},async()=>new Map()])await assert.rejects(()=>fixture([deal(1)],()=>[],read).run());
@@ -51,4 +51,13 @@ test('historical invoice loading is bounded and each returned deal is counted on
  });
  const rows=await f.run();assert.equal(rows.length,18);assert.equal(new Set(rows.map(row=>row.id)).size,18);assert.ok(maximum<=6);assert.ok(maximum>1);
  assert.equal(rules.commissionForDeals(rows),684000);
+});
+
+test('CRM-only paid contract receipts stay unresolved, while canonical void/refund and analysis records cannot qualify',async()=>{
+ const read=async deals=>new Map(deals.map(d=>[d.id,{amount:null,date:'',status:'not_registered',source:'payment_register',entryId:null,ignoredLegacyInvoiceIds:d.id==='2'?[8]:[]}]));
+ const paid=(id,parent,overrides={})=>invoice(id,parent,{currencyId:'KZT',ufCrm_SMART_INVOICE_1772428490886:187,ufCrm_SMART_INVOICE_1778071148399:241,...overrides});
+ const f=fixture([deal(1),deal(2),deal(3),deal(4)],id=>id==='1'?[paid(7,1)]:id==='2'?[paid(8,2)]:id==='3'?[paid(9,3,{ufCrm_SMART_INVOICE_1772428490886:215})]:[paid(10,4,{ufCrm_SMART_INVOICE_1778071148399:243})],read);
+ const rows=await f.run();assert.equal(rows[0].paymentEvidence.reason,'crm_paid_not_registered');assert.equal(rows[0].paymentEvidence.status,'review_required');assert.equal(rules.commissionForDeals(rows),null);
+ assert.ok(rows.slice(1).every(r=>r.paymentEvidence.status==='not_registered'));
+ for(const page of [()=>{throw Error('down');},()=>({result:{}}),(_id,start)=>({result:{items:[]},next:start+50})])await assert.rejects(()=>fixture([deal(1)],page,read).run());
 });

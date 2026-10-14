@@ -40,8 +40,8 @@ test('built Worker persists a complete contract and recovers a handoff without d
   for(const statement of sql.split('--> statement-breakpoint').filter(s=>s.trim()))await db.prepare(statement).run();
  }
  const finance=await mf.getD1Database('FINANCE_DB');
- await finance.exec("CREATE TABLE register_state(key TEXT PRIMARY KEY,value TEXT); INSERT INTO register_state VALUES('active','1'); CREATE TABLE register_entries(id INTEGER PRIMARY KEY,client_id INTEGER,kind TEXT,amount_minor INTEGER,currency TEXT,event_date TEXT,service_type_id INTEGER); CREATE TABLE register_voids(entry_id INTEGER PRIMARY KEY);");
- await finance.exec("INSERT INTO register_entries VALUES(1,910001,'receipt',8000000,'KZT','2026-10-01',187),(2,910002,'receipt',7000000,'KZT','2026-10-02',187),(3,910003,'receipt',500000,'KZT','2026-09-01',215);");
+ await finance.exec("CREATE TABLE register_state(key TEXT PRIMARY KEY,value TEXT); INSERT INTO register_state VALUES('active','1'); CREATE TABLE register_entries(id INTEGER PRIMARY KEY,client_id INTEGER,kind TEXT,amount_minor INTEGER,currency TEXT,event_date TEXT,service_type_id INTEGER,source_invoice_id INTEGER); CREATE TABLE register_voids(entry_id INTEGER PRIMARY KEY);");
+ await finance.exec("INSERT INTO register_entries(id,client_id,kind,amount_minor,currency,event_date,service_type_id) VALUES(1,910001,'receipt',8000000,'KZT','2026-10-01',187),(2,910002,'receipt',7000000,'KZT','2026-10-02',187),(3,910003,'receipt',500000,'KZT','2026-09-01',215);");
  let cookie='';
  async function api(path,body,status=200){
   const response=await mf.dispatchFetch(origin+path,{method:body?'POST':'GET',headers:{origin,cookie,'content-type':'application/json'},body:body?JSON.stringify(body):undefined});
