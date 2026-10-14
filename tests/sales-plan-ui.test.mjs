@@ -75,11 +75,11 @@ test('earned first-place bonus has its own line and does not become a recorded p
  await act(async()=>document.querySelectorAll('.ps-overall button')[1].click());
  assert.equal(document.querySelectorAll('.ps-payment-row').length,0);assert.match(document.querySelector('#ps-earnings-history').textContent,/Выплаты не подтверждены/);
 });
-test('current plan shows fixed first-payment commission and the unawarded first-place prize',async t=>{
+test('current plan explains independent handoff and additional first-payment commission and the unawarded prize',async t=>{
  const {report}=await mount(t,success);
  report.periods=[{id:'synthetic-plan',start:'2026-10-01',end:'2026-10-21',target:12000000,metric:'volume',tiers:[[0,1.5],[12000000,2]],leaderBonus:100000,count:0,volume:0,missing:0,progress:0,remaining:12000000,ongoing:true}];
  await act(async()=>document.querySelectorAll('.rop-nav button')[1].click());await act(async()=>document.querySelectorAll('.rop-nav button')[0].click());
- assert.match(document.querySelector('.ps-current').textContent,/После определения и 50\/50 — 6% от суммы договора после первой зарегистрированной оплаты/);
+ assert.match(document.querySelector('.ps-current').textContent,/После определения и 50\/50 — комиссия за передачу юристам независимо от оплаты, плюс 6% после первого платежа/);
  assert.doesNotMatch(document.querySelector('.ps-current').textContent,/До цели —|При выполнении —/);
  assert.match(document.querySelector('.ps-current').textContent,/За 1-е место — 100.000 ₸ · итоги после 21 октября/);
 });
