@@ -14,7 +14,7 @@ test('earnings totals switch histories without changing current accrual or losin
   globalThis.document = dom.window.document;
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   const month = { id: '2026-08', ongoing: false, earned: 140000, baseSalary: 100000, contractBonus: 0, commission: 40000, count: 4, volume: 2000000, missing: 0, paid: 50000, owed: 90000, periods: [], commissionDeals: [] };
-  const report = { person: 'ramazan', canChoosePerson: true, name: 'Рамазан', periods: [], futurePlans: [], earningsMonths: [{ ...month, id: '2026-09', ongoing: true, earned: 0, baseSalary: 0, commission: 0, performanceCommission: 64000, paid: 0, owed: 0 }, { ...month, performanceCommission: 40000 }], payments: [{ id: 'payment-1', month: '2026-08', amount: 50000, paidAt: '2026-09-02', note: 'Kaspi 89' }], earned: 140000, paid: 50000, owed: 90000, today: '2026-09-21', generatedAt: '2026-09-21T10:00:00Z' };
+  const report = { person: 'ramazan', canChoosePerson: true, name: 'Рамазан', periods: [{id:'september',start:'2026-09-01',end:'2026-09-30',target:10000000,metric:'volume',tiers:[[0,1.6],[10000000,2.3]],ongoing:true,count:4,volume:2000000,progress:20,remaining:8000000,missing:0}], futurePlans: [], earningsMonths: [{ ...month, id: '2026-09', ongoing: true, earned: 0, baseSalary: 0, commission: 0, performanceCommission: 64000, paid: 0, owed: 0 }, { ...month, performanceCommission: 40000 }], payments: [{ id: 'payment-1', month: '2026-08', amount: 50000, paidAt: '2026-09-02', note: 'Kaspi 89' }], earned: 140000, paid: 50000, owed: 90000, today: '2026-09-21', generatedAt: '2026-09-21T10:00:00Z' };
   const context = vm.createContext({ exports: {}, Intl, Date, AbortController, setTimeout, clearTimeout, crypto: globalThis.crypto, fetch: async () => ({ ok: true, json: async () => report }), require: name => name === 'react' ? React : name === 'next/link' ? { __esModule: true, default: ({ children, ...props }) => React.createElement('a', props, children) } : (() => { throw Error(name); })() });
   const source = await readFile(new URL('../app/PersonalSales.tsx', import.meta.url), 'utf8');
   vm.runInContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true } }).outputText.replace('"use strict";', '"use strict"; const React = require("react");'), context);
@@ -42,6 +42,11 @@ test('earnings totals switch histories without changing current accrual or losin
     await act(async () => document.querySelector('.ps-action').click());
     assert.match(document.querySelector('.ps-entry').textContent, /Выплата · Рамазан/);
     assert.match(current.textContent, /Комиссия за текущий месяц64.000 ₸/);
+    await act(async () => document.querySelector('.rop-nav button').click());
+    assert.match(document.querySelector('.ps-current').textContent, /После определения и 50\/50 — 6% от договора после первого платежа/);
+    assert.doesNotMatch(document.body.textContent, /До цели — .*При выполнении/);
+    await act(async () => document.querySelector('.ps-action').click());
+    assert.match(document.querySelector('.ps-entry').textContent, /Ставки плана не меняют фиксированные комиссии/);
   } finally {
     await act(async () => root.unmount());
     dom.window.close();
