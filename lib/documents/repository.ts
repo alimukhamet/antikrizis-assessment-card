@@ -14,6 +14,15 @@ export type ExtractionRow={id:string;document_id:string;version:string;result_ke
 export type IdentityBindingRow={id:string;case_id:string;identity_revision:number;iin:string;document_id:string;extraction_id:string;actor_id:string;authentication:string;created_at:string};
 export type ReviewRow={id:string;request_id:string;case_id:string;document_id:string;extraction_id:string;identity_revision:number;fact_key:string;value_json:string;disposition:string;reason:string;actor_id:string;authentication:string;payload_hash:string;created_at:string};
 export async function sha256(data:Uint8Array|string){const input=typeof data==='string'?new TextEncoder().encode(data):new Uint8Array(data);return [...new Uint8Array(await crypto.subtle.digest('SHA-256',input))].map(n=>n.toString(16).padStart(2,'0')).join('');}
+/** Full-day metadata is not a questionnaire fact and must not revoke old reviews. */
+function sameQuestionnaireExtraction(previous:NativeExtraction,current:NativeExtraction){
+ const withoutDateMetadata=(extraction:NativeExtraction)=>{
+  const comparable={...extraction,version:current.version};
+  if(Array.isArray(extraction.credits))comparable.credits=extraction.credits.map(credit=>{const copy={...credit};delete copy.contractStartDate;return copy;});
+  return comparable;
+ };
+ return JSON.stringify(withoutDateMetadata(previous))===JSON.stringify(withoutDateMetadata(current));
+}
 export class EvidenceRepository {
  constructor(private db:D1Database,private files:R2Bucket){}
  async syncCase(client:ClientContext):Promise<CaseRow>{
@@ -108,7 +117,7 @@ export class EvidenceRepository {
    if(result.extraction.kind!=='kaspi'&&!kazakhPropertyCertificateHeader(front)&&!loanAccountStatementHeader(front))return previous;
    if(!result.read?.pages?.length)return null;
    const current=extractNative(result.read.pages);
-   return JSON.stringify({...result.extraction,version:current.version})===JSON.stringify(current)?previous:null;
+   return sameQuestionnaireExtraction(result.extraction,current)?previous:null;
   }
   // Reader v4 only changes sparse GKB page classification. Preserve existing
   // evidence/reviews for unaffected PDFs. Blocked GKBs must re-read the original
@@ -131,7 +140,7 @@ export class EvidenceRepository {
    if(!version.endsWith(':rules-native-26')&&!result.extraction.kind.startsWith('gkb_'))return previous;
    if(!result.read?.pages?.length)return null;
    const current=extractNative(result.read.pages);
-   return JSON.stringify({...result.extraction,version:current.version})===JSON.stringify(current)?previous:null;
+   return sameQuestionnaireExtraction(result.extraction,current)?previous:null;
   }
   // v23 recognizes pension-account and property-rights exports. Keep every
   // unaffected extraction/review identity. Changed originals require explicit

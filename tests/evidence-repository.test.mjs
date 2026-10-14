@@ -311,3 +311,23 @@ test('full contract-date metadata preserves existing native v31 evidence and con
  assert.equal(sqlite.prepare('SELECT count(*) AS n FROM assessment_extractions').get().n,1);
  assert.equal(sqlite.prepare('SELECT id FROM assessment_reviews').get().id,review.id);
 });
+
+test('v32 exact-day metadata alone keeps older GKB analyses and reviews, while changed questionnaire facts still require review',async()=>{
+ const compiledRules=buildSync({entryPoints:['lib/documents/extract-native.ts'],bundle:true,platform:'node',format:'cjs',write:false}).outputFiles[0].text,rulesModule={exports:{}};
+ vm.runInNewContext(compiledRules,{module:rulesModule,exports:rulesModule.exports,Date,JSON});
+ const text='Персональный кредитный отчет\nИИН: 991231300003\nДата выдачи: 10.09.2026\nОбязательство 1\nФаза контракта: Действующий\nРоль субъекта: Заемщик\nНомер договора: SYNTH-NUMBER\nКод контракта: SYNTH-CODE\nКредитор: Тест Банк\nДата начала срока действия контракта: 17.04.2023\nСтраница 1 из 1';
+ const pages=[{page:1,text,nativeCharacters:text.length,needsOcr:false}],current=rulesModule.exports.extractNative(pages);
+ assert.equal(current.credits[0].contractStartDate.value,'2023-04-17');
+ for(const version of [23,25,28,29])for(const changed of [false,true]){
+  const {repo,sqlite}=setup(),record=await repo.syncCase(client());
+  const previous=JSON.parse(JSON.stringify(current));previous.version='rules-native-'+version;delete previous.credits[0].contractStartDate;
+  if(changed)previous.credits[0].facts.find(f=>f.key==='creditor').value='Different stored bank';
+  const stored=await repo.store(record.id,new Uint8Array([version]),'synthetic.pdf',actor,'native-pdf-3:rules-native-'+version,{read:{pages},extraction:previous});
+  const review=await repo.appendReview({caseId:record.id,documentId:stored.document.id,extractionId:stored.extraction.id,identityRevision:1,requestId:'keep-old-review',factKey:'synthetic',value:'reviewed',disposition:'confirmed',reason:''},actor);
+  const cached=await repo.cached(record.id,stored.document.original_sha256,'native-pdf-5:rules-native-32');
+  if(changed)assert.equal(cached,null);
+  else assert.equal(cached?.extraction.id,stored.extraction.id,'unchanged questionnaire evidence v'+version);
+  assert.equal(sqlite.prepare('SELECT count(*) n FROM assessment_extractions').get().n,1);
+  assert.equal(sqlite.prepare('SELECT id FROM assessment_reviews').get().id,review.id);
+ }
+});
