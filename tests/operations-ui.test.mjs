@@ -256,6 +256,7 @@ test('issuance-only full date removes the unknown start from missing answers and
  assert.equal(s.run('afMissing().some(e=>e.id==="n8038Start")'),true);const before=s.run('afMissing().length');
  issued.value='2023-04-18';issued.dispatchEvent(new s.w.Event('change',{bubbles:true}));s.run('visibilityRules();afRefresh()');
  assert.equal(start.value,'');assert.equal(start.required,false);assert.equal(s.run('afMissing().some(e=>e.id==="n8038Start")'),false);assert.equal(s.run('afMissing().length'),before-1);
+ s.w.AssessmentWorkflow.refresh();const row=start.closest('.repeat-item'),summary=row.querySelector('summary');const expected=s.run('[...document.getElementById("n8038Start").closest(".repeat-item").querySelectorAll("input,select,textarea")].filter(e=>!e.closest(".af-source")&&afLogicalVisible(e)&&afControlMissing(e)).length');assert.match(summary.textContent,new RegExp('заполнить: '+expected+'$'));
  issued.value='2023-02-30';issued.dispatchEvent(new s.w.Event('change',{bubbles:true}));assert.equal(s.run('afMissing().some(e=>e.id==="loanDisbursementDate")'),true);
  issued.value='';issued.dispatchEvent(new s.w.Event('change',{bubbles:true}));s.run('visibilityRules();afRefresh()');assert.equal(s.run('afMissing().some(e=>e.id==="n8038Start")'),true);
 });
