@@ -150,3 +150,13 @@ test('current fixed commission without any plan is visible but remains unaccrued
  assert.equal(data.periods.length,0);assert.equal(data.earningsMonths[0].performanceCommission,30000);
  assert.equal(data.earningsMonths[0].commission,0);assert.equal(data.earned,0);assert.equal(data.earningsMonths[0].commissionDeals.length,1);
 });
+
+test('unresolved register evidence keeps a closed month commission, earned and owed unknown',async()=>{
+ const deals=[{id:'1',title:'Test',paymentType:'261',handoffDate:'2026-06-10',commissionDate:'2026-06-10',firstPayment:null,contractValue:400000,stageId:'C1:NEW',outcomeId:'',paymentEvidence:{status:'review_required',source:'payment_register'}}];
+ const payments=[{id:'paid',person:'ramazan',month:'2026-06',amount:125000,paidAt:'2026-07-02',note:'Existing transfer',createdAt:''}];
+ const {data}=await api('ramazan','month=2026-06',false,0,payments,{today:'2026-10-14',deals});
+ assert.equal(data.earningsMonths[0].commission,null);assert.equal(data.earned,null);assert.equal(data.owed,null);assert.equal(data.paid,125000);
+ assert.equal(data.earningsMonths[0].commissionDeals[0].amount,null);
+ assert.equal(data.earningsMonths[0].commissionDeals[0].formula,'Оплату нужно сверить — расчёт не подтверждён');
+ assert.deepEqual(data.payments,payments);
+});
