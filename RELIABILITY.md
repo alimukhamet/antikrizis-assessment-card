@@ -1,3 +1,9 @@
+# Reliability and issue register
+
+## Deal 10363: obsolete profile JSON size limit — 14 October 2026
+
+Open pending canonical release and live check. Employee completed draft 97 after the earlier balance repair. Current saved draft passes answer checks but the unchanged compiler reproduces PROFILE_TOO_LARGE: 46 loans, 493 display answers, 43,928-byte card and 72,474-byte structured JSON. The old shared 60KB bound incorrectly treated structured JSON as a Bitrix field; it is stored in D1 and exposed through the profile feed. The repair keeps the exact v1 schema/labels/values, retains the card budget, separates a 1MB JSON budget and caps the complete saved envelope at 1.5MB before database or CRM writes. Complete-answer checks also compile before claiming readiness. No live facts, approvals, profile publication or other receipts changed. Source evidence is protected in shared outputs/deal-10363-2026-10-14/too-long.private.json; local size metrics in outputs/profile-size-10363/size.json. Employee publication remains separate from technical verification.
+
 # Tools 03 and 04 reliability checks
 
 ## Deal 10363: partial GKB draft balances — 14 October 2026

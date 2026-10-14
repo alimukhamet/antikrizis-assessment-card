@@ -74,7 +74,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ dealId: st
     const { dealId } = await ctx.params, { record, client, actor } = await evidenceContext(request, dealId);
     if (!client.iin || client.iin !== record.client_iin) throw new RepositoryError('DEAL_IDENTITY_UNVERIFIED', 409);
     if (body.action === 'check') {
-      const checked = checkAnswers(validateDraft(body.draft), client.iin, operatingDay(), { profile: true });
+      const draft = validateDraft(body.draft), day = operatingDay();
+      const checked = checkAnswers(draft, client.iin, day, { profile: true });
+      if (checked.answersComplete) compileProfile(draft, client.iin, dealId, { name: actor.displayName, at: new Date().toISOString() }, day);
       return Response.json({ ready: checked.answersComplete, issues: checked.issues, unresolved: checked.unresolved.map(a => ({ key: a.key, label: a.label, group: a.group, row: a.row })) }, { headers });
     }
     const repo = await storage(), adapter = createProfileAdapter(process.env.BITRIX_WEBHOOK ?? '');

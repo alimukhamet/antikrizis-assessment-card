@@ -15,6 +15,9 @@ export type ProfileSaveRow = {
   created_at: string; updated_at: string;
 };
 
+// Leave headroom below D1's 2,000,000-byte row limit for metadata and hashes.
+const MAX_PROFILE_SAVE_BYTES = 1500000;
+
 const requestPattern = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 
 export class ProfileSaveRepository {
@@ -56,6 +59,7 @@ export class ProfileSaveRepository {
   async begin(record: CaseRow, requestId: string, payload: ProfileSavePayload, actor: Actor) {
     if (!requestPattern.test(requestId)) throw new RepositoryError('INVALID_REQUEST_ID', 400);
     const now = new Date().toISOString(), serialized = JSON.stringify(payload);
+    if (new TextEncoder().encode(serialized).length > MAX_PROFILE_SAVE_BYTES) throw new RepositoryError('PROFILE_TOO_LARGE', 413);
     await this.db.prepare("INSERT INTO assessment_profile_saves (id,case_id,request_id,identity_revision,actor_id,authentication,payload_json,payload_hash,state,created_at,updated_at) SELECT ?,?,?,?,?,?,?,?,'writing',?,? WHERE EXISTS (SELECT 1 FROM assessment_cases WHERE id=? AND identity_revision=?) ON CONFLICT DO NOTHING")
       .bind(crypto.randomUUID(), record.id, requestId, record.identity_revision, actor.id, actor.authentication, serialized, await sha256(serialized), now, now, record.id, record.identity_revision).run();
     const row = await this.get(record.id, requestId);

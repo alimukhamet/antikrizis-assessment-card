@@ -199,6 +199,25 @@ test('profile uses the contract form requirements for jobs without extra employe
  assert.ok(has(checkAnswers(validateDraft(jobs),iin,'2026-09-25',{profile:true}),'n8001','ANSWER_REQUIRED'),'the existing income question remains required');
 });
 
+test('46-loan profile preserves full v1 data above the obsolete Bitrix field budget',()=>{
+ const p=fixture({profile:true}),group=p.groups.find(g=>g.id==='creditors'),template=structuredClone(group.rows[0]);
+ group.rows=Array.from({length:46},(_,index)=>template.map(a=>({...a,value:a.key==='n8038'?'Синтетическая микрофинансовая организация':a.key==='loanContractId'?'SYNTHETIC-'+index:a.value})));
+ group.rowKeys=group.rows.map(()=>null);
+ const compiled=compileProfile(p,iin,'11665',author,'2026-09-25'),data=JSON.parse(compiled.values.profileJson);
+ assert.ok(Buffer.byteLength(compiled.values.profileJson)>60000,'Regression must cross the obsolete JSON limit');
+ assert.ok(Buffer.byteLength(compiled.card)<60000,'Readable timeline card retains its existing budget');
+ assert.equal(data.schema,'antikrizis.profile.v1');assert.equal(data.totalDebt,'4611.50');
+ for(let row=0;row<46;row++){
+  const answers=data.answers.filter(a=>a.group==='creditors'&&a.row===row);
+  assert.ok(answers.some(a=>a.key==='loanContractId'&&a.value==='SYNTHETIC-'+row&&a.label));
+  assert.ok(answers.some(a=>a.key==='n8038'&&a.value==='Синтетическая микрофинансовая организация'&&a.label));
+  assert.ok(answers.some(a=>a.key==='n8040'&&a.value==='100.25'&&a.label));
+  assert.ok(compiled.card.includes('SYNTHETIC-'+row));
+ }
+ const tooLarge=structuredClone(p);for(const row of tooLarge.groups.find(g=>g.id==='creditors').rows)row.find(a=>a.key==='n8038').value='С'.repeat(1000);
+ assert.throws(()=>compileProfile(tooLarge,iin,'11665',author,'2026-09-25'),/PROFILE_TOO_LARGE/,'Readable-card limit must still reject a true overflow');
+});
+
 test('compiled profile carries no contract data, lists open questions and keeps the debt honest',()=>{
  const p=fixture({profile:true});set(p,'clientPhone','Не знаю');
  const compiled=compileProfile(p,iin,'11665',author,'2026-09-25');
