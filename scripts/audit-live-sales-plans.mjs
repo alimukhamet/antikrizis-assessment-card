@@ -47,6 +47,34 @@ try{
   const earned=month.commission===null||expected===null?null:month.baseSalary+month.contractBonus+month.commission+expected;
   assert.ok(month.earned===earned,'Monthly earnings must include the bonus exactly once');
  }
+ // Verify every payroll month through the same read-only endpoint used by the employee UI.
+ // Retain only pass/fail metadata; no client identities, amounts or payroll details in artifacts.
+ let verifiedFirstPaymentLines=0;
+ for(const person of Object.keys(managers)){
+  const ledgerResponse=await request('/api/sales-compensation?person='+person);assert.equal(ledgerResponse.status,200);
+  const ledger=await ledgerResponse.json();
+  const response=await request('/api/personal-sales?person='+person);assert.equal(response.status,200);
+  assert.match(response.headers.get('cache-control'),/private, no-store/);
+  const data=await response.json();assert.ok(data.person===person,'Payroll scope must match');
+  assert.ok(JSON.stringify(data.payments)===JSON.stringify(ledger.payments),'Recorded payouts must match the existing ledger');
+  for(const month of data.earningsMonths){
+   const ids=new Set();
+   for(const line of month.commissionDeals){
+    assert.ok(!ids.has(line.id),'A deal must appear only once per payroll month');ids.add(line.id);
+    if(!['После определения','50/50'].includes(line.paymentType))continue;
+    assert.ok(Object.hasOwn(line,'firstPayment')&&Object.hasOwn(line,'contractValue'),'First-payment calculation evidence is required');
+    const eligible=line.firstPayment!==null&&line.firstPayment>0;
+    const expected=line.contractValue===null?null:eligible?Math.round(line.contractValue*6/100):0;
+    assert.ok(line.amount===expected,'Confirmed first payment must earn 6% of the full contract');
+    if(line.contractValue!==null)assert.ok(line.formula===(eligible?`${line.contractValue} × 6%`:'0 · Первый платёж не подтверждён'),'Displayed formula must match eligibility');
+    assert.ok(line.date.startsWith(month.id),'Existing salary-month allocation must be preserved');
+    verifiedFirstPaymentLines++;
+   }
+  }
+ }
+ assert.ok(verifiedFirstPaymentLines>0,'Live verification requires qualifying payment-type records');
+ report.firstPaymentContractCommissionVerified=true;
+ report.recordedPayoutsPreserved=true;
  report.closedCompetitionVerified=true;
  report.septemberTargetVerified=true;
  await login('ramazan');

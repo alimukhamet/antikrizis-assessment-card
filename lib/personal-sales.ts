@@ -31,8 +31,11 @@ export function plansFor(person: Person): Plan[] {
 }
 export type Totals = { count: number; volume: number; missing: number };
 export type CommissionDeal = { contractValue:number|null; paymentType:string; stageId:string; outcomeId:string; firstPayment:number|null };
+// Owner confirmed 14 October 2026: applies retroactively, using existing handoff periods.
+export const FIRST_PAYMENT_CONTRACT_RATE = 6;
+export function hasFirstPaymentContractRate(paymentType:string){return paymentType==='261'||paymentType==='423';}
 const AFTER_DECISION_PAYABLE_STAGES=new Set(['C1:UC_R0NPNE','C1:UC_P1YJHC','C1:WON']);
-export function commissionForDeals(deals:CommissionDeal[],standardRate:number|null){
+export function commissionForDeals(deals:CommissionDeal[]){
   let total=0;
   for(const deal of deals){
     const value=deal.contractValue;
@@ -42,9 +45,8 @@ export function commissionForDeals(deals:CommissionDeal[],standardRate:number|nu
       total+=deal.firstPayment*.15+(value-deal.firstPayment)*.04;
     }else if(deal.paymentType==='461'){
       if(deal.outcomeId==='311'&&AFTER_DECISION_PAYABLE_STAGES.has(deal.stageId))total+=value*.08;
-    }else if(deal.paymentType==='261'||deal.paymentType==='423'){
-      if(standardRate===null)return null;
-      total+=value*standardRate/100;
+    }else if(hasFirstPaymentContractRate(deal.paymentType)){
+      if(deal.firstPayment!==null&&deal.firstPayment>0)total+=value*FIRST_PAYMENT_CONTRACT_RATE/100;
     }else return null;
   }
   return Math.round(total);
