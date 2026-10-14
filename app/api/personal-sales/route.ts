@@ -1,5 +1,5 @@
 import { readSessionCookie, verifySession } from '../../../lib/worker-session';
-import { PEOPLE, Person, plansFor, calculate, commissionForDeals, monthlyEarnings, todayAlmaty, monthRange, Totals, COMPENSATION_START_MONTH, isCommissionExcluded, hasFirstPaymentContractRate, FIRST_PAYMENT_CONTRACT_RATE } from '../../../lib/personal-sales';
+import { PEOPLE, Person, plansFor, calculate, allocateCommissionForDeals, commissionForDeals, monthlyEarnings, todayAlmaty, monthRange, Totals, COMPENSATION_START_MONTH, isCommissionExcluded, hasFirstPaymentContractRate, FIRST_PAYMENT_CONTRACT_RATE } from '../../../lib/personal-sales';
 import {compensationRepository,storedPlan} from '../../../lib/sales-compensation';
 import {loadCompensationDeals,loadSalesCompetitionTotals,type CompensationDeal} from '../../../lib/crm/personal-compensation';
 import {leaderAwardsFor,leaderCompetitionFor} from '../../../lib/sales-leader-bonus';
@@ -8,17 +8,37 @@ const headers = { 'cache-control': 'private, no-store' };
 // Owner-confirmed payment-type rules are applied from live deal and invoice data.
 const EARNINGS_BASIS_CONFIRMED = true;
 const PAYMENT_LABELS:Record<string,string>={'261':'После определения','263':'До определения','423':'50/50','461':'После решения'};
-function commissionBreakdown(deals:CompensationDeal[]){
-  return deals.map(deal=>{
-    const amount=commissionForDeals([deal]),value=deal.contractValue,first=deal.firstPayment;
+function commissionBreakdown(deals:CompensationDeal[],rate:number|null=2){
+  const allocation=allocateCommissionForDeals(deals,rate);
+  return deals.map((deal,index)=>{
+    const amount=allocation.amounts[index],value=deal.contractValue,first=deal.firstPayment,parts=allocation.parts[index];
     let formula='Нет данных для расчёта';
-    if(value!==null){
-      if(deal.paymentType==='263'&&first!==null)formula=`${first} × 15% + ${value-first} × 4%`;
-      else if(deal.paymentType==='461')formula=deal.outcomeId==='311'?`${value} × 8%`:'0';
-      else if(hasFirstPaymentContractRate(deal.paymentType))formula=first!==null&&first>0?`${value} × ${FIRST_PAYMENT_CONTRACT_RATE}%`:deal.paymentEvidence?.status==='review_required'?'Оплату нужно сверить — расчёт не подтверждён':'0 · Нет зарегистрированной оплаты по договору';
+    const components:Array<{id:string;label:string;formula:string;amount:number|null}>=[];
+    if(hasFirstPaymentContractRate(deal.paymentType)){
+      const standardFormula=value!==null&&rate!==null?`${value} × ${rate}%`:'Нет данных для расчёта';
+      const receiptFormula=value===null?'Нет данных для расчёта':deal.paymentEvidence?.status==='review_required'?'Оплату нужно сверить — расчёт не подтверждён':first!==null&&first>0?`${value} × ${FIRST_PAYMENT_CONTRACT_RATE}%`:'0 · Нет зарегистрированной оплаты по договору';
+      components.push({id:`handoff-${rate}`,label:`Передача юристам · ${rate===null?'ставка не определена':rate+'%'}`,formula:standardFormula,amount:parts.standard});
+      components.push({id:'receipt-6',label:'После первого платежа · 6%',formula:receiptFormula,amount:parts.receipt});
+      formula=`${standardFormula} + ${receiptFormula}`;
+    }else{
+      if(value!==null){
+        if(deal.paymentType==='263'&&first!==null)formula=`${first} × 15% + ${value-first} × 4%`;
+        else if(deal.paymentType==='461')formula=parts.other===0?'0':`${value} × 8%`;
+      }
+      components.push({id:`type-${deal.paymentType}`,label:PAYMENT_LABELS[deal.paymentType]||'Не указан',formula,amount:parts.other});
     }
-    return {id:deal.id,title:deal.title,date:deal.paymentType==='263'?deal.commissionDate:deal.handoffDate,paymentType:PAYMENT_LABELS[deal.paymentType]||'Не указан',formula,amount,contractValue:value,firstPayment:first,...(deal.paymentEvidence?{paymentEvidence:deal.paymentEvidence}:{})};
+    return {id:deal.id,title:deal.title,date:deal.paymentType==='263'?deal.commissionDate:deal.handoffDate,paymentType:PAYMENT_LABELS[deal.paymentType]||'Не указан',formula,amount,components,contractValue:value,firstPayment:first,...(deal.paymentEvidence?{paymentEvidence:deal.paymentEvidence}:{})};
   });
+}
+function commissionGroups(deals:ReturnType<typeof commissionBreakdown>){
+  const groups=new Map<string,{id:string;label:string;amount:number|null;deals:Array<Omit<typeof deals[number],'components'>>}>();
+  for(const {components,...deal} of deals)for(const component of components){
+    const group=groups.get(component.id)||{id:component.id,label:component.label,amount:0,deals:[]};
+    group.amount=group.amount===null||component.amount===null?null:group.amount+component.amount;
+    group.deals.push({...deal,formula:component.formula,amount:component.amount});groups.set(group.id,group);
+  }
+  // Lines already share the period's rounded totals; grouping never rounds again.
+  return [...groups.values()];
 }
 export async function GET(request: Request) {
   const actor = await verifySession(readSessionCookie(request.headers.get('cookie')), process.env.SITE_SESSION_TOKEN ?? '');
@@ -42,8 +62,8 @@ export async function GET(request: Request) {
     const plans = allPlans.filter(p => (!params.has('month') || p.end.slice(0, 7) === month) && p.start <= today);
     const monthly=totals(inRange(range.start,range.end));
     const periods=plans.map(plan=>{
-      const end=plan.end<today?plan.end:today,items=inRange(plan.start,end),commissionItems=commissionInRange(plan.start,end),values=totals(items),commission=commissionForDeals(commissionItems);
-      return {...plan,...values,...calculate(plan,values,commission),leaderAward:leaderAwards.find(award=>award.start===plan.start&&award.end===plan.end),commissionDeals:commissionBreakdown(commissionItems),ongoing:plan.end>=today};
+      const end=plan.end<today?plan.end:today,items=inRange(plan.start,end),commissionItems=commissionInRange(plan.start,end),values=totals(items),base=calculate(plan,values),commission=commissionForDeals(commissionItems,base.rate);
+      return {...plan,...values,...calculate(plan,values,commission),leaderAward:leaderAwards.find(award=>award.start===plan.start&&award.end===plan.end),commissionDeals:commissionBreakdown(commissionItems,base.rate),ongoing:plan.end>=today};
     });
     const coveredDays = new Set(periods.flatMap(p => {
       const days = []; for (let d = p.start; d <= (p.end < today ? p.end : today);) { days.push(d); const date = new Date(d + 'T00:00:00Z'); date.setUTCDate(date.getUTCDate() + 1); d = date.toISOString().slice(0, 10); } return days;
@@ -69,7 +89,7 @@ export async function GET(request: Request) {
       const paid=params.has('month')?(rows.length?rows.reduce((sum,row)=>sum+row.amount,0):null):!paymentEvidence||item.earned===null?null:Math.min(Math.max(item.earned,0),unappliedPayments);
       if(!params.has('month')&&paid!==null)unappliedPayments-=paid;
       const commissionDeals=[...periodsForMonth.flatMap(period=>period.commissionDeals),...commissionBreakdown(outsidePeriods)].sort((a,b)=>a.date.localeCompare(b.date)||Number(a.id)-Number(b.id));
-      return {...item,commissionDeals,ongoing:key===today.slice(0,7),paid,owed:item.earned===null||paid===null?null:item.earned-paid};
+      return {...item,commissionGroups:commissionGroups(commissionDeals),commissionDeals,ongoing:key===today.slice(0,7),paid,owed:item.earned===null||paid===null?null:item.earned-paid};
     });
     const earned = !EARNINGS_BASIS_CONFIRMED || !earningsMonths.length || earningsMonths.some(item => item.earned === null) ? null : earningsMonths.reduce((sum, item) => sum + item.earned!, 0);
     const paid=params.has('month')?(earningsMonths.some(item=>item.paid===null)?null:earningsMonths.reduce((sum,item)=>sum+item.paid!,0)):(paymentEvidence?paymentRows.reduce((sum,row)=>sum+row.amount,0):null),owed=earned===null||paid===null?null:earned-paid;

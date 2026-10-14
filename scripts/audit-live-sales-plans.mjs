@@ -66,18 +66,35 @@ try{
     const eligible=line.firstPayment!==null&&line.firstPayment>0;
     assert.ok(line.paymentEvidence?.source==='payment_register','Canonical register evidence is required');
     const review=line.paymentEvidence.status==='review_required';
-    const expected=line.contractValue===null||review?null:eligible?Math.round(line.contractValue*6/100):0;
-    assert.ok(line.amount===expected,'Confirmed first payment must earn 6% of the full contract');
-    if(line.contractValue!==null)assert.ok(line.formula===(eligible?`${line.contractValue} × 6%`:review?'Оплату нужно сверить — расчёт не подтверждён':'0 · Нет зарегистрированной оплаты по договору'),'Displayed formula must match eligibility');
+    const receipt=line.components.find(component=>component.id==='receipt-6');
+    const handoff=line.components.find(component=>component.id.startsWith('handoff-'));
+    assert.ok(receipt&&handoff,'Separate handoff and first-payment components are required');
+    const expected=line.contractValue===null||review?null:eligible?line.contractValue*6/100:0;
+    assert.ok(expected===null?receipt.amount===null:receipt.amount!==null&&Math.abs(receipt.amount-expected)<=1,'6% component must match receipt eligibility with whole-tenge allocation');
+    if(line.contractValue!==null)assert.ok(receipt.formula===(eligible?`${line.contractValue} × 6%`:review?'Оплату нужно сверить — расчёт не подтверждён':'0 · Нет зарегистрированной оплаты по договору'),'Displayed receipt formula must match eligibility');
+    const period=month.periods.find(period=>line.date>=period.start&&line.date<=period.end),rate=period?period.rate:2;
+    const base=line.contractValue===null||rate===null?null:line.contractValue*rate/100;
+    assert.ok(base===null?handoff.amount===null:handoff.amount!==null&&Math.abs(handoff.amount-base)<=1,'Original handoff commission must remain independent of receipt');
+    if(line.contractValue!==null&&rate!==null)assert.ok(handoff.formula===`${line.contractValue} × ${rate}%`,'Historical plan rate must be retained');
+    assert.ok(line.amount===(line.components.some(component=>component.amount===null)?null:line.components.reduce((sum,component)=>sum+component.amount,0)),'Deal total must equal its separate components');
     assert.ok(line.date.startsWith(month.id),'Existing salary-month allocation must be preserved');
     verifiedFirstPaymentLines++;
     if(eligible&&line.contractValue!==null)verifiedPaidFirstPaymentLines++;
    }
+   assert.ok(Array.isArray(month.commissionGroups),'Commission categories are required');
+   for(const group of month.commissionGroups){
+    const lines=group.deals,expected=lines.some(line=>line.amount===null)?null:lines.reduce((sum,line)=>sum+line.amount,0);
+    assert.ok(group.amount===expected,'Category must reconcile with its contract lines');
+   }
+   const grouped=month.commissionGroups.some(group=>group.amount===null)?null:month.commissionGroups.reduce((sum,group)=>sum+group.amount,0);
+   assert.ok(month.performanceCommission===grouped,'Monthly commission must reconcile with all categories');
   }
  }
  assert.ok(verifiedFirstPaymentLines>0,'Live verification requires qualifying payment-type records');
  assert.ok(verifiedPaidFirstPaymentLines>0,'Live verification requires a confirmed paid first-payment contract');
  report.firstPaymentContractCommissionVerified=true;
+ report.originalHandoffCommissionVerified=true;
+ report.separateCommissionCategoriesVerified=true;
  report.recordedPayoutsMatchLedger=true;
  report.closedCompetitionVerified=true;
  report.septemberTargetVerified=true;

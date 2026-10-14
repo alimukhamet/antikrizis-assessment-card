@@ -25,7 +25,7 @@ test('register receipts qualify both types once, preserve handoff month and only
  const f=fixture([deal(1),deal(2,'423'),deal(3),deal(4,'461')],()=>[],read);
  const rows=await f.run();
  assert.equal(rows.length,4);assert.equal(rows[0].firstPayment,80000);assert.equal(rows[1].firstPayment,80000);assert.equal(rows[2].firstPayment,null);
- assert.ok(rows.every(row=>row.commissionDate==='2026-09-15'));assert.equal(rules.commissionForDeals(rows.slice(0,3)),48000);
+ assert.ok(rows.every(row=>row.commissionDate==='2026-09-15'));assert.equal(rules.commissionForDeals(rows.slice(0,3)),72000);
  assert.deepEqual(Array.from(scope,d=>[d.id,d.serviceType]),[['1','199'],['2','199'],['3','199']]);
  assert.equal(f.calls.filter(call=>call.url.endsWith('crm.item.list.json')).length,1);
 });

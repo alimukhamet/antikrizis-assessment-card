@@ -30,27 +30,53 @@ export function plansFor(person: Person): Plan[] {
   ];
 }
 export type Totals = { count: number; volume: number; missing: number };
-export type CommissionDeal = { contractValue:number|null; paymentType:string; stageId:string; outcomeId:string; firstPayment:number|null; paymentEvidence?:{status:'received'|'not_registered'|'review_required'} };
-// Owner confirmed 14 October 2026: applies retroactively, using existing handoff periods.
+export type CommissionDeal = { id?:string; contractValue:number|null; paymentType:string; stageId:string; outcomeId:string; firstPayment:number|null; paymentEvidence?:{status:'received'|'not_registered'|'review_required'} };
+// Owner correction: original handoff commission remains payable without payment.
+// An additional 6% applies retroactively after a registered receipt; retain historical plan rates.
 export const FIRST_PAYMENT_CONTRACT_RATE = 6;
 export function hasFirstPaymentContractRate(paymentType:string){return paymentType==='261'||paymentType==='423';}
 const AFTER_DECISION_PAYABLE_STAGES=new Set(['C1:UC_R0NPNE','C1:UC_P1YJHC','C1:WON']);
-export function commissionForDeals(deals:CommissionDeal[]){
-  let total=0;
-  for(const deal of deals){
-    const value=deal.contractValue;
-    if(value===null)return null;
-    if(deal.paymentType==='263'){
-      if(deal.firstPayment===null||deal.firstPayment>value)return null;
-      total+=deal.firstPayment*.15+(value-deal.firstPayment)*.04;
-    }else if(deal.paymentType==='461'){
-      if(deal.outcomeId==='311'&&AFTER_DECISION_PAYABLE_STAGES.has(deal.stageId))total+=value*.08;
-    }else if(hasFirstPaymentContractRate(deal.paymentType)){
-      if(deal.paymentEvidence?.status==='review_required')return null;
-      if(deal.firstPayment!==null&&deal.firstPayment>0)total+=value*FIRST_PAYMENT_CONTRACT_RATE/100;
-    }else return null;
+export function commissionParts(deal:CommissionDeal,standardRate:number|null=2){
+  const value=deal.contractValue;
+  const standard=hasFirstPaymentContractRate(deal.paymentType)?(value===null||standardRate===null?null:value*standardRate/100):0;
+  const receipt=hasFirstPaymentContractRate(deal.paymentType)?(value===null||deal.paymentEvidence?.status==='review_required'?null:deal.firstPayment!==null&&deal.firstPayment>0?value*FIRST_PAYMENT_CONTRACT_RATE/100:0):0;
+  let other:number|null=0;
+  if(!hasFirstPaymentContractRate(deal.paymentType)){
+    if(value===null)other=null;
+    else if(deal.paymentType==='263')other=deal.firstPayment===null||deal.firstPayment>value?null:deal.firstPayment*.15+(value-deal.firstPayment)*.04;
+    else if(deal.paymentType==='461')other=deal.outcomeId==='311'&&AFTER_DECISION_PAYABLE_STAGES.has(deal.stageId)?value*.08:0;
+    else other=null;
   }
-  return Math.round(total);
+  return {standard,receipt,other};
+}
+export function allocateCommissionForDeals(deals:CommissionDeal[],standardRate:number|null=2){
+  const parts=deals.map(deal=>commissionParts(deal,standardRate));
+  type Part=keyof typeof parts[number];
+  const allocate=(keys:Part[])=>{
+    const entries=parts.flatMap((part,index)=>keys.map(key=>({index,key,amount:part[key]})));
+    const known=entries.filter((entry):entry is typeof entry&{amount:number}=>entry.amount!==null);
+    const total=Math.round(known.reduce((sum,entry)=>sum+entry.amount,0));
+    let remainder=total-known.reduce((sum,entry)=>sum+Math.floor(entry.amount),0);
+    // Preserve the rounded period total, assigning its fractional remainders
+    // to lines deterministically. IDs break ties independently of CRM row order.
+    known.sort((a,b)=>(b.amount-Math.floor(b.amount))-(a.amount-Math.floor(a.amount))||
+      (deals[a.index].id&&deals[b.index].id?deals[a.index].id!.localeCompare(deals[b.index].id!,'en',{numeric:true}):a.index-b.index)||a.key.localeCompare(b.key));
+    for(const entry of known){
+      const extra=remainder>0?1:0;
+      parts[entry.index][entry.key]=Math.floor(entry.amount)+extra;
+      remainder-=extra;
+    }
+    return known.length===entries.length?total:null;
+  };
+  // The original commission keeps its historical period rounding. The new
+  // receipt commission is added afterwards and cannot alter that old total.
+  const legacy=allocate(['standard','other']),receipt=allocate(['receipt']);
+  const total=legacy===null||receipt===null?null:legacy+receipt;
+  const amounts=parts.map(part=>Object.values(part).some(value=>value===null)?null:part.standard!+part.receipt!+part.other!);
+  return {parts,amounts,legacy,receipt,total};
+}
+export function commissionForDeals(deals:CommissionDeal[],standardRate:number|null=2){
+  return allocateCommissionForDeals(deals,standardRate).total;
 }
 export function calculate(plan: Plan, totals: Totals, commissionOverride?:number|null) {
   const value = plan.metric === 'count' ? totals.count : totals.volume;
