@@ -17,7 +17,8 @@ await request('/api/session',{worker:'ali',password:process.env.ASSESSMENT_TEST_
 const report={readAt:new Date().toISOString(),people:[]};
 for(const person of ['darkhan','ramazan','nurdaulet']){
  const stored=await request('/api/sales-compensation?person='+person);
- const item={person,plans:stored.plans,months:[]};
+ const history=await request('/api/personal-sales?person='+person);
+ const item={person,plans:stored.plans,payments:stored.payments,history,months:[]};
  for(const month of ['2026-09','2026-10']){
   const data=await request('/api/personal-sales?person='+person+'&month='+month);
   item.months.push({month,monthly:data.monthly,earned:data.earned,paid:data.paid,owed:data.owed,periods:data.periods.map(({id,start,end,target,metric,tiers,leaderBonus,bonus,rate,count,volume,missing,commission,earned,leaderAward})=>({id,start,end,target,metric,tiers,leaderBonus,bonus,rate,count,volume,missing,commission,earned,leaderAward})),earningsMonths:data.earningsMonths.map(({id,baseSalary,contractBonus,leaderBonus,commission,earned})=>({id,baseSalary,contractBonus,leaderBonus,commission,earned}))});

@@ -28,7 +28,7 @@ test('built Worker persists a complete contract and recovers a handoff without d
  // The pinned local workerd supports May 2026. Production keeps its September
  // compatibility date; this local suite does not claim production parity.
  const options={modules,compatibilityDate:'2026-05-22',compatibilityFlags:['nodejs_compat'],
-  d1Databases:{DB:'synthetic-db'},r2Buckets:{FILES:'synthetic-files'},d1Persist:join(dir,'d1'),r2Persist:join(dir,'r2'),
+  d1Databases:{DB:'synthetic-db',FINANCE_DB:'synthetic-finance-db'},r2Buckets:{FILES:'synthetic-files'},d1Persist:join(dir,'d1'),r2Persist:join(dir,'r2'),
   bindings:{AUTH_PROVIDER:'local',SITE_ACCESS_PASSWORD:'synthetic-password',PLATFORM_ENTRY_SECRET:'synthetic-platform-entry-key-never-used-in-production',SITE_SESSION_TOKEN:'synthetic-session-key-never-used-in-production',BITRIX_WEBHOOK:'https://bitrix.synthetic.invalid/rest/'},
   assets:{directory:resolve('dist/client'),binding:'ASSETS',routerConfig:{has_user_worker:true},assetConfig:{html_handling:'none'}},
   outboundService:crm.handle
@@ -39,6 +39,9 @@ test('built Worker persists a complete contract and recovers a handoff without d
   const sql=await readFile(join('drizzle',name),'utf8');
   for(const statement of sql.split('--> statement-breakpoint').filter(s=>s.trim()))await db.prepare(statement).run();
  }
+ const finance=await mf.getD1Database('FINANCE_DB');
+ await finance.exec("CREATE TABLE register_state(key TEXT PRIMARY KEY,value TEXT); INSERT INTO register_state VALUES('active','1'); CREATE TABLE register_entries(id INTEGER PRIMARY KEY,client_id INTEGER,kind TEXT,amount_minor INTEGER,currency TEXT,event_date TEXT,service_type_id INTEGER,source_invoice_id INTEGER); CREATE TABLE register_voids(entry_id INTEGER PRIMARY KEY);");
+ await finance.exec("INSERT INTO register_entries(id,client_id,kind,amount_minor,currency,event_date,service_type_id) VALUES(1,910001,'receipt',8000000,'KZT','2026-10-01',187),(2,910002,'receipt',7000000,'KZT','2026-10-02',187),(3,910003,'receipt',500000,'KZT','2026-09-01',215);");
  let cookie='';
  async function api(path,body,status=200){
   const response=await mf.dispatchFetch(origin+path,{method:body?'POST':'GET',headers:{origin,cookie,'content-type':'application/json'},body:body?JSON.stringify(body):undefined});
@@ -56,6 +59,7 @@ test('built Worker persists a complete contract and recovers a handoff without d
  assert.equal(winnerEarnings.earningsMonths[0].commission,33000);
  assert.equal(winnerEarnings.earningsMonths[0].commissionDeals[0].formula,'550000 × 6%');
  assert.equal(winnerEarnings.earningsMonths[0].commissionDeals[0].date,'2026-09-15');
+ assert.equal(winnerEarnings.earningsMonths[0].commissionDeals[0].paymentEvidence.source,'payment_register');
  assert.equal(winnerEarnings.paid,null);
  const splitEarnings=await api('/api/personal-sales?person=ramazan&month=2026-09');
  assert.equal(splitEarnings.earningsMonths[0].leaderBonus,0);
@@ -63,7 +67,7 @@ test('built Worker persists a complete contract and recovers a handoff without d
  assert.equal(splitEarnings.earningsMonths[0].commissionDeals[0].formula,'450000 × 6%');
  const unpaidEarnings=await api('/api/personal-sales?person=nurdaulet&month=2026-09');
  assert.equal(unpaidEarnings.earningsMonths[0].commission,0);
- assert.equal(unpaidEarnings.earningsMonths[0].commissionDeals[0].formula,'0 · Первый платёж не подтверждён');
+ assert.equal(unpaidEarnings.earningsMonths[0].commissionDeals[0].formula,'0 · Нет зарегистрированной оплаты по договору');
  assert.equal((await db.prepare('SELECT COUNT(*) n FROM sales_payments').first()).n,0,'Awarded earnings must never fabricate a payment');
  const salesReceipt=await api('/api/sales-compensation',salesPlan,201);
  assert.equal(salesReceipt.plans.length,2);

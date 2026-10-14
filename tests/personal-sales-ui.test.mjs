@@ -43,7 +43,7 @@ test('earnings totals switch histories without changing current accrual or losin
     assert.match(document.querySelector('.ps-entry').textContent, /Выплата · Рамазан/);
     assert.match(current.textContent, /Комиссия за текущий месяц64.000 ₸/);
     await act(async () => document.querySelector('.rop-nav button').click());
-    assert.match(document.querySelector('.ps-current').textContent, /После определения и 50\/50 — 6% от договора после первого платежа/);
+    assert.match(document.querySelector('.ps-current').textContent, /После определения и 50\/50 — 6% от суммы договора после первой зарегистрированной оплаты/);
     assert.doesNotMatch(document.body.textContent, /До цели — .*При выполнении/);
     await act(async () => document.querySelector('.ps-action').click());
     assert.match(document.querySelector('.ps-entry').textContent, /Ставки плана не меняют фиксированные комиссии/);

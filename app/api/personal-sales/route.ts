@@ -15,9 +15,9 @@ function commissionBreakdown(deals:CompensationDeal[]){
     if(value!==null){
       if(deal.paymentType==='263'&&first!==null)formula=`${first} × 15% + ${value-first} × 4%`;
       else if(deal.paymentType==='461')formula=deal.outcomeId==='311'?`${value} × 8%`:'0';
-      else if(hasFirstPaymentContractRate(deal.paymentType))formula=first!==null&&first>0?`${value} × ${FIRST_PAYMENT_CONTRACT_RATE}%`:'0 · Первый платёж не подтверждён';
+      else if(hasFirstPaymentContractRate(deal.paymentType))formula=first!==null&&first>0?`${value} × ${FIRST_PAYMENT_CONTRACT_RATE}%`:deal.paymentEvidence?.status==='review_required'?'Оплату нужно сверить — расчёт не подтверждён':'0 · Нет зарегистрированной оплаты по договору';
     }
-    return {id:deal.id,title:deal.title,date:deal.paymentType==='263'?deal.commissionDate:deal.handoffDate,paymentType:PAYMENT_LABELS[deal.paymentType]||'Не указан',formula,amount,contractValue:value,firstPayment:first};
+    return {id:deal.id,title:deal.title,date:deal.paymentType==='263'?deal.commissionDate:deal.handoffDate,paymentType:PAYMENT_LABELS[deal.paymentType]||'Не указан',formula,amount,contractValue:value,firstPayment:first,...(deal.paymentEvidence?{paymentEvidence:deal.paymentEvidence}:{})};
   });
 }
 export async function GET(request: Request) {

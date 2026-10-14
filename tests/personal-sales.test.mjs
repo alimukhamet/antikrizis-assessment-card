@@ -141,7 +141,7 @@ test('retroactive 6% covers plan gaps once, retains handoff dates, exclusions an
  assert.equal(month.commission,48000);assert.equal(month.earned,148000);assert.equal(month.paid,125000);assert.equal(month.owed,23000);
  assert.deepEqual(data.payments,payments);assert.equal(data.monthly.count,4);assert.equal(data.periods[0].count,3);
  assert.deepEqual(month.commissionDeals.map(row=>[row.id,row.date,row.formula,row.amount]),[
-  ['1','2026-06-01','400000 × 6%',24000],['2','2026-06-15','400000 × 6%',24000],['3','2026-06-20','0 · Первый платёж не подтверждён',0],
+  ['1','2026-06-01','400000 × 6%',24000],['2','2026-06-15','400000 × 6%',24000],['3','2026-06-20','0 · Нет зарегистрированной оплаты по договору',0],
  ]);
 });
 test('current fixed commission without any plan is visible but remains unaccrued until month end',async()=>{
@@ -149,4 +149,14 @@ test('current fixed commission without any plan is visible but remains unaccrued
  const {data}=await api('ramazan','month=2026-10',false,0,[],{today:'2026-10-14',deals});
  assert.equal(data.periods.length,0);assert.equal(data.earningsMonths[0].performanceCommission,30000);
  assert.equal(data.earningsMonths[0].commission,0);assert.equal(data.earned,0);assert.equal(data.earningsMonths[0].commissionDeals.length,1);
+});
+
+test('unresolved register evidence keeps a closed month commission, earned and owed unknown',async()=>{
+ const deals=[{id:'1',title:'Test',paymentType:'261',handoffDate:'2026-06-10',commissionDate:'2026-06-10',firstPayment:null,contractValue:400000,stageId:'C1:NEW',outcomeId:'',paymentEvidence:{status:'review_required',source:'payment_register'}}];
+ const payments=[{id:'paid',person:'ramazan',month:'2026-06',amount:125000,paidAt:'2026-07-02',note:'Existing transfer',createdAt:''}];
+ const {data}=await api('ramazan','month=2026-06',false,0,payments,{today:'2026-10-14',deals});
+ assert.equal(data.earningsMonths[0].commission,null);assert.equal(data.earned,null);assert.equal(data.owed,null);assert.equal(data.paid,125000);
+ assert.equal(data.earningsMonths[0].commissionDeals[0].amount,null);
+ assert.equal(data.earningsMonths[0].commissionDeals[0].formula,'Оплату нужно сверить — расчёт не подтверждён');
+ assert.deepEqual(data.payments,payments);
 });

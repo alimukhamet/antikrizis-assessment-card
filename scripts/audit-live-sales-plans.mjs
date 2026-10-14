@@ -64,9 +64,11 @@ try{
     if(!['После определения','50/50'].includes(line.paymentType))continue;
     assert.ok(Object.hasOwn(line,'firstPayment')&&Object.hasOwn(line,'contractValue'),'First-payment calculation evidence is required');
     const eligible=line.firstPayment!==null&&line.firstPayment>0;
-    const expected=line.contractValue===null?null:eligible?Math.round(line.contractValue*6/100):0;
+    assert.ok(line.paymentEvidence?.source==='payment_register','Canonical register evidence is required');
+    const review=line.paymentEvidence.status==='review_required';
+    const expected=line.contractValue===null||review?null:eligible?Math.round(line.contractValue*6/100):0;
     assert.ok(line.amount===expected,'Confirmed first payment must earn 6% of the full contract');
-    if(line.contractValue!==null)assert.ok(line.formula===(eligible?`${line.contractValue} × 6%`:'0 · Первый платёж не подтверждён'),'Displayed formula must match eligibility');
+    if(line.contractValue!==null)assert.ok(line.formula===(eligible?`${line.contractValue} × 6%`:review?'Оплату нужно сверить — расчёт не подтверждён':'0 · Нет зарегистрированной оплаты по договору'),'Displayed formula must match eligibility');
     assert.ok(line.date.startsWith(month.id),'Existing salary-month allocation must be preserved');
     verifiedFirstPaymentLines++;
     if(eligible&&line.contractValue!==null)verifiedPaidFirstPaymentLines++;
