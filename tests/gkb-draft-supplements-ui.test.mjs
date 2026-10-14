@@ -21,11 +21,11 @@ test('explicit fill writes only blank balance and restores an unconfirmed source
   assert.equal(await f.run('afSupplementDraftBalances()'),0);
   f.run('af.fillingMissing=false;af.sources.clear();af.restoringEvidence=true');assert.equal(await f.run('afSupplementDraftBalances()'),1);assert.equal(f.run('af.sources.size'),1);
   f.run('af.sources.clear()');f.field('n8040').value='';assert.equal(await f.run('afSupplementDraftBalances()'),0);assert.equal(f.field('n8040').value,'');
- }finally{f.dom.window.close();}
+ }finally{await new Promise(resolve=>setTimeout(resolve,20));f.dom.window.close();}
 });
 test('staff values, zero, cleared/replaced answers, stale context and ambiguous rows stay unchanged',async()=>{
  for(const change of [f=>{f.field('n8040').value='0';},f=>{f.field('n8040').value='250';},f=>{f.field('n8040').dataset.sourceReplaced='true';},f=>{f.field('n8040').dataset.clientConfirmedValue='0';},f=>{f.reports[0].server.identityRevision=2;},f=>{f.row.parentElement.append(f.row.cloneNode(true));}]){
-  const f=setup();try{change(f);const before=f.row.innerHTML,value=f.field('n8040').value;f.run('af.fillingMissing=true');assert.equal(await f.run('afSupplementDraftBalances()'),0);assert.equal(f.field('n8040').value,value);assert.equal(f.row.innerHTML,before);}finally{f.dom.window.close();}
+  const f=setup();try{change(f);const before=f.row.innerHTML,value=f.field('n8040').value;f.run('af.fillingMissing=true');assert.equal(await f.run('afSupplementDraftBalances()'),0);assert.equal(f.field('n8040').value,value);assert.equal(f.row.innerHTML,before);}finally{await new Promise(resolve=>setTimeout(resolve,20));f.dom.window.close();}
  }
 });
 
@@ -39,5 +39,5 @@ test('supplements cannot enter fact review bindings and yield to a subsequently 
   assert.equal(f.w.afPut(input,'100.25',source),true,'new eligible source replaces unconfirmed draft supplement');
   assert.equal(f.run('af.sources.values().next().value.gkbDraftSupplement'),undefined);
   const bindings=f.w.ServerDrafts.reviewBindings();assert.equal(bindings.length,1);assert.equal(bindings[0].documentId,'doc-1');assert.equal(bindings[0].reviewId,null);
- }finally{f.dom.window.close();}
+ }finally{await new Promise(resolve=>setTimeout(resolve,20));f.dom.window.close();}
 });
