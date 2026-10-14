@@ -49,7 +49,7 @@ try{
  }
  // Verify every payroll month through the same read-only endpoint used by the employee UI.
  // Retain only pass/fail metadata; no client identities, amounts or payroll details in artifacts.
- let verifiedFirstPaymentLines=0;
+ let verifiedFirstPaymentLines=0,verifiedPaidFirstPaymentLines=0;
  for(const person of Object.keys(managers)){
   const ledgerResponse=await request('/api/sales-compensation?person='+person);assert.equal(ledgerResponse.status,200);
   const ledger=await ledgerResponse.json();
@@ -69,12 +69,14 @@ try{
     if(line.contractValue!==null)assert.ok(line.formula===(eligible?`${line.contractValue} × 6%`:'0 · Первый платёж не подтверждён'),'Displayed formula must match eligibility');
     assert.ok(line.date.startsWith(month.id),'Existing salary-month allocation must be preserved');
     verifiedFirstPaymentLines++;
+    if(eligible&&line.contractValue!==null)verifiedPaidFirstPaymentLines++;
    }
   }
  }
  assert.ok(verifiedFirstPaymentLines>0,'Live verification requires qualifying payment-type records');
+ assert.ok(verifiedPaidFirstPaymentLines>0,'Live verification requires a confirmed paid first-payment contract');
  report.firstPaymentContractCommissionVerified=true;
- report.recordedPayoutsPreserved=true;
+ report.recordedPayoutsMatchLedger=true;
  report.closedCompetitionVerified=true;
  report.septemberTargetVerified=true;
  await login('ramazan');
