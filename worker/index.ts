@@ -70,7 +70,8 @@ const worker = {
       return secured;
     }
     const protectedPage = ['/', '/platform-entry', '/assessment-review', '/lawyer-handoff', '/assessment-feedback', '/assessment-card', '/assessment-card.html', '/my-results', '/my-earnings', '/knowledge', '/knowledge/', '/profile-backfill'].includes(url.pathname);
-    const protectedApi = url.pathname.startsWith('/api/') && url.pathname !== '/api/session';
+    // /api/session/platform accepts a signed one-minute Platform ticket instead of a session.
+    const protectedApi = url.pathname.startsWith('/api/') && url.pathname !== '/api/session' && url.pathname !== '/api/session/platform';
     if (protectedPage || protectedApi) {
       const actor = await verifySession(readSessionCookie(request.headers.get('cookie')), env.SITE_SESSION_TOKEN ?? process.env.SITE_SESSION_TOKEN ?? '');
       if (!actor) {

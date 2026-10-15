@@ -1,6 +1,6 @@
 import { WORKERS } from '../../lib/worker-session';
 
-export function LoginForm({returnTo, error, worker}: {returnTo: string; error: string; worker: string}) {
+export function LoginForm({returnTo, error, worker, platformUrl}: {returnTo: string; error: string; worker: string; platformUrl: string}) {
   return (
     <form className="login-form" method="post" action="/api/session">
       <input name="returnTo" type="hidden" value={returnTo} />
@@ -17,6 +17,7 @@ export function LoginForm({returnTo, error, worker}: {returnTo: string; error: s
       </label>
       {error ? <p className="login-error" role="alert">{error}</p> : null}
       <button type="submit">Войти</button>
+      <a className="login-platform" href={platformUrl}>Войти через платформу</a>
     </form>
   );
 }

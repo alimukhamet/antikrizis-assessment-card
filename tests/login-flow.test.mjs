@@ -22,6 +22,7 @@ function fixture({denied = false, rateLimited = false, unavailable = false} = {}
   const route = moduleAt('../app/api/session/route.ts', {
     '../../../lib/worker-session': session,
     '../../../lib/login-navigation': navigation,
+    '../../../lib/platform-sign-in': {PLATFORM_ENTRY_COOKIE: '__Host-antikrizis_platform_entry'},
     '../../../lib/login-rate': {checkLoginRate: async () => ({allowed: !rateLimited, retryAfter: 60})},
     '../../../lib/auth-provider': {authenticateStaff: async (worker, password, configuration) => {
       calls++; assert.equal(configuration.provider, 'payment-control');

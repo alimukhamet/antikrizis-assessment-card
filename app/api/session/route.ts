@@ -2,6 +2,7 @@ import { issueSession, readSessionCookie, verifySession, requestOriginAllowed, S
 import { authenticateStaff } from '../../../lib/auth-provider';
 import { checkLoginRate } from '../../../lib/login-rate';
 import { loginDestination, LOGIN_ERRORS } from '../../../lib/login-navigation';
+import { PLATFORM_ENTRY_COOKIE } from '../../../lib/platform-sign-in';
 export const dynamic = 'force-dynamic';
 const headers = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' };
 const cookie = (value: string, maxAge: number) => `${SESSION_COOKIE}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Strict`;
@@ -61,5 +62,9 @@ export async function POST(request: Request) {
 }
 export async function DELETE(request: Request) {
   if (!requestOriginAllowed(request)) return Response.json({ error: 'Запрос отклонён.' }, { status: 403, headers });
-  return Response.json({ ok: true }, { headers: { ...headers, 'set-cookie': cookie('', 0) } });
+  // Signing out also forgets the Platform entry, so the login page does not sign straight back in.
+  const response = new Headers({...headers, 'content-type': 'application/json'});
+  response.append('set-cookie', cookie('', 0));
+  response.append('set-cookie', `${PLATFORM_ENTRY_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`);
+  return new Response(JSON.stringify({ ok: true }), { headers: response });
 }
