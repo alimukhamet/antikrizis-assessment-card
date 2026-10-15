@@ -1,5 +1,7 @@
 # Antikrizis assessment and document intake
 
+> **Moved (15 October 2026).** This source now lives in `apps/assessment` of the private repository [alimukhamet/antikrizis-platform](https://github.com/alimukhamet/antikrizis-platform). Do not change or release code here: the deploy and check workflows are disabled. This repository keeps the history, the production monitor and the manual live audits. Last source commit here: `2964953`; imported by alimukhamet/antikrizis-platform#213.
+
 Project ownership, unresolved issues and completion rules are maintained in [RELIABILITY.md](RELIABILITY.md). Agents working on this project must also follow [AGENTS.md](AGENTS.md).
 
 For deployment outside ChatGPT Sites, start with
