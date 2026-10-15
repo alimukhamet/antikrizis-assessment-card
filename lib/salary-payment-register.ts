@@ -38,6 +38,16 @@ export async function loadRegisterFirstPayments(deals:Deal[],database?:D1Databas
    if(current.status==='received')continue;
    result.set(id,{amount:row.amount_minor/100,date:row.event_date??'',status:'received',source:'payment_register',entryId:row.id,ignoredLegacyInvoiceIds:current.ignoredLegacyInvoiceIds});
   }
+  // The owner's "not a payment" decisions on payments /admin: a CRM invoice he dismissed is not
+  // unregistered money, so it must not turn the salary into a reconciliation conflict.
+  const dismissed=await db.prepare(`SELECT r.deal_id,r.invoice_id FROM register_bitrix_resolutions r WHERE r.deal_id IN (SELECT value FROM json_each(?))
+   AND r.action='dismissed' AND r.id=(SELECT MAX(x.id) FROM register_bitrix_resolutions x WHERE x.invoice_id=r.invoice_id)`).bind(JSON.stringify(ids)).all<{deal_id:number;invoice_id:number}>();
+  if(!dismissed.success||!Array.isArray(dismissed.results))throw new Error('Реестр оплат вернул неполные данные.');
+  for(const row of dismissed.results){
+   const current=result.get(String(row.deal_id));
+   if(!current||!Number.isSafeInteger(row.invoice_id)||row.invoice_id<=0)throw new Error('Реестр оплат вернул противоречивые данные.');
+   (current.ignoredLegacyInvoiceIds??=[]).push(row.invoice_id);
+  }
  }
  return result;
 }
