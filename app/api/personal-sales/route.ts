@@ -8,16 +8,19 @@ const headers = { 'cache-control': 'private, no-store' };
 // Owner-confirmed payment-type rules are applied from live deal and invoice data.
 const EARNINGS_BASIS_CONFIRMED = true;
 const PAYMENT_LABELS:Record<string,string>={'261':'После определения','263':'До определения','423':'50/50','461':'После решения'};
-function commissionBreakdown(deals:CompensationDeal[],rate:number|null=2){
+type PlanSpan={start:string;end:string};
+function commissionBreakdown(deals:CompensationDeal[],rate:number|null=2,span?:PlanSpan){
   const allocation=allocateCommissionForDeals(deals,rate);
   return deals.map((deal,index)=>{
     const amount=allocation.amounts[index],value=deal.contractValue,first=deal.firstPayment,parts=allocation.parts[index];
     let formula='Нет данных для расчёта';
-    const components:Array<{id:string;label:string;formula:string;amount:number|null}>=[];
+    const components:Array<{id:string;label:string;formula:string;amount:number|null;start?:string;end?:string;outsidePlan?:boolean}>=[];
     if(hasFirstPaymentContractRate(deal.paymentType)){
       const standardFormula=value!==null&&rate!==null?`${value} × ${rate}%`:'Нет данных для расчёта';
       const receiptFormula=value===null?'Нет данных для расчёта':deal.paymentEvidence?.status==='review_required'?'Оплату нужно сверить — расчёт не подтверждён':first!==null&&first>0?`${value} × ${FIRST_PAYMENT_CONTRACT_RATE}%`:'0 · Нет зарегистрированной оплаты по договору';
-      components.push({id:`handoff-${rate}`,label:`Передача юристам · ${rate===null?'ставка не определена':rate+'%'}`,formula:standardFormula,amount:parts.standard});
+      // Each plan period keeps its own dated line, even when two periods share a rate.
+      const dates=span??{start:deal.handoffDate,end:deal.handoffDate,outsidePlan:true};
+      components.push({id:span?`handoff-${rate}:${span.start}:${span.end}`:`handoff-${rate}`,label:`Передача юристам · ${rate===null?'ставка не определена':rate+'%'}`,formula:standardFormula,amount:parts.standard,...dates});
       components.push({id:'receipt-6',label:'После первого платежа · 6%',formula:receiptFormula,amount:parts.receipt});
       formula=`${standardFormula} + ${receiptFormula}`;
     }else{
@@ -31,14 +34,19 @@ function commissionBreakdown(deals:CompensationDeal[],rate:number|null=2){
   });
 }
 function commissionGroups(deals:ReturnType<typeof commissionBreakdown>){
-  const groups=new Map<string,{id:string;label:string;amount:number|null;deals:Array<Omit<typeof deals[number],'components'>>}>();
-  for(const {components,...deal} of deals)for(const component of components){
-    const group=groups.get(component.id)||{id:component.id,label:component.label,amount:0,deals:[]};
-    group.amount=group.amount===null||component.amount===null?null:group.amount+component.amount;
-    group.deals.push({...deal,formula:component.formula,amount:component.amount});groups.set(group.id,group);
+  type Component=ReturnType<typeof commissionBreakdown>[number]['components'][number];
+  const groups=new Map<string,Omit<Component,'formula'>&{deals:Array<Omit<typeof deals[number],'components'>>}>();
+  for(const {components,...deal} of deals)for(const {formula,amount,...component} of components){
+    const group=groups.get(component.id)||{...component,amount:0,deals:[]};
+    group.amount=group.amount===null||amount===null?null:group.amount+amount;
+    if(component.start&&group.start&&component.start<group.start)group.start=component.start;
+    if(component.end&&group.end&&component.end>group.end)group.end=component.end;
+    group.deals.push({...deal,formula,amount});groups.set(group.id,group);
   }
   // Lines already share the period's rounded totals; grouping never rounds again.
-  return [...groups.values()];
+  // Handoff periods read as a timeline, then other payment types, then the 6%.
+  const rank=(id:string)=>id.startsWith('handoff-')?0:id==='receipt-6'?2:1;
+  return [...groups.values()].sort((a,b)=>rank(a.id)-rank(b.id)||(a.start??'').localeCompare(b.start??''));
 }
 export async function GET(request: Request) {
   const actor = await verifySession(readSessionCookie(request.headers.get('cookie')), process.env.SITE_SESSION_TOKEN ?? '');
@@ -63,7 +71,7 @@ export async function GET(request: Request) {
     const monthly=totals(inRange(range.start,range.end));
     const periods=plans.map(plan=>{
       const end=plan.end<today?plan.end:today,items=inRange(plan.start,end),commissionItems=commissionInRange(plan.start,end),values=totals(items),base=calculate(plan,values),commission=commissionForDeals(commissionItems,base.rate);
-      return {...plan,...values,...calculate(plan,values,commission),leaderAward:leaderAwards.find(award=>award.start===plan.start&&award.end===plan.end),commissionDeals:commissionBreakdown(commissionItems,base.rate),ongoing:plan.end>=today};
+      return {...plan,...values,...calculate(plan,values,commission),leaderAward:leaderAwards.find(award=>award.start===plan.start&&award.end===plan.end),commissionDeals:commissionBreakdown(commissionItems,base.rate,{start:plan.start,end:plan.end}),ongoing:plan.end>=today};
     });
     const coveredDays = new Set(periods.flatMap(p => {
       const days = []; for (let d = p.start; d <= (p.end < today ? p.end : today);) { days.push(d); const date = new Date(d + 'T00:00:00Z'); date.setUTCDate(date.getUTCDate() + 1); d = date.toISOString().slice(0, 10); } return days;
