@@ -10,7 +10,7 @@ const {loadRegisterFirstPayments:load}=exports;
 test('canonical register classifies received contract money, not invoice labels or planned/analysis/refund/void rows',async t=>{
  const mf=new Miniflare({modules:true,script:'export default {fetch(){return new Response("ok")}}',d1Databases:['FINANCE_DB']});t.after(()=>mf.dispose());
  const db=await mf.getD1Database('FINANCE_DB');
- await db.exec("CREATE TABLE register_state(key TEXT PRIMARY KEY,value TEXT); INSERT INTO register_state VALUES('active','1'); CREATE TABLE register_entries(id INTEGER PRIMARY KEY,client_id INTEGER,kind TEXT,amount_minor INTEGER,currency TEXT,event_date TEXT,service_type_id INTEGER,source_invoice_id INTEGER); CREATE TABLE register_voids(entry_id INTEGER PRIMARY KEY);");
+ await db.exec("CREATE TABLE register_state(key TEXT PRIMARY KEY,value TEXT); CREATE TABLE register_bitrix_resolutions(id INTEGER PRIMARY KEY,invoice_id INTEGER,deal_id INTEGER,action TEXT); INSERT INTO register_state VALUES('active','1'); CREATE TABLE register_entries(id INTEGER PRIMARY KEY,client_id INTEGER,kind TEXT,amount_minor INTEGER,currency TEXT,event_date TEXT,service_type_id INTEGER,source_invoice_id INTEGER); CREATE TABLE register_voids(entry_id INTEGER PRIMARY KEY);");
  // Imported recurring receipts and staff register-only receipts have identical
  // canonical evidence; no installment label, reconciliation flag or CRM ID gate.
  await db.prepare(`INSERT INTO register_entries(id,client_id,kind,amount_minor,currency,event_date,service_type_id) VALUES
@@ -29,6 +29,8 @@ test('canonical register classifies received contract money, not invoice labels 
  (14,12,'refund',10000000,'KZT','2026-09-02',187),
  (15,999,'receipt',10000000,'KZT','2026-09-01',187)`).run();
  await db.prepare('INSERT INTO register_voids VALUES(7)').run();
+ // Client 4: the owner dismissed CRM invoice 401, reopened 402 after dismissing it, and dismissed 403 for client 99 (out of scope).
+ await db.prepare("INSERT INTO register_bitrix_resolutions(id,invoice_id,deal_id,action) VALUES(1,401,4,'dismissed'),(2,402,4,'dismissed'),(3,402,4,'reopened'),(4,403,99,'dismissed')").run();
  await db.prepare('UPDATE register_entries SET source_invoice_id=id*100 WHERE id IN(6,7)').run();
  const before=await db.prepare('SELECT * FROM register_entries ORDER BY id').all();
  const rows=await load(Array.from({length:12},(_,i)=>({id:String(i+1),serviceType:'199'})),db);
@@ -38,6 +40,7 @@ test('canonical register classifies received contract money, not invoice labels 
  assert.equal(rows.get('11').amount,100000);assert.equal(rows.get('11').date,'');
  assert.deepEqual(Array.from(rows.get('6').ignoredLegacyInvoiceIds),[700]);
  assert.deepEqual(Array.from(rows.get('5').ignoredLegacyInvoiceIds),[600]);
+ assert.deepEqual(Array.from(rows.get('4').ignoredLegacyInvoiceIds),[401],'Only the current owner dismissal is ignored');
  assert.equal(rows.get('12').amount,100000,'Refund-driven salary clawback is not an approved rule');
  assert.equal(rows.has('999'),false);assert.equal(rows.size,12);
  assert.deepEqual((await db.prepare('SELECT * FROM register_entries ORDER BY id').all()).results,before.results,'Reads preserve every payment');
