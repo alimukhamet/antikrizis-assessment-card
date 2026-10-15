@@ -45,6 +45,8 @@
   ],
   "vars": {
     "AUTH_PROVIDER": "payment-control",
+    "PLATFORM_SSO_PUBLIC_KEY": "CQObkeEKOsqgvkkUyV2AYz9iIZFOmL2quo1V1wsT-j4",
+    "PLATFORM_SSO_WORKERS": "{\"prod-admin-1\":\"ali\"}",
     "ASSESSMENT_INTAKE_APPROVED_ORIGIN": "https://platform.anti-krizis.kz",
     "ASSESSMENT_INTAKE_SOURCE_ORIGIN": "https://assessment.anti-krizis.kz",
     "CRM_ASSESSMENT_INTAKE_ORIGIN": "https://platform.anti-krizis.kz"
