@@ -2,6 +2,8 @@ import {readSessionCookie,verifySession,requestOriginAllowed} from '../lib/worke
 import {recordServerFailure} from '../lib/operations-monitor';
 import toolsHomeHtml from '../templates/tools-home.html?raw';
 import {platformEntryLauncher,platformEntryResponse} from '../lib/platform-entry';
+import {platformReturn} from '../lib/platform-sign-in';
+import {loginDestination} from '../lib/login-navigation';
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
@@ -100,6 +102,9 @@ const worker = {
       }, allowedWidths);
     }
 
+    // Entered through the Platform before: return through it, without a password (see lib/platform-sign-in.ts).
+    const platform = request.method === 'GET' ? platformReturn(url, request.headers.get('cookie'), loginDestination) : null;
+    if (platform) return new Response(null, {status: 303, headers: {location: platform, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer'}});
     const response = await handler.fetch(request, env, ctx);
     if (url.pathname === '/login') {
       const login = new Response(response.body, response);

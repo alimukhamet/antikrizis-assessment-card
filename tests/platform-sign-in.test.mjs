@@ -74,6 +74,14 @@ test('refuses other origins, tools, keys, stale or long tickets and unmapped emp
 });
 
 test('the login page returns through the Platform only after a Platform entry', () => {
+  const at = path => new URL('https://assessment.anti-krizis.kz' + path), mark = '__Host-antikrizis_platform_entry=1';
+  assert.equal(realSignIn.platformReturn(at('/login?returnTo=%2Fassessment-review%3FdealId%3D9701'), mark, navigation.loginDestination), 'https://platform.anti-krizis.kz/sso/assessment?return=%2Fassessment-review%3FdealId%3D9701');
+  assert.equal(realSignIn.platformReturn(at('/login'), mark, navigation.loginDestination), 'https://platform.anti-krizis.kz/sso/assessment?return=%2F');
+  assert.equal(realSignIn.platformReturn(at('/login?error=platform&returnTo=%2F'), mark, navigation.loginDestination), null);
+  assert.equal(realSignIn.platformReturn(at('/login?error=anything'), mark, navigation.loginDestination), null);
+  assert.equal(realSignIn.platformReturn(at('/login'), 'other=1', navigation.loginDestination), null);
+  assert.equal(realSignIn.platformReturn(at('/assessment-review'), mark, navigation.loginDestination), null);
+  assert.equal(realSignIn.platformReturn(at('/login?returnTo=%2F%2Fevil.example'), mark, navigation.loginDestination), 'https://platform.anti-krizis.kz/sso/assessment?return=%2F');
   assert.equal(realSignIn.hasPlatformEntry('a=b; __Host-antikrizis_platform_entry=1'), true);
   assert.equal(realSignIn.hasPlatformEntry('__Host-antikrizis_platform_entry=0'), false);
   assert.equal(realSignIn.hasPlatformEntry(null), false);
