@@ -14,9 +14,13 @@ function module(path, dependencies = {}) {
  return exports;
 }
 const entry = module('lib/platform-entry.ts');
+const navigation = module('lib/login-navigation.ts');
+const signIn = module('lib/platform-sign-in.ts');
 const worker = module('worker/index.ts', {
  '../lib/worker-session': session,
  '../lib/platform-entry': entry,
+ '../lib/platform-sign-in': signIn,
+ '../lib/login-navigation': navigation,
  '../lib/operations-monitor':{recordServerFailure:async()=>{}},
  '../templates/tools-home.html?raw':{default:readFileSync('templates/tools-home.html','utf8')},
  'vinext/server/image-optimization':{},
@@ -66,4 +70,11 @@ test('each click has a fresh nonce and missing configuration fails without a tic
  const response=await entry.platformEntryResponse(new Request(origin+'/platform-entry',{method:'POST'}),actor,'');
  assert.equal(response.status,503);assert.doesNotMatch(await response.text(),/name="ticket"/);
  await assert.rejects(entry.issuePlatformEntry({worker:'constructor'},secret),/FORBIDDEN/);
+});
+test('an opened login page returns through the Platform only after a Platform entry',async()=>{
+ const mark={cookie:'__Host-antikrizis_platform_entry=1'};
+ const back=await request('/login?returnTo=%2Fassessment-review%3FdealId%3D9701',null,{headers:mark});
+ assert.equal(back.status,303);assert.equal(back.headers.get('location'),'https://platform.anti-krizis.kz/sso/assessment?return=%2Fassessment-review%3FdealId%3D9701');
+ assert.equal(await (await request('/login?error=platform',null,{headers:mark})).text(),'APP');
+ assert.equal(await (await request('/login',null)).text(),'APP');
 });
