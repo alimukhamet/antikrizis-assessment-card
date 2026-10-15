@@ -16,6 +16,11 @@ export function platformSignInUrl(returnTo: string): string {
 export function hasPlatformEntry(cookieHeader: string | null): boolean {
   return (cookieHeader || '').split(';').some(part => part.trim() === PLATFORM_ENTRY_COOKIE + '=1');
 }
+/** Where an opened login page goes instead: through the Platform after one Platform entry, never after an error. */
+export function platformReturn(url: URL, cookieHeader: string | null, destination: (value: unknown) => string): string | null {
+  if (url.pathname !== '/login' || url.searchParams.has('error') || !hasPlatformEntry(cookieHeader)) return null;
+  return platformSignInUrl(destination(url.searchParams.get('returnTo') ?? undefined));
+}
 export async function verifyPlatformTicket(raw: string, publicKey: string | undefined, now = Math.floor(Date.now() / 1000)): Promise<PlatformTicket | null> {
   const parts = raw.split('.');
   if (!publicKey || raw.length > 2048 || parts.length !== 2 || !/^[A-Za-z0-9_-]+$/.test(parts[0]) || !/^[A-Za-z0-9_-]{86}$/.test(parts[1])) return null;
