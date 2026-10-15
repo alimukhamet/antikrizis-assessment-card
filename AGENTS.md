@@ -1,5 +1,7 @@
 # Project ownership
 
+> **Moved (15 October 2026).** This source now lives in `apps/assessment` of the private repository [alimukhamet/antikrizis-platform](https://github.com/alimukhamet/antikrizis-platform). Do not change or release code here: the deploy and check workflows are disabled. This repository keeps the history, the production monitor and the manual live audits. Last source commit here: `2964953`; imported by alimukhamet/antikrizis-platform#213.
+
 The owner asked Codex to act as project manager and technical owner on 23 September 2026. Own triage, priorities, implementation, regression prevention and release verification. Do not make the owner diagnose technical failures or coordinate routine follow-ups.
 
 - Read the ownership rules and open issue register in `RELIABILITY.md` before starting issue work. Preserve confirmed business rules in `README.md`.
