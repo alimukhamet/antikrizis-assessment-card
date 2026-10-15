@@ -4,8 +4,8 @@ import Link from 'next/link';
 import type { Plan, Totals, calculate, MonthlyEarnings } from '../lib/personal-sales';
 import type {LeaderAward} from '../lib/sales-leader-bonus';
 type Period = Plan & Totals & ReturnType<typeof calculate> & { ongoing: boolean;leaderAward?:LeaderAward };
-type CommissionLine = { id:string; title:string; date:string; paymentType:string; formula:string; amount:number|null };
-type CommissionGroup = { id:string; label:string; amount:number|null; deals:CommissionLine[] };
+type CommissionLine = { id:string; title:string; date:string; paymentType:string; formula:string; amount:number|null; paymentEvidence?:{status:string;date:string} };
+type CommissionGroup = { id:string; label:string; amount:number|null; start?:string; end?:string; outsidePlan?:boolean; deals:CommissionLine[] };
 type EarningsMonth = Omit<MonthlyEarnings, 'periods'> & { commissionGroups?:CommissionGroup[]; periods: Period[]; commissionDeals:CommissionLine[]; paid: number | null; owed: number | null };
 type Payment = { id: string; month: string; amount: number; paidAt: string; note: string };
 type FuturePlan = Plan;
@@ -16,6 +16,8 @@ const money = (n: number | null) => n === null ? 'Не рассчитано' : n
 const paidMoney = (n: number | null) => n === null ? 'Не подтверждено' : money(n);
 const date = (s: string) => new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' }).format(new Date(s + 'T12:00:00+05:00'));
 const range = (p: Plan) => date(p.start) + ' — ' + date(p.end);
+const span = (start:string,end:string) => start===end ? date(start) : start.slice(0,7)===end.slice(0,7) ? Number(start.slice(8))+'–'+date(end) : date(start)+' – '+date(end);
+const groupDates = (group:CommissionGroup) => group.start&&group.end ? (group.outsidePlan?'вне плана · ':'')+span(group.start,group.end) : '';
 const nextDay = (day:string) => { const value=new Date(day+'T00:00:00Z');value.setUTCDate(value.getUTCDate()+1);return value.toISOString().slice(0,10); };
 const monthName = (s: string) => {
   const value = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' }).format(new Date(s + '-15T12:00:00+05:00'));
@@ -88,11 +90,11 @@ export default function PersonalSales({ mode }: { mode: 'results' | 'earnings' }
       <div className="ps-sum-row"><span>Оклад</span><strong>{money(p.baseSalary)}</strong></div>
       <div className="ps-sum-row"><span>Бонус</span><strong>{money(p.contractBonus)}</strong></div>
       {p.leaderBonus!==undefined&&p.leaderBonus!==0&&<div className="ps-sum-row"><span>Бонус за 1-е место</span><strong>{money(p.leaderBonus)}</strong></div>}
-      {p.commissionGroups?.map(group=><div className="ps-sum-row" key={group.id}><span>{group.label}</span><strong>{money(settlement&&p.ongoing?0:group.amount)}</strong></div>)}
+      {p.commissionGroups?.map(group=><div className="ps-sum-row" key={group.id}><span>{group.label}{groupDates(group)&&<small className="ps-sum-dates">{groupDates(group)}</small>}</span><strong>{money(settlement&&p.ongoing?0:group.amount)}</strong></div>)}
       <div className="ps-sum-row"><span>{settlement?'Комиссия всего':'Комиссия сейчас'}</span><strong>{money(displayedCommission)}</strong></div>
       <div className="ps-sum-row ps-sum-total"><span>{settlement?'Итого':'К начислению'}</span><strong>{money(settlement?p.earned:displayedCommission)}</strong></div>
       <p className="ps-deal-heading">Комиссия по договорам</p>
-      {(p.commissionGroups||[{id:'all',label:'',deals:p.commissionDeals}]).map(group=><div key={group.id}>{group.label&&<p className="ps-deal-heading">{group.label}</p>}<div className="ps-deal-list">{group.deals.map(item=><div className="ps-deal" key={item.id}><div><strong>{item.title}</strong><span>{date(item.date)} · {item.paymentType}</span><span>{item.formula}</span></div><b>{money(item.amount)}</b></div>)}</div></div>)}
+      {(p.commissionGroups||[{id:'all',label:'',amount:null,deals:p.commissionDeals}]).map(group=><div key={group.id}>{group.label&&<p className="ps-deal-heading">{group.label}{groupDates(group)&&' · '+groupDates(group)}</p>}<div className="ps-deal-list">{group.deals.map(item=><div className="ps-deal" key={item.id}><div><strong>{item.title}</strong><span>{date(item.date)} · {item.paymentType}{group.id==='receipt-6'&&item.paymentEvidence?.status==='received'&&item.paymentEvidence.date?' · оплата '+date(item.paymentEvidence.date):''}</span><span>{item.formula}</span></div><b>{money(item.amount)}</b></div>)}</div></div>)}
       <p>{p.count} договоров в плане · {money(p.volume)}</p>{settlement&&<p>Выплачено {paidMoney(p.paid)} · Остаток {money(p.owed)}</p>}{p.missing > 0 && <p>Неполные суммы: {p.missing}</p>}
     </div></details>;
   }

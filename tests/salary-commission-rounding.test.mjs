@@ -75,7 +75,9 @@ test('API lines, separate categories and month totals reconcile across historica
  // August uses 1.7%, then 2%; August 31 is outside the saved plans and uses 2%.
  assert.deepEqual(data.periods.map(period=>period.rate),[1.7,2]);
  assert.equal(month.commission,23708);assert.equal(month.earned,123708);
- assert.deepEqual(Object.fromEntries(month.commissionGroups.map(group=>[group.id,group.amount])),{'handoff-1.7':1700,'receipt-6':18006,'handoff-2':4002});
+ // Each plan period is its own dated line; same-rate periods and the plan gap stay separate.
+ assert.deepEqual(Object.fromEntries(month.commissionGroups.map(group=>[group.id,group.amount])),{'handoff-1.7:2026-08-01:2026-08-15':1700,'handoff-2:2026-08-16:2026-08-30':2001,'handoff-2':2001,'receipt-6':18006});
+ assert.deepEqual(month.commissionGroups.map(group=>[group.start,group.end,group.outsidePlan??false]),[['2026-08-01','2026-08-15',false],['2026-08-16','2026-08-30',false],['2026-08-31','2026-08-31',true],[undefined,undefined,false]]);
  assert.equal(sum(month.commissionGroups.map(group=>group.amount)),month.commission);
  assert.equal(sum(month.commissionDeals.map(line=>line.amount)),month.commission);
  for(const group of month.commissionGroups)assert.equal(sum(group.deals.map(line=>line.amount)),group.amount);
@@ -86,7 +88,7 @@ test('API aggregates unresolved receipt evidence as unknown while showing the co
  const data=await report([datedDeal(1,'2026-08-16',{firstPayment:null,paymentEvidence:{status:'review_required'}}),datedDeal(2,'2026-08-17')]);
  const month=data.earningsMonths[0];
  assert.equal(month.commission,null);assert.equal(month.earned,null);assert.equal(month.owed,null);
- const standard=month.commissionGroups.find(group=>group.id==='handoff-2');
+ const standard=month.commissionGroups.find(group=>group.id==='handoff-2:2026-08-16:2026-08-30');
  assert.equal(standard.amount,4001);assert.equal(sum(standard.deals.map(line=>line.amount)),4001);
  assert.equal(month.commissionGroups.find(group=>group.id==='receipt-6').amount,null);
 });
