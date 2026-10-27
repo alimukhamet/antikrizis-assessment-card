@@ -22,3 +22,13 @@ test('new submissions append and reconcile the pinned full history; old snapshot
  const service=load('lib/questionnaire/submission-history.ts',{'../documents/repository':repository,'../crm/assessment-history':history});
  for(const full of [null,'FULL SNAPSHOT WITH CONTRACT']){const row={id:submissionId,state:'verified',history_state:'pending',identity_revision:1,actor_id:'worker',payload_json:JSON.stringify({lawyerCard:card,historyCard:full})};let appended,reconciled;const repo={get:async()=>row,claimHistory:async()=>true,finishHistory:async()=>row};const adapter={append:async(id,owner,ref,text)=>{appended=text;return{commentId:'1'};},reconcile:async(id,owner,ref,text)=>{reconciled=text;return{commentId:'1'};}};const args=[repo,adapter,{id:'case',external_id:'11665',client_iin:iin,identity_revision:1},{id:'worker'},'request'];await service.saveSubmissionHistory(...args);row.history_state='uncertain';await service.saveSubmissionHistory(...args);assert.equal(appended,full||card);assert.equal(reconciled,full||card);}
 });
+test('history is re-sent only after a quiet period in which a complete read-back still finds no comment',async()=>{
+ const service=load('lib/questionnaire/submission-history.ts',{'../documents/repository':repository,'../crm/assessment-history':history});let adds=0,released=0;
+ const row={id:submissionId,state:'verified',history_state:'uncertain',identity_revision:1,actor_id:'worker',updated_at:new Date().toISOString(),payload_json:JSON.stringify({lawyerCard:card})};
+ const repo={get:async()=>row,claimHistory:async()=>{row.history_state='writing';return true;},releaseHistoryUnsent:async()=>{released++;row.history_state='pending';return row;},finishHistory:async(c,id,commentId)=>{row.history_state=commentId?'verified':'uncertain';row.updated_at=new Date().toISOString();return row;}};
+ const adapter={append:async()=>{adds++;return {commentId:'7',verified:true};},reconcile:async()=>null};
+ const args=[repo,adapter,{id:'case',external_id:'11665',client_iin:iin,identity_revision:1},{id:'worker'},'request'];
+ const before=row.updated_at;await service.saveSubmissionHistory(...args);assert.equal(row.history_state,'uncertain');assert.equal(row.updated_at,before,'a fruitless read must not reset the wait');assert.equal(released,0);
+ row.updated_at=new Date(Date.now()-11*60*1000).toISOString();await service.saveSubmissionHistory(...args);assert.equal(released,1);assert.equal(row.history_state,'pending');assert.equal(adds,0);
+ await service.saveSubmissionHistory(...args);assert.equal(adds,1);assert.equal(row.history_state,'verified');
+});
