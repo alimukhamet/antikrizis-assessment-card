@@ -2,6 +2,7 @@ import {RepositoryError,type CaseRow} from '../documents/repository';
 import type {Actor} from '../worker-session';
 import {SubmissionRepository,type SubmissionPayload} from './submission-repository';
 import {AssessmentHistoryError,type createAssessmentHistoryAdapter} from '../crm/assessment-history';
+export const HISTORY_RETRY_AFTER_MS=10*60*1000;
 /** Card save and timeline save have separate durable receipts. */
 export async function saveSubmissionHistory(submissions:SubmissionRepository,adapter:ReturnType<typeof createAssessmentHistoryAdapter>,record:CaseRow,actor:Actor,requestId:string){
  const prior=await submissions.get(record.id,requestId);if(!prior)throw new RepositoryError('SUBMISSION_NOT_FOUND',404);
@@ -19,6 +20,14 @@ export async function saveSubmissionHistory(submissions:SubmissionRepository,ada
  }catch(error){
   if(pending&&error instanceof AssessmentHistoryError&&error.notStarted)return submissions.releaseHistoryUnsent(record.id,requestId,error.code);
   return submissions.finishHistory(record.id,requestId,null,error instanceof AssessmentHistoryError?error.code:'HISTORY_OUTCOME_UNCERTAIN');
+ }
+ // A complete read-back that still finds no comment long after the add means the
+ // add never landed (e.g. Bitrix rejected it). Allow one new append after a quiet
+ // period; append() reads again first, so a late-arriving comment is never doubled.
+ // Keep updated_at untouched until then so repeated clicks do not reset the wait.
+ if(!pending&&!receipt){
+  if(Date.now()-Date.parse(prior.updated_at)>=HISTORY_RETRY_AFTER_MS)return submissions.releaseHistoryUnsent(record.id,requestId,'HISTORY_NOT_FOUND_AFTER_WAIT');
+  return prior;
  }
  return submissions.finishHistory(record.id,requestId,receipt?.commentId??null,receipt?'HISTORY_READBACK_VERIFIED':'HISTORY_OUTCOME_UNCERTAIN');
 }
